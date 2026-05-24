@@ -1,0 +1,30 @@
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Node dependencies
+node_modules/
+npm-debug.log
+
+# Next.js build output
+.next/
+out/
+build/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.tfstate.lock.info
+
+# SQLite DB
+*.sqlite
+*.db
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
