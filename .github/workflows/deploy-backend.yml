@@ -34,6 +34,11 @@ jobs:
       - name: Restart Services via SSH
         run: |
           gcloud compute ssh --quiet hire-backend-orchestrator --zone=${{ secrets.GCP_ZONE }} --command="
+            if [ ! -f /opt/bin/docker-compose ] || ! /opt/bin/docker-compose version >/dev/null 2>&1; then
+              sudo mkdir -p /opt/bin && \
+              sudo curl -L \"https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-linux-x86_64\" -o /opt/bin/docker-compose && \
+              sudo chmod +x /opt/bin/docker-compose;
+            fi && \
             sudo mkdir -p /home/app && \
             sudo chown -R \$USER:\$USER /home/app && \
             rm -rf /home/app/backend && \
