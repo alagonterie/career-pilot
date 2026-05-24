@@ -185,9 +185,9 @@ export default function Dashboard() {
       {/* Header bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h1 style={{ fontSize: '2.5rem' }}>Welcome, {profile?.name.split(' ')[0]}</h1>
-          <p style={{ color: 'var(--text-secondary)', marginTop: '4px' }}>
-            {profile?.target_roles}
+          <h1 style={{ fontSize: '2.5rem' }}>{profile?.name}</h1>
+          <p style={{ color: 'var(--text-secondary)', marginTop: '4px', fontWeight: '500' }}>
+            {profile?.target_roles} ➔ <span style={{ color: 'var(--success)' }}>Active Agent Monitor</span>
           </p>
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
