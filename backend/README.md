@@ -11,3 +11,5 @@ docker compose up --build
 
 ### Production Deployment
 Production deployment is fully automated via GitHub Actions on push to the `master` branch.
+*   **Security**: Authenticated using GCP Workload Identity Federation (OIDC).
+*   **Process**: SCP copies the backend files, and SSH restarts the Docker compose service.
