@@ -17,6 +17,11 @@ build/
 *.tfstate
 *.tfstate.backup
 .terraform.tfstate.lock.info
+*.tfvars
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.tfstate.lock.info
 
 # SQLite DB
 *.sqlite
