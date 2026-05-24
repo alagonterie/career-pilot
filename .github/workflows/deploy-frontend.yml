@@ -1,0 +1,47 @@
+name: Deploy Frontend to Cloudflare
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'frontend/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package.json'
+
+      - name: Install Dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Build Next.js app via OpenNext
+        run: |
+          cd frontend
+          npx @opennextjs/cloudflare build
+        env:
+          NEXT_PUBLIC_CANDIDATE_NAME: ${{ vars.CANDIDATE_NAME }}
+          NEXT_PUBLIC_CANDIDATE_TITLE: ${{ vars.CANDIDATE_TITLE }}
+          NEXT_PUBLIC_CANDIDATE_DOMAIN: ${{ vars.DOMAIN_NAME }}
+          NEXT_PUBLIC_API_URL: https://api.${{ vars.DOMAIN_NAME }}
+          NEXT_PUBLIC_GITHUB_URL: ${{ vars.CANDIDATE_GITHUB }}
+          NEXT_PUBLIC_LINKEDIN_URL: ${{ vars.CANDIDATE_LINKEDIN }}
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: 'frontend'
+          command: deploy

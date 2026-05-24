@@ -1,0 +1,41 @@
+name: Deploy Backend to GCP
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'backend/**'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Sync Files to GCP VM via gcloud compute scp
+        run: |
+          gcloud compute scp --recurse backend/ --zone=${{ secrets.GCP_ZONE }} hire-backend-orchestrator:/home/app/backend
+
+      - name: Restart Services via SSH
+        run: |
+          gcloud compute ssh hire-backend-orchestrator --zone=${{ secrets.GCP_ZONE }} --command="
+            cd /home/app/backend && \
+            export PORTKEY_API_KEY='${{ secrets.PORTKEY_API_KEY }}' && \
+            /opt/bin/docker-compose down && \
+            /opt/bin/docker-compose up -d --build
+          "
