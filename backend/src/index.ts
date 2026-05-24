@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { initDb, getDb } from './db';
-import { startTelegramBot } from './telegram';
+import { startTelegramBot, bot } from './telegram';
 import { startTaskOrchestrator } from './orchestrator';
 import { getAuthUrl, exchangeCodeForTokens, syncGmailAndCalendar } from './google';
 
@@ -96,6 +96,36 @@ app.post('/api/sync', async (req, res) => {
 
     res.json({ success: true, message: 'Workspace sync completed.' });
   } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Recruiter Contact Request Endpoint (forwards details to Alexander via Telegram)
+app.post('/api/contact', async (req, res) => {
+  const { name, email, company, role, message } = req.body;
+  if (!name || !email || !message) {
+    return res.status(400).json({ error: 'Name, email, and message are required.' });
+  }
+
+  try {
+    const telegramMessage = 
+      `🔔 **New Recruiter Contact Request!**\n\n` +
+      `👤 **Name**: ${name}\n` +
+      `📧 **Email**: ${email}\n` +
+      `🏢 **Company**: ${company || 'N/A'}\n` +
+      `💼 **Role**: ${role || 'N/A'}\n\n` +
+      `💬 **Message**:\n${message}`;
+
+    const allowedChatId = process.env.ALLOWED_TELEGRAM_CHAT_ID;
+    if (allowedChatId && bot) {
+      await bot.telegram.sendMessage(allowedChatId, telegramMessage);
+      res.json({ success: true, message: 'Message sent to Alexander via Telegram.' });
+    } else {
+      console.warn('Telegram bot or allowed chat ID not initialized');
+      res.status(500).json({ error: 'Orchestrator communication offline.' });
+    }
+  } catch (error: any) {
+    console.error('Error forwarding contact message to Telegram:', error);
     res.status(500).json({ error: error.message });
   }
 });
