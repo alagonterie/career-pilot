@@ -29,11 +29,11 @@ jobs:
 
       - name: Sync Files to GCP VM via gcloud compute scp
         run: |
-          gcloud compute scp --recurse backend/ --zone=${{ secrets.GCP_ZONE }} hire-backend-orchestrator:/home/app/backend
+          gcloud compute scp --quiet --recurse backend/ --zone=${{ secrets.GCP_ZONE }} hire-backend-orchestrator:/home/app/backend
 
       - name: Restart Services via SSH
         run: |
-          gcloud compute ssh hire-backend-orchestrator --zone=${{ secrets.GCP_ZONE }} --command="
+          gcloud compute ssh --quiet hire-backend-orchestrator --zone=${{ secrets.GCP_ZONE }} --command="
             cd /home/app/backend && \
             export PORTKEY_API_KEY='${{ secrets.PORTKEY_API_KEY }}' && \
             /opt/bin/docker-compose down && \
