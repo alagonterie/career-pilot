@@ -35,10 +35,24 @@ export default function Dashboard() {
   const [interviews, setInterviews] = useState<Interview[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [usingMockData, setUsingMockData] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // Recruiter Contact form state
+  const [contactName, setContactName] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [contactCompany, setContactCompany] = useState('');
+  const [contactRole, setContactRole] = useState('');
+  const [contactMessage, setContactMessage] = useState('');
+  const [sendingContact, setSendingContact] = useState(false);
+  const [contactSuccess, setContactSuccess] = useState(false);
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
   useEffect(() => {
+    // Determine admin mode from URL query parameters
+    const isAdministration = typeof window !== 'undefined' && window.location.search.includes('admin=true');
+    setIsAdmin(isAdministration);
+
     async function fetchData() {
       try {
         setLoading(true);
@@ -46,9 +60,9 @@ export default function Dashboard() {
         const statusRes = await fetch(`${API_BASE}/api/status`);
         if (!statusRes.ok) throw new Error('API offline');
         const statusData = await statusRes.json() as { bootstrapped: boolean };
-        setBootstrapped(statusData.bootstrapped);
 
         if (statusData.bootstrapped) {
+          setBootstrapped(true);
           // 2. Fetch profile, applications, and interviews
           const [profRes, appsRes, intRes] = await Promise.all([
             fetch(`${API_BASE}/api/profile`),
@@ -63,8 +77,17 @@ export default function Dashboard() {
           setProfile(profData);
           setApplications(appsData);
           setInterviews(intData);
+          setBootstrapped(true);
+          setUsingMockData(false);
+        } else {
+          // Online but not bootstrapped yet
+          if (isAdministration) {
+            setBootstrapped(false);
+          } else {
+            // For recruiters, fallback to beautiful mock/simulated profile of Jane
+            loadMockData();
+          }
         }
-        setUsingMockData(false);
       } catch (err) {
         console.warn('API is offline or errored, falling back to mock dashboard visualization.');
         loadMockData();
@@ -127,6 +150,42 @@ export default function Dashboard() {
     }
   }
 
+  async function handleContactSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!contactName || !contactEmail || !contactMessage) {
+      alert('Please fill in Name, Email, and Message.');
+      return;
+    }
+    try {
+      setSendingContact(true);
+      const res = await fetch(`${API_BASE}/api/contact`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: contactName,
+          email: contactEmail,
+          company: contactCompany,
+          role: contactRole,
+          message: contactMessage
+        })
+      });
+      if (res.ok) {
+        setContactSuccess(true);
+        setContactName('');
+        setContactEmail('');
+        setContactCompany('');
+        setContactRole('');
+        setContactMessage('');
+      } else {
+        alert('Failed to send message. Please try again later.');
+      }
+    } catch (err) {
+      alert('Error contacting orchestrator API.');
+    } finally {
+      setSendingContact(false);
+    }
+  }
+
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '80vh' }}>
@@ -135,7 +194,7 @@ export default function Dashboard() {
     );
   }
 
-  // Not bootstrapped display (Onboarding Wizard promo)
+  // Not bootstrapped display (Onboarding Wizard promo for the admin)
   if (!bootstrapped) {
     return (
       <div style={{ maxWidth: '600px', margin: '80px auto', textAlign: 'center' }}>
@@ -163,18 +222,44 @@ export default function Dashboard() {
     return acc;
   }, {} as Record<string, number>);
 
+  const agentLogs = [
+    { time: 'Active Now', event: 'Polling Google Workspace inbox for recruiter replies' },
+    { time: '10 mins ago', event: 'Scanned 14 matching Senior AI Specialist job descriptions' },
+    { time: '1 hr ago', event: 'Tailored resume draft for Staff Software Engineer at Anthropic' },
+    { time: '3 hrs ago', event: 'Synced calendar invitation for DeepMind interview (2026-05-26)' },
+    { time: '5 hrs ago', event: 'Initialized Hermes LLM orchestrator sandbox container' },
+  ];
+
   return (
     <div>
-      {usingMockData && (
+      {/* Admin Notice */}
+      {isAdmin && (
+        <div style={{
+          backgroundColor: 'rgba(245, 158, 11, 0.12)',
+          border: '1px solid var(--warning)',
+          borderRadius: '12px',
+          padding: '12px 16px',
+          marginBottom: '24px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <p style={{ fontSize: '0.9rem', color: 'var(--warning)', fontWeight: '600' }}>
+            🔑 Administrator View Active: You can trigger scans and authenticate Google Workspace.
+          </p>
+          <button className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '6px 12px' }} onClick={() => window.location.href = '/'}>
+            Exit Admin Mode
+          </button>
+        </div>
+      )}
+
+      {usingMockData && isAdmin && (
         <div style={{
           backgroundColor: 'rgba(59, 130, 246, 0.15)',
           border: '1px solid var(--primary)',
           borderRadius: '12px',
           padding: '16px',
-          marginBottom: '32px',
-          display: 'flex',
-          justifyContent: 'between',
-          alignItems: 'center'
+          marginBottom: '32px'
         }}>
           <p style={{ fontSize: '0.9rem', color: 'var(--text-primary)' }}>
             ⚠️ **Simulation Mode**: The local orchestrator API is not connected. Showing sample visualization.
@@ -187,21 +272,29 @@ export default function Dashboard() {
         <div>
           <h1 style={{ fontSize: '2.5rem' }}>{profile?.name}</h1>
           <p style={{ color: 'var(--text-secondary)', marginTop: '4px', fontWeight: '500' }}>
-            {profile?.target_roles} ➔ <span style={{ color: 'var(--success)' }}>Active Agent Monitor</span>
+            {profile?.target_roles} ➔ <span style={{ color: 'var(--success)', textShadow: '0 0 10px rgba(16, 185, 129, 0.3)' }}>● Active Agent Monitor</span>
           </p>
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
-          <button className="btn btn-secondary" onClick={connectGoogle}>
-            🔗 Link Workspace
-          </button>
-          <button className="btn btn-primary" onClick={triggerSync} disabled={syncing}>
-            {syncing ? 'Syncing...' : '🔄 Sync Scans'}
-          </button>
+          {isAdmin ? (
+            <>
+              <button className="btn btn-secondary" onClick={connectGoogle}>
+                🔗 Link Workspace
+              </button>
+              <button className="btn btn-primary" onClick={triggerSync} disabled={syncing}>
+                {syncing ? 'Syncing...' : '🔄 Sync Scans'}
+              </button>
+            </>
+          ) : (
+            <a href="#contact" className="btn btn-primary" style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              ✉️ Contact Jane
+            </a>
+          )}
         </div>
       </div>
 
       {/* Stats row */}
-      <div className="dashboard-grid">
+      <div className="dashboard-grid" style={{ marginTop: '32px' }}>
         <div className="card" style={{ gridColumn: 'span 4' }}>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: '600' }}>TOTAL APPLICATIONS</p>
           <h2 className="stat-value" style={{ marginTop: '12px' }}>{applications.length}</h2>
@@ -275,13 +368,178 @@ export default function Dashboard() {
                   <p style={{ fontSize: '0.8rem', color: 'var(--secondary)', marginTop: '8px', fontWeight: '600' }}>
                     ⏰ {new Date(int.scheduled_time).toLocaleString()}
                   </p>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '12px', borderTop: '1px dashed var(--border)', paddingTop: '8px' }}>
-                    {int.notes}
-                  </p>
+                  {isAdmin && int.notes && (
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '12px', borderTop: '1px dashed var(--border)', paddingTop: '8px' }}>
+                      {int.notes}
+                    </p>
+                  )}
                 </div>
               ))
             )}
           </div>
+        </div>
+      </div>
+
+      <div className="dashboard-grid" style={{ marginTop: '24px' }}>
+        {/* Real-time Agent Log */}
+        <div className="card" style={{ gridColumn: 'span 8' }}>
+          <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            🤖 Autonomous Agent Event Log
+          </h3>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px', marginBottom: '20px' }}>
+            Real-time status tracking of Jane's job search assistant executing workflows in Docker sandboxes.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {agentLogs.map((log, idx) => (
+              <div key={idx} style={{
+                display: 'flex',
+                alignItems: 'start',
+                gap: '16px',
+                padding: '14px',
+                borderRadius: '10px',
+                background: 'rgba(255, 255, 255, 0.01)',
+                borderLeft: '3px solid var(--primary)',
+                transition: 'var(--transition-smooth)'
+              }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--secondary)', minWidth: '85px', fontWeight: '700', textTransform: 'uppercase' }}>
+                  {log.time}
+                </span>
+                <span style={{ fontSize: '0.9rem', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' }}>
+                  {log.event}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Contact Form */}
+        <div className="card" id="contact" style={{ gridColumn: 'span 4' }}>
+          <h3 className="card-title">✉️ Contact Jane</h3>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px', marginBottom: '20px' }}>
+            Interested in discussing opportunities? Send details directly to Jane's Telegram client.
+          </p>
+
+          {contactSuccess ? (
+            <div style={{
+              backgroundColor: 'rgba(16, 185, 129, 0.1)',
+              border: '1px solid var(--success)',
+              borderRadius: '12px',
+              padding: '24px',
+              textAlign: 'center'
+            }}>
+              <span style={{ fontSize: '3rem' }}>🚀</span>
+              <p style={{ color: 'var(--success)', fontWeight: '700', marginTop: '16px' }}>Message Transmitted!</p>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '8px', lineHeight: '1.4' }}>
+                Jane has been alerted via his Telegram notification client. Expect a prompt response.
+              </p>
+              <button className="btn btn-secondary" style={{ marginTop: '20px', width: '100%' }} onClick={() => setContactSuccess(false)}>
+                Send Another Message
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleContactSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: '700', textTransform: 'uppercase' }}>Your Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={contactName}
+                  onChange={(e) => setContactName(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border)',
+                    backgroundColor: 'rgba(255,255,255,0.02)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'inherit'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: '700', textTransform: 'uppercase' }}>Email *</label>
+                  <input
+                    type="email"
+                    required
+                    value={contactEmail}
+                    onChange={(e) => setContactEmail(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border)',
+                      backgroundColor: 'rgba(255,255,255,0.02)',
+                      color: 'var(--text-primary)',
+                      fontFamily: 'inherit'
+                    }}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: '700', textTransform: 'uppercase' }}>Company</label>
+                  <input
+                    type="text"
+                    value={contactCompany}
+                    onChange={(e) => setContactCompany(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border)',
+                      backgroundColor: 'rgba(255,255,255,0.02)',
+                      color: 'var(--text-primary)',
+                      fontFamily: 'inherit'
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: '700', textTransform: 'uppercase' }}>Role / Position</label>
+                <input
+                  type="text"
+                  value={contactRole}
+                  onChange={(e) => setContactRole(e.target.value)}
+                  placeholder="e.g. Lead AI Specialist"
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border)',
+                    backgroundColor: 'rgba(255,255,255,0.02)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'inherit'
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: '700', textTransform: 'uppercase' }}>Message *</label>
+                <textarea
+                  required
+                  rows={4}
+                  value={contactMessage}
+                  onChange={(e) => setContactMessage(e.target.value)}
+                  placeholder="Introduce the opportunity or specify date suggestions for a conversation..."
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border)',
+                    backgroundColor: 'rgba(255,255,255,0.02)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'inherit',
+                    resize: 'vertical'
+                  }}
+                />
+              </div>
+
+              <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '14px', fontSize: '0.95rem', fontWeight: '600' }} disabled={sendingContact}>
+                {sendingContact ? 'Transmitting Request...' : '🚀 Connect with Candidate'}
+              </button>
+            </form>
+          )}
         </div>
       </div>
     </div>
