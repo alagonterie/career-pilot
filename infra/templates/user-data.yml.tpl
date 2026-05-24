@@ -24,6 +24,6 @@ runcmd:
   - systemctl daemon-reload
   - systemctl enable cloudflared.service
   - systemctl start cloudflared.service
-  - mkdir -p /var/bin
-  - curl -L "https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-linux-x86_64" -o /var/bin/docker-compose
-  - chmod +x /var/bin/docker-compose
+  - mkdir -p /var/lib/google
+  - curl -L "https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-linux-x86_64" -o /var/lib/google/docker-compose
+  - chmod +x /var/lib/google/docker-compose

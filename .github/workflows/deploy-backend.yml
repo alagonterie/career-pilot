@@ -34,9 +34,10 @@ jobs:
       - name: Restart Services via SSH
         run: |
           gcloud compute ssh --quiet hire-backend-orchestrator --zone=${{ secrets.GCP_ZONE }} --command="
-            if [ ! -f ~/docker-compose ] || ! ~/docker-compose version >/dev/null 2>&1; then
-              curl -L \"https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-linux-x86_64\" -o ~/docker-compose && \
-              chmod +x ~/docker-compose;
+            if [ ! -f /var/lib/google/docker-compose ] || ! /var/lib/google/docker-compose version >/dev/null 2>&1; then
+              sudo mkdir -p /var/lib/google && \
+              sudo curl -L \"https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-linux-x86_64\" -o /var/lib/google/docker-compose && \
+              sudo chmod +x /var/lib/google/docker-compose;
             fi && \
             sudo mkdir -p /home/app && \
             sudo chown -R \$USER:\$USER /home/app && \
@@ -44,6 +45,6 @@ jobs:
             mv ~/backend /home/app/backend && \
             cd /home/app/backend && \
             export PORTKEY_API_KEY='${{ secrets.PORTKEY_API_KEY }}' && \
-            ~/docker-compose -f docker-compose.prod.yml down && \
-            ~/docker-compose -f docker-compose.prod.yml up -d --build
+            /var/lib/google/docker-compose -f docker-compose.prod.yml down && \
+            /var/lib/google/docker-compose -f docker-compose.prod.yml up -d --build
           "
