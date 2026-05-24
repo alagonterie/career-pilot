@@ -25,5 +25,5 @@ runcmd:
   - systemctl enable cloudflared.service
   - systemctl start cloudflared.service
   - mkdir -p /opt/bin
-  - curl -L "https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-$(uname -s)-$(uname -m)" -o /opt/bin/docker-compose
+  - curl -L "https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-linux-x86_64" -o /opt/bin/docker-compose
   - chmod +x /opt/bin/docker-compose
