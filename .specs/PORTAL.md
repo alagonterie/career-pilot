@@ -1,4 +1,4 @@
-# hire.alagonterie.com — Portal UX Specification
+﻿# hire.example.com — Portal UX Specification
 
 This is the primary deliverable of the `career-pilot` project. The backend exists to feed this portal a compelling, real, live story. Every architectural decision downstream should be judged against "does this surface something undeniable to a visitor?"
 
@@ -8,13 +8,13 @@ This document specs the portal experience end-to-end. The backend [STRATEGY.md](
 
 ## 1. Vision & success metric
 
-A visiting recruiter or hiring manager lands on `hire.alagonterie.com`, spends 30–120 seconds on the page, and converts in one of three ways:
+A visiting recruiter or hiring manager lands on `hire.example.com`, spends 30–120 seconds on the page, and converts in one of three ways:
 
-1. **Direct contact** — submits the contact form or DMs Alexander via a surfaced channel.
+1. **Direct contact** — submits the contact form or DMs the candidate via a surfaced channel.
 2. **Forward up** — sends the link to their engineering hiring manager / EM / staff engineer with a positive framing.
-3. **Pipeline pull** — adds Alexander to their pipeline for a specific open role.
+3. **Pipeline pull** — adds the candidate to their pipeline for a specific open role.
 
-The portal succeeds when **technical hiring managers who see this page conclude, within 60 seconds of digging in, that Alexander ships real systems**. Recruiter conversion is downstream of that conclusion.
+The portal succeeds when **technical hiring managers who see this page conclude, within 60 seconds of digging in, that the candidate ships real systems**. Recruiter conversion is downstream of that conclusion.
 
 **Anti-goals:**
 - Looking clever without proving substance (vibe over substance is disqualifying).
@@ -30,9 +30,9 @@ The portal succeeds when **technical hiring managers who see this page conclude,
 |---|---|---|
 | **Non-technical recruiter / sourcer** | Lands on `/`, sees hero + funnel + "try it" CTA, plays with simulator, submits contact form | Contact form submission |
 | **Technical recruiter / TPM** | Lands on `/`, glances at hero, clicks "see it work" → `/live`, watches activity for 30s, returns to `/` for contact | Contact form submission with role context |
-| **Engineering hiring manager / Staff engineer** | Lands on `/`, scans hero, clicks through to `/live` and `/architecture`, opens GitHub repo in new tab, returns to `/contact` if convinced | Personal email to Alexander, or recruiter handoff |
+| **Engineering hiring manager / Staff engineer** | Lands on `/`, scans hero, clicks through to `/live` and `/architecture`, opens GitHub repo in new tab, returns to `/contact` if convinced | Personal email to the candidate, or recruiter handoff |
 | **Curious peer engineer** | Lands on `/`, dives into `/architecture` and GitHub, reads the actual code | Stars repo, follows on socials, may reach out |
-| **The person being shown the link by Alexander** | Direct deep link to a specific page he sends them | Whatever the conversation calls for |
+| **The person being shown the link by the candidate** | Direct deep link to a specific page they're sent | Whatever the conversation calls for |
 
 The first three are the priority. Design every page to read fast for #1, reward dig-in for #3.
 
@@ -151,7 +151,7 @@ API routes (consumed by the frontend)
 /api/architecture    GET — live system status (sessions, containers, etc.)
 /api/simulator       POST — start a sandbox simulation; returns simulation_id
 /api/simulator/:id   GET — SSE stream of simulator results
-/api/contact         POST — relay to Alexander's Telegram
+/api/contact         POST — relay to the candidate's Telegram
 ```
 
 Public routes are TanStack Start pages running on Cloudflare Workers. Route loaders hit the backend API via server functions (the Worker proxies to the GCP VM through Cloudflare Tunnel); client islands hydrate against the same data on the page.
@@ -162,14 +162,14 @@ Public routes are TanStack Start pages running on Cloudflare Workers. Route load
 
 ### 5.1 `/` — Landing
 
-**Purpose:** In 5 seconds of viewing, the visitor learns three things: (a) who Alexander is and what he does, (b) that this site is *itself* the proof, (c) where to click to go deeper or convert.
+**Purpose:** In 5 seconds of viewing, the visitor learns three things: (a) who the candidate is and what they do, (b) that this site is *itself* the proof, (c) where to click to go deeper or convert.
 
 **Viewport 1: Hero**
 
 ```
                  ────────────────────────────────────────────
 
-                 Alexander LaGonterie
+                 Jane Doe
                  Senior Software Engineer · AI Systems
 
                  I built this site. Everything moving on
@@ -249,7 +249,7 @@ Big single-button CTA. No form on this viewport — the form lives on `/simulato
 ```
   Skills              Recent work             Talk to me
   ─────               ───────────             ──────────
-  TypeScript          [project 1]             ✉ alexander@…
+  TypeScript          [project 1]             ✉ jane@…
   Go                  [project 2]             telegram: …
   AI agents           [project 3]             linkedin: …
   ...                 [see all → /work]       [form → /contact]
@@ -343,7 +343,7 @@ A `LogStream` showing sanitized agent activity, live via SSE. Each line is a `Tr
                   source: gmail webhook (recruiter reply)
 16:42:08.119  ◆ briefing  cron  morning-summary   haiku  890 tok  0.6s  $0.001
                 ▸ summarized 8 overnight events
-                ▸ delivered to telegram:alexander
+                ▸ delivered to telegram:jane
                 ✓ done
 16:38:50.044  ◆ followup-nudge  cron  weekly        haiku  640 tok  0.4s  $0.001
                 ▸ identified 1 stale application (12 days, no reply)
@@ -370,7 +370,7 @@ Two numbers:
 - **Today's spend:** `$X.XX` — sourced from Portkey
 - **Saved via cache:** `$Y.YY` — also from Portkey (`cache_hit_count * estimated_uncached_cost`)
 
-Tagline below: *"This page costs Alexander ~$ZZ/day to run. Cache saves the rest."*
+Tagline below: *"This page costs the candidate ~$ZZ/day to run. Cache saves the rest."*
 
 This single signal is one of the strongest credibility moves on the site: real cost, real numbers, transparent.
 
@@ -416,7 +416,7 @@ This is also where the visitor learns that the public side of the system is genu
 
 ### 5.3 `/simulator` — Recruiter Simulator
 
-**What this is:** Proof-by-demonstration. A visiting recruiter or hiring manager doesn't have to take Alexander's word that the system works — they type in their own company name and role description, click `Run`, and watch the same agent stack that's running his real job search execute on *their* data in real time. Within 20-30 seconds they have a tangible, downloadable artifact (tailored bullets + cold outreach email).
+**What this is:** Proof-by-demonstration. A visiting recruiter or hiring manager doesn't have to take the candidate's word that the system works — they type in their own company name and role description, click `Run`, and watch the same agent stack that's running the candidate's real job search execute on *their* data in real time. Within 20-30 seconds they have a tangible, downloadable artifact (tailored bullets + cold outreach email).
 
 **Three things it surfaces:**
 
@@ -549,7 +549,7 @@ The `Talk to me` button pre-fills the contact form on `/contact` with the compan
 
 ### 5.4 `/funnel` — Funnel race detail
 
-**Purpose:** The gamified deep-dive into Alexander's job search. Recruiter sees motion ("this person is in demand"), engineer sees a real pipeline tracker.
+**Purpose:** The gamified deep-dive into the candidate's job search. Recruiter sees motion ("this person is in demand"), engineer sees a real pipeline tracker.
 
 **Layout:** Ops register. The full funnel as a horse-race style horizontal board:
 
@@ -599,7 +599,7 @@ Footer: A short methodology block:
                                 ┌─────────────────────────────────────────┐
 TRIGGERS ────────────────────►  │  HOST (Node)                            │
                                 │                                          │
-   Telegram (Alexander)   ──►   │  [Channel Adapters ●]                    │
+   Telegram (the candidate)   ──►   │  [Channel Adapters ●]                    │
    Portal sandbox (web)   ──►   │       │                                  │
    Gmail / Calendar       ──►   │       ▼                                  │
      webhooks                   │  [Router ●] ─► writes to session inbound │
@@ -667,7 +667,7 @@ TRIGGERS ────────────────────►  │  H
 ```
 
 The diagram has three regions:
-- **TRIGGERS** — what can wake the system: chat input from Alexander, sandbox visitors, Google Workspace webhooks, the cron sweep.
+- **TRIGGERS** — what can wake the system: chat input from the candidate, sandbox visitors, Google Workspace webhooks, the cron sweep.
 - **HOST + CONTAINER** — NanoClaw's two-process model. The host orchestrates; the container is where the agent loop runs.
 - **PUBLIC** — the read-only sanitized path that feeds this very page.
 
@@ -694,11 +694,11 @@ Below the diagram: a panel labeled `WHAT YOU'RE LOOKING AT`:
 **Purpose:** The actual resume content. Apple register. Static-ish content.
 
 **Sections:**
-1. **Bio** — 2 paragraphs, voice-of-Alexander
+1. **Bio** — 2 paragraphs, voice-of-the candidate
 2. **What I'm looking for** — short list (target roles, comp, location)
 3. **Experience** — role/company/dates/3-bullet summary per role
 4. **Projects** — featured projects with links (this portal itself is one of them)
-5. **Writing / talks** (optional, if Alexander has any)
+5. **Writing / talks** (optional, if the candidate has any)
 6. **Skills** — tag cloud (curated, not exhaustive)
 7. **Education / certs** (brief)
 8. **Where else to find me** — GitHub, LinkedIn, X, blog (whichever apply)
@@ -731,11 +731,11 @@ A `Download PDF` button at top + bottom — generated server-side from the struc
 ```
 
 Below the form, three alternative paths:
-- **Telegram** (deep link to a public bot username — replies route to Alexander via NanoClaw)
+- **Telegram** (deep link to a public bot username — replies route to the candidate via NanoClaw)
 - **Email** (`mailto:` link)
 - **LinkedIn**
 
-When submitted, the message is relayed to Alexander via Telegram. Sender gets a confirmation: *"Sent. Alexander typically replies within 24 hours."*
+When submitted, the message is relayed to the candidate via Telegram. Sender gets a confirmation: *"Sent. the candidate typically replies within 24 hours."*
 
 **Spam control:** Cloudflare Turnstile captcha (invisible by default). Rate limit 5 submissions per IP per hour.
 
@@ -761,7 +761,7 @@ A subsection that calls out a deliberately strong security model — it's a cred
 
 > No raw API key ever enters the agent container. Credentials are split across two purpose-built vaults:
 >
-> - **Portkey Model Catalog** holds Alexander's Anthropic API key as a vaulted Integration. The container makes Claude calls to `api.portkey.ai` with only a Portkey API key; Portkey looks up the right Anthropic credential, makes the actual API call, and logs the trace for observability.
+> - **Portkey Model Catalog** holds the candidate's Anthropic API key as a vaulted Integration. The container makes Claude calls to `api.portkey.ai` with only a Portkey API key; Portkey looks up the right Anthropic credential, makes the actual API call, and logs the trace for observability.
 > - **OneCLI Agent Vault** holds everything else — the Portkey API key itself, Google OAuth refresh tokens, Cloudflare API tokens, the Telegram bot token. OneCLI runs as a local credential-injecting proxy; the container is configured to route outbound HTTPS through it. Credentials inject at request time based on URL pattern matching + per-agent policies.
 >
 > The container's environment contains exactly **zero** secrets. Even if a Worker handler dumps `process.env`, nothing useful leaks. Outbound HTTPS routes through OneCLI, which knows what credential to apply for each destination and which actions require human approval.
@@ -782,7 +782,7 @@ A subsection that says the quiet part out loud — this repo is meant to be fork
 > | Working state (applications, drafts, learnings) | SQLite (private) | ✗ private |
 > | Owner config (bot token, Portkey key) | `.env` + OneCLI vault | ✗ private |
 >
-> A developer who forks the repo gets the system, then populates their own `candidate_profile` via the Telegram onboarding flow. None of Alexander's personal content is committed.
+> A developer who forks the repo gets the system, then populates their own `candidate_profile` via the Telegram onboarding flow. None of the candidate's personal content is committed.
 
 #### How to fork it
 
@@ -811,9 +811,9 @@ Three distinct actor classes interact with the system, each through a different 
 
 | Actor | Surface | Agent group | Permissions |
 |---|---|---|---|
-| **Owner (Alexander)** | Telegram (v1); Discord later | `career-pilot` | Full. Owner role via `user_roles`. Real DB writes, Gmail/Calendar OAuth, real outreach. |
+| **Owner (the candidate)** | Telegram (v1); Discord later | `career-pilot` | Full. Owner role via `user_roles`. Real DB writes, Gmail/Calendar OAuth, real outreach. |
 | **Sandbox visitor** (recruiter trying the simulator) | `/simulator` (web → portal channel adapter) | `career-pilot-sandbox` | Sandbox-only. No role required. Ephemeral per-visitor session. Read-only subagents; no DB-write tools; no Gmail/Calendar OAuth; separate Portkey spend budget. |
-| **Contact-form visitor** | `/contact` (web POST) | (none — webhook handler) | One-way relay. No conversation. Submission is delivered to Alexander's channel as a system message. |
+| **Contact-form visitor** | `/contact` (web POST) | (none — webhook handler) | One-way relay. No conversation. Submission is delivered to the candidate's channel as a system message. |
 
 The owner agent group and the sandbox agent group share **skills** (the actual job-hunt logic in `groups/<group>/skills/`) but have **different container configs** — different tool allowlists, different OneCLI credential scope, different Portkey Model Catalog AI Providers (with separate spend caps). This way the sandbox can run the same `research-company`/`tailor-resume`/`draft-outreach` subagents without any risk of touching real state.
 
@@ -910,7 +910,7 @@ The agent learns from outcomes. Rejection-as-fuel is the canonical case.
 
 1. Webhook → `parse_email` tool classifies the message: `rejection-after-screen`, `rejection-after-interview`, `rejection-after-final`, `ghosted` (no contact for N days after a stage).
 2. Agent updates the funnel: `[REDACTED:company] → REJECTED`. A `◆ rejection` event lands in the activity stream.
-3. **The reflection prompt:** Within 1 hour (or at the next quiet-hours boundary if it's late), the agent posts a card to Alexander on Telegram:
+3. **The reflection prompt:** Within 1 hour (or at the next quiet-hours boundary if it's late), the agent posts a card to the candidate on Telegram:
    > *"Heads up: rejection from [REDACTED:fintech-b] after the final round. Want to capture a quick reflection? 3 prompts, ~90s — feeds future runs."*
    > `[ Yes, prompt me ]  [ Later ]  [ Skip ]`
 4. If accepted, the agent runs three focused prompts:
@@ -920,7 +920,7 @@ The agent learns from outcomes. Rejection-as-fuel is the canonical case.
 5. Free-form answers stored in `rejection_learnings` (private) keyed to the application + role category.
 6. **Future fuel:** every subsequent `research-company` and `tailor-resume` run for similar companies/roles includes a context block:
    > *"Prior learnings from similar attempts:* [bulleted, anonymized excerpts]*"*
-7. **Optional portal publication:** Alexander can flip `reflection_published: true` per learning. Published reflections show on the application's `/funnel` detail panel as a "What I learned" block, with the company still obfuscated unless `public_state = 'public'`.
+7. **Optional portal publication:** the candidate can flip `reflection_published: true` per learning. Published reflections show on the application's `/funnel` detail panel as a "What I learned" block, with the company still obfuscated unless `public_state = 'public'`.
 
 **Why this matters for the showcase:** A hiring manager who lands on `/funnel` and sees a closed/rejected entry with a handwritten reflection ("*I underestimated their bar for systems design — leaning into Designing Data-Intensive Applications before my next big-tech round*") thinks: *this is someone who learns in public*. That signal is much harder to fake than competence claims.
 
@@ -939,7 +939,7 @@ All learnings live in the same `learnings` table with a `kind` column. Approval-
 
 ## 7. System modes & safety controls
 
-Career Pilot has weight — it touches real applications, real people, real money, and Alexander's career. Three control mechanisms keep it safe: a system-mode flag, three pause/halt tiers, and the autonomy gradient from §6.3.
+Career Pilot has weight — it touches real applications, real people, real money, and the candidate's career. Three control mechanisms keep it safe: a system-mode flag, three pause/halt tiers, and the autonomy gradient from §6.3.
 
 ### 7.1 `LIVE_MODE` — the most important switch
 
@@ -963,7 +963,7 @@ A single flag on the host: `LIVE_MODE: boolean` (default `false` until explicitl
 
 When `false`, the portal hero adds a small badge: `◇ SHADOW MODE — career-pilot is running in dry-run. External actions disabled.` Visitors still see the system working; recruiters might even appreciate the transparency about how cautious the rollout is.
 
-**The flip:** Alexander promotes to `LIVE_MODE = true` via a Telegram command requiring two-step confirmation. Going back to dry-run is one command (no confirmation) — easy to back off.
+**The flip:** the candidate promotes to `LIVE_MODE = true` via a Telegram command requiring two-step confirmation. Going back to dry-run is one command (no confirmation) — easy to back off.
 
 This is the answer to *"I want to deploy and watch it run for a while before it can actually affect my life."* You can run for weeks in shadow mode, profile cost, watch the system make decisions you agree or disagree with, refine prompts and skills, then flip.
 
@@ -1001,7 +1001,7 @@ Effect:
 - All of `/halt`, plus:
 - OneCLI agent tokens revoked → container can't make ANY authenticated outbound call even if it somehow restarts.
 - Portkey rate limits flipped to 0 → even if a credential leaks, no LLM calls succeed.
-- Cloudflare Worker serves a static "This system is paused for review. — Alexander" page; backend API responses replaced with 503s.
+- Cloudflare Worker serves a static "This system is paused for review. — the candidate" page; backend API responses replaced with 503s.
 - Webhook events DROPPED, not queued. Anything in flight is lost.
 
 **Recovery:** Requires manual intervention via SSH. Not designed for fast recovery — designed for "stop everything until I know what happened."
@@ -1014,9 +1014,9 @@ Effect:
 | `LIVE_MODE=false`, running | `◇ Shadow mode` badge | `◇ DRY-RUN` on every event | Still works (sandbox isn't gated on LIVE_MODE) | Normal |
 | `/pause` active | Status pill: `⏸ Paused` | Banner: `⏸ Proactive paused` | Still works | Normal |
 | `/halt` active | Page: `⏸ Temporarily offline — back shortly` (cached snapshot) | Same | Disabled with clear message | Still works (doesn't depend on orchestrator) |
-| `/killswitch` active | Static page: `Paused for review — Alexander` | Same | Disabled | Disabled |
+| `/killswitch` active | Static page: `Paused for review — the candidate` | Same | Disabled | Disabled |
 
-The transparent "*here's why we paused*" message Alexander can set is itself a credibility move — recruiters reading *"paused due to traffic spike at 5,200 RPS — diagnosing now"* see operational maturity, not breakage.
+The transparent "*here's why we paused*" message the candidate can set is itself a credibility move — recruiters reading *"paused due to traffic spike at 5,200 RPS — diagnosing now"* see operational maturity, not breakage.
 
 ### 7.6 The autonomy gradient still applies
 
@@ -1032,7 +1032,7 @@ Both are required for a real send: `LIVE_MODE=true` AND owner approves the speci
 
 Minimal. Logo / wordmark left, links right:
 ```
-  alexander.dev    /live    /simulator    /funnel    /work    /contact
+  janedoe.dev    /live    /simulator    /funnel    /work    /contact
 ```
 
 Sticky on scroll. On mobile, collapses to hamburger.
@@ -1042,7 +1042,7 @@ Sticky on scroll. On mobile, collapses to hamburger.
 Identical on every page:
 ```
   ───────────────────────────────────────────────────────────────────────
-  alexander.dev          ● SYSTEM STATUS: ONLINE          last deploy: a3f4c1
+  janedoe.dev          ● SYSTEM STATUS: ONLINE          last deploy: a3f4c1
                          · 91% cache · $0.84/day
                          
   GitHub · LinkedIn · X · /about · /privacy
@@ -1070,13 +1070,13 @@ Add a column `public_state` to the `applications` table:
 | `partial` | Category and stage shown; company name still redacted |
 | `public` | Real company name shown |
 
-Alexander toggles this per application via Telegram (`@career-pilot reveal stripe`) or via an admin route. **Default is `obfuscated` until explicitly toggled.**
+the candidate toggles this per application via Telegram (`@career-pilot reveal stripe`) or via an admin route. **Default is `obfuscated` until explicitly toggled.**
 
 ### Rules
 
 1. **Active applications are obfuscated by default.** Real names only after explicit flip.
-2. **Closed-with-offer / hired:** Public by default IF the company has agreed (Alexander confirms).
-3. **Closed-rejected / withdrawn:** Stays obfuscated unless Alexander chooses to publish (e.g. "Big Tech Co rejected me at the final round, here's what I learned" — only if he wants that publicly).
+2. **Closed-with-offer / hired:** Public by default IF the company has agreed (the candidate confirms).
+3. **Closed-rejected / withdrawn:** Stays obfuscated unless the candidate chooses to publish (e.g. "Big Tech Co rejected me at the final round, here's what I learned" — only if they want that publicly).
 4. **No PII anywhere ever.** Recruiter names, email addresses, phone numbers, scheduling links — all redacted by deterministic regex BEFORE LLM sanitization. The LLM sanitization is a second pass for context-dependent leaks.
 
 ### Sanitization pipeline (host-side)
@@ -1084,7 +1084,7 @@ Alexander toggles this per application via Telegram (`@career-pilot reveal strip
 Every event flowing to `public_audit_trail` runs through:
 1. **Deterministic regex pass:** emails, phones, URLs containing recruiter names, monetary amounts, addresses.
 2. **Company name pass:** every application's `company_name` (and `aliases` array) gets replaced with its current `obfuscated_label` (e.g. `[REDACTED:fintech-b]`) or its real name if `public_state = 'public'`.
-3. **LLM context-sensitivity pass (optional, async):** Haiku reviews the sanitized text for leak risk; if flagged, escalates to Alexander for approval before publication.
+3. **LLM context-sensitivity pass (optional, async):** Haiku reviews the sanitized text for leak risk; if flagged, escalates to the candidate for approval before publication.
 
 Failed sanitization = event dropped, NOT published. Better to lose an event than leak PII.
 
@@ -1127,7 +1127,7 @@ To support this portal, the backend must expose:
 | `POST /api/simulator` | Spawns sandbox session in `career-pilot-sandbox` agent group | 1 session | <3s to ready |
 | `GET /api/simulator/:id/stream` | SSE tailing the sandbox session's messages_out | streaming | first event <2s |
 | `GET /api/simulator/results/:id` | Persisted simulator output (30d TTL) | 1 record | <100ms |
-| `POST /api/contact` | Relays to Alexander's Telegram via NanoClaw | 1 message | <2s |
+| `POST /api/contact` | Relays to the candidate's Telegram via NanoClaw | 1 message | <2s |
 
 Backend-side capabilities required:
 - **A `portal` channel adapter** for NanoClaw so simulator runs are first-class NanoClaw sessions.
@@ -1140,9 +1140,9 @@ Detailed in `STRATEGY.md` (to be written next).
 
 ---
 
-## 12. Content variables (TBD inputs from Alexander)
+## 12. Content variables (TBD inputs from the candidate)
 
-Things Alexander needs to provide before the portal can ship — **but the system ships without them**. See "Placeholder strategy" below for how.
+Things the candidate needs to provide before the portal can ship — **but the system ships without them**. See "Placeholder strategy" below for how.
 
 | Variable | Where it goes | Provided by |
 |---|---|---|
@@ -1160,7 +1160,7 @@ Things Alexander needs to provide before the portal can ship — **but the syste
 
 ### Placeholder strategy
 
-The portal **must** ship and run without all of these populated. The user (Alexander) should be able to deploy on day 1 with everything empty and see the system running end-to-end with placeholder content, then refine variables one at a time over time.
+The portal **must** ship and run without all of these populated. The user (the candidate) should be able to deploy on day 1 with everything empty and see the system running end-to-end with placeholder content, then refine variables one at a time over time.
 
 **Default behavior for each unset variable:**
 
@@ -1170,7 +1170,7 @@ The portal **must** ship and run without all of these populated. The user (Alexa
 
 **Owner experience for populating variables:**
 
-Alexander can fill these in natural-language via Telegram at any time. Examples:
+the candidate can fill these in natural-language via Telegram at any time. Examples:
 - *"My bio is two paragraphs — first paragraph: ..."* → agent updates `candidate_profile.bio`
 - *"Set the accent color to ..."* → agent updates the Tailwind theme override
 - *"Here's my master resume:"* (paste or attach file) → agent updates `candidate_profile.master_resume`
@@ -1206,7 +1206,7 @@ The required 5 are enforced (the `LIVE_MODE` flip command refuses if they're not
 
 1. **Should `/live` be discoverable without clicking through?** Alternative: render a "preview pane" of `/live` as a viewport on `/` for visitors who don't click. Risk: dilutes the apple-clean hero. Recommendation: keep landing clean, but add a single ~120px-tall live ticker between viewports 2 and 3 as a teaser.
 
-2. **Anonymization for hired companies that haven't agreed:** What's the policy if Alexander signs an offer with a company that wants to keep his hire quiet for now? Recommendation: default `public_state = 'partial'` for any offer/hire until explicit reveal.
+2. **Anonymization for hired companies that haven't agreed:** What's the policy if the candidate signs an offer with a company that wants to keep the hire quiet for now? Recommendation: default `public_state = 'partial'` for any offer/hire until explicit reveal.
 
 3. **Recruiter Simulator scope:** Do we run `resume-tailor` only, or `resume-tailor + outreach-drafter` (full pitch)? Two skills × ~$0.04/run vs one × ~$0.02. Recommendation: full pitch — that's the wow moment.
 
@@ -1224,7 +1224,7 @@ The required 5 are enforced (the `LIVE_MODE` flip command refuses if they're not
 
 ## 14. Out of scope (deliberately)
 
-- A blog / writing CMS — link out to wherever Alexander writes.
+- A blog / writing CMS — link out to wherever the candidate writes.
 - A general portfolio (non-career-pilot) — `/work` covers the resume case, but career-pilot is the centerpiece.
 - Multi-user / SaaS-ifying career-pilot. The portal showcases a single user. If a recruiter wants the same for their candidate pool, that's a future product, not v1.
 - Internationalization. English only.

@@ -1,8 +1,19 @@
-# STRATEGY.md — Backend, Infrastructure, and Delivery Plan
+﻿# STRATEGY.md — Backend, Infrastructure, and Delivery Plan
 
 This is the back-derivation from [PORTAL.md](PORTAL.md). PORTAL.md says *what* the portal must surface; this doc says *how* we build it.
 
 Reading order: PORTAL.md first, then this.
+
+**Companion documents in `.specs/`:**
+
+| Doc | Purpose | When to read |
+|---|---|---|
+| [PORTAL.md](PORTAL.md) | Frontend UX specification — every page, component, interaction | Before STRATEGY |
+| **STRATEGY.md** (this) | Backend, infra, delivery plan | After PORTAL |
+| [AGENT_SDK_PATTERNS.md](AGENT_SDK_PATTERNS.md) | Claude Agent SDK canonical patterns cribsheet | Before frontend or agent-runner code lands |
+| [CLOUDFLARE_PATTERNS.md](CLOUDFLARE_PATTERNS.md) | Cloudflare protection patterns cribsheet | Before Worker / infra code lands |
+| [RECOVERY.md](RECOVERY.md) | Operator manual — what to do when things go sideways | Keep open during operations |
+| [V2_IDEAS.md](V2_IDEAS.md) | Deferred features tracked for later | When tempted to add scope |
 
 ---
 
@@ -283,8 +294,8 @@ Two agent groups, with shared skill code but distinct trust boundaries.
 
 **CLAUDE.md (committed, generic):**
 
-The persona/role description for Alexander's primary assistant. Contains:
-- The agent's overall mission: "Manage Alexander's job search end-to-end"
+The persona/role description for the candidate's primary assistant. Contains:
+- The agent's overall mission: "Manage the candidate's job search end-to-end"
 - The autonomy gradient (§6.3 of PORTAL.md) codified as concrete dos/don'ts
 - The voice: technical, warm, brief, never sycophantic
 - The reflection prompting style (for rejection-as-fuel)
@@ -295,13 +306,16 @@ The persona/role description for Alexander's primary assistant. Contains:
 
 **Container config (`container_configs` table row):**
 - All subagents available
-- All in-process MCP tools available, including DB-write and `send_outreach_email` (gated by LIVE_MODE + approval card)
-- OneCLI scope: full (access to Google OAuth, Telegram, Portkey, Cloudflare)
-- Model: `@anthropic-prod/claude-opus-4-7` (Portkey AI Provider)
-- Memory: `user` (per Claude Agent SDK options)
+- All in-process MCP tools available, including DB-write and `send_outreach_email`
+- `permissionMode: "default"` + a `canUseTool` callback (see [AGENT_SDK_PATTERNS.md §6](AGENT_SDK_PATTERNS.md)) — falls through to runtime gating for irreversible actions
+- A `PreToolUse` hook on `mcp__career-pilot__send_outreach_email` enforces `LIVE_MODE` + approval card (see [AGENT_SDK_PATTERNS.md §5](AGENT_SDK_PATTERNS.md))
+- OneCLI scope: full (access to Google OAuth, Telegram, Portkey)
+- Model: `@anthropic-prod/claude-opus-4-7` (Portkey Model Catalog AI Provider)
+- Session JSONL: written to `/workspace/.claude/` (persistent across container restarts via mount)
+- `ENABLE_PROMPT_CACHING_1H=1` env → 1-hour prompt cache TTL for long-running owner sessions
 
 **Wiring (`messaging_group_agents`):**
-- Telegram (Alexander) → `career-pilot`, `session_mode='shared'`, owner-only via `user_roles`
+- Telegram (the candidate) → `career-pilot`, `session_mode='shared'`, owner-only via `user_roles`
 
 #### `groups/career-pilot-sandbox/` — public simulator agent group
 
@@ -315,11 +329,15 @@ A shorter persona for the simulator. Explains:
 
 **Container config:**
 - Subagents: `research-company`, `tailor-resume`, `draft-outreach` only (no `prep-interview`, no `scrape-jobs`)
-- MCP tools: only `analyze_jd`, `sanitize_text` — **explicitly excludes** `update_application`, `record_funnel_event`, `save_outreach_draft`, `send_outreach_email`, `query_gmail`, `query_calendar`
+- `permissionMode: "dontAsk"` — unlisted tools are denied outright. Combined with the lists below, sandbox is locked down hard.
+- `allowedTools`: `["Read", "WebSearch", "WebFetch", "Agent", "mcp__career-pilot__analyze_jd", "mcp__career-pilot__sanitize_text"]`
+- `disallowedTools` (bare names → tools removed from context entirely, so the agent doesn't even know they exist): `["Write", "Edit", "Bash", "mcp__career-pilot__update_application", "mcp__career-pilot__record_funnel_event", "mcp__career-pilot__save_outreach_draft", "mcp__career-pilot__send_outreach_email", "mcp__career-pilot__query_gmail", "mcp__career-pilot__query_calendar"]`
 - OneCLI scope: separate sub-vault `career-pilot-sandbox` containing only a sandbox-specific Portkey API key with a separate spend cap
 - Model: `@anthropic-sandbox/claude-opus-4-7` (Portkey AI Provider with separate budget)
-- Memory: `local` (per-session; no cross-session memory)
-- `maxTurns`: 30 (hard cap on agent turns to prevent runaway)
+- Memory: per-session JSONL only (no cross-session memory)
+- `maxTurns: 30` and `maxBudgetUsd: 0.10` (hard caps to prevent runaway)
+
+**Important Agent SDK gotcha (see [AGENT_SDK_PATTERNS.md §6](AGENT_SDK_PATTERNS.md)):** `allowedTools` does NOT constrain `bypassPermissions` mode. We never use `bypassPermissions` in either agent group. The sandbox uses `dontAsk` (auto-denies unlisted tools); the owner uses `default` + a runtime `canUseTool` callback for irreversible actions.
 
 **Wiring:**
 - `portal` channel → `career-pilot-sandbox`, `session_mode='per-thread'` — each visitor gets a fresh isolated session
@@ -332,7 +350,9 @@ A `scripts/sync-shared-skills.ts` script runs on host startup and after any comm
 
 ### 5. Subagent designs
 
-Five subagents, all read-only. Defined as filesystem agents in `.claude/agents/<name>.md`. The Claude Agent SDK loads them automatically (per the SDK docs).
+Five subagents, all read-only. Defined as filesystem agents in `.claude/agents/<name>.md`. The Claude Agent SDK loads them automatically when `settingSources: ["project"]` is set in `query()` options. SDK pinned to **v0.3.150**.
+
+For Agent SDK canonical patterns (hook usage, session persistence, custom tool authoring, cost tracking via `parent_tool_use_id`), see [AGENT_SDK_PATTERNS.md](AGENT_SDK_PATTERNS.md).
 
 Each agent definition file has frontmatter + body:
 
@@ -416,7 +436,13 @@ Body: scoring rubric (role match, comp signal, company stage match, location mat
 
 ### 6. In-process MCP tools
 
-Defined using the Claude Agent SDK's `tool()` helper. All live in `groups/career-pilot/agent-runner-src/mcp-tools/`. Loaded into both agent groups' containers (with the sandbox's tool allowlist filtering them out where appropriate).
+Defined using the Claude Agent SDK's `tool()` helper, **wrapped in `createSdkMcpServer({ name: "career-pilot", version, tools: [...] })`** and passed via `mcpServers: { "career-pilot": careerPilotMcpServer }`. All tools live in `groups/career-pilot/agent-runner-src/mcp-tools/`. Tool naming convention is auto-derived: `mcp__career-pilot__<tool_name>`.
+
+**Authoring discipline (per [AGENT_SDK_PATTERNS.md §7](AGENT_SDK_PATTERNS.md)):**
+- Tool handlers NEVER throw. Return `{ content: [{ type: "text", text }], isError: true }` on failure — the model sees the error as data and can adapt.
+- Use `structuredContent: {...}` for typed data the model should reason about; reserve the `content[].text` field for natural-language summaries.
+- Include `annotations: { readOnlyHint: true }` on read-only tools so the SDK can parallelize them.
+- Detailed `description` strings drive selection quality — invest 3-4 sentences per tool.
 
 | Tool | Args (Zod) | Side effect | Owner | Sandbox |
 |---|---|---|---|---|
@@ -435,7 +461,7 @@ Defined using the Claude Agent SDK's `tool()` helper. All live in `groups/career
 | `add_learning` | `{ application_id?: string, kind: string, reflections: object }` | DB write `learnings` | ✓ | ✗ |
 | `update_profile_field` | `{ field: string, value: any }` | DB write `candidate_profile` | ✓ | ✗ |
 
-Each tool is a single TS file in `mcp-tools/`. The barrel `mcp-tools/index.ts` registers all tools; the container's `container.json` `tools` array filters which are exposed to the agent.
+Each tool is a single TS file in `mcp-tools/`. The barrel `mcp-tools/index.ts` exports `careerPilotMcpServer` (the `createSdkMcpServer` result). Tool visibility per agent group is controlled by the `allowedTools` / `disallowedTools` settings in `container_configs` (see §4) — NOT by the barrel.
 
 ---
 
@@ -448,7 +474,7 @@ Each tool is a single TS file in `mcp-tools/`. The barrel `mcp-tools/index.ts` r
 Installed via NanoClaw's `/add-telegram` skill, which clones the adapter from the `channels` branch of `nanocoai/nanoclaw` into `src/channels/telegram/`. Configuration:
 
 - Bot token in OneCLI vault (key: `telegram_bot_token`)
-- `ALLOWED_TELEGRAM_CHAT_ID` env var = Alexander's chat ID (drops messages from any other ID)
+- `ALLOWED_TELEGRAM_CHAT_ID` env var = the candidate's chat ID (drops messages from any other ID)
 - Wired to `career-pilot` agent group, `session_mode='shared'`
 
 #### `portal` channel (custom)
@@ -524,24 +550,37 @@ export async function sanitize(raw: string, opts?: { application_id?: string }):
 
 Express app, lives in `src/modules/portal/api.ts`. Started by the NanoClaw host on a configurable port (default `3001`, behind Cloudflare Tunnel).
 
-All routes return JSON. All routes are read-only or write-only-via-relay (contact form). Authentication: none for read endpoints (they're sanitized); per-IP rate limit + Turnstile for write endpoints.
+**Domain split (verified via Cloudflare research, see [CLOUDFLARE_PATTERNS.md §1](CLOUDFLARE_PATTERNS.md)):**
+
+| Hostname | Served by | Routes |
+|---|---|---|
+| `hire.example.com` | Cloudflare Worker (TanStack Start) | All marketing/ops pages, `POST /api/contact`, `POST /api/sandbox/*` (Turnstile-protected) |
+| `api.hire.example.com` | Cloudflare Tunnel → Express | `GET /api/funnel`, `GET /api/activity`, `GET /api/activity/stream` (SSE), `GET /api/telemetry`, `GET /api/architecture`, `GET /api/simulator/:id/stream` (SSE), `GET /api/simulator/results/:id`, `GET /api/system-status` |
+
+**Why the split:** Worker absorbs short-lived requests and applies edge protection (Turnstile, WAF, rate limits via Workers RL + Durable Objects). SSE streams go direct to `api.hire.*` for efficiency — no Worker subrequest quota burn, lower latency. Cloudflare Workers DO support SSE (no fixed duration, only CPU time is metered, and `fetch()` waits don't count) — we use the direct path as an optimization, not a workaround.
 
 ```
-GET  /api/funnel
-GET  /api/activity?since=<ts>&limit=50
-GET  /api/activity/stream                  ← SSE
-GET  /api/telemetry
-GET  /api/architecture
-POST /api/simulator                        ← spawns sandbox session
-GET  /api/simulator/:id/stream             ← SSE
-GET  /api/simulator/results/:id
-POST /api/contact                          ← spam-controlled relay
-GET  /api/system-status                    ← LIVE_MODE / pause state / health
+Worker routes (hire.example.com):
+  POST /api/contact           ← Turnstile-protected; relays to owner Telegram
+  POST /api/sandbox/start     ← Turnstile + WAF + DO daily caps; spawns sandbox session
+
+Tunnel routes (api.hire.example.com):
+  GET  /api/funnel            ← sanitized public_funnel_view
+  GET  /api/activity          ← sanitized public_audit_trail (last 50)
+  GET  /api/activity/stream   ← SSE: live sanitized events
+  GET  /api/telemetry         ← Portkey + local aggregates (cached 30s)
+  GET  /api/architecture      ← NanoClaw central DB + Docker status
+  GET  /api/simulator/:id/stream   ← SSE: sandbox session output
+  GET  /api/simulator/results/:id  ← 30d-TTL cached run output
+  GET  /api/system-status     ← LIVE_MODE / pause / health
 ```
 
-CORS: explicit allow-list (`hire.alagonterie.com` + dev origins). No `*`.
+**CORS:** explicit allow-list (`hire.example.com` + dev origins). No `*`.
 
-Server-Sent Events use the `text/event-stream` MIME with `data:` framing. Cloudflare Tunnel handles SSE transparently; no special config required.
+**Origin protection (triple defense, see [CLOUDFLARE_PATTERNS.md §5](CLOUDFLARE_PATTERNS.md)):**
+1. **Cloudflare Access Service Auth** (free for ≤50 users) in front of the Tunnel. Worker sends `CF-Access-Client-Id` + `CF-Access-Client-Secret` headers (Worker secrets).
+2. **JWT validation at origin** of the `Cf-Access-Jwt-Assertion` header using `jose` against the team's JWKS endpoint.
+3. **Authenticated Origin Pulls (mTLS)** at the zone level — defense in depth so leaked tunnel hostname is useless without the Cloudflare client cert.
 
 ### 11. System modes implementation
 
@@ -572,7 +611,9 @@ The `/killswitch` handler does five things in sequence:
 4. `portkeyClient.setBudget(0)` (admin API)
 5. Update `system_modes` table → portal worker reads this and serves the static "paused for review" page
 
-Recovery from killswitch is intentionally manual — `/resume` doesn't work. Owner must SSH, run a recovery script that re-issues OneCLI tokens, resets Portkey budget, and clears the killswitch flag.
+Recovery from killswitch is intentionally manual — `/resume` doesn't work. Owner must SSH, run `scripts/recover-from-killswitch.sh` which re-issues OneCLI tokens, resets Portkey budget, clears the killswitch flag, and brings the system back online in shadow mode (`LIVE_MODE=false`). Detailed step-by-step in [RECOVERY.md §3](RECOVERY.md).
+
+**Full operator manual for all pause/halt/recovery scenarios:** [RECOVERY.md](RECOVERY.md). Designed reassurance — the candidate should feel safe with the kill switches because every one has a documented recovery path.
 
 ---
 
@@ -593,7 +634,25 @@ Recovery from killswitch is intentionally manual — `/resume` doesn't work. Own
 | Portal Turnstile site key | `.env` (frontend, public) | Frontend `/contact` form | No (env injection) |
 | Portal Turnstile secret | `.env` (host) | `/api/contact` validation | No |
 
-Container env on session start contains only OneCLI connection vars + the Portkey base URL. Everything else is injected at request time by OneCLI.
+Container env on session start contains only OneCLI connection vars + the Portkey base URL + `ENABLE_PROMPT_CACHING_1H=1`. Everything else is injected at request time by OneCLI.
+
+**Portkey terminology note:** We use Portkey's **Model Catalog** (Integrations + AI Providers — see [STRATEGY § Setup notes](#)) which replaced the deprecated Virtual Keys concept in early 2026. An "AI Provider" is the workspace-scoped slug (e.g. `@anthropic-prod`) that maps to a vaulted Integration holding the actual Anthropic API key. Reference: [Portkey upgrade guide](https://portkey.ai/docs/support/upgrade-to-model-catalog).
+
+**Portkey bypass fallback (for when Portkey is down, rate-limited, or budget-exhausted):**
+
+```bash
+# In .env on the VM
+PORTKEY_BYPASS=true
+ANTHROPIC_API_KEY=sk-ant-...    # raw Anthropic key, injected via OneCLI
+```
+
+When `PORTKEY_BYPASS=true`:
+- Containers spawn with `ANTHROPIC_BASE_URL` set to the default Anthropic endpoint
+- OneCLI injects the raw `ANTHROPIC_API_KEY` per-request
+- Portkey-derived telemetry on `/live` shows `—` instead of cache rate / spend
+- Cost tracking falls back to the SDK's `total_cost_usd` estimate (less authoritative)
+
+To restore: remove `PORTKEY_BYPASS`, restart `career-pilot.service`. See [RECOVERY.md §8](RECOVERY.md).
 
 ### 13. Infrastructure (GCP + Cloudflare)
 
@@ -609,19 +668,22 @@ Container env on session start contains only OneCLI connection vars + the Portke
 7. Register systemd service `career-pilot.service` (NanoClaw provides this)
 8. Run cloudflared as a sibling container; tunnel token comes from Terraform output → injected env
 
-**Why e2-medium not e2-small:** NanoClaw spawns one container per active session (Bun, ~200-400 MB). With Alexander's owner session + up to 3 simultaneous sandbox sessions + the host node process + cloudflared, we need ~2-3 GB working set. e2-small (2GB) would OOM under any load. e2-medium has headroom.
+**Why e2-medium not e2-small:** NanoClaw spawns one container per active session (Bun, ~200-400 MB). With the candidate's owner session + up to 3 simultaneous sandbox sessions + the host node process + cloudflared, we need ~2-3 GB working set. e2-small (2GB) would OOM under any load. e2-medium has headroom.
 
-**Cloudflare:**
+**Cloudflare:** (full patterns reference in [CLOUDFLARE_PATTERNS.md](CLOUDFLARE_PATTERNS.md))
 
 | Surface | Service | Config |
 |---|---|---|
-| `hire.alagonterie.com` | Cloudflare Worker | TanStack Start build via `wrangler deploy` |
-| `api.alagonterie.com` | Cloudflare Tunnel → cloudflared container on VM | Auth: `X-Career-Pilot-Auth` header signed via shared secret |
-| DNS for both | Cloudflare DNS | CNAMEs via Terraform |
-| Analytics | Cloudflare Web Analytics | Free, privacy-respecting; site tag injected by the Worker |
-| Spam | Cloudflare Turnstile | `/contact` and `/simulator` POST endpoints |
+| `hire.example.com` | Cloudflare Worker (TanStack Start build via `wrangler deploy`) | Static assets, SSR pages, Turnstile-protected POST endpoints, Durable Object daily caps for sandbox |
+| `api.hire.example.com` | Cloudflare Tunnel → `cloudflared` container on VM | Triple defense: CF Access Service Auth + JWT validation at origin + Authenticated Origin Pulls (mTLS) |
+| DNS for both | Cloudflare DNS (managed via Terraform `cloudflare.tf`) | CNAMEs |
+| Analytics | Cloudflare Web Analytics (free, no cookies) | JS beacon in TanStack Start root layout |
+| Spam protection | Cloudflare Turnstile (free, 20 widgets) | `/contact` and `/api/sandbox/start` with server-side `siteverify` + `idempotency_key` |
+| Rate limiting | Workers Rate Limiting binding (free) + Durable Objects | 60s burst (Workers RL) + 10/IP/day + $5/day global cap (DOs with midnight `alarm()`) |
+| WAF | Cloudflare Free Managed Ruleset (on by default) + 1 custom rule + 1 rate-limit rule | Custom rule on `/api/sandbox/*` missing Turnstile cookie |
+| Bot Fight Mode | ON at `hire.*` (apex), OFF at `api.hire.*` (would break Worker→backend signed headers) | |
 
-VM has no public HTTP ports open. SSH (`tcp/22`) is the only public port, and we'll lock it down to Identity-Aware Proxy (IAP) ranges if possible — see `iac/main.tf` firewall rule.
+VM has no public HTTP ports open. SSH (`tcp/22`) is the only public port, locked down via Identity-Aware Proxy (IAP) ranges in `iac/main.tf`.
 
 ### 14. Frontend stack (refers to PORTAL.md §3.5)
 
@@ -660,64 +722,214 @@ Two GitHub Actions workflows, replacing the existing scaffolding:
 
 ### 16. Local development
 
-Goal: full E2E (Telegram → agent → DB → portal SSE event → frontend live update) running on Docker Desktop, no Anthropic API spend.
+**Core goal:** developer can iterate narrowly (single skill / single subagent / single component) or broadly (full E2E: Telegram → agent → DB → portal SSE → frontend live update) without manual fiddling, on Docker Desktop, with confidence and speed. the candidate works from two machines — the setup story must be idempotent and friction-free on both.
 
-**Local stack:**
+#### 16.1 Local stack
+
 - NanoClaw host runs natively (`pnpm dev`) — faster iteration than dockerized
-- Ollama runs in a Docker container with GPU passthrough enabled if available
-- Agent containers run via local Docker
+- Ollama runs in a Docker container (GPU passthrough enabled if available)
+- Agent containers run via local Docker daemon
 - TanStack Start dev server runs natively (`pnpm dev` in `frontend/`)
-- A separate dev Telegram bot token (so we don't fight the prod bot)
-- `LLM_PROVIDER=ollama` env var routes all LLM calls through Ollama via NanoClaw's `/add-ollama-provider` skill
+- A separate dev Telegram bot token (so dev doesn't fight prod)
+- A separate dev SQLite DB at `data/v2.dev.db`
+- A separate OneCLI dev vault namespace (`career-pilot-dev`)
 
-**Setup script (local):** `bash scripts/setup-local.ps1` (Windows / WSL2) / `setup-local.sh` (mac/linux):
-1. Check prerequisites (Node, pnpm, Docker)
-2. Run `pnpm install`
-3. Start Ollama container
-4. Pull `llama3.2` model: `docker exec ollama ollama pull llama3.2`
-5. Run NanoClaw setup (interactive Telegram pairing for dev bot)
-6. Apply migrations
-7. Print "Ready — run `pnpm dev` to start the host and `cd frontend && pnpm dev` for the portal"
+#### 16.2 LLM provider switching — three modes
 
-**Trade-off:** Ollama with `llama3.2:3b` will produce noticeably worse output than Opus 4.7 — bullet quality, outreach voice, all weaker. That's fine for plumbing tests. For "what would the simulator actually output for a recruiter" tests we'll selectively flip to Claude with a small per-test budget.
+| Mode | `LLM_PROVIDER` env | What runs | Cost | Use case |
+|---|---|---|---|---|
+| **`ollama`** (default for `pnpm dev`) | `ollama` | Local Llama 3.2 via NanoClaw's `/add-ollama-provider` | $0 | Plumbing tests — does the flow work end-to-end? |
+| **`claude_test`** | `claude_test` | Real Claude via Portkey, but with strict per-day cap (e.g., $2/day) and a separate Portkey AI Provider with its own budget | <$2/day | Quality testing — does the simulator actually produce good output for a recruiter? |
+| **`claude_prod`** | `claude_prod` | Real Claude via Portkey production AI Provider | Real | Production VM only — never set locally without explicit override |
+
+Switching is just an env var change + restart. The host wires the right Portkey AI Provider slug based on `LLM_PROVIDER`:
+
+```typescript
+// src/llm-routing.ts
+const AI_PROVIDERS = {
+  ollama: "@ollama-local/llama3.2",
+  claude_test: "@anthropic-test/claude-opus-4-7",     // separate Portkey AI Provider, $2/day cap
+  claude_prod: "@anthropic-prod/claude-opus-4-7",     // production cap
+};
+```
+
+For **narrow quality testing** (e.g., "does the resume tailor produce decent output for this specific JD?"), there's a `pnpm test:quality` script that wraps the agent invocation, prompts you to confirm before each LLM call, prints the cost, and skips persisting anything to the dev DB. Costs ~$0.04 per test run.
+
+#### 16.3 Setup script (`scripts/setup-local.ts`)
+
+**Must be:** idempotent, interactive when needed, fast on re-runs, friction-free. Works on Windows (WSL2 required), macOS, and Linux.
+
+```
+pnpm setup
+```
+
+What it does (each step is idempotent and skip-if-done):
+
+1. **Detect environment.** Refuses to run if `ENVIRONMENT=production` or if hostname matches the prod VM (safety guard).
+2. **Check prerequisites.** Node 20+, pnpm 10+, Docker, gh CLI authenticated, wrangler authenticated. For missing tools, prints the exact install command for the OS and exits non-zero.
+3. **Install deps.** `pnpm install` at root (host) + `cd frontend && pnpm install` (workspace).
+4. **Initialize OneCLI dev vault.** Sets up the `career-pilot-dev` namespace; prompts for any missing secrets (Portkey API key, Anthropic key for fallback, Telegram dev bot token).
+5. **Start Ollama container.** Detects existing `ollama` container; reuses or creates. Pulls `llama3.2` model if not present (idempotent).
+6. **Run NanoClaw setup.** Interactive Telegram pairing for the dev bot (skipped if already paired).
+7. **Apply migrations.** On `data/v2.dev.db`.
+8. **Build agent container image.** Skipped if image exists and `container/` hasn't changed.
+9. **Seed defaults.** Inserts default rows into `preferences` and `system_modes` if not present.
+10. **Print next steps:** `pnpm dev` (host) + `cd frontend && pnpm dev` (portal).
+
+Re-run any time — safe.
+
+#### 16.4 Narrow vs broad testing
+
+| Scope | How |
+|---|---|
+| One MCP tool | `pnpm test:tool update_application` (unit test against the dev DB) |
+| One subagent prompt | `pnpm test:subagent tailor-resume --jd-file=fixtures/jd-example.md` (runs the subagent in isolation, returns output; uses `LLM_PROVIDER` whichever you've set) |
+| Sanitization pipeline | `pnpm test:sanitize` (regex + DB lookup + LLM review pass on a fixture set) |
+| Portal API | `pnpm test:api` (Vitest against Express, mocks the agent subsystem) |
+| Frontend component | `pnpm --filter frontend test` (Vitest + Testing Library) |
+| Frontend visual | `pnpm --filter frontend dev` + browse manually |
+| Full E2E plumbing | Send a message to the dev Telegram bot — see what happens. Uses Ollama, $0. |
+| Full E2E with real LLM | `LLM_PROVIDER=claude_test pnpm dev` — uses Claude with the $2/day cap |
+
+#### 16.5 Reset to clean state (`pnpm reset:dev`)
+
+Critical for testing onboarding/bootstrap flows. Safety-guarded against running in prod.
+
+```
+pnpm reset:dev
+```
+
+What it does (interactive — confirms each step):
+1. Kills all running career-pilot agent containers
+2. Stops the local host process
+3. Wipes `data/v2.dev.db` and all session JSONLs in dev
+4. Clears OneCLI `career-pilot-dev` vault entries (NOT production — different namespace)
+5. **Preserves:** dev Telegram bot pairing (per-account), `.env`, installed deps, container image
+6. Re-applies migrations
+7. Prints "Ready — send `/start` to your dev bot to re-bootstrap"
+
+Recovery time: ~30 seconds. Full onboarding cycle: ~5 minutes via Telegram.
+
+Detailed procedure in [RECOVERY.md §7](RECOVERY.md).
+
+#### 16.6 Hot-reload preference / config changes
+
+The host watches `data/v2.dev.db` `preferences` and `system_modes` tables (via SQLite's file-modification time or a simple poll). When a row changes, it writes a `messages_in` row of `kind: 'system'` with `action: 'reload_preferences'` to all active sessions. Containers invalidate their cached preferences on receipt.
+
+This means changes to quiet hours, budgets, frequency caps, etc. take effect within ~5 seconds, no restart required. Same mechanism applies in production.
+
+#### 16.7 Configuration discipline
+
+**No magic numbers in code.** Every tunable lives in one of:
+
+- `.env` — deployment-environment-specific (keys, hostnames, ports, OneCLI connection info)
+- `preferences` table — owner-tunable (quiet hours, budgets, frequency caps, channel preferences by message class, briefing schedule)
+- `system_modes` table — operational state (live mode, pause state, killswitch state)
+- `config/defaults.json` (committed) — initial seeds for `preferences` and `system_modes`, single source of truth for defaults
+
+The setup script (§16.3) seeds defaults from `config/defaults.json`. The host has a runtime helper `getConfig(key, fallback?)` that reads from the right tier in precedence: env > preferences > defaults.json.
+
+Examples of what MUST be configurable (not hardcoded):
+- Poll intervals (`HOST_SWEEP_INTERVAL_SEC` default 60, `ACTIVE_POLL_INTERVAL_SEC` default 1)
+- Rate limits (sandbox runs per IP per day default 10, global $ cap default $5)
+- LLM budgets (owner daily default $5, sandbox daily default $5)
+- Container resource limits (memory default 512MB, CPU default 1.0)
+- Session idle timeout (default 30 min)
+- Cache TTL strategy (5min/1hour toggle)
+- Sanitization aggressiveness (regex strictness, LLM review threshold)
+- Webhook polling frequency (Gmail default 60s, Calendar default 5min)
+- All the texture controls from PORTAL.md §6.4
+
+See §20 for the full configuration model.
 
 ### 17. Observability
 
+Two surfaces of observability: **public** (sanitized, recruiter-facing on the portal) and **owner-private** (full-fidelity, the candidate only).
+
+#### 17.1 Public surface — `/live` portal panels
+
 | Signal | Source | Surfaced where |
 |---|---|---|
-| LLM cost / cache rate / token usage | Portkey Analytics API | `/api/telemetry` → `/live` panel |
-| Active sessions / containers | NanoClaw central DB + Docker | `/api/architecture` → `/architecture` page |
-| Agent trace events | `public_audit_trail` (sanitized) | `/api/activity` + SSE → `/live` stream |
-| Host process health | systemd + `journalctl` | `/api/system-status` |
-| Error/crash logs | `logs/career-pilot.error.log` + Telegram alert channel | Owner via Telegram + `/about` cost panel |
-| Simulator runs (success/failure rate) | `simulator_runs` table | `/api/telemetry` |
+| LLM cost / cache rate / token usage | Portkey Analytics API (or SDK fallback if `PORTKEY_BYPASS`) | `/api/telemetry` → `/live` panel |
+| Active sessions / containers (counts) | NanoClaw central DB + Docker | `/api/architecture` → `/architecture` page |
+| Agent trace events (sanitized) | `public_audit_trail` | `/api/activity` + SSE → `/live` stream |
+| Host health (color-coded) | systemd + `journalctl` aggregate | `/api/system-status` |
+| Simulator runs (success/failure rate, aggregate) | `simulator_runs` table | `/api/telemetry` |
 
-The Telegram alert channel (separate from the chat channel) gets a message whenever:
+#### 17.2 Owner-private surface — Telegram + `/admin`
+
+The owner needs more than the public portal shows. Two channels:
+
+**Telegram (`/status`, `/cost`, `/sessions`, `/inspect`):**
+- `/status` — daily briefing snapshot on demand: budget burn today, active applications by stage, today's events
+- `/cost` — full breakdown: today's spend by subagent, by model, by application; "burn at this rate would deplete N days of remaining budget"
+- `/sessions` — list of active NanoClaw sessions with ages, last activity
+- `/inspect <application-id>` — full timeline + last 20 sanitized events + private notes (real company name, recruiter name, etc.)
+- `/inspect <session-id>` — recent agent decisions and tool calls (full fidelity, owner-only)
+
+**`/admin` portal page (gated by a signed cookie token, refreshed via Telegram on demand):**
+
+A dense ops dashboard, owner-only, that surfaces:
+- **Cost dashboard:** today's spend, this week, this month; by application, by subagent, by model; cache hit rate trends; budget runway projection (at current burn, X days until daily cap → flip dry-run mode)
+- **Agent trace stream (UNSANITIZED):** the real version of the public `/live` stream — real company names, recruiter info, full payload
+- **Pending approvals queue:** all `ask_user_question` cards still waiting on the candidate's response, with deep-link to Telegram thread
+- **Sanitization spot-check:** side-by-side raw vs sanitized for a sliding window of recent events. Owner can flag any false negatives (real PII that leaked through), which adds a regex pattern automatically
+- **Pause/halt/killswitch state + history:** every mode change with timestamp and reason
+- **Quick admin actions:** `/setmode shadow|live`, `/halt`, edit `preferences`, force a `research-company` re-run, etc. — all via signed POST to the host's admin endpoints
+
+**Auth pattern:** `/admin` validates a signed cookie. The cookie is issued only via Telegram (`/admin login` → bot replies with a short-lived link). Multi-day session, refreshed automatically while you have an active Telegram presence.
+
+#### 17.3 Telegram alert channel (separate from owner chat)
+
+A separate Telegram chat with a different bot, dedicated to alerts (so owner chat stays clean). Receives:
 - Host process crash/restart
 - Sanitization Pass 3 flagged content (requires owner review)
-- LIVE_MODE state change
-- Daily spend approaches budget cap (warn at 80%, hard cap at 100%)
+- `LIVE_MODE` state change
+- Daily spend at 80% of cap (warn), 100% (hard stop)
 - Killswitch triggered
+- Cloudflare Tunnel disconnect
+- VM disk usage > 80%
+- Backup failure
+- TLS cert renewal failure
+
+Owner can `/mute alerts` for a window; critical alerts (killswitch, breach indicators) bypass mute.
+
+#### 17.4 Cost transparency for visitors (public framing)
+
+On `/about`:
+> *"This system has cost the candidate $X.XX so far in their job search. The cache saves about Y% — without it, this would have cost $Z.ZZ. When [outcome] happens, it'll be worth every cent."*
+
+Numbers updated live from the same telemetry as `/live`. The transparency is itself a credibility move.
 
 ### 18. Cost model
 
-Realistic monthly estimate:
+Realistic monthly estimate. We accept ~$65-100/mo as a price worth paying for a serious job search — that's been explicitly weighed against the alternative of stripping features to save money. Cost transparency is also a portal feature (see §17.4), not a thing to hide.
 
 | Item | Estimate |
 |---|---|
 | GCP e2-medium (us-central1, sustained use) | $13 |
 | GCP egress (minimal, mostly via Cloudflare Tunnel) | $1-3 |
 | Cloudflare Workers (free tier covers 100k req/day) | $0 |
-| Cloudflare Tunnel | $0 |
-| Cloudflare DNS | $0 |
-| Domain renewal (alagonterie.com) | $1/mo amortized |
-| Anthropic API via Portkey (Alexander's actual usage, with caching) | $30-80 |
-| Portkey (free tier 10k req/mo; Pro $99 if portal goes viral) | $0-99 |
-| Anthropic API for sandbox simulator (capped at $5/day = ~$150/mo worst case; ~$20/mo realistic) | $20-150 |
+| Cloudflare Tunnel + DNS + Access (≤50 users) | $0 |
+| Cloudflare Web Analytics + Turnstile | $0 |
+| Domain renewal (example.com) | $1/mo amortized |
+| Anthropic API via Portkey (the candidate's actual usage, with 1h caching) | $30-80 |
+| Portkey (free tier 10k req/mo; Pro $99/mo if traffic justifies — bypass fallback available) | $0-99 |
+| Anthropic API for sandbox simulator ($5/day cap = $150/mo absolute max; ~$20/mo realistic) | $20-150 |
+| Dedicated Gmail account (free) | $0 |
 | **Total realistic** | **$65-100/mo** |
-| **Worst case (viral moment, paid Portkey)** | **~$350/mo** |
+| **Worst case (viral moment + Portkey Pro)** | **~$350/mo** |
 
-The viral worst case is bounded by the daily spend cap on the simulator — even if the portal hits HN front page, the sim auto-disables at $5/day.
+The viral worst case is bounded by:
+- Sandbox `$5/day` hard cap (DO-enforced — see [CLOUDFLARE_PATTERNS.md §4](CLOUDFLARE_PATTERNS.md))
+- Owner LLM budget cap (`$5/day` configurable; warning at 80%, hard stop at 100%)
+- Portkey free-tier ceiling → automatic bypass to direct Anthropic via `PORTKEY_BYPASS=true` if Portkey rate-limits us
+
+**June 15, 2026 billing change:** Starting June 15, Claude Agent SDK usage stops drawing from your Claude.ai subscription quota and moves to a separate monthly Agent SDK credit pool ($20 Pro / $100 Max 5x / $200 Max 20x), no rollover. For career-pilot, this means we should plan our Anthropic spend assuming **API-rate pay-per-use**, not subscription. The numbers above already assume API-rate pricing — they remain valid. See the [Anthropic notice](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan).
+
+**Cost transparency for owner:** the `/admin` page (§17.2) projects burn rate and surfaces remaining-runway estimates. The owner-side Telegram briefing includes daily cost snapshots.
+
+**Cost transparency for visitors:** the `/about` page surfaces aggregate spend honestly — "this system has cost $X so far; here's what the cache saved." Demonstrates engineering discipline + serious investment in landing the role.
 
 ### 19. Security & threat model
 
@@ -726,13 +938,251 @@ The viral worst case is bounded by the daily spend cap on the simulator — even
 | Unauthorized Telegram message → drain LLM credits | Chat ID whitelist; reject silently |
 | Compromised Portkey API key | OneCLI vault holds it; rotation via `onecli secrets update`; container restart picks it up |
 | Compromised Anthropic key | Lives only in Portkey vault, never in our infra; rotate in Anthropic console + Portkey integration |
-| Public sandbox abused for cost | Per-IP rate limit (10 runs/day); $5/day total cap; sandbox container `maxTurns=30`; sandbox uses a separate Portkey AI Provider with its own budget |
-| Public sandbox used to extract Alexander's private data | Sandbox agent group has NO access to private DB or Gmail/Calendar; tools enforced via container config (defense in depth) |
-| PII leak via sanitization bug | Three-pass sanitizer; Pass 3 LLM review; failed sanitization drops the event entirely; manual spot-checks via the `ANONYMIZATION DEMO` panel on `/live` |
-| Contact form spam / abuse | Turnstile invisible captcha; 5 submits/IP/hour |
+| Public sandbox abused for cost | Cloudflare Bot Fight Mode → Turnstile → Workers RL (60s burst) → DO per-IP daily cap (10/day) → DO global $5/day cap → output cap. See [CLOUDFLARE_PATTERNS.md §9](CLOUDFLARE_PATTERNS.md). |
+| Public sandbox used to extract the candidate's private data | Sandbox agent group has NO access to private DB or Gmail/Calendar; tools enforced via `disallowedTools` (bare names — removed from context) AND `permissionMode: dontAsk` (defense in depth) |
+| PII leak via sanitization bug | Three-pass sanitizer; Pass 3 LLM review; failed sanitization drops the event entirely; manual spot-checks via the `ANONYMIZATION DEMO` panel on `/live` + the `/admin` raw-vs-sanitized inspector |
+| Contact form spam / abuse | Turnstile invisible captcha with `idempotency_key`; 5 submits/IP/hour via Workers RL |
 | SSH access to VM | Cloudflare Access (or IAP); no password auth; key-only |
+| Cloudflare Tunnel leak (target address exposure) | Triple defense: CF Access Service Auth + JWT validation at origin + Authenticated Origin Pulls (mTLS) |
 | Webhook source spoofing (Gmail, etc.) | Google Pub/Sub push webhooks with shared-secret HMAC or signed JWTs |
-| Catastrophic incident | Killswitch tier (§7 PORTAL.md) — manual SSH-only recovery |
+| Catastrophic incident | `/killswitch` tier (see PORTAL.md §7 + [RECOVERY.md §3](RECOVERY.md)) — manual SSH-only recovery |
+
+### 20. Configuration-driven design (no hardcoded values)
+
+**Principle:** zero magic numbers in code. Every tunable lives in one of four tiers, each with clear ownership:
+
+| Tier | Stored in | Owner | Hot-reload? | Examples |
+|---|---|---|---|---|
+| `.env` | File on host VM (gitignored) | Operator (the candidate) | No (restart required) | Hostnames, ports, OneCLI connection info, `PORTKEY_BYPASS`, `LLM_PROVIDER`, `ENABLE_PROMPT_CACHING_1H` |
+| `preferences` table | SQLite (`data/v2.db`) | Owner via natural-language Telegram | **Yes** (~5s via system message) | Quiet hours, frequency caps, budgets, channel preferences by message class, briefing schedule, autonomy gradient per action class |
+| `system_modes` table | SQLite | Owner via Telegram commands | **Yes** | `LIVE_MODE`, `pause_state`, `pause_reason`, killswitch state |
+| `config/defaults.json` | Committed file | Developer (this codebase) | No (it's the seed) | Initial values for `preferences` and `system_modes`; single source of truth for defaults |
+
+The host has a runtime helper `getConfig(key, fallback?)` that reads from the right tier in precedence: env > preferences > defaults.
+
+#### 20.1 What must be configurable (not hardcoded)
+
+| Category | Example | Default | Tier |
+|---|---|---|---|
+| Polling | `HOST_SWEEP_INTERVAL_SEC` | 60 | `.env` |
+| Polling | `ACTIVE_POLL_INTERVAL_SEC` | 1 | `.env` |
+| Polling | Gmail poll interval | 60s | preferences |
+| Polling | Calendar poll interval | 5min | preferences |
+| Budgets | Owner daily LLM budget USD | $5 | preferences |
+| Budgets | Sandbox daily USD cap (global) | $5 | preferences |
+| Budgets | Sandbox per-IP daily run cap | 10 | preferences |
+| Rate limits | Workers RL burst window | 60s | wrangler.toml (binding) |
+| Container | Memory limit per session | 512MB | preferences |
+| Container | CPU limit per session | 1.0 | preferences |
+| Container | Idle timeout | 30 min | preferences |
+| Container | Max concurrent | 4 | preferences |
+| Cache | Prompt cache TTL strategy | 1-hour | `.env` (`ENABLE_PROMPT_CACHING_1H`) |
+| Sanitization | LLM review threshold (chars) | 1000 | preferences |
+| Sanitization | LLM review aggressiveness | high | preferences |
+| Telegram | Quiet hours | 22:00-07:00 local | preferences |
+| Telegram | Frequency cap per day | 8 proactive | preferences |
+| Notifications | Channel preference by message class | `{ urgent: telegram, briefing: telegram }` | preferences |
+| Onboarding | Required content variables before LIVE_MODE | 5 listed in PORTAL.md §12 | defaults.json |
+
+**Anti-pattern to enforce in code review:** any `const FOO = 60` or `setTimeout(fn, 5000)` without a comment justifying immobility is a flag.
+
+#### 20.2 Hot-reload mechanism
+
+`preferences` and `system_modes` table changes propagate to running containers within ~5 seconds via NanoClaw's native message system:
+
+1. Host watches table mod-time (or SQLite triggers)
+2. On change, host writes `messages_in` row of `kind: 'system'`, `action: 'reload_preferences'` to all active sessions
+3. Container picks it up on next poll, invalidates its cached `getConfig()` reads
+4. Next config read returns the new value
+
+No container restart required. No service restart required. Telegram commands like `/set quiet_hours 22:00-07:00` update preferences and the change takes effect inline.
+
+### 21. CLI tooling reference
+
+The system spans many surfaces. The right CLI for each:
+
+| Task | CLI | Common ops |
+|---|---|---|
+| GitHub (issues, PRs, releases, repo metadata) | `gh` | `gh pr create`, `gh issue list`, `gh repo view`, `gh api repos/...` |
+| GCP (VM, IAM, storage, deployments) | `gcloud` | `gcloud compute instances list`, `gcloud compute ssh ...`, `gcloud iam workload-identity-pools ...` |
+| Cloudflare Workers deploy + secrets | `wrangler` | `wrangler deploy`, `wrangler secret put`, `wrangler tail` |
+| Cloudflare Tunnel | `cloudflared` | `cloudflared tunnel create`, `cloudflared tunnel route dns`, `cloudflared tunnel login` |
+| Cloudflare DNS + zone-level WAF / rate-limit rules | Terraform (`cloudflare.tf`) | `terraform plan`, `terraform apply` |
+| Terraform (all infra-as-code) | `terraform` | `terraform validate`, `terraform plan`, `terraform apply -var-file=...` |
+| NanoClaw admin (groups, users, sessions, wirings, approvals) | `ncl` | `ncl groups list`, `ncl users grant ...`, `ncl sessions list`, `ncl approvals list` |
+| Credential vault | `onecli` | `onecli secrets list`, `onecli secrets update`, `onecli agents set-secret-mode --mode all` |
+| Package management (host) | `pnpm` | `pnpm install`, `pnpm dev`, `pnpm test`, `pnpm exec tsx ...` |
+| Package management (container/agent-runner only) | `bun` | `bun install`, `bun test`, `bun run typecheck` |
+| Local dev orchestration | `docker` | For Ollama + occasional sandbox container debugging |
+| DB inspection from skills/scripts | `pnpm exec tsx scripts/q.ts` | `pnpm exec tsx scripts/q.ts data/v2.db "SELECT * FROM applications"` — wraps `better-sqlite3` (no `sqlite3` binary dep) |
+
+**Best practices for Claude Code / coding-agent sessions on this repo:**
+- For GitHub data: prefer `gh api repos/...` over `WebFetch` (auth handled, structured JSON)
+- For Cloudflare DNS / WAF: use Terraform, not direct API/wrangler — keeps changes reproducible
+- For ad-hoc DB queries: `scripts/q.ts` over the `sqlite3` binary (matches NanoClaw's convention)
+- For VM operations: prefer `gcloud compute ssh` over manual SSH (handles IAP transparently)
+- For one-shot Worker testing: `wrangler tail` to stream logs in real time
+- For NanoClaw operations: `ncl` from inside the VM or via SSH; never modify the central DB directly
+
+### 22. Gmail / Calendar OAuth setup walkthrough
+
+Owner-friendly. No prior Google Cloud Console familiarity required.
+
+#### 22.1 Create a dedicated Gmail account first
+
+Per the decision in our review, v1 uses a free dedicated Gmail (e.g., `jane-doe.career@gmail.com`) to keep the personal inbox clean and to isolate OAuth scope. Steps:
+
+1. Open a private/incognito browser window
+2. Go to `accounts.google.com/signup`
+3. Create the new Gmail account
+4. Sign out of your personal Google, sign in to the new one
+5. Note the email address — this is what the OAuth flow will authorize
+
+#### 22.2 Create the GCP project for OAuth credentials
+
+(Distinct from the GCP project we use for the VM — could be the same, but cleaner separate.)
+
+1. Sign in to [console.cloud.google.com](https://console.cloud.google.com) with the dedicated Gmail
+2. Create a new project: `career-pilot-oauth` (or similar)
+3. **Enable APIs:**
+   - APIs & Services → Library → search "Gmail API" → Enable
+   - APIs & Services → Library → search "Google Calendar API" → Enable
+4. **Configure OAuth consent screen:**
+   - APIs & Services → OAuth consent screen
+   - User type: **External** (because it's a personal Google account, not a Workspace)
+   - App name: `Career Pilot`
+   - User support email: the dedicated Gmail
+   - Developer contact: the dedicated Gmail
+   - **Scopes:** Add `https://www.googleapis.com/auth/gmail.readonly` and `https://www.googleapis.com/auth/calendar.events.readonly`
+   - **Test users:** Add the dedicated Gmail address itself (only this account will use this app)
+   - Save (you'll stay in Testing mode — that's fine; no publishing needed for a single-user app)
+5. **Create OAuth client ID:**
+   - APIs & Services → Credentials → Create Credentials → OAuth client ID
+   - Application type: **Web application**
+   - Name: `Career Pilot Backend`
+   - Authorized redirect URIs: `https://api.hire.example.com/api/google/callback` (and `http://localhost:3001/api/google/callback` for dev)
+   - Click Create
+   - Save the **Client ID** and **Client Secret** — these go into `.env`:
+     ```env
+     GOOGLE_OAUTH_CLIENT_ID=...
+     GOOGLE_OAUTH_CLIENT_SECRET=...
+     ```
+
+#### 22.3 First-time authorization (happens during onboarding)
+
+After the system is deployed:
+1. On the `/admin` page (or via Telegram `/setup gmail`), click "Authorize Gmail/Calendar"
+2. You're redirected to Google's consent screen
+3. You'll see a "this app isn't verified" warning — click "Advanced" → "Go to Career Pilot (unsafe)". This is expected for a single-user External app in Testing mode
+4. Grant the requested scopes
+5. You're redirected to `api.hire.example.com/api/google/callback?code=...`
+6. The host exchanges the code for tokens, stores the **refresh token** in OneCLI vault (key: `google_oauth_refresh_token`)
+7. From then on, the agent can call Gmail/Calendar APIs transparently via OneCLI's proxy
+
+**Token refresh:** access tokens expire hourly. OneCLI auto-refreshes using the stored refresh token. The refresh token itself doesn't expire (unless revoked by the owner from Google account settings).
+
+**Revoking:** if you ever want to cut off the system's Google access:
+- From Google: account.google.com → Security → Third-party apps → "Career Pilot" → Remove access
+- Or from the system: `onecli secrets delete google_oauth_refresh_token`
+
+### 23. Phase 0 cleanup checklist
+
+The current repo on `nanoclaw-rebuild` still has the old skeleton. Phase 0 fork (per Part V milestone plan) will:
+
+**DELETE outright:**
+```
+backend/src/db.ts
+backend/src/google.ts
+backend/src/index.ts
+backend/src/orchestrator.ts
+backend/src/telegram.ts
+backend/Dockerfile
+backend/docker-compose.yml
+backend/docker-compose.prod.yml
+backend/package.json
+backend/package-lock.json
+backend/README.md
+backend/tsconfig.json
+backend/node_modules/                  # gitignored anyway
+frontend/src/app/page.tsx
+frontend/src/app/layout.tsx
+frontend/src/app/globals.css
+frontend/src/app/favicon.ico
+frontend/AGENTS.md
+frontend/CLAUDE.md
+frontend/eslint.config.mjs
+frontend/next.config.ts
+frontend/next-env.d.ts
+frontend/open-next.config.ts
+frontend/package.json
+frontend/package-lock.json
+frontend/postcss.config.mjs
+frontend/public/                       # static assets (review individually first)
+frontend/README.md
+frontend/tsconfig.json
+frontend/wrangler.toml
+frontend/node_modules/
+SETUP.md                               # superseded by nanoclaw.sh + scripts/setup-local.ts
+```
+
+**ARCHIVE (move to `.specs/v1-archive/`):**
+```
+.specs/feasibility_analysis.md
+.specs/implementation_plan.md
+.specs/verification_playbook.md
+.specs/component_backend.md
+.specs/component_frontend.md
+.specs/component_infrastructure.md
+```
+(Useful for context / diff reference, but superseded by PORTAL.md + STRATEGY.md.)
+
+**ADAPT (keep + rewrite heavily):**
+```
+README.md                              # rewrite — generic-by-design, points to .specs/
+CLAUDE.md (root)                       # rewrite — orient Claude Code to new structure
+.gitignore                             # add: data/, sessions/, persona.local.md,
+                                       #      .env*, !.env.example, *.dev.db,
+                                       #      logs/, .onecli-vault/
+.github/workflows/deploy-frontend.yml  # rewrite from scratch (TanStack Start + wrangler)
+.github/workflows/deploy-backend.yml   # rewrite from scratch (gcloud + pnpm + systemctl)
+infra/main.tf                          # e2-small → e2-medium; COS → Ubuntu 24.04
+infra/cloudflare.tf                    # add api.hire CNAME, Tunnel, Access service-auth, AOP
+infra/variables.tf                     # new variables: cf_access_aud, tunnel_id, etc.
+infra/templates/user-data.yml.tpl      # rewrite — Ubuntu cloud-init for NanoClaw + OneCLI
+```
+
+**KEEP unchanged:**
+```
+.git/                                  # commit history
+.specs/PORTAL.md
+.specs/STRATEGY.md                     # this doc
+.specs/AGENT_SDK_PATTERNS.md
+.specs/CLOUDFLARE_PATTERNS.md
+.specs/RECOVERY.md
+.specs/V2_IDEAS.md
+.specs/v1-archive/                     # the moved-aside old specs
+```
+
+**ADD (from NanoClaw v2 upstream — `git clone https://github.com/nanocoai/nanoclaw.git` into a sibling working dir, copy in):**
+
+Everything that NanoClaw v2 ships: `bin/`, `scripts/` (NanoClaw's own), `setup/`, `launchd/`, `container/`, `docs/` (NanoClaw's), `config-examples/`, `repo-tokens/`, `assets/`, `src/` (NanoClaw's host), `nanoclaw.sh`, `pnpm-workspace.yaml`, root `package.json`, `tsconfig.json`, `eslint.config.js`, `vitest.config.ts`, `migrate-v2.sh`, etc.
+
+**THEN ADD (career-pilot specifics, the part that's actually our work):**
+
+- `groups/career-pilot/` — owner agent group folder (CLAUDE.md, .claude/agents/, skills/, agent-runner-src/mcp-tools/)
+- `groups/career-pilot-sandbox/` — public simulator agent group folder
+- `groups/_shared-skills/` — skill code shared between owner and sandbox
+- `src/modules/portal/` — Express API, sanitization, public_audit_trail, system modes, simulator orchestration, contact relay
+- `src/channels/portal/` — the new `portal` channel adapter for the web simulator
+- `src/db/migrations/100-107` — career-pilot tables
+- `frontend/` — fresh TanStack Start project (new layout, see PORTAL.md §3.5)
+- `config/defaults.json` — seed values for preferences + system_modes
+- `scripts/setup-local.ts` — the idempotent setup script (§16.3)
+- `scripts/reset:dev.ts` — clean-state reset (§16.5)
+- `scripts/recover-from-killswitch.sh` — manual recovery procedure
+- `scripts/sync-shared-skills.ts` — copy `_shared-skills/` into both agent groups
+
+**The Phase 0 commit will be huge** (probably 200+ files from NanoClaw + scaffolding for our additions). Plan: one commit landing the NanoClaw tree as-is, then a second commit adding our scaffolding (empty career-pilot agent group skeletons, the modules/portal/ directory tree with placeholder index.ts, the migrations files with empty bodies, etc.). Subsequent phases fill in the bodies.
 
 ---
 
@@ -750,7 +1200,7 @@ The viral worst case is bounded by the daily spend cap on the simulator — even
 | **5. Frontend bootstrap** | 6 | **TanStack Start docs deep-read** + scaffold + landing + /work | Hero renders. Live ticker connects to SSE. /work renders with placeholders. |
 | **6. Frontend depth** | 7 | /live, /funnel, /architecture pages | All three pages render real data. Filter chips work. Funnel race animates. |
 | **7. Simulator end-to-end** | 8 | /simulator interactive sandbox | A visitor can type a company + JD, hit Run, see real streaming output side-by-side. Sandbox session tears down cleanly. |
-| **8. Polish + deploy** | 9 | Cloudflare deploy pipeline, /about content, /contact form, content placeholders | `hire.alagonterie.com` resolves to the deployed Worker. /contact submission lands in Telegram. /about reads honestly. |
+| **8. Polish + deploy** | 9 | Cloudflare deploy pipeline, /about content, /contact form, content placeholders | `hire.example.com` resolves to the deployed Worker. /contact submission lands in Telegram. /about reads honestly. |
 | **9. Shadow run** | 10 | Deploy with `LIVE_MODE=false`; system runs in shadow for 1-2 weeks | I'm comfortable flipping `LIVE_MODE=true`. All proactive behaviors observed without external side effects. |
 | **10. Go live** | 11 | `LIVE_MODE=true`; real outreach starts | First real recruiter contact submitted via /contact form. First real outreach approved + sent. Portal shares to LinkedIn / wherever. |
 
@@ -782,7 +1232,7 @@ Each phase ends with a commit-and-pause for review. Phases 0-3 are mostly invisi
 
 7. **Initial obfuscated_label assignment:** What's the function that turns a JD into an industry label (`fintech-b` vs `ai-infra-a`)? Probably a simple LLM call on first JD analysis, cached per company. Confirm during Phase 1.
 
-8. **Headshot for /work:** If Alexander has one, easy. If not, we'll need a clean illustration or skip the headshot block. Owner decision pre-Phase 8.
+8. **Headshot for /work:** If the candidate has one, easy. If not, we'll need a clean illustration or skip the headshot block. Owner decision pre-Phase 8.
 
 ---
 
