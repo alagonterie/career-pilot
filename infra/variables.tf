@@ -31,8 +31,13 @@ variable "cloudflare_zone_id" {
   type        = string
 }
 
+variable "apex_domain" {
+  description = "The apex domain managed by this Cloudflare zone (e.g., 'example.com'). Used to construct the Tunnel ingress FQDN. Set this in terraform.tfvars (gitignored), never hardcode."
+  type        = string
+}
+
 variable "frontend_subdomain" {
-  description = "The subdomain for the Next.js portal (e.g., 'hire')"
+  description = "The subdomain for the portal (e.g., 'hire' → hire.<apex_domain>)"
   type        = string
   default     = "hire"
 }

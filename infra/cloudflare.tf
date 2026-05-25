@@ -22,7 +22,7 @@ resource "cloudflare_tunnel_config" "backend_tunnel_config" {
 
   config {
     ingress_rule {
-      hostname = "api.${var.frontend_subdomain}.alagonterie.com"
+      hostname = "api.${var.frontend_subdomain}.${var.apex_domain}"
       service  = "http://localhost:3000"
     }
     ingress_rule {
