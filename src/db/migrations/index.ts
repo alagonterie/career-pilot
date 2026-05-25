@@ -14,6 +14,15 @@ import { migration014 } from './014-container-configs.js';
 import { migration015 } from './015-cli-scope.js';
 import { moduleApprovalsPendingApprovals } from './module-approvals-pending-approvals.js';
 import { moduleApprovalsTitleOptions } from './module-approvals-title-options.js';
+// --- career-pilot migrations (100-107) ---
+import { migration100 } from './100-applications.js';
+import { migration101 } from './101-funnel-events.js';
+import { migration102 } from './102-public-audit-trail.js';
+import { migration103 } from './103-learnings.js';
+import { migration104 } from './104-preferences.js';
+import { migration105 } from './105-candidate-profile.js';
+import { migration106 } from './106-system-modes.js';
+import { migration107 } from './107-simulator-runs.js';
 
 export interface Migration {
   version: number;
@@ -35,6 +44,15 @@ const migrations: Migration[] = [
   migration013,
   migration014,
   migration015,
+  // --- career-pilot migrations (100-107) ---
+  migration100,
+  migration101,
+  migration102,
+  migration103,
+  migration104,
+  migration105,
+  migration106,
+  migration107,
 ];
 
 export function runMigrations(db: Database.Database): void {
