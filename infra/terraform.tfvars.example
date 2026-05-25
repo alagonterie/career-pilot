@@ -1,0 +1,27 @@
+# Copy to terraform.tfvars (gitignored) and fill in real values.
+# terraform.tfvars is what `terraform apply` reads by default.
+#
+# NEVER commit the real terraform.tfvars — it contains live credentials
+# and the actual apex domain. The gitignore allows .example through.
+
+# --- GCP ---
+gcp_project_id = "your-gcp-project-id"
+gcp_region     = "us-central1"
+gcp_zone       = "us-central1-a"
+
+# --- Cloudflare ---
+# API token: create at https://dash.cloudflare.com/profile/api-tokens with
+# zone-edit + tunnel permissions on the target zone only.
+cloudflare_api_token  = "cf-pat-..."
+cloudflare_account_id = "your-account-id"
+cloudflare_zone_id    = "your-zone-id"
+
+# --- Domain ---
+# Your apex domain (the one whose zone you've delegated to Cloudflare).
+# The portal will live at <frontend_subdomain>.<apex_domain> and the API
+# at api.<frontend_subdomain>.<apex_domain>.
+apex_domain        = "example.com"
+frontend_subdomain = "hire"
+
+# --- Workers ---
+cloudflare_worker_subdomain = "career-pilot"
