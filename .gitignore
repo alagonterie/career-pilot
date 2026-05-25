@@ -1,35 +1,93 @@
-# Environment variables
+# ============================================================================
+# Career Pilot .gitignore
+# Base: NanoClaw v2 upstream + career-pilot-specific additions
+# ============================================================================
+
+# --- NanoClaw upstream ---
+
+# Dependencies
+node_modules/
+.npm-cache/
+# pnpm content-addressable store (created when running in sandbox mode)
+.pnpm-store/
+# Build output
+dist/
+
+# Local data & auth
+store/
+data/
+logs/
+
+# Groups - per-installation state, not tracked by default in upstream.
+# Career-pilot exception: we COMMIT our own custom agent groups under
+# well-known names so the repo is forkable. Anything else under groups/
+# stays per-installation.
+groups/*
+!groups/career-pilot/
+!groups/career-pilot-sandbox/
+!groups/_shared-skills/
+# NanoClaw upstream default group skeletons — tracked in upstream, so we track them too
+!groups/global/
+!groups/main/
+# Within our committed groups, gitignore generated/per-install artifacts:
+groups/*/persona.local.md
+groups/*/CLAUDE.local.md
+groups/*/.claude-shared.md
+groups/*/.claude-fragments/
+
+# Composer-managed CLAUDE.md artifacts (regenerated every spawn) and
+# per-group memory (CLAUDE.local.md) must never be committed.
+**/CLAUDE.local.md
+**/.claude-shared.md
+**/.claude-fragments/
+
+# Secrets
+*.keys.json
 .env
-.env.*
+.env*
 !.env.example
 
-# Node dependencies
-node_modules/
-npm-debug.log
+# Temp files
+.tmp-*
 
-# Next.js build output
-.next/
-out/
-build/
-
-# Terraform
-.terraform/
-*.tfstate
-*.tfstate.backup
-.terraform.tfstate.lock.info
-*.tfvars
-.terraform/
-*.tfstate
-*.tfstate.backup
-.terraform.tfstate.lock.info
-
-# SQLite DB
-*.sqlite
-*.db
-
-# macOS
+# OS
 .DS_Store
 
-# Editor
-.vscode/
+# IDE
 .idea/
+.vscode/
+
+# Skills system (local per-installation state)
+.nanoclaw/
+
+agents-sdk-docs
+
+# --- Career-pilot additions ---
+
+# OneCLI local vault state (per-installation)
+.onecli-vault/
+
+# Local dev DBs (separate from production data/)
+*.dev.db
+*.dev.db-journal
+*.dev.db-shm
+*.dev.db-wal
+*.sqlite
+
+# Terraform local state — NEVER commit (contains secrets and live infra state)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform.tfstate.lock.info
+
+# Test artifacts
+coverage/
+.vitest-cache/
+
+# Frontend build output (TanStack Start on Cloudflare Workers, Phase 5+)
+.wrangler/
+frontend/.output/
+frontend/.tanstack/
+frontend/dist/
