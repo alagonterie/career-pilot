@@ -93,27 +93,41 @@ Motion: limited. The only auto-animating element on `/` is a single pulsing "●
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Framework | **Next.js 15 App Router** | RSC + Server Actions + streaming Suspense; route groups for the two registers |
-| Edge adapter | **`@opennextjs/cloudflare` v1.19+** | Cloudflare's preferred path now (Pages-for-Next.js deprecated). |
-| Worker runtime | **`nodejs_compat`** (NOT edge runtime) | Strictly more capable; required for many shadcn deps. |
-| Styling | **Tailwind v4** | `@theme` directive; OKLCH color tokens; layered registers via CSS variables. |
-| UI primitives | **shadcn/ui (new-york)** on Radix UI | Owned components, copy-paste-and-modify. |
-| Motion | **`motion/react`** | The renamed successor to Framer Motion; one-line import swap if we ever migrate. |
-| Virtualized lists | **`@tanstack/react-virtual`** | Powers the `LogStream` and dense trace tables; cheaper + better-looking than `xterm.js` for read-only output. |
-| ANSI parsing (logs) | **`anser`** | Lightweight ANSI → React nodes for terminal-style coloring. |
-| Icons | **Lucide React** (shadcn default) | |
-| Forms | **`react-hook-form` + Zod** | Type-safe form validation, used for `/contact` + `/simulator` inputs. |
+| Framework | **TanStack Start** (latest RC) | Vite-native, type-safe routing end-to-end, server-functions RPC model. Cloudflare Workers is an official partner integration. |
+| Routing | **TanStack Router** (bundled with Start) | File-based or code-based; full type inference for params, search params, loader returns; deep-link safety enforced by the compiler. |
+| Build tool | **Vite** | Fast HMR, mature plugin ecosystem (Vitest, vite-plugin-*). |
+| Cloudflare deploy | **Cloudflare Workers** (official adapter) | Single `wrangler.toml` + adapter; output binary is the Worker bundle. |
+| Worker runtime | **`nodejs_compat`** flag enabled | Required for several shadcn deps and `crypto`/`Buffer` use; SSE works fine. |
+| Styling | **Tailwind v4** | `@theme` directive, OKLCH color tokens, layered registers via CSS variables. |
+| UI primitives | **shadcn/ui (new-york)** on Radix UI | Framework-agnostic; works identically under TanStack Start. |
+| Motion | **`motion/react`** | The renamed successor to Framer Motion. |
+| Virtualized lists | **`@tanstack/react-virtual`** | Powers `LogStream` and dense trace tables. (Same TanStack family — clean integration.) |
+| ANSI parsing (logs) | **`anser`** | Lightweight ANSI → React nodes. |
+| Icons | **Lucide React** | shadcn default. |
+| Forms | **`react-hook-form` + Zod** | Pairs naturally with TanStack Router's typed search params. |
 | Analytics | **Cloudflare Web Analytics** | Privacy-respecting, free with Workers. |
+
+**Why TanStack Start (vs Next.js 15):**
+
+- **Type-safe routing end-to-end.** Every route param, search param, loader return, and `<Link>` target is inferred by the compiler. Critical for our dashboard pages with multi-param state: `/live?filter=tailor&since=<ts>`, `/funnel?reveal=fintech-b`, `/simulator/results/:id`. Rename a route → TS catches every call site.
+- **No RSC mental tax.** Server functions are typed RPC; no `"use client"`/`"use server"` poisoning, no "can't import from server component" footguns, no hydration-mismatch landmines.
+- **Smaller framework footprint** → easier to stay under the 3 MiB Cloudflare Worker compressed bundle cap (free tier).
+- **Engineering-taste signal.** The audience for this portal includes engineering hiring managers and senior peers — they recognize TanStack Start as a thoughtful 2026 choice. Next.js is universally recognized but uninteresting.
+
+**Trade-off accepted:** TanStack Start is RC (not 1.0 yet). APIs can shift. Cloudflare's official partner integration reduces this risk meaningfully, and the app code (React + shadcn + business logic) is ~95% framework-agnostic — fallback to Next.js mid-project is a one-day port if catastrophic happens.
 
 **Architectural rules:**
 
-1. **Route groups** for the two visual registers. `app/(marketing)/` (landing register) and `app/(ops)/` (operations register) with separate root layouts and Tailwind density tokens.
-2. **No global client instantiation in Server Components / route handlers.** Required by the Worker runtime — `I/O streams cannot cross request handlers`. All HTTP clients, SSE readers, etc. live inside handler bodies.
-3. **3 MiB compressed Worker budget on Cloudflare's free tier.** Audit dep additions; OpenNext v1.2+ helps by stripping Babel and toolbox-optimizer, but anything new gets weighed.
-4. **SSE consumers** prefer `fetch`-with-stream-reader over `EventSource` so we can set custom headers (e.g., auth) — and to multiplex over HTTP/2 (Cloudflare default), which sidesteps the browser 6-connection HTTP/1.1 cap on `EventSource`.
-5. **Server Actions for forms.** `/contact` submission flows through a Server Action that calls the Express backend via Cloudflare Tunnel — no client-side API key handling.
+1. **Nested-route layouts** for the two visual registers. `routes/(marketing)/_layout.tsx` for the landing register, `routes/(ops)/_layout.tsx` for the operations register. Tailwind density tokens swap based on the layout context.
+2. **No global client instantiation in server functions or route loaders.** Required by the Worker runtime — `I/O streams cannot cross request handlers`. HTTP clients, SSE readers, etc. live inside the handler body.
+3. **3 MiB compressed Worker budget on Cloudflare's free tier.** Audit any dep addition. TanStack Start ships less framework code than Next.js, giving more headroom.
+4. **SSE consumers** prefer `fetch`-with-stream-reader over `EventSource` so we can set custom headers (e.g., auth) — and to multiplex over HTTP/2 (Cloudflare default), sidestepping the browser 6-connection HTTP/1.1 cap on `EventSource`.
+5. **Server functions for forms.** `/contact` submission flows through a TanStack Start server function (typed RPC) that calls the Express backend via Cloudflare Tunnel. No client-side API key handling.
+6. **Search params as first-class state.** Filter chips on `/live`, reveal toggles on `/funnel`, and pagination on `/simulator/results` use TanStack Router's typed `useSearch()` instead of ad-hoc URL parsing — deep-linkable, type-safe, refresh-safe.
 
-**Alternative considered:** TanStack Start (Vite-native, type-safe, no RSC overhead) was the 2026 dark horse. It deploys cleanly to Workers, but it's RC and recruiters won't read it as "the safe enterprise choice." Filed as a possible v2 migration target if we ever feel Next.js' weight.
+**Implementation discipline:** Before any frontend code lands, we do a focused TanStack Start docs pass (latest RC release notes, Cloudflare Workers adapter docs, server-functions API, search-param typing patterns) and capture canonical patterns for our specific needs (SSE streaming, server-function error handling, route prefetching). See STRATEGY.md milestone "Frontend bootstrap."
+
+**Alternative considered:** Next.js 15 App Router on `@opennextjs/cloudflare`. It's the safer/universally-recognized pick — production-locked, larger community, more recipes for SSE-on-Workers patterns. We're trading some of that recognition for type-safety wins, smaller bundles, and the taste signal. If TanStack Start ever feels like it's costing us more than it's giving us, the fallback is a one-day port.
 
 ---
 
@@ -140,7 +154,7 @@ API routes (consumed by the frontend)
 /api/contact         POST — relay to Jane's Telegram
 ```
 
-Public routes are all statically rendered Next.js pages on Cloudflare Workers that hydrate against the API. The API lives on the GCP VM behind Cloudflare Tunnel.
+Public routes are TanStack Start pages running on Cloudflare Workers. Route loaders hit the backend API via server functions (the Worker proxies to the GCP VM through Cloudflare Tunnel); client islands hydrate against the same data on the page.
 
 ---
 
@@ -736,7 +750,7 @@ Linked from footer. Less prominent but substantive — this is where a curious e
 - **Credential & data privacy** — see "Two-tier vault" below
 - **System modes & safety controls** — high-level explanation linking to §7
 - **Cost of running this thing** — live numbers, not estimates
-- **Why these specific tech choices** — NanoClaw, Claude Agent SDK, Portkey (Model Catalog), OneCLI, Next.js 15
+- **Why these specific tech choices** — NanoClaw, Claude Agent SDK, Portkey (Model Catalog), OneCLI, TanStack Start
 - **How to fork it for yourself** — generic-by-design, the repo is meant to be forked
 - **Honest limitations** — what this system doesn't do (anti-claims build credibility)
 - **FAQ** — common recruiter questions
