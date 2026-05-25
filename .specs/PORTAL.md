@@ -89,6 +89,32 @@ Motion: limited. The only auto-animating element on `/` is a single pulsing "●
 | `TraceLine` | Ops | Single agent invocation row with model, latency, cost, cache state |
 | `Simulator` | Hybrid | Apple-clean shell, ops-style streaming output |
 
+### Frontend framework & libraries (locked)
+
+| Layer | Choice | Notes |
+|---|---|---|
+| Framework | **Next.js 15 App Router** | RSC + Server Actions + streaming Suspense; route groups for the two registers |
+| Edge adapter | **`@opennextjs/cloudflare` v1.19+** | Cloudflare's preferred path now (Pages-for-Next.js deprecated). |
+| Worker runtime | **`nodejs_compat`** (NOT edge runtime) | Strictly more capable; required for many shadcn deps. |
+| Styling | **Tailwind v4** | `@theme` directive; OKLCH color tokens; layered registers via CSS variables. |
+| UI primitives | **shadcn/ui (new-york)** on Radix UI | Owned components, copy-paste-and-modify. |
+| Motion | **`motion/react`** | The renamed successor to Framer Motion; one-line import swap if we ever migrate. |
+| Virtualized lists | **`@tanstack/react-virtual`** | Powers the `LogStream` and dense trace tables; cheaper + better-looking than `xterm.js` for read-only output. |
+| ANSI parsing (logs) | **`anser`** | Lightweight ANSI → React nodes for terminal-style coloring. |
+| Icons | **Lucide React** (shadcn default) | |
+| Forms | **`react-hook-form` + Zod** | Type-safe form validation, used for `/contact` + `/simulator` inputs. |
+| Analytics | **Cloudflare Web Analytics** | Privacy-respecting, free with Workers. |
+
+**Architectural rules:**
+
+1. **Route groups** for the two visual registers. `app/(marketing)/` (landing register) and `app/(ops)/` (operations register) with separate root layouts and Tailwind density tokens.
+2. **No global client instantiation in Server Components / route handlers.** Required by the Worker runtime — `I/O streams cannot cross request handlers`. All HTTP clients, SSE readers, etc. live inside handler bodies.
+3. **3 MiB compressed Worker budget on Cloudflare's free tier.** Audit dep additions; OpenNext v1.2+ helps by stripping Babel and toolbox-optimizer, but anything new gets weighed.
+4. **SSE consumers** prefer `fetch`-with-stream-reader over `EventSource` so we can set custom headers (e.g., auth) — and to multiplex over HTTP/2 (Cloudflare default), which sidesteps the browser 6-connection HTTP/1.1 cap on `EventSource`.
+5. **Server Actions for forms.** `/contact` submission flows through a Server Action that calls the Express backend via Cloudflare Tunnel — no client-side API key handling.
+
+**Alternative considered:** TanStack Start (Vite-native, type-safe, no RSC overhead) was the 2026 dark horse. It deploys cleanly to Workers, but it's RC and recruiters won't read it as "the safe enterprise choice." Filed as a possible v2 migration target if we ever feel Next.js' weight.
+
 ---
 
 ## 4. Site map
@@ -153,7 +179,7 @@ The "● live" indicator is a real-time signal:
 Below the CTAs, **a single line** that updates every page load with a real number:
 > *3 active applications · last activity 4 minutes ago · cache hit rate 91%*
 
-Source: `/api/telemetry`. The number must be honest — fewer applications is fine, "0 active applications" gets handled by showing a different message (see §9).
+Source: `/api/telemetry`. The number must be honest — fewer applications is fine, "0 active applications" gets handled by showing a different message (see §10).
 
 **Viewport 2: Funnel strip**
 
@@ -342,7 +368,7 @@ A log of recent funnel state changes:
 2026-05-22  Anthropic              FINAL → OFFER  ◆ public
 ```
 
-Companies marked `◆ public` are ones with explicit reveal — they're displayed with their real name. See §8 for the rules.
+Companies marked `◆ public` are ones with explicit reveal — they're displayed with their real name. See §9 for the rules.
 
 #### Panel: `ANONYMIZATION DEMO` (the wow-finish)
 
@@ -376,7 +402,13 @@ This is also where the visitor learns that the public side of the system is genu
 
 ### 5.3 `/simulator` — Recruiter Simulator
 
-**Purpose:** Convert recruiters by giving them a tangible artifact ("here's a draft pitch tailored to your role") + showing the system actually works in real time.
+**What this is:** Proof-by-demonstration. A visiting recruiter or hiring manager doesn't have to take Alexander's word that the system works — they type in their own company name and role description, click `Run`, and watch the same agent stack that's running his real job search execute on *their* data in real time. Within 20-30 seconds they have a tangible, downloadable artifact (tailored bullets + cold outreach email).
+
+**Three things it surfaces:**
+
+1. **The system genuinely works.** Real LLM calls, real subagent invocations, real output streaming. Not a screencast, not a faked demo. The trace stream the visitor sees is identical to the one running on `/live` — same components, same SSE infrastructure.
+2. **Engineering hygiene on display.** They see the sandbox session spin up and tear down. They see the cost reported transparently (~$0.04). They see what's *not* happening (zero DB writes, no real outreach, no Gmail/Calendar access — these tools are explicitly missing from the sandbox agent group's toolset). The labeled "DRY-SANDBOX" badge on the activity stream is itself a credibility move.
+3. **Personal sales angle.** The output is tailored to *their* role, not a canned demo. They walk away with a 3-paragraph cold-email pitch and 5 resume bullets pitched at their team. The result page's `[Talk to me]` CTA pre-fills the contact form with their company name — one click from a real conversation.
 
 **Layout:** Apple register for the input form (clean, single focal point) → switches to ops register the moment they hit `Run`. The transition is itself an "I'm not faking this" signal.
 
@@ -697,14 +729,59 @@ When submitted, the message is relayed to Alexander via Telegram. Sender gets a 
 
 ### 5.8 `/about` — Methodology / FAQ
 
-Linked from footer. Less prominent. Covers:
-- Why this portal exists (1 paragraph)
-- Anonymization policy (the rules — see §8)
-- Cost of running this thing
-- Why these specific tech choices (NanoClaw, Claude Agent SDK, Portkey, etc.)
-- How to fork it for yourself
-- Honest limitations (what this system doesn't do)
-- FAQ for common recruiter questions
+Linked from footer. Less prominent but substantive — this is where a curious engineer reading the GitHub repo lands when they want the "why" behind decisions. Covers:
+
+- **Why this portal exists** — 1 paragraph framing
+- **Anonymization policy** — the rules (see §9)
+- **Credential & data privacy** — see "Two-tier vault" below
+- **System modes & safety controls** — high-level explanation linking to §7
+- **Cost of running this thing** — live numbers, not estimates
+- **Why these specific tech choices** — NanoClaw, Claude Agent SDK, Portkey (Model Catalog), OneCLI, Next.js 15
+- **How to fork it for yourself** — generic-by-design, the repo is meant to be forked
+- **Honest limitations** — what this system doesn't do (anti-claims build credibility)
+- **FAQ** — common recruiter questions
+
+#### Two-tier vault (the credential story)
+
+A subsection that calls out a deliberately strong security model — it's a credibility move with engineering visitors.
+
+> No raw API key ever enters the agent container. Credentials are split across two purpose-built vaults:
+>
+> - **Portkey Model Catalog** holds Alexander's Anthropic API key as a vaulted Integration. The container makes Claude calls to `api.portkey.ai` with only a Portkey API key; Portkey looks up the right Anthropic credential, makes the actual API call, and logs the trace for observability.
+> - **OneCLI Agent Vault** holds everything else — the Portkey API key itself, Google OAuth refresh tokens, Cloudflare API tokens, the Telegram bot token. OneCLI runs as a local credential-injecting proxy; the container is configured to route outbound HTTPS through it. Credentials inject at request time based on URL pattern matching + per-agent policies.
+>
+> The container's environment contains exactly **zero** secrets. Even if a Worker handler dumps `process.env`, nothing useful leaks. Outbound HTTPS routes through OneCLI, which knows what credential to apply for each destination and which actions require human approval.
+>
+> This isn't security theater — it's how Anthropic, AWS, and most enterprise AI shops manage agent credentials in 2026.
+
+#### Content privacy (resume isn't in the repo)
+
+A subsection that says the quiet part out loud — this repo is meant to be forked, so personal content is partitioned out:
+
+> The career-pilot repository is **fully generic**. There is no hardcoded personal data. Three classes of content, three storage locations:
+>
+> | Class | Lives in | In the repo? |
+> |---|---|---|
+> | System code (routes, components, agent skills, sanitization rules) | `src/`, `groups/career-pilot/skills/` | ✓ public |
+> | Persona content (bio, skills list, "what I'm looking for") | SQLite `candidate_profile` table, host-side | ✗ private |
+> | Master resume | SQLite (private), loaded into the agent group at runtime | ✗ private |
+> | Working state (applications, drafts, learnings) | SQLite (private) | ✗ private |
+> | Owner config (bot token, Portkey key) | `.env` + OneCLI vault | ✗ private |
+>
+> A developer who forks the repo gets the system, then populates their own `candidate_profile` via the Telegram onboarding flow. None of Alexander's personal content is committed.
+
+#### How to fork it
+
+Short instructions for a curious engineer who wants to try it:
+
+```
+git clone <repo>
+cd <repo>
+bash setup.sh        # installs Node, pnpm, Docker, OneCLI, builds the container,
+                     # walks Telegram pairing, runs first-agent onboarding
+```
+
+The setup script is the same NanoClaw `nanoclaw.sh` flow — fresh-machine to running agent in one command, with handoffs to Claude Code for failure recovery.
 
 This page exists so a curious visitor never has to wonder "is any of this for real" — they can read the methodology.
 
@@ -724,7 +801,7 @@ Three distinct actor classes interact with the system, each through a different 
 | **Sandbox visitor** (recruiter trying the simulator) | `/simulator` (web → portal channel adapter) | `career-pilot-sandbox` | Sandbox-only. No role required. Ephemeral per-visitor session. Read-only subagents; no DB-write tools; no Gmail/Calendar OAuth; separate Portkey spend budget. |
 | **Contact-form visitor** | `/contact` (web POST) | (none — webhook handler) | One-way relay. No conversation. Submission is delivered to Alexander's channel as a system message. |
 
-The owner agent group and the sandbox agent group share **skills** (the actual job-hunt logic in `groups/<group>/skills/`) but have **different container configs** — different tool allowlists, different OneCLI credential scope, different Portkey virtual keys. This way the sandbox can run the same `research-company`/`tailor-resume`/`draft-outreach` subagents without any risk of touching real state.
+The owner agent group and the sandbox agent group share **skills** (the actual job-hunt logic in `groups/<group>/skills/`) but have **different container configs** — different tool allowlists, different OneCLI credential scope, different Portkey Model Catalog AI Providers (with separate spend caps). This way the sandbox can run the same `research-company`/`tailor-resume`/`draft-outreach` subagents without any risk of touching real state.
 
 ### 6.2 Proactivity taxonomy
 
@@ -809,11 +886,135 @@ Some things the agent never does on its own, to keep trust and avoid embarrassme
 - **Never burns through the LLM budget cap.** Hard stop, not soft warning.
 - **Never speaks on the owner's behalf in any channel the owner doesn't control.**
 
+### 6.7 Feedback loops — turning outcomes into fuel
+
+The agent learns from outcomes. Rejection-as-fuel is the canonical case.
+
+**Trigger:** A rejection or "we're moving forward with other candidates" email is detected in Gmail.
+
+**Flow:**
+
+1. Webhook → `parse_email` tool classifies the message: `rejection-after-screen`, `rejection-after-interview`, `rejection-after-final`, `ghosted` (no contact for N days after a stage).
+2. Agent updates the funnel: `[REDACTED:company] → REJECTED`. A `◆ rejection` event lands in the activity stream.
+3. **The reflection prompt:** Within 1 hour (or at the next quiet-hours boundary if it's late), the agent posts a card to Alexander on Telegram:
+   > *"Heads up: rejection from [REDACTED:fintech-b] after the final round. Want to capture a quick reflection? 3 prompts, ~90s — feeds future runs."*
+   > `[ Yes, prompt me ]  [ Later ]  [ Skip ]`
+4. If accepted, the agent runs three focused prompts:
+   - *"What do you think went well?"*
+   - *"What didn't go well, or what would you do differently?"*
+   - *"What signal do you wish you'd had earlier?"*
+5. Free-form answers stored in `rejection_learnings` (private) keyed to the application + role category.
+6. **Future fuel:** every subsequent `research-company` and `tailor-resume` run for similar companies/roles includes a context block:
+   > *"Prior learnings from similar attempts:* [bulleted, anonymized excerpts]*"*
+7. **Optional portal publication:** Alexander can flip `reflection_published: true` per learning. Published reflections show on the application's `/funnel` detail panel as a "What I learned" block, with the company still obfuscated unless `public_state = 'public'`.
+
+**Why this matters for the showcase:** A hiring manager who lands on `/funnel` and sees a closed/rejected entry with a handwritten reflection ("*I underestimated their bar for systems design — leaning into Designing Data-Intensive Applications before my next big-tech round*") thinks: *this is someone who learns in public*. That signal is much harder to fake than competence claims.
+
+**Other feedback loops in the same family:**
+
+| Trigger | Reflection target | Future use |
+|---|---|---|
+| Interview accepted → went well | "What worked in your prep?" | Strengthens future `prep-interview` outputs |
+| Outreach got a reply (positive) | "What in this draft do you think clicked?" | Reinforces voice for future `draft-outreach` |
+| Outreach got a reply (negative) | "Tone? Content? Timing?" | Updates the voice constraints in CLAUDE.md |
+| Offer received | "What was the unlock here?" | Captures patterns for future final-round prep |
+
+All learnings live in the same `learnings` table with a `kind` column. Approval-gated publication, owner-only reveal.
+
 ---
 
-## 7. Cross-cutting components
+## 7. System modes & safety controls
 
-### 7.1 Top nav
+Career Pilot has weight — it touches real applications, real people, real money, and Alexander's career. Three control mechanisms keep it safe: a system-mode flag, three pause/halt tiers, and the autonomy gradient from §6.3.
+
+### 7.1 `LIVE_MODE` — the most important switch
+
+A single flag on the host: `LIVE_MODE: boolean` (default `false` until explicitly flipped).
+
+**When `LIVE_MODE = false` (dry-run / shadow mode):**
+
+| What | Still runs | Blocked |
+|---|---|---|
+| Telegram chat with the agent | ✓ | |
+| Subagents run, drafts get generated | ✓ | |
+| Real LLM calls via Portkey | ✓ (so you can profile real cost) | |
+| Local DB writes (applications, drafts, funnel) | ✓ | |
+| Gmail webhook triggers actions | ✓ (drafts only) | |
+| Calendar webhook → updates funnel state | ✓ | |
+| Portal activity stream | ✓ (clearly labeled `◇ DRY-RUN`) | |
+| `send_outreach_email` (real send) | | ✗ — draft saved, never delivered |
+| `submit_real_application` | | ✗ |
+| `respond_to_calendar_invite` (RSVP) | | ✗ |
+| Any external-visible irreversible action | | ✗ |
+
+When `false`, the portal hero adds a small badge: `◇ SHADOW MODE — career-pilot is running in dry-run. External actions disabled.` Visitors still see the system working; recruiters might even appreciate the transparency about how cautious the rollout is.
+
+**The flip:** Alexander promotes to `LIVE_MODE = true` via a Telegram command requiring two-step confirmation. Going back to dry-run is one command (no confirmation) — easy to back off.
+
+This is the answer to *"I want to deploy and watch it run for a while before it can actually affect my life."* You can run for weeks in shadow mode, profile cost, watch the system make decisions you agree or disagree with, refine prompts and skills, then flip.
+
+### 7.2 `/pause` — soft pause
+
+Triggered by `/pause` in Telegram. Effect:
+- Container completes any task in flight, then stops.
+- Proactive crons are skipped (briefings, follow-ups, etc.).
+- Webhook events still arrive but are queued (not dropped).
+- Reactive responses to direct Telegram messages still work — pause is for proactive behavior, not your direct chat.
+- Portal shows: `⏸ Paused — manual reason: <if set>` in the footer status and a small banner on `/live`.
+- Resume with `/resume`. Queued webhook events fire in order.
+
+Used for: "I'm in an interview right now, hold all pings"; "I'm thinking through a strategy change, freeze proactive behavior."
+
+### 7.3 `/halt` — emergency hard stop
+
+Triggered by `/halt` in Telegram or via the host's admin endpoint. Effect:
+- `MAX_CONCURRENT_CONTAINERS` set to `0`; all running containers killed.
+- All webhook events queue (not dropped).
+- No proactive anything.
+- Reactive chat disabled (Telegram bot replies: *"system halted — use `/resume` to restore"*).
+- Portal goes to a graceful degraded view: cached funnel + activity, banner reads `⏸ System temporarily offline — back shortly. <optional transparent reason>`.
+- Simulator disabled with a clear message: *"The orchestrator is paused for review. The simulator is back when it's back — last successful runs are still browsable below."*
+
+Used for: cost spike, viral traffic surge, unexpected behavior I want to diagnose, anything I want to stop right now without the catastrophic-recovery overhead of killswitch.
+
+**Recovery:** `/resume` in Telegram. Queued events drain. State self-heals.
+
+### 7.4 `/killswitch` — catastrophic / breach
+
+Triggered by `/killswitch` in Telegram, requires a confirmation card. Used only for: credential compromise, breach, system has done something it shouldn't have done.
+
+Effect:
+- All of `/halt`, plus:
+- OneCLI agent tokens revoked → container can't make ANY authenticated outbound call even if it somehow restarts.
+- Portkey rate limits flipped to 0 → even if a credential leaks, no LLM calls succeed.
+- Cloudflare Worker serves a static "This system is paused for review. — Alexander" page; backend API responses replaced with 503s.
+- Webhook events DROPPED, not queued. Anything in flight is lost.
+
+**Recovery:** Requires manual intervention via SSH. Not designed for fast recovery — designed for "stop everything until I know what happened."
+
+### 7.5 What visitors see per mode
+
+| Host state | Portal `/` | `/live` | `/simulator` | `/contact` |
+|---|---|---|---|---|
+| `LIVE_MODE=true`, running | Normal | Normal | Normal | Normal |
+| `LIVE_MODE=false`, running | `◇ Shadow mode` badge | `◇ DRY-RUN` on every event | Still works (sandbox isn't gated on LIVE_MODE) | Normal |
+| `/pause` active | Status pill: `⏸ Paused` | Banner: `⏸ Proactive paused` | Still works | Normal |
+| `/halt` active | Page: `⏸ Temporarily offline — back shortly` (cached snapshot) | Same | Disabled with clear message | Still works (doesn't depend on orchestrator) |
+| `/killswitch` active | Static page: `Paused for review — Alexander` | Same | Disabled | Disabled |
+
+The transparent "*here's why we paused*" message Alexander can set is itself a credibility move — recruiters reading *"paused due to traffic spike at 5,200 RPS — diagnosing now"* see operational maturity, not breakage.
+
+### 7.6 The autonomy gradient still applies
+
+Even in `LIVE_MODE=true`, the autonomy gradient from §6.3 still gates irreversible actions through approval cards. `LIVE_MODE` is the *outer* switch — gates the action *class*. The autonomy gradient is the *inner* switch — gates the specific *instance*.
+
+Both are required for a real send: `LIVE_MODE=true` AND owner approves the specific card.
+
+---
+
+## 8. Cross-cutting components
+
+### 8.1 Top nav
 
 Minimal. Logo / wordmark left, links right:
 ```
@@ -822,7 +1023,7 @@ Minimal. Logo / wordmark left, links right:
 
 Sticky on scroll. On mobile, collapses to hamburger.
 
-### 7.2 Footer
+### 8.2 Footer
 
 Identical on every page:
 ```
@@ -836,13 +1037,13 @@ Identical on every page:
 
 The status string is live (single tick per 30s). If degraded or offline, it changes color and adds a brief note.
 
-### 7.3 Live indicator
+### 8.3 Live indicator
 
 Used on `/` and in the footer. A single small dot with `● live` label. Connects to `/api/activity/stream` and pulses on each received event. Disconnects gracefully if SSE drops.
 
 ---
 
-## 8. Anonymization model
+## 9. Anonymization model
 
 This is a separate, important section because it touches multiple pages and shapes the database.
 
@@ -884,7 +1085,7 @@ The portal API only ever queries the public tables. The portal Cloudflare Worker
 
 ---
 
-## 9. Empty / edge / failure states
+## 10. Empty / edge / failure states
 
 | State | Behavior |
 |---|---|
@@ -898,7 +1099,7 @@ The portal API only ever queries the public tables. The portal Cloudflare Worker
 
 ---
 
-## 10. Backend surfaces required (bridge to STRATEGY.md)
+## 11. Backend surfaces required (bridge to STRATEGY.md)
 
 To support this portal, the backend must expose:
 
@@ -918,32 +1119,76 @@ Backend-side capabilities required:
 - **A `portal` channel adapter** for NanoClaw so simulator runs are first-class NanoClaw sessions.
 - **A read-only observer module** that tails session DBs and writes sanitized rows to `public_audit_trail`.
 - **A Portkey analytics proxy** that caches Portkey responses for 30s to avoid hitting their API on every page load.
-- **A sanitization pipeline** as described in §8.
+- **A sanitization pipeline** as described in §9.
 - **Rate limiting** on `/api/simulator` (per IP) and `/api/contact` (per IP + spam control).
 
 Detailed in `STRATEGY.md` (to be written next).
 
 ---
 
-## 11. Content variables (TBD inputs from Alexander)
+## 12. Content variables (TBD inputs from Alexander)
 
-Things Alexander needs to provide before the portal can ship:
+Things Alexander needs to provide before the portal can ship — **but the system ships without them**. See "Placeholder strategy" below for how.
 
-- **Bio paragraphs** (2 short paragraphs for `/work`)
-- **Headshot** (optional, recommended for `/work`)
-- **Master resume markdown** (for the actual agents to use + render on `/work`)
-- **Featured projects list** with descriptions
-- **Skills list** (curated)
-- **Writing/talks** (optional)
-- **Telegram bot username** (for the public-facing contact path, separate from his admin bot)
-- **Real social URLs** (GitHub, LinkedIn, X)
-- **What I'm looking for** statement (target comp, location, role flavor)
-- **"Why this exists" prose** (for `/about`)
-- **Color preferences** — confirm the accent green/cyan vs alternatives
+| Variable | Where it goes | Provided by |
+|---|---|---|
+| Bio paragraphs (2 short paragraphs) | `/work` hero + meta description | Owner |
+| Headshot (optional) | `/work` and meta og:image | Owner |
+| Master resume markdown | SQLite `candidate_profile.master_resume` (private, never in repo) — used by `tailor-resume` agent and rendered on `/work` | Owner via Telegram onboarding |
+| Featured projects | `/work` and `/` viewport 5 | Owner (could come from a GitHub API call as a default) |
+| Curated skills list | `/work`, `/` | Owner |
+| Writing/talks (optional) | `/work` if present | Owner |
+| Public Telegram bot username | `/contact` deep link | Owner (separate bot from admin bot) |
+| Real social URLs (GitHub/LinkedIn/X) | Footer + `/work` | Owner via env or DB |
+| "What I'm looking for" statement | `/work`, `/` hero copy | Owner |
+| "Why this exists" prose | `/about` | Owner |
+| Brand color (accent) | Tailwind theme tokens | Owner (defaults to neon green/cyan from §3) |
+
+### Placeholder strategy
+
+The portal **must** ship and run without all of these populated. The user (Alexander) should be able to deploy on day 1 with everything empty and see the system running end-to-end with placeholder content, then refine variables one at a time over time.
+
+**Default behavior for each unset variable:**
+
+- **Render with a clearly-marked placeholder** — e.g. `[bio: 2 paragraphs describing yourself and your work]` in the position the real content would go.
+- **In public-mode (default for non-owner visitors):** placeholders are styled subtly (slightly muted, italicized) so the portal still looks intentional. The visitor sees that the system is alive but some content is still being filled in. This is honest and recruiters will read it as a "WIP launching in public" signal, which is actually charming.
+- **In owner-mode (`?admin=true` or recognized admin session):** placeholders are highlighted with a bright outline and a one-click "Fill this in via Telegram" button that opens the bot with the right prompt.
+
+**Owner experience for populating variables:**
+
+Alexander can fill these in natural-language via Telegram at any time. Examples:
+- *"My bio is two paragraphs — first paragraph: ..."* → agent updates `candidate_profile.bio`
+- *"Set the accent color to ..."* → agent updates the Tailwind theme override
+- *"Here's my master resume:"* (paste or attach file) → agent updates `candidate_profile.master_resume`
+
+The agent uses the `update_profile_field` MCP tool, validates the input, writes to the DB, and the portal picks up the change on next request (no rebuild needed for content variables).
+
+**What's the minimum to flip `LIVE_MODE = true`?**
+
+A short opinionated checklist the portal surfaces to the owner:
+
+```
+Ready to go live? (5/11 complete)
+  ✓ Bio
+  ✓ Master resume (used by agents)
+  ✓ Social URLs (GitHub minimum)
+  ✓ "What I'm looking for"
+  ✓ Public Telegram bot configured
+  ○ Featured projects (recommended but not required)
+  ○ Headshot (recommended but not required)
+  ○ "Why this exists" prose for /about
+  ○ Curated skills list
+  ○ Writing/talks
+  ○ Brand color (using defaults)
+
+The required 5 are filled in. You're ready for LIVE_MODE.
+```
+
+The required 5 are enforced (the `LIVE_MODE` flip command refuses if they're not set). The rest are nice-to-haves.
 
 ---
 
-## 12. Open questions
+## 13. Open questions
 
 1. **Should `/live` be discoverable without clicking through?** Alternative: render a "preview pane" of `/live` as a viewport on `/` for visitors who don't click. Risk: dilutes the apple-clean hero. Recommendation: keep landing clean, but add a single ~120px-tall live ticker between viewports 2 and 3 as a teaser.
 
@@ -963,7 +1208,7 @@ Things Alexander needs to provide before the portal can ship:
 
 ---
 
-## 13. Out of scope (deliberately)
+## 14. Out of scope (deliberately)
 
 - A blog / writing CMS — link out to wherever Alexander writes.
 - A general portfolio (non-career-pilot) — `/work` covers the resume case, but career-pilot is the centerpiece.
@@ -974,7 +1219,7 @@ Things Alexander needs to provide before the portal can ship:
 
 ---
 
-## 14. Next step
+## 15. Next step
 
 After sign-off on this spec, the next deliverable is `STRATEGY.md`:
 - Branch structure (where this lives relative to NanoClaw fork)
