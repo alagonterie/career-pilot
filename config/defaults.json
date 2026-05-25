@@ -1,0 +1,47 @@
+{
+  "_comment": "Seed values for the preferences and system_modes tables. Loaded by scripts/setup-local.ts on first setup and on `pnpm run reset:dev`. See STRATEGY.md §20 for the four-tier config model.",
+  "preferences": {
+    "gmail_poll_interval_sec": 60,
+    "calendar_poll_interval_sec": 300,
+    "owner_daily_llm_budget_usd": 5,
+    "sandbox_daily_global_budget_usd": 5,
+    "sandbox_per_ip_daily_run_cap": 10,
+    "container_memory_mb": 512,
+    "container_cpu": 1.0,
+    "container_idle_timeout_sec": 1800,
+    "container_max_concurrent": 4,
+    "sanitization_llm_review_threshold_chars": 1000,
+    "sanitization_llm_review_aggressiveness": "high",
+    "quiet_hours": "22:00-07:00",
+    "quiet_hours_tz": "America/New_York",
+    "telegram_proactive_frequency_cap_per_day": 8,
+    "channel_pref_by_class": {
+      "urgent": "telegram",
+      "briefing": "telegram",
+      "approval_request": "telegram",
+      "alert": "telegram_alerts"
+    },
+    "auto_research_threshold": "after_jd_pasted",
+    "approval_scope": {
+      "send_outreach_email": "always",
+      "respond_to_calendar_invite": "always",
+      "update_application_status": "if_terminal"
+    },
+    "briefing_schedule": {
+      "morning": "08:00",
+      "evening": "18:00"
+    }
+  },
+  "system_modes": {
+    "live_mode": false,
+    "pause_state": "active",
+    "pause_reason": null
+  },
+  "_required_before_live_mode": [
+    "candidate_profile.full_name",
+    "candidate_profile.master_resume",
+    "candidate_profile.target_roles",
+    "candidate_profile.bio",
+    "candidate_profile.why_this_exists"
+  ]
+}
