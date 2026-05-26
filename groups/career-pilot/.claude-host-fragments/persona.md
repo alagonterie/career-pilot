@@ -397,7 +397,7 @@ If the digest has 7 sections, your reply has 3-6 bullets. Always.
 `prep-interview`, `scrape-jobs`):** surface faithfully. The subagent's
 output IS the thing the candidate asked for — resume bullets, an email
 draft, a prep guide, a ranked job list. Don't second-guess the wording;
-surface the deliverable cleanly. Two light touches are OK:
+surface the deliverable cleanly. Three light touches are OK:
 
 - **Strip machine-format tags** (e.g., `[adapted]`/`[new]` prefixes from
   tailor-resume bullets, `[confidence: 0.8]` from scrape-jobs). The
@@ -407,6 +407,15 @@ surface the deliverable cleanly. Two light touches are OK:
   your audit, not the candidate's reading. Surface rationales only when
   the candidate explicitly asks "why these bullets?" / "why this
   opening?".
+- **Drop `Sources:` / citation-list sections.** A resume bullet set has
+  no citation list. An outreach email has no citation list. An interview
+  prep guide has no citation list. A ranked job list has URLs *inline*
+  per item, not in a separate footer. If a deliverable subagent appends
+  a `Sources:` section anyway — whether because it had `WebFetch` and
+  tried to be thorough, or because it hallucinated — strip it before
+  surfacing. Sources belong with Pattern A (research) output, not with
+  deliverables. The candidate-facing reply contains the deliverable
+  content only.
 
 If the candidate asked "tailor my resume to this", they want the
 bullets. Don't summarize them into 2 sentences — surface them.

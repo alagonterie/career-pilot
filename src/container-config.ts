@@ -104,6 +104,8 @@ export function materializeContainerJson(agentGroupId: string): ContainerConfig 
 
   if (process.env.OLLAMA_TEST_MODE === '1' && group.folder === 'career-pilot') {
     applyOllamaTestOverrides(config);
+  } else if (process.env.CLAUDE_TEST_MODE === '1' && group.folder === 'career-pilot') {
+    applyClaudeTestOverrides(config);
   }
 
   const p = path.join(GROUPS_DIR, group.folder, 'container.json');
@@ -170,4 +172,45 @@ function applyOllamaTestOverrides(config: ContainerConfig): void {
     'api.portkey.ai',
   ];
   config.model = model;
+}
+
+/**
+ * Apply the Claude-routing overlay to a ContainerConfig in place.
+ *
+ * Used for "validate prompt quality against the production model tier"
+ * runs — what does the system look like when running against real
+ * Claude (Sonnet 4.6) instead of local Ollama? Triggered by setting
+ * `CLAUDE_TEST_MODE=1` in the host process env.
+ *
+ * Unlike the Ollama override, this does NOT touch `ANTHROPIC_BASE_URL`
+ * or `ANTHROPIC_API_KEY` — calls go through OneCLI's gateway, which
+ * injects the real Anthropic credential at request time. We just retarget
+ * Claude Code's model aliases:
+ * - `ANTHROPIC_DEFAULT_SONNET_MODEL` → `claude-sonnet-4-6`
+ * - `ANTHROPIC_DEFAULT_OPUS_MODEL` → `claude-sonnet-4-6` (default; route
+ *   Opus aliases to Sonnet for cost — every subagent declares
+ *   `model: opus` in frontmatter, but for these task shapes Sonnet is
+ *   plenty capable. Override via `CLAUDE_TEST_OPUS_MODEL=claude-opus-4-7`
+ *   if you need real Opus.)
+ * - `ANTHROPIC_DEFAULT_HAIKU_MODEL` → `claude-haiku-4-5` (WebFetch/
+ *   WebSearch use Haiku internally for content summarization)
+ *
+ * No `blockedHosts` entry — we WANT calls to reach Anthropic.
+ *
+ * Prerequisite: OneCLI gateway must be running with the Anthropic
+ * secret registered (via `/init-onecli`). If the gateway has no
+ * Anthropic creds, calls will fail with a credential error. The Ollama
+ * override doesn't have this prerequisite because Ollama doesn't auth.
+ */
+function applyClaudeTestOverrides(config: ContainerConfig): void {
+  const sonnetModel = process.env.CLAUDE_TEST_SONNET_MODEL || 'claude-sonnet-4-6';
+  const opusModel = process.env.CLAUDE_TEST_OPUS_MODEL || sonnetModel;
+  const haikuModel = process.env.CLAUDE_TEST_HAIKU_MODEL || 'claude-haiku-4-5';
+  config.env = {
+    ...(config.env ?? {}),
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: haikuModel,
+    ANTHROPIC_DEFAULT_OPUS_MODEL: opusModel,
+    ANTHROPIC_DEFAULT_SONNET_MODEL: sonnetModel,
+  };
+  config.model = sonnetModel;
 }
