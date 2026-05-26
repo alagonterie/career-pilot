@@ -7,10 +7,22 @@
  *   - optional per-skill fragments (skills that ship `instructions.md`)
  *   - optional per-MCP-server fragments (inline `instructions` field in
  *     `container.json`)
+ *   - optional host-rendered fragments from
+ *     `groups/<folder>/.claude-host-fragments/*.md` — career-pilot extension
+ *     (see .specs/NANOCLAW_INTERNALS.md §11 Δ3). These let the host inject
+ *     per-group authored or runtime-rendered content (a persona, a
+ *     candidate-profile-rendered identity card) without abusing
+ *     `CLAUDE.local.md` (which is agent-writable per-group memory and not
+ *     a safe home for host-managed content)
  *   - per-group agent memory (`CLAUDE.local.md`, auto-loaded by Claude Code)
  *
  * Runs on every spawn from `container-runner.buildMounts()`. Deterministic —
  * same inputs produce the same CLAUDE.md, and stale fragments are pruned.
+ *
+ * Host-fragment directory ownership: the composer READS `.claude-host-fragments/`
+ * but does NOT prune it. The directory is owned externally — by the host
+ * (pre-spawn render hooks) and by anything the operator commits to the
+ * group dir. The composer just imports what it finds.
  *
  * See `docs/claude-md-composition.md` for the full design.
  */
@@ -121,10 +133,24 @@ export function composeGroupClaudeMd(group: AgentGroup): void {
     }
   }
 
+  // Host-fragment discovery — career-pilot extension. See file header.
+  // Externally owned (we don't write or prune); we just enumerate.
+  const hostFragmentsDir = path.join(groupDir, '.claude-host-fragments');
+  const hostFragmentNames: string[] = [];
+  if (fs.existsSync(hostFragmentsDir)) {
+    for (const entry of fs.readdirSync(hostFragmentsDir)) {
+      if (entry.endsWith('.md')) hostFragmentNames.push(entry);
+    }
+    hostFragmentNames.sort();
+  }
+
   // Composed entry — imports only.
   const imports = ['@./.claude-shared.md'];
   for (const name of [...desired.keys()].sort()) {
     imports.push(`@./.claude-fragments/${name}`);
+  }
+  for (const name of hostFragmentNames) {
+    imports.push(`@./.claude-host-fragments/${name}`);
   }
   const body = [COMPOSED_HEADER, ...imports, ''].join('\n');
   writeAtomic(path.join(groupDir, 'CLAUDE.md'), body);

@@ -29,14 +29,26 @@ groups/*
 # NanoClaw upstream default group skeletons — tracked in upstream, so we track them too
 !groups/global/
 !groups/main/
-# Within our committed groups, gitignore generated/per-install artifacts:
-groups/*/persona.local.md
+# Within our committed groups, gitignore generated/per-install artifacts.
+# Note: groups/<name>/CLAUDE.md is composer-managed (regenerated every
+# container spawn by src/claude-md-compose.ts), as is .claude-fragments/.
+# CLAUDE.local.md is agent-writable per-group memory. None of these should
+# be committed — the composer owns one set; the agent owns the other.
+groups/*/CLAUDE.md
 groups/*/CLAUDE.local.md
 groups/*/.claude-shared.md
 groups/*/.claude-fragments/
 
+# Career-pilot host-fragments — see src/claude-md-compose.ts file header.
+# The `persona.md` fragment is hand-authored (committed). The `candidate.md`
+# fragment is host-rendered per-deployment from candidate_profile and
+# contains PII — never commit.
+groups/*/.claude-host-fragments/candidate.md
+
 # Composer-managed CLAUDE.md artifacts (regenerated every spawn) and
-# per-group memory (CLAUDE.local.md) must never be committed.
+# per-group memory (CLAUDE.local.md) must never be committed — these
+# **/-prefix variants catch group folders that don't match the groups/*/
+# pattern above (e.g. nested test fixtures).
 **/CLAUDE.local.md
 **/.claude-shared.md
 **/.claude-fragments/

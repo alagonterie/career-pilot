@@ -1,18 +1,24 @@
 # Career Pilot — owner agent verification plan
 
 > **Developer-facing.** Not loaded into the agent's runtime context. The
-> sibling `CLAUDE.md` is the persona spec (and the agent's system prompt at
-> runtime); this file is the verification target for that spec — how we
-> check that the agent's behavior matches what `CLAUDE.md` describes.
+> sibling `.claude-host-fragments/persona.md` is the persona spec
+> (composed into the agent's runtime system prompt via our composer
+> extension — see `src/claude-md-compose.ts` and NANOCLAW_INTERNALS.md
+> §4). This file is the verification target for that spec — how we check
+> that the agent's behavior matches what `persona.md` describes.
 >
-> Move this file in lockstep with the persona: when the persona changes
+> The group's `CLAUDE.md` file is composer-generated (regenerated every
+> container spawn) — do NOT treat it as authored content.
+>
+> Move this file in lockstep with the persona: when `persona.md` changes
 > meaningfully, this verification plan updates too.
 
 ## Definition of done
 
-The persona at `CLAUDE.md` is the behavioral contract for the owner agent.
-"Done" means the agent's actual behavior matches what's described there.
-The verification plan, in increasing rigor:
+The persona at `.claude-host-fragments/persona.md` is the behavioral
+contract for the owner agent. "Done" means the agent's actual behavior
+matches what's described there. The verification plan, in increasing
+rigor:
 
 ### 1. Voice red-team (manual, ~30 min)
 
@@ -26,7 +32,7 @@ spectrum:
 - Mid-process disagreement (agent spots a fit problem)
 - Irreversible action approval flow (`send_outreach_email`)
 - Quiet-hours edge case (low-priority event at 23:00)
-- Onboarding flow (empty `persona.local.md`)
+- Onboarding flow (empty / missing `.claude-host-fragments/candidate.md`)
 - Coaching moment (3rd rejection at the same interview stage)
 - Hard refusal (candidate asks for fabricated metrics)
 
@@ -115,8 +121,10 @@ persona's "Reflection prompting" section need work.
 Re-run the relevant subset of this plan whenever any of the following
 changes:
 
-- `CLAUDE.md` (the persona spec) — re-run §1, §2 at minimum
+- `.claude-host-fragments/persona.md` (the persona spec) — re-run §1, §2 at minimum
 - Voice rules section specifically — §1
+- Output format section — §1, §2 (wrapping compliance)
 - Autonomy gradient catalogs — §2
 - Proactivity rules — §3 (during the next shadow window)
 - Reflection prompting templates — §5
+- The composer extension in `src/claude-md-compose.ts` — re-run §1 to confirm host-fragments are being included in the composed CLAUDE.md as expected
