@@ -437,13 +437,30 @@ have a choice of strategies (cf. §11 for the decision):
   arguably meant to describe how to use *that server's tools*.
 
 **Strategy B is the clean answer** — small, principled extension that
-matches NanoClaw's own pattern. Strategy A is the fast-and-dirty fallback
-if we want to move now.
+matches NanoClaw's own pattern. **Implemented** in the second of the
+NanoClaw-deep-dive commit set:
+
+- `src/claude-md-compose.ts` now scans `groups/<folder>/.claude-host-fragments/`
+  for `*.md` files and adds them to the composed `CLAUDE.md` import list
+  alongside skill + MCP-tool fragments. The composer does NOT prune the
+  directory — it's externally owned (by host-side pre-spawn render hooks
+  and by anything committed in the group dir).
+- `src/container-runner.ts` mounts the directory RO into the container
+  at `/workspace/agent/.claude-host-fragments/`, so the in-container
+  agent cannot modify host-rendered content.
+- Per-deployment candidate-specific content (PII-bearing) goes in
+  `candidate.md`, gitignored. Authored persona goes in `persona.md`,
+  committed. Both get composed in via the same `@./` import mechanism.
+
+This is our **first deliberate deviation from upstream NanoClaw** — track
+for future `/update-nanoclaw` runs. The change is additive (a new
+directory the composer recognizes) so upstream pulls that touch
+`claude-md-compose.ts` should re-apply cleanly via 3-way merge.
 
 **The `persona.local.md` filename was naive.** It would never have been
 loaded automatically. The actual model is either CLAUDE.local.md (named
-exactly that, no choice) or a composer-imported fragment (any name we
-want).
+exactly that, no choice) or a composer-imported fragment via our
+extension (any name we want).
 
 **Subagent definitions need no change.** Our 5 stub files at
 `groups/career-pilot/.claude/agents/` are in the right place.
@@ -1078,7 +1095,7 @@ The audit. Each item:
 
 1. **Δ1 — Permission mode:** **Accept NanoClaw's `bypassPermissions`.** Spec deltas applied — `decision_architecture` memory + `AGENT_SDK_PATTERNS.md` §6 + `STRATEGY.md` §4 updated. Security perimeter = container mount geometry + `disallowedTools` bare-name removal + `PreToolUse` hook + approvals module + hard caps.
 2. **Δ2 — Agent SDK version:** **Align spec to `^0.2.128` (NanoClaw upstream).** Spec deltas applied — `decision_architecture` memory + `AGENT_SDK_PATTERNS.md` §1 + root `CLAUDE.md` locked-decisions table updated. Phase 5+ revisit.
-3. **Δ3 — Persona placement strategy:** **Strategy B — composer extension.** Implementation lands in the upcoming "Commit 2" (extend `src/claude-md-compose.ts` to read `groups/<folder>/.claude-host-fragments/*.md` and include them in the composed import list; move persona content to `groups/career-pilot/.claude-host-fragments/persona.md`; add the output-protocol section). First deliberate deviation from upstream NanoClaw — track for `/update-nanoclaw` runs.
+3. **Δ3 — Persona placement strategy:** **Strategy B — composer extension. IMPLEMENTED.** `src/claude-md-compose.ts` extended to discover `.claude-host-fragments/*.md` and include them in the composed import list. `src/container-runner.ts` mounts the dir RO. Persona content moved to `groups/career-pilot/.claude-host-fragments/persona.md` with the output-protocol section added. `.gitignore` updated for composer-managed `CLAUDE.md` + PII-bearing `candidate.md`. Old `groups/career-pilot/CLAUDE.md` removed (composer owns that path now). First deliberate deviation from upstream NanoClaw — flagged in commit message for future `/update-nanoclaw` runs.
 
 ---
 

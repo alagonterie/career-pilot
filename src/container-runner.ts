@@ -292,6 +292,15 @@ function buildMounts(
   if (fs.existsSync(fragmentsDir)) {
     mounts.push({ hostPath: fragmentsDir, containerPath: '/workspace/agent/.claude-fragments', readonly: true });
   }
+  // Host-fragments — career-pilot extension to the composer (see
+  // `claude-md-compose.ts` file header). The directory is owned by the
+  // host (pre-spawn render hooks write here); mount RO so the in-container
+  // agent can't modify host-rendered content like the candidate-profile
+  // identity card.
+  const hostFragmentsDir = path.join(groupDir, '.claude-host-fragments');
+  if (fs.existsSync(hostFragmentsDir)) {
+    mounts.push({ hostPath: hostFragmentsDir, containerPath: '/workspace/agent/.claude-host-fragments', readonly: true });
+  }
 
   // Global memory directory — always read-only.
   const globalDir = path.join(GROUPS_DIR, 'global');
