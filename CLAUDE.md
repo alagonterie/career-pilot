@@ -4,11 +4,11 @@ This file tells a Claude Code session opening this repo what it needs to know to
 
 ---
 
-## Where we are (as of 2026-05-25)
+## Where we are (as of 2026-05-26)
 
 **Branch:** `nanoclaw-rebuild` (off `master`), pushed to `origin/nanoclaw-rebuild`.
 
-**Status:** Phase 0 complete (NanoClaw v2 vendored + career-pilot scaffolding + apex domain scrubbed). Phase 1 in progress — owner agent persona is written at `groups/career-pilot/CLAUDE.md`. Next concrete work: `persona.local.md` host-side hook + first 6 MCP tools (analyze_jd, sanitize_text, update_application, get_application, list_applications, record_funnel_event).
+**Status:** Phase 0 complete. Phase 1 in progress but PAUSED at the persona placement step: the NanoClaw deep dive (see `.specs/NANOCLAW_INTERNALS.md`) found that `groups/<folder>/CLAUDE.md` is composer-managed (regenerated every spawn, mounted RO) — our authored persona at `groups/career-pilot/CLAUDE.md` would be destroyed on first container wake. Strategy B chosen: extend the composer to read `groups/<folder>/.claude-host-fragments/*.md` and move the persona there. Spec deltas land first (this commit set), then the composer extension + persona move, then resume Phase 1 (persona render hook + first 6 MCP tools).
 
 **Read `memory/status_current.md` first for the current detailed state.**
 
@@ -41,7 +41,8 @@ Treat changes to any of these the same way: update with intent, then align imple
 |---|---|---|
 | `.specs/PORTAL.md` | Frontend UX specification — every page, component, interaction, anonymization model | Always first |
 | `.specs/STRATEGY.md` | Backend, infra, delivery plan (10-week phased) | After PORTAL |
-| `.specs/AGENT_SDK_PATTERNS.md` | Claude Agent SDK canonical patterns cribsheet | Before any agent-runner code |
+| `.specs/NANOCLAW_INTERNALS.md` | How upstream NanoClaw actually works — composer, sessions, mounts, hook surface, output protocol | Before ANY work that touches NanoClaw mechanics |
+| `.specs/AGENT_SDK_PATTERNS.md` | Claude Agent SDK canonical patterns cribsheet (note: most patterns written against 0.3.150; we use ^0.2.128) | Before any agent-runner code |
 | `.specs/CLOUDFLARE_PATTERNS.md` | Cloudflare protection patterns cribsheet | Before any Worker/infra code |
 | `.specs/RECOVERY.md` | Operator manual for kill switches + recovery | Keep open during operations |
 | `.specs/V2_IDEAS.md` | Deferred features (do NOT scope-creep into these) | When tempted to add scope |
@@ -60,7 +61,7 @@ Treat changes to any of these the same way: update with intent, then align imple
 | Decision | Choice | Why locked |
 |---|---|---|
 | Foundation | Clone-and-customize fork of **NanoClaw v2** (`nanocoai/nanoclaw`) | Not submodule. Not npm-installed. We vendor and customize in place per NanoClaw's own docs. |
-| Agent runtime | **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`, **pin v0.3.150**) | In-process library — NOT Managed Agents (Anthropic-hosted REST product with similar name). See AGENT_SDK_PATTERNS.md §0 for disambiguation. |
+| Agent runtime | **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`, **upstream NanoClaw pin `^0.2.128`**) | In-process library — NOT Managed Agents (Anthropic-hosted REST product with similar name). See AGENT_SDK_PATTERNS.md §0 for disambiguation, §1 for version-pin rationale. Caret on a 0.x version resolves to `0.2.x` only — implicitly tight at the major level. |
 | Frontend | **TanStack Start** (RC) on Cloudflare Workers | Type-safe routing, no RSC tax, smaller bundle. NOT Next.js. See decision memory + PORTAL.md §3.5. |
 | Styling | Tailwind v4 + shadcn/ui (new-york) + motion/react | Locked in PORTAL.md §3.5 |
 | LLM gateway | **Portkey Model Catalog** (Integrations + AI Providers) | "Virtual keys" terminology is deprecated. Use Integrations + AI Providers. PORTKEY_BYPASS=true env enables fallback to direct Anthropic if Portkey is rate-limited or unavailable. |
@@ -70,7 +71,8 @@ Treat changes to any of these the same way: update with intent, then align imple
 | Telegram owner channel | v1 only. Discord deferred to V2_IDEAS.md item 3 | |
 | Public visitor surface | Web simulator only (no public bot) | V2_IDEAS.md item 1 |
 | Agent groups | Two: `career-pilot` (owner) + `career-pilot-sandbox` (public simulator) | |
-| Subagents | Five (all read-only): `research-company`, `tailor-resume`, `draft-outreach`, `prep-interview`, `scrape-jobs` | Sandbox group has the first three only; uses `permissionMode: "dontAsk"` + explicit `disallowedTools` bare names |
+| Subagents | Five (all read-only): `research-company`, `tailor-resume`, `draft-outreach`, `prep-interview`, `scrape-jobs` | Sandbox group has the first three only. Both groups run on NanoClaw's upstream `bypassPermissions` provider; sandbox isolation comes from `disallowedTools` bare-name removal + `maxTurns`/`maxBudgetUsd` caps + per-thread session isolation. See AGENT_SDK_PATTERNS.md §6 for the security-layer model. |
+| Permission model | Accept NanoClaw's upstream `bypassPermissions` Claude provider; gate irreversible actions via the host-side approvals module hooks, not in-SDK permission prompts | Decision per NANOCLAW_INTERNALS.md §11 Δ1. The container boundary + `disallowedTools` (bare names) + `PreToolUse` hooks + approvals primitives are the actual security perimeter. Forking the provider to use `default`+`canUseTool` was the alternative — rejected to avoid owning provider code that diverges from upstream. |
 
 If you find yourself wanting to change any of these, surface it explicitly to the user first.
 
@@ -82,10 +84,10 @@ If you find yourself wanting to change any of these, surface it explicitly to th
 - **Managed Agents** (Anthropic's hosted REST product) — wrong product for our use case. We use the Agent SDK library.
 - **Next.js 15 App Router** — considered, swapped to TanStack Start. Don't suggest Next.js patterns.
 - **Portkey Virtual Keys** — deprecated in early 2026. Use Model Catalog (Integrations + AI Providers).
-- **`bypassPermissions` mode in Claude Agent SDK** — never use. Use `default` + `canUseTool` callback (owner) or `dontAsk` + explicit `disallowedTools` (sandbox).
+- **Forking NanoClaw's Claude provider to change `permissionMode`** — don't. The upstream uses `bypassPermissions` by design (the security perimeter is the container + approvals + disallow list, not in-SDK gating). Forking puts us on the hook for divergence from every NanoClaw upgrade. See NANOCLAW_INTERNALS.md §11 Δ1.
 - **Throwing from Agent SDK tool handlers** — always `return { isError: true, content: [...] }`.
 - **Throwing from hooks** — same; catch internally.
-- **`allowedTools` to constrain `bypassPermissions`** — doesn't work. Use `disallowedTools` with bare names.
+- **`allowedTools` to constrain `bypassPermissions`** — doesn't work; `allowedTools` is ignored under bypass mode. Use `disallowedTools` with bare names instead (removes from context entirely — works regardless of permission mode). This is the load-bearing mechanism for our sandbox tool-palette restriction.
 - **Hardcoded values** — all tunables (intervals, limits, budgets) live in `.env` / `preferences` table / `system_modes` table / `config/defaults.json`. See STRATEGY.md §20.
 - **Personal identifiers in active `.specs/` files** — all scrubbed. Use placeholders: `Jane Doe`, `example.com`, `hire.example.com`, `api.hire.example.com`, "the candidate".
 
@@ -130,5 +132,7 @@ This project has a persistent memory at `C:\Users\alago\.claude\projects\C--Proj
 
 ## What's next (the actionable to-do list)
 
-1. **Phase 1, continued** — `persona.local.md` host-side hook (generates from `candidate_profile` at session start), then first 6 MCP tools (`analyze_jd`, `sanitize_text`, `update_application`, `get_application`, `list_applications`, `record_funnel_event`). Goal per STRATEGY.md §V Phase 1: "I can say 'add an application for X' and it writes to the DB and confirms."
-2. **Phase 2-10** — see STRATEGY.md §V milestone plan. See `memory/status_current.md` for current detailed state across phases.
+1. **Commit 1 (this commit set):** Apply spec deltas surfaced by the NanoClaw deep dive — see `.specs/NANOCLAW_INTERNALS.md` §11 for the full Δ list. Touches AGENT_SDK_PATTERNS.md, STRATEGY.md, root CLAUDE.md, decision_architecture memory, status_current memory, VERIFICATION.md. No code change.
+2. **Commit 2:** Strategy B persona-placement rework. Extend `src/claude-md-compose.ts` to discover `.claude-host-fragments/*.md` and include them in the composed import list. Move `groups/career-pilot/CLAUDE.md` content → `groups/career-pilot/.claude-host-fragments/persona.md`. Add the `<message to="name">` output-protocol section to the persona while it's open. This is our first deliberate deviation from upstream NanoClaw — track it for future `/update-nanoclaw` runs.
+3. **Phase 1, continued (after Commit 2):** Render-persona hook (host-side: reads `candidate_profile`, writes `.claude-host-fragments/persona.md` before spawn), then first 6 MCP tools (`analyze_jd`, `sanitize_text`, `update_application`, `get_application`, `list_applications`, `record_funnel_event`). Goal per STRATEGY.md §V Phase 1: "I can say 'add an application for X' and it writes to the DB and confirms."
+4. **Phase 2-10** — see STRATEGY.md §V milestone plan. See `memory/status_current.md` for current detailed state across phases.
