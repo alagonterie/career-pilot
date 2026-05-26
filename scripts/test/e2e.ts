@@ -10,16 +10,19 @@
  * gating Phase 1 → Phase 2.
  *
  * Usage:
- *   pnpm test:e2e [--flow=smoke|onboarding] [--keep-host] [--no-reset]
+ *   pnpm test:e2e [--flow=smoke|onboarding|add-application] [--keep-host] [--no-reset]
  *
  * Flags:
- *   --flow=smoke         Default. Single turn, asserts non-empty reply.
- *   --flow=onboarding    Multi-turn onboarding sequence (uses fresh DB,
- *                        no seeded profile).
- *   --keep-host          Leave `pnpm dev` running after the test for
- *                        manual probing. Default tears down.
- *   --no-reset           Skip the state wipe — useful for re-running
- *                        against an existing populated DB.
+ *   --flow=smoke            Default. Single turn, asserts non-empty reply.
+ *   --flow=onboarding       Fresh DB (no seeded profile), asserts the
+ *                           first reply mentions "name".
+ *   --flow=add-application  Seeded profile. Asks the agent to bookmark a
+ *                           role; asserts the applications table grew.
+ *                           Phase 1 DoD per STRATEGY.md §V.
+ *   --keep-host             Leave `pnpm dev` running after the test for
+ *                           manual probing. Default tears down.
+ *   --no-reset              Skip the state wipe — useful for re-running
+ *                           against an existing populated DB.
  *
  * Pre-requisites this script CHECKS for and bails on if missing:
  *   - Ollama daemon up + qwen3-coder:30b loaded (delegates to
@@ -44,6 +47,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+import Database from 'better-sqlite3';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -63,20 +68,26 @@ const runTsx = (script: string, args: string[] = []): [string, string[]] => [
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
 const stripAnsi = (s: string): string => s.replace(ANSI_RE, '');
 
+type Flow = 'smoke' | 'onboarding' | 'add-application';
+const FLOWS: ReadonlySet<Flow> = new Set(['smoke', 'onboarding', 'add-application']);
+const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set(['smoke', 'add-application']);
+
 interface Args {
-  flow: 'smoke' | 'onboarding';
+  flow: Flow;
   keepHost: boolean;
   noReset: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
-  let flow: Args['flow'] = 'smoke';
+  let flow: Flow = 'smoke';
   for (const a of argv) {
-    if (a === '--flow=smoke') flow = 'smoke';
-    else if (a === '--flow=onboarding') flow = 'onboarding';
-    else if (a.startsWith('--flow=')) {
-      console.error(`unknown flow: ${a.slice('--flow='.length)} (expected smoke|onboarding)`);
-      process.exit(2);
+    if (a.startsWith('--flow=')) {
+      const v = a.slice('--flow='.length) as Flow;
+      if (!FLOWS.has(v)) {
+        console.error(`unknown flow: ${v} (expected one of: ${[...FLOWS].join('|')})`);
+        process.exit(2);
+      }
+      flow = v;
     }
   }
   return {
@@ -230,7 +241,9 @@ async function teardownHost(h: HostHandle): Promise<void> {
     }
   }
 
-  // Best-effort: rip down any container we spawned. Match by name prefix.
+  // Best-effort: capture logs from any container we spawned, then rip it
+  // down. Logs help diagnose why a chat turn timed out — without this,
+  // `docker rm -f` discards the only record of what the agent was doing.
   try {
     const ids = execSync(
       'docker ps -a --filter "name=nanoclaw-v2-career-pilot" --format "{{.ID}}"',
@@ -241,6 +254,21 @@ async function teardownHost(h: HostHandle): Promise<void> {
       .split('\n')
       .filter(Boolean);
     for (const id of ids) {
+      try {
+        const logs = execSync(`docker logs --tail 80 ${id} 2>&1`, { stdio: 'pipe' }).toString();
+        if (logs.trim()) {
+          console.log(`\n  --- docker logs ${id} (last 80 lines) ---`);
+          console.log(
+            logs
+              .split('\n')
+              .map((l) => `  ${l}`)
+              .join('\n'),
+          );
+          console.log(`  --- end docker logs ${id} ---\n`);
+        }
+      } catch {
+        // logs may be unavailable; carry on
+      }
       try {
         execSync(`docker rm -f ${id}`, { stdio: 'ignore' });
         ok(`removed container ${id}`);
@@ -318,23 +346,89 @@ async function runOnboarding(): Promise<void> {
   ok('first onboarding turn prompts for name');
 }
 
+async function runAddApplication(): Promise<void> {
+  header('Flow: add-application');
+  // Phase 1 DoD per STRATEGY.md §V: "I can say 'add an application for X'
+  // and it writes to the DB and confirms."
+  //
+  // The prompt names a fictional company + role so any LLM that tool-calls
+  // sensibly should land an `update_application` UPSERT. The DB assertion
+  // is the load-bearing check; we don't pin the agent's exact wording.
+  const reply = await chatTurn(
+    'Add an application for Acme Corp — Senior Backend Engineer role. Just bookmark it for now.',
+  );
+  if (reply.length === 0) fail('reply was empty');
+
+  // Give WAL a beat to surface the host-side commit. better-sqlite3 in WAL
+  // mode does see committed-but-uncheckpointed rows on a read connection,
+  // but the system-action round-trip can lag the chat reply by a tick.
+  await sleep(500);
+
+  const row = assertApplicationRow(/acme/i);
+  ok(
+    `applications row written: company_name="${row.company_name}", role_title="${row.role_title}", status="${row.status}"`,
+  );
+}
+
+interface ApplicationRow {
+  id: string;
+  company_name: string;
+  role_title: string;
+  status: string;
+  obfuscated_label: string;
+}
+
+function assertApplicationRow(companyPattern: RegExp): ApplicationRow {
+  const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const rows = db
+      .prepare(
+        'SELECT id, company_name, role_title, status, obfuscated_label FROM applications',
+      )
+      .all() as ApplicationRow[];
+    if (rows.length === 0) {
+      fail('applications table is empty — agent did not call update_application');
+    }
+    const match = rows.find((r) => companyPattern.test(r.company_name));
+    if (!match) {
+      fail(
+        `no applications row matched ${companyPattern}. Found: ${rows
+          .map((r) => `${r.company_name}/${r.role_title}`)
+          .join(', ')}`,
+      );
+    }
+    return match;
+  } finally {
+    db.close();
+  }
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
 
   preflight();
 
   if (!args.noReset) {
-    // smoke flow uses a seeded profile so the persona is in normal mode;
-    // onboarding flow needs a blank profile so the persona enters
-    // onboarding mode on first turn.
-    await resetAndSetup(args.flow === 'smoke');
+    // FLOWS_NEEDING_SEED skips onboarding mode by pre-populating
+    // candidate_profile; everything else starts with a blank profile.
+    await resetAndSetup(FLOWS_NEEDING_SEED.has(args.flow));
   }
 
   const host = await startHost();
   let assertionsPassed = false;
   try {
+    // SCALING: Adding flows here is cheap up to ~5. Past that, the if/else
+    // chain becomes awkward, flows want shared multi-step helpers, and
+    // reading e2e.ts top-to-bottom stops working as a mental model. The
+    // refactor target is then:
+    //   scripts/test/flows/<name>.ts  — each flow exports an `async run()`
+    //   scripts/test/e2e.ts           — keeps preflight/host/teardown,
+    //                                   maps flow name → import().
+    // Not before. Premature abstraction has its own cost.
     if (args.flow === 'smoke') await runSmoke();
-    else await runOnboarding();
+    else if (args.flow === 'onboarding') await runOnboarding();
+    else await runAddApplication();
     assertionsPassed = true;
   } catch (err) {
     console.error(`  ✗ ${err instanceof Error ? err.message : String(err)}`);

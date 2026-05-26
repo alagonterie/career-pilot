@@ -130,10 +130,18 @@ export function materializeContainerJson(agentGroupId: string): ContainerConfig 
  *   stray config override can't accidentally bill real credits during
  *   tests.
  *
- * The model name (`qwen3-coder:30b` by default; override via
+ * The model name (`glm-4.7-flash` by default; override via
  * `OLLAMA_TEST_MODEL` env) gets passed via `config.model` →
  * ProviderOptions → SDK options. Ollama's `/v1/messages` endpoint
  * routes by model name to the locally-loaded weight.
+ *
+ * Model choice: `glm-4.7-flash` is the only open model + Ollama combo
+ * confirmed to round-trip Anthropic `tool_use` blocks correctly as of
+ * 2026-05. qwen3-coder hits a renderer/parser mismatch in Ollama (issues
+ * #12380, #15529) -- its tool calls come out as `<function=...>` XML
+ * that the Anthropic shim doesn't wrap. GLM-4.7-Flash with the
+ * `RENDERER glm-4.7 + PARSER glm-4.7` Modelfile directives works. See
+ * `config/glm-4.7-flash.modelfile` for the registration recipe.
  */
 function applyOllamaTestOverrides(config: ContainerConfig): void {
   config.env = {
@@ -148,5 +156,5 @@ function applyOllamaTestOverrides(config: ContainerConfig): void {
     'api.anthropic.com',
     'api.portkey.ai',
   ];
-  config.model = process.env.OLLAMA_TEST_MODEL || 'qwen3-coder:30b';
+  config.model = process.env.OLLAMA_TEST_MODEL || 'glm-4.7-flash';
 }
