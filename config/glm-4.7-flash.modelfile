@@ -1,0 +1,23 @@
+FROM hf.co/unsloth/GLM-4.7-Flash-GGUF:Q4_K_M
+
+# RENDERER + PARSER set to glm-4.7 are what make Ollama's Anthropic
+# `/v1/messages` shim correctly translate between the Claude Agent SDK's
+# tool_use blocks and the model's native tool-call format. Without these,
+# the model emits its native format and Ollama ships it through as plain
+# text, so `tool_use` blocks never reach the SDK. See:
+#   https://github.com/ollama/ollama/issues/15529
+#   https://huggingface.co/unsloth/GLM-4.7-Flash-GGUF/discussions/23
+RENDERER glm-4.7
+PARSER glm-4.7
+
+TEMPLATE """[gMASK]<sop><|system|>
+{{ .System }}<|user|>
+{{ .Prompt }}<|assistant|>
+{{ .Response }}"""
+
+PARAMETER stop <|user|>
+
+PARAMETER temperature 0.7
+PARAMETER top_p 1.0
+PARAMETER min_p 0.01
+PARAMETER repeat_penalty 1.0

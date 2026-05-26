@@ -11,12 +11,14 @@
  * Exits 0 on success, 1 with a clear remediation message on failure.
  *
  * Override the model name via the OLLAMA_TEST_MODEL env var (defaults to
- * `qwen3-coder:30b` — chosen per the research in the Phase 1.5 design
- * discussion: best tool-calling stability on a 24GB-VRAM card).
+ * `glm-4.7-flash` -- the only open model + Ollama combo confirmed to
+ * tool-call correctly through the Anthropic `/v1/messages` shim as of
+ * 2026-05; see config/glm-4.7-flash.modelfile and the note in
+ * src/container-config.ts applyOllamaTestOverrides).
  */
 
 const OLLAMA_URL = process.env.OLLAMA_URL ?? 'http://localhost:11434';
-const REQUIRED_MODEL = process.env.OLLAMA_TEST_MODEL ?? 'qwen3-coder:30b';
+const REQUIRED_MODEL = process.env.OLLAMA_TEST_MODEL ?? 'glm-4.7-flash';
 
 interface OllamaTag {
   name: string;
@@ -51,7 +53,12 @@ async function main(): Promise<void> {
   const body = (await res.json()) as OllamaTagsResponse;
   const present = (body.models ?? []).map((m) => m.name);
 
-  if (!present.includes(REQUIRED_MODEL)) {
+  // Ollama appends `:latest` to local tags by default; match either form.
+  // REQUIRED_MODEL="glm-4.7-flash" should accept "glm-4.7-flash:latest" too.
+  const matches = (name: string): boolean =>
+    name === REQUIRED_MODEL || name === `${REQUIRED_MODEL}:latest` || name.replace(/:latest$/, '') === REQUIRED_MODEL;
+
+  if (!present.some(matches)) {
     fail(
       `Ollama is reachable but model "${REQUIRED_MODEL}" is not pulled.\n` +
         `  Available: ${present.length === 0 ? '(none)' : present.join(', ')}\n` +
@@ -60,7 +67,7 @@ async function main(): Promise<void> {
     );
   }
 
-  const m = body.models.find((x) => x.name === REQUIRED_MODEL)!;
+  const m = body.models.find((x) => matches(x.name))!;
   const paramSize = m.details?.parameter_size ?? '?';
   const quant = m.details?.quantization_level ?? '?';
   const sizeGB = (m.size / 1_073_741_824).toFixed(1);
