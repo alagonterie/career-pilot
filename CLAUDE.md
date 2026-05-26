@@ -22,16 +22,18 @@ This project follows **spec-driven development** ([canonical reference](https://
 
 The "spec layer" is broader than `.specs/` alone. All of these are first-class spec artifacts:
 
-| Artifact | Specifies |
-|---|---|
-| `.specs/*.md` | Architecture, UX, delivery plan, patterns, recovery, deferred work |
-| `CLAUDE.md` (this file) | Repo orientation + workflow rules |
-| `groups/<name>/CLAUDE.md` | Agent persona — the behavioral contract for that agent |
-| `groups/<name>/.claude/agents/*.md` | Subagent prompts + tool palettes |
-| `src/db/migrations/*.ts` | Schema (the data model is a spec) |
-| `config/defaults.json` | Default tunable values across the four-tier config model |
+| Artifact | Specifies | Runtime? |
+|---|---|---|
+| `.specs/*.md` | Architecture, UX, delivery plan, patterns, recovery, deferred work | No |
+| `CLAUDE.md` (this file) | Repo orientation + workflow rules | No |
+| `groups/<name>/CLAUDE.md` | Agent persona — the behavioral contract for that agent | **Yes** |
+| `groups/<name>/.claude/agents/*.md` | Subagent prompts + tool palettes | **Yes** |
+| `src/db/migrations/*.ts` | Schema (the data model is a spec) | Yes (executed) |
+| `config/defaults.json` | Default tunable values across the four-tier config model | Yes (loaded) |
 
 Treat changes to any of these the same way: update with intent, then align implementation.
+
+**Runtime vs non-runtime spec artifacts is a meaningful distinction.** Runtime artifacts get loaded into the agent's context (or executed/loaded by code) — they cannot contain developer-facing meta-content. Non-runtime artifacts are read by developers (or future Claude sessions) for orientation. Inline DoD goes in non-runtime artifacts; for runtime artifacts (a persona, a subagent definition), the DoD goes in a sibling file like `VERIFICATION.md` so it's discoverable next to what it verifies without polluting the system prompt.
 
 ### Reading order for `.specs/`
 
@@ -48,7 +50,7 @@ Treat changes to any of these the same way: update with intent, then align imple
 
 - **If a question's answer isn't in the specs, ask.** If it conflicts with the specs, the specs win unless explicitly redirected.
 - **If a spec is incomplete for the work in front of you, stop and spec it first.** Don't fill gaps with code and document later. That's how drift starts.
-- **New spec sections that drive implementation include a "Definition of done" subsection.** Concrete, verifiable, what gets checked to confirm intent matches reality. Existing specs don't need retroactive churn — apply this habit going forward.
+- **New spec sections that drive implementation include a "Definition of done" subsection.** Concrete, verifiable, what gets checked to confirm intent matches reality. For runtime spec artifacts (personas, subagent definitions), DoD lives in a sibling `VERIFICATION.md` file instead of inline (see the runtime distinction above). Existing specs don't need retroactive churn — apply this habit going forward.
 - **Commit messages reference the spec section the work derives from** (e.g., "per STRATEGY.md §6"). When code can't be derived from spec, that's the signal — either the spec is wrong or we're going off-piste, and either way it needs to surface.
 
 ---
