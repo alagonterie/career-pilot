@@ -43,6 +43,20 @@ export interface ContainerConfig {
   maxMessagesPerPrompt?: number;
   model?: string;
   effort?: string;
+  /**
+   * Per-spawn env overrides — applied AFTER OneCLI's gateway env, so these
+   * win on conflict. Used by the Ollama test mode to redirect Anthropic SDK
+   * traffic to a local Ollama daemon. See add-ollama-provider skill steps
+   * 1a/1b and the OLLAMA_TEST_MODE branch in `materializeContainerJson`.
+   */
+  env?: Record<string, string>;
+  /**
+   * Hosts to resolve to 0.0.0.0 inside the container (defense-in-depth
+   * block on outbound to specific upstreams). Used by Ollama test mode to
+   * prevent any accidental fall-through to `api.anthropic.com` when the
+   * agent is supposed to be running against local Ollama.
+   */
+  blockedHosts?: string[];
 }
 
 /** Build a `ContainerConfig` from a DB row + agent group identity. */
@@ -70,6 +84,14 @@ export function configFromDb(row: ContainerConfigRow, group: AgentGroup): Contai
  * Materialize `container.json` from the DB. Called at spawn time so the
  * container always sees fresh config. Returns the `ContainerConfig` for
  * use by the caller (buildMounts, buildContainerArgs, etc.).
+ *
+ * **Ollama test-mode override:** when `OLLAMA_TEST_MODE=1` is set in the
+ * host process env AND the agent group's folder is `career-pilot`, the
+ * config is overlaid with Ollama routing (env vars, blockedHosts, model).
+ * This lets Layer 4 E2E tests exercise the full pipeline against a local
+ * Ollama daemon at zero LLM cost. Production runs (no env flag) are
+ * untouched. See `.specs/STRATEGY.md` testing section + the
+ * `add-ollama-provider` skill for the underlying recipe.
  */
 export function materializeContainerJson(agentGroupId: string): ContainerConfig {
   const group = getAgentGroup(agentGroupId);
@@ -80,10 +102,51 @@ export function materializeContainerJson(agentGroupId: string): ContainerConfig 
 
   const config = configFromDb(row, group);
 
+  if (process.env.OLLAMA_TEST_MODE === '1' && group.folder === 'career-pilot') {
+    applyOllamaTestOverrides(config);
+  }
+
   const p = path.join(GROUPS_DIR, group.folder, 'container.json');
   const dir = path.dirname(p);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(p, JSON.stringify(config, null, 2) + '\n');
 
   return config;
+}
+
+/**
+ * Apply the Ollama-routing overlay to a ContainerConfig in place.
+ *
+ * - `ANTHROPIC_BASE_URL` redirects the Anthropic SDK to the local Ollama
+ *   daemon (Ollama speaks the Anthropic v1/messages API natively).
+ * - `ANTHROPIC_API_KEY=ollama` is a placeholder satisfying the SDK's
+ *   key requirement; Ollama ignores it.
+ * - `NO_PROXY` / `no_proxy` bypass the OneCLI HTTPS proxy for
+ *   `host.docker.internal` so requests reach Ollama directly instead of
+ *   going through the credential gateway (OneCLI would otherwise
+ *   intercept and try to inject the wrong creds).
+ * - `blockedHosts: ['api.anthropic.com']` resolves the real Anthropic
+ *   endpoint to 0.0.0.0 inside the container — defense-in-depth, so a
+ *   stray config override can't accidentally bill real credits during
+ *   tests.
+ *
+ * The model name (`qwen3-coder:30b` by default; override via
+ * `OLLAMA_TEST_MODEL` env) gets passed via `config.model` →
+ * ProviderOptions → SDK options. Ollama's `/v1/messages` endpoint
+ * routes by model name to the locally-loaded weight.
+ */
+function applyOllamaTestOverrides(config: ContainerConfig): void {
+  config.env = {
+    ...(config.env ?? {}),
+    ANTHROPIC_BASE_URL: 'http://host.docker.internal:11434',
+    ANTHROPIC_API_KEY: 'ollama',
+    NO_PROXY: 'host.docker.internal',
+    no_proxy: 'host.docker.internal',
+  };
+  config.blockedHosts = [
+    ...(config.blockedHosts ?? []),
+    'api.anthropic.com',
+    'api.portkey.ai',
+  ];
+  config.model = process.env.OLLAMA_TEST_MODEL || 'qwen3-coder:30b';
 }
