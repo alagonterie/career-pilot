@@ -1375,6 +1375,95 @@ The **discovery test is the trigger** for moving down the hierarchy. We run the 
 6. Sandbox group has a byte-identical copy of `research-company.md` (`diff groups/career-pilot{,-sandbox}/.claude/agents/research-company.md` → empty).
 7. No new MCP tools, no new migrations, no `research_cache` table — discipline check on increment size.
 
+#### 24.2 Sub-milestone 2.2 — `tailor-resume` subagent + chained delegation
+
+**Why this sub-milestone next:** This is the first *chained* subagent call (orchestrator invokes `research-company` then `tailor-resume`), which is the Phase 2 narrative deliverable verbatim: *"I can paste a JD and ask 'tailor my resume' — agent invokes research-company + tailor-resume, returns tailored bullets."* It exercises a different failure surface from 2.1: not just "can the orchestrator delegate?" but "can the orchestrator chain delegations and weave their outputs?" — a load-bearing capability for every subsequent multi-subagent flow (2.3 draft-outreach also depends on research-company, 2.4 prep-interview spans research + JD reading, etc.).
+
+It is also the first subagent that consumes *candidate context*. `candidate_profile` is auto-loaded into the agent's CLAUDE.md via the render-persona hook (Phase 1, commit `7857fe2`) — meaning `master_resume`, `target_roles`, and `skills` are already visible in the subagent's system prompt without any new MCP tools or `Read` calls.
+
+**What lands:**
+
+1. **Flesh out `groups/career-pilot/.claude/agents/tailor-resume.md`** (currently a Phase 0 placeholder). The body covers:
+   - **Mission** — produce tailored resume bullets that bridge the candidate's master resume to the target JD, honestly. Read-only — does not modify `candidate_profile.master_resume`.
+   - **Inputs** — three sources, ordered by trust:
+     1. **Master resume + skills + target_roles** — auto-loaded via `.claude-host-fragments/candidate.md`. *Source of truth for facts.*
+     2. **JD text** — provided in the orchestrator's invocation prompt. *Source of truth for what to weight.*
+     3. **research-company digest** — provided in the orchestrator's invocation prompt (the orchestrator pastes the prior subagent's full digest). *Optional flavor; null-safe — if missing, proceed with master + JD only.*
+   - **Hard constraints** — preserved from placeholder, strengthened:
+     - NEVER fabricate metrics, dates, employers, or scope.
+     - NEVER invent technologies the candidate hasn't listed.
+     - Prefer concrete numbers/terms already in the master resume; do not round up or expand scope.
+     - When a JD term has no honest analogue in the candidate's history, omit it rather than invent.
+   - **Output format (markdown; structure-flexible)** — the digest must produce these information categories. Exact section/bullet shape is not prescribed — `tailor-resume` picks formatting that fits the role.
+
+     | Category | Why it matters |
+     |---|---|
+     | **3-5 tailored bullets** | The deliverable. Each is a single-line revision of an existing resume bullet OR a new bullet honestly inferable from listed experience. Mark `[adapted]` or `[new]` per bullet. |
+     | **One-sentence rationale per bullet** | Explains the choice — why this phrasing, which JD term it maps to, which honest source it rests on. Lets the orchestrator (and the candidate) sanity-check the work. |
+     | **Honesty note** (optional, encouraged) | If a JD requirement has no honest match, call it out: `_(JD mentions X; no signal in candidate profile — recommend not stretching.)_` This is more valuable than silent omission. |
+
+   - **What to avoid:**
+     - Pasting the JD back at the candidate.
+     - Re-running research the orchestrator already passed in (use the digest as context, do not re-search).
+     - Buzzword inflation (`"leveraged synergies"`, `"spearheaded paradigm shifts"`) — bullets should read like the candidate wrote them.
+     - Producing more than ~5 bullets — discipline. If the candidate wants more, they'll ask.
+   - **Tool palette** — `tools: []`. No SDK tools needed; everything is in the prompt context. (The Phase 0 placeholder lists `[Read]` defensively for "load the master resume from disk" — obsolete now that `candidate.md` auto-loads.)
+   - **No tool budget needed** — pure reasoning task. `maxTurns: 8` from Phase 0 stays.
+
+2. **Update the orchestrator persona's Subagents section** at `groups/career-pilot/.claude-host-fragments/persona.md`:
+   - Add `tailor-resume` to the trigger-phrase table (`"tailor my resume"`, `"adapt my bullets to this JD"`, `"how should I pitch this experience for X role"`, etc.).
+   - Add a load-bearing chain rule: **"Before invoking `tailor-resume`, invoke `research-company` first if and only if the company isn't already covered in this session. Pass the digest verbatim into `tailor-resume`'s prompt under a `## Company research` header."** This is the chained-delegation contract.
+   - Add to the voice rules: when relaying tailor-resume's output, the orchestrator presents the 3-5 bullets to the candidate cleanly (drop `[adapted]/[new]` tags, drop rationales unless the candidate asks why) — but stays faithful to the wording. Tailored bullets are a deliverable, not a digest; the "don't recite back" rule from 2.1 does NOT apply here.
+
+3. **Mirror to sandbox group** — copy `groups/career-pilot/.claude/agents/tailor-resume.md` → `groups/career-pilot-sandbox/.claude/agents/tailor-resume.md` (byte-identical, manual copy).
+
+4. **Shared subagent preamble — decision: defer the mechanism.** Task #71 (consolidate the `## You are a subagent — output format note` section across subagent files) is the natural temptation here. **Decision: duplicate inline for now.** Two-of-five subagents is too early to invest in a sync script or composer extension — both options add machinery the team has to remember. Revisit when (a) the third subagent body is being written, OR (b) the preamble grows beyond ~25 lines, whichever first. Per-file duplication remains the simplest correct answer until one of those triggers fires. The duplicated preamble currently in `research-company.md` gets copied verbatim into `tailor-resume.md` (with `<message to="..."` framing kept identical).
+
+5. **New e2e flow `--flow=tailor-resume`** in `scripts/test/e2e.ts`:
+   - Preconditions:
+     - `--seed-profile` populates `candidate_profile` (Test Candidate; Go/Rust/PostgreSQL; Staff Backend Engineer + Platform Engineer; $220k floor).
+     - An `applications` row for Anthropic in `BOOKMARKED` state (mirror 2.1's seeding).
+   - User turn (single-shot, JD inlined): `"Anthropic just posted a Staff Backend Engineer role focused on building distributed Rust systems for inference workloads — they want strong PostgreSQL and observability. Can you tailor my resume bullets to this?"`
+   - Assertions:
+     - **Two Task tool_uses emitted in this order:** `subagent_type: "research-company"` then `subagent_type: "tailor-resume"`. Both `tool_result.is_error: false`. (Reuse `taskCallSucceeded()` and chain-aware ordering from 2.1's helpers.)
+     - **The `tailor-resume` invocation's user prompt contains a `## Company research` header** AND a substring of the research-company subagent's output (sanity check that the orchestrator actually passed the digest down, not synthesized its own).
+     - **`tailor-resume`'s JSONL output contains ≥3 bullet-shaped lines** (`-` or `*` or numbered `1.` at start of line) within the body of its final assistant message.
+     - **≥1 bullet contains a candidate-profile term** (one of: `Go`, `Rust`, `PostgreSQL`) — proves the subagent actually read the candidate context.
+     - **≥1 bullet contains a JD-specific term** (one of: `distributed`, `inference`, `observability`) — proves the subagent actually read the JD.
+     - **Orchestrator's reply to the candidate contains ≥3 bullet-shaped lines** (the deliverable surfaces in the user-facing reply) — divergence from 2.1's "don't recite" rule.
+   - Wires into the existing `FLOW_HANDLERS` registry. No new DB-write assertions — `tailor-resume` is stateless until 2.3+ start writing `funnel_events` for outreach.
+   - 600s timeout (chained subagent flows run longer than single-subagent flows).
+
+**Out of scope (explicit, to keep the increment small):**
+- `analyze_jd` MCP tool — separate sub-milestone (probably 2.2.5). Phase 2.2 reads raw JD text from the orchestrator's prompt; structured JD analysis is a future optimization.
+- `tailor-resume.fixtures/jd-example.md` — STRATEGY.md §10 references this for offline subagent testing; lands when we wire `pnpm test:subagent` (also Phase 2.2.5 territory).
+- Resume diff UI / portal integration — Phase 5+.
+- Sync script for shared subagent preamble — deferred per item 4 above.
+- `research_cache` layer (Sub-milestone 2.1.5) — `tailor-resume` re-triggers fresh `research-company` invocations during 2.2 dev cycles; tolerable on local Ollama.
+
+**Risk + fallback hierarchy:**
+
+Three distinct risk surfaces, each with a prescribed fallback:
+
+| Risk | Probability | Fallback |
+|---|---|---|
+| **A. Orchestrator doesn't chain** — calls `tailor-resume` directly without `research-company` first | Medium (the persona's chain rule is new; LLMs sometimes skip optional-feeling steps). | Tighten the chain rule in persona to "MUST — not optional." Add a concrete worked example showing the two Task calls in sequence. If still failing under GLM, document and proceed (chain is nice-to-have for 2.2; load-bearing for 2.3 draft-outreach which has higher stakes). |
+| **B. Bullets reference master_resume literally** ("Built things") rather than tailored versions | Medium-high under GLM (model size limits adaptation creativity). | Strengthen the prompt's "show how you bridged" rationale rule; require the rationale to name the JD term it mapped to. If GLM still produces literal copies, this is a model-capability ceiling — escalate to fallback hierarchy from 2.1 (route orchestrator + tailor-resume through `LLM_PROVIDER=claude_test`). |
+| **C. Bullet count varies wildly** (1 bullet, or 20) | Low (Phase 2.1 found GLM respects loose format constraints well). | Bound at the prompt level: `"Produce 3 to 5 bullets. If you cannot find honest material for 3, produce fewer and explain why."` Same approach as `maxTurns` being advisory. |
+
+The 2.1 escalation ladder (prompt-tune → `LLM_PROVIDER=claude_test` → never go inline) applies recursively if any of A/B/C blocks DoD.
+
+**Definition of done:**
+
+1. With `--seed-profile` + a `BOOKMARKED` Anthropic application row, the candidate's *"tailor my resume to this JD"* turn produces two chained `Task` tool_uses (`research-company` then `tailor-resume`) in the session JSONL, both with `tool_result.is_error: false`.
+2. The orchestrator's `tailor-resume` invocation prompt contains the research-company digest under a `## Company research` header (verified by substring match against research-company's output).
+3. `tailor-resume`'s subagent JSONL output contains ≥3 bullet-shaped lines in the final assistant message body.
+4. At least one bullet contains a candidate-profile term (`Go`, `Rust`, OR `PostgreSQL`); at least one bullet contains a JD-specific term (`distributed`, `inference`, OR `observability`). Both must be true.
+5. The orchestrator's user-facing reply contains ≥3 bullet-shaped lines (the deliverable surfaces; the "don't recite" rule from 2.1 does NOT apply here — these are bullets, not research).
+6. `pnpm test:e2e --flow=tailor-resume` passes on Windows with the GLM-4.7-Flash stack — OR, if the 2.1 fallback hierarchy kicked in, with the documented `LLM_PROVIDER` value, choice recorded in commit message + `feedback_windows_dev_env.md` memory.
+7. Sandbox group has a byte-identical copy of `tailor-resume.md` (`diff groups/career-pilot{,-sandbox}/.claude/agents/tailor-resume.md` → empty).
+8. No new MCP tools, no new migrations, no shared-preamble sync script — discipline check on increment size. (Task #71 stays open; revisited at Phase 2.3 or preamble-growth trigger.)
+
 ---
 
 ## Part VI: Open questions
