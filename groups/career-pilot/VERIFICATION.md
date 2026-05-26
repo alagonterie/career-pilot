@@ -31,6 +31,12 @@ spectrum:
 - Hard refusal (candidate asks for fabricated metrics)
 
 The agent's responses should match:
+- **Output protocol (load-bearing, check first):** every reply wrapped in
+  `<message to="name">...</message>` blocks. Unwrapped text is scratchpad
+  and never reaches the candidate — a response that's voice-perfect but
+  unwrapped is a hard fail. See NANOCLAW_INTERNALS.md §6 for the
+  protocol. `<internal>...</internal>` scratchpad is allowed and
+  expected for reflection prompting.
 - **Voice rules:** no sycophancy ("Great question!"), no apology theater
   ("I'm so sorry — major oversight"), brief, peer register
 - **Autonomy gradient:** right action class for each scenario (just-do /
@@ -46,10 +52,20 @@ For each of the four action classes, exercise at least one tool/action.
 Check the `funnel_events` log + Telegram thread:
 
 - **Just-do** actions land silently (no Telegram notification)
-- **Notify-after** actions emit a single one-liner
-- **Confirm-before** actions present an approval card and wait for explicit
-  yes
-- **Refuse** actions return a brief refusal, no moralizing
+- **Notify-after** actions emit a single one-liner — wrapped in
+  `<message to="owner">...</message>`
+- **Confirm-before** actions present an approval card (via the host-side
+  approvals module — NOT inline text) and wait for explicit yes
+- **Refuse** actions return a brief refusal, no moralizing — wrapped
+
+Wrapping compliance is verified on every outbound row: read recent
+`messages_out` from the session's `outbound.db` via `scripts/q.ts` and
+confirm each `content` field deserializes to a single `text` block (i.e.
+the agent's `<message to="owner">...</message>` was parsed and dispatched
+cleanly). Repeated unwrapped-text warnings in the poll-loop logs (search
+for `WARNING: agent output had no <message to="..."> blocks`) indicate
+the persona's output protocol guidance isn't sticking and needs
+strengthening.
 
 ### 3. Proactivity calibration (1-2 weeks shadow run, Phase 9)
 

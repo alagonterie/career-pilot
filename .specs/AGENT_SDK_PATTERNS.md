@@ -1,6 +1,8 @@
 ﻿# Claude Agent SDK — Canonical Patterns for Career Pilot
 
-This is a cribsheet, not a tutorial. It captures the patterns we use, the gotchas we've already discovered, and the version-pinning discipline. Sourced from the official [Agent SDK docs](https://code.claude.com/docs/en/agent-sdk/overview) (May 2026 version 0.3.150).
+This is a cribsheet, not a tutorial. It captures the patterns we use, the gotchas we've already discovered, and the version-pinning discipline. Originally sourced from the official [Agent SDK docs](https://code.claude.com/docs/en/agent-sdk/overview) at SDK version 0.3.150.
+
+> **Version caveat (2026-05-26):** NanoClaw's vendored `container/agent-runner/package.json` pins `@anthropic-ai/claude-agent-sdk: ^0.2.128` — a major version behind what most of this doc was written against. Patterns that hinge on 0.3-only APIs (`startup()`, `forkSession`, `maxBudgetUsd`, etc.) need verification against the 0.2.x surface before relying on them. See [NANOCLAW_INTERNALS.md](NANOCLAW_INTERNALS.md) §11 Δ2 for the rationale; bump scheduled for Phase 5+ when there's a concrete reason.
 
 For STRATEGY.md context: this doc is referenced by §5 (subagents), §6 (in-process tools), §11 (system modes via hooks), §16 (local dev), §17 (observability).
 
@@ -26,17 +28,19 @@ Docs we cite: `code.claude.com/docs/en/agent-sdk/*`. We do **not** read or follo
 ## 1. Pin the version
 
 ```json
-// package.json (container/agent-runner/)
+// container/agent-runner/package.json
 {
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.3.150"
+    "@anthropic-ai/claude-agent-sdk": "^0.2.128"
   }
 }
 ```
 
-Exact pin. No `^`. The SDK is on a Claude Code CLI version parity track and has had breaking changes in the last 6 months (v0.3.142 removed the V2 Session API; `TodoWrite` renamed to `TaskCreate/Update/Get/List`; `options.env` changed semantics).
+This is the upstream NanoClaw pin (`^0.2.128`). The caret on a 0.x version is implicitly tight — npm resolves it to `0.2.x` only, never auto-floating to 0.3.x. So we ARE pinned at the major level; the caret only allows patch + minor updates within 0.2.
 
-Upgrade discipline: check the [CHANGELOG](https://github.com/anthropics/claude-agent-sdk-typescript/blob/main/CHANGELOG.md) before bumping. Test in dev. Bump rarely.
+The SDK is on a Claude Code CLI version parity track and has had breaking changes in the last 6 months (v0.3.142 removed the V2 Session API; `TodoWrite` renamed to `TaskCreate/Update/Get/List`; `options.env` changed semantics). The 0.3.x branch differs meaningfully from 0.2.x in those areas — when reading external docs, verify which version they're written against.
+
+Upgrade discipline: do not bump independent of NanoClaw upstream. If we bump, do it via a coordinated upstream sync (the `/update-nanoclaw` skill flow). Check the [CHANGELOG](https://github.com/anthropics/claude-agent-sdk-typescript/blob/main/CHANGELOG.md) before any bump. Test in dev. Bump rarely.
 
 ---
 
@@ -72,7 +76,8 @@ async function processUserMessage(userId: string, prompt: string, sandbox: boole
          "mcp__career-pilot__record_funnel_event"]
       : undefined,
 
-    permissionMode: sandbox ? "dontAsk" : "default",   // see §6
+    // permissionMode: NanoClaw's vendored provider hard-codes "bypassPermissions";
+    // see §6 for the security model that flows from that choice.
     maxTurns: sandbox ? 30 : undefined,
     maxBudgetUsd: sandbox ? 0.10 : undefined,           // sandbox per-run cap
     includePartialMessages: true,                       // for SSE token streaming
@@ -175,7 +180,7 @@ groups/career-pilot-sandbox/.claude/agents/
 
 **Auto-loaded when** `settingSources: ["project"]` is set in `query()` options.
 
-**Subagent permission inheritance gotcha:** When the parent's `permissionMode` is `bypassPermissions` / `acceptEdits` / `auto`, subagents **inherit it** and cannot override. We avoid `bypassPermissions` in both agent groups for this reason.
+**Subagent permission inheritance gotcha:** When the parent's `permissionMode` is `bypassPermissions` / `acceptEdits` / `auto`, subagents **inherit it** and cannot override. Both our agent groups run with the parent's `bypassPermissions` (NanoClaw upstream default), so subagents inherit that too. The actual constraint on what a subagent can do comes from its definition's `tools:` list (a soft constraint — the subagent prompt declares the palette) + our parent-level `disallowedTools` (which removes tools from the entire SDK context, subagents included). Don't expect a subagent to be more locked-down than its parent at the SDK level.
 
 **Subagent cost tracking:** Messages from inside a subagent's context include a `parent_tool_use_id` field. Use this to attribute cost per subagent invocation.
 
@@ -287,20 +292,47 @@ hooks.SessionStart = [{ hooks: [sessionInit] }];
 
 ---
 
-## 6. Permission modes — which agent group uses which
+## 6. Permission modes — the NanoClaw upstream model
 
-| Agent group | `permissionMode` | Rationale |
+NanoClaw's vendored Claude provider (`container/agent-runner/src/providers/claude.ts`) hard-codes:
+
+```ts
+permissionMode: 'bypassPermissions',
+allowDangerouslySkipPermissions: true,
+```
+
+We **accept this** rather than fork the provider. Decision documented in [NANOCLAW_INTERNALS.md](NANOCLAW_INTERNALS.md) §11 Δ1. The security perimeter is moved out of in-SDK permission gating and into the surrounding layers:
+
+| Layer | What it enforces |
+|---|---|
+| Container mount geometry | Agent has RW only to its session folder + group dir + `/home/node/.claude`; central `data/v2.db` is NOT mounted. The agent literally cannot reach private host state from filesystem alone. |
+| `disallowedTools` (bare names) | Removes tools from the agent's context entirely — the agent doesn't know they exist. Works regardless of `permissionMode`. Our primary palette-shaping mechanism. |
+| `PreToolUse` hook | Defense-in-depth: blocks any disallowed tool that slipped through (e.g. an unknown future SDK builtin). Also records `tool_declared_timeout_ms` for the host sweep. |
+| Approvals module (host-side) | For irreversible owner-facing actions (`send_outreach_email`, schema-altering self-mod, etc.), the MCP tool enqueues an approval card via the approvals primitive and blocks until the owner answers. Same pattern as NanoClaw's `self-mod` tools. |
+| Hard caps | `maxTurns`, `maxBudgetUsd`, OneCLI scope partitioning between owner and sandbox. |
+
+### Per-group differentiation
+
+Both `career-pilot` and `career-pilot-sandbox` go through the same upstream provider, so both run with `bypassPermissions`. Group-level differentiation comes from:
+
+| Knob | Owner | Sandbox |
 |---|---|---|
-| `career-pilot` (owner) | `"default"` + `canUseTool` callback for irreversible actions | Falls through to runtime gating, lets us approve specific tool calls |
-| `career-pilot-sandbox` | `"dontAsk"` | Combined with explicit `allowedTools` allowlist + `disallowedTools` denylist, sandbox is locked down hard |
+| `disallowedTools` | None (full palette) | `["Write", "Edit", "Bash", "mcp__career-pilot__update_application", "mcp__career-pilot__record_funnel_event", "mcp__career-pilot__save_outreach_draft", "mcp__career-pilot__send_outreach_email", "mcp__career-pilot__query_gmail", "mcp__career-pilot__query_calendar"]` |
+| `maxTurns` | unlimited | 30 |
+| `maxBudgetUsd` | tracked via Portkey | 0.10 per run (hard cap) |
+| OneCLI scope | Full vault (Gmail, Calendar, Cloudflare, Telegram) | Sandbox sub-vault (sandbox-only Portkey key with separate budget) |
+| Subagents | All five | `research-company`, `tailor-resume`, `draft-outreach` only |
+| Session model | `agent-shared` (one brain across channels) | `per-thread` (each visitor isolated) |
 
-**Gotcha to avoid:** `allowedTools` does NOT constrain `bypassPermissions`. If we ever set `permissionMode: "bypassPermissions"`, the `allowedTools` list is ignored. We never use `bypassPermissions` in production — only `default` (owner) or `dontAsk` (sandbox).
+**The bare-name `disallowedTools` removal is the load-bearing mechanism for the sandbox.** It cannot be bypassed by `bypassPermissions` because the tools are simply not in the agent's tool listing at all.
 
-**Sandbox toolset construction:**
-- `allowedTools`: pre-approved (skips `canUseTool`)
-- `disallowedTools`: bare names like `"Write"`, `"mcp__career-pilot__update_application"` — these are REMOVED FROM CONTEXT entirely (the agent doesn't even know they exist)
+### What `bypassPermissions` actually changes
 
-This is the correct way to truly restrict a sandbox.
+Tool calls skip the SDK's prompt-for-permission step and go straight to the handler. The handler still runs, the hook still fires, the disallow list still applies. The thing we lose is the per-call interactive "Allow this Bash command?" gate — which we wouldn't have a UX surface for anyway in this headless model.
+
+### Anti-pattern
+
+Don't try to constrain `bypassPermissions` with `allowedTools` thinking it'll deny unlisted tools — `allowedTools` is bypassed too. Use `disallowedTools` with bare names.
 
 ---
 
@@ -522,7 +554,7 @@ mcpServers: {
 
 1. **Throwing from tool handlers.** Always `return { isError: true, content: [{ type: "text", text: "..." }] }`. Throwing kills the agent loop.
 2. **Throwing from hooks.** Same rule — catch internally, log, return empty output.
-3. **`bypassPermissions` mode.** We never use it. Even for the owner agent — we use `default` + `canUseTool` callbacks for runtime gating.
+3. **Forking the Claude provider to override `bypassPermissions`.** Avoid. NanoClaw upstream uses `bypassPermissions` deliberately; we accept it and enforce restrictions via `disallowedTools` + approvals module + mount geometry. See §6.
 4. **Relying on `total_cost_usd` for billing.** Always reconcile against Portkey/Anthropic billing APIs.
 5. **`options.env` overlay assumption.** Spread `process.env` explicitly: `env: { ...process.env, MY_VAR: "..." }`. Otherwise the entire env is replaced.
 6. **Container `cwd` mismatch.** Set `process.chdir("/workspace/agent")` so session JSONLs land on the persistent mount.
@@ -536,7 +568,7 @@ mcpServers: {
 ## 13. Quick reference card
 
 ```
-Install:               npm install @anthropic-ai/claude-agent-sdk@0.3.150
+Install:               npm install @anthropic-ai/claude-agent-sdk@^0.2.128  (NanoClaw upstream)
 Entry point:           import { query, tool, createSdkMcpServer, startup } from "..."
 Pre-warm:              await startup()  (once per process)
 New session:           query({ prompt, options: { ... } })   // no resume
@@ -550,7 +582,7 @@ Subagents (inline):    options.agents = { name: { description, prompt, tools, mo
 Custom tools:          tool(name, desc, zodSchema, async (args) => ({ content, isError? })) → createSdkMcpServer({...tools: [...]})
 1-hour cache:          env.ENABLE_PROMPT_CACHING_1H = "1"
 Cost:                  message.total_cost_usd (estimate), message.modelUsage (per-model)
-Permission mode:       default | acceptEdits | plan | dontAsk | bypassPermissions(never)
+Permission mode:       bypassPermissions (NanoClaw upstream default; see §6 for security model)
 Disallow tool:         disallowedTools: ["Write"]  (bare name removes from context)
 Tool naming:           mcp__<server>__<tool>  (e.g., mcp__career-pilot__update_application)
 ```

@@ -50,8 +50,10 @@ career-pilot/                         (this repo, public)
 │
 ├── groups/
 │   ├── career-pilot/                 ← NEW — owner agent group
-│   │   ├── CLAUDE.md                 (committed; persona + rules, no PII)
-│   │   ├── persona.local.md          (gitignored; populated from candidate_profile)
+│   │   ├── CLAUDE.md                 (composer-generated every spawn, RO-mounted; do NOT hand-edit)
+│   │   ├── CLAUDE.local.md           (per-group agent memory, auto-loaded by Claude Code; agent may write)
+│   │   ├── .claude-host-fragments/
+│   │   │   └── persona.md            (gitignored; host-rendered from candidate_profile before each spawn; composer pulls into the composed CLAUDE.md via our extension — see NANOCLAW_INTERNALS.md §4)
 │   │   ├── .claude/agents/           (filesystem subagent definitions)
 │   │   │   ├── research-company.md
 │   │   │   ├── tailor-resume.md
@@ -292,23 +294,26 @@ Two agent groups, with shared skill code but distinct trust boundaries.
 
 #### `groups/career-pilot/` — owner agent group
 
-**CLAUDE.md (committed, generic):**
+**Persona file layout** (see [NANOCLAW_INTERNALS.md §4](NANOCLAW_INTERNALS.md) for why this is more complicated than it should be):
 
-The persona/role description for the candidate's primary assistant. Contains:
+- `groups/career-pilot/CLAUDE.md` is **composer-generated on every spawn** by NanoClaw's `composeGroupClaudeMd()`. Hand-edits are destroyed. Contains only `@./` imports.
+- `groups/career-pilot/.claude-host-fragments/persona.md` (gitignored) is where we put the authored persona. The composer (extended in Commit 2) reads `.claude-host-fragments/*.md` and includes them in the composed import list. Host writes this file from the `candidate_profile` table before each container spawn.
+- `groups/career-pilot/CLAUDE.local.md` is NanoClaw's standard per-group memory file — auto-loaded by Claude Code, writable by the agent. We use it for agent-self-written notes; we do NOT put persona content here (agent auto-memory would clobber sections of it).
+
+The persona content covers:
 - The agent's overall mission: "Manage the candidate's job search end-to-end"
 - The autonomy gradient (§6.3 of PORTAL.md) codified as concrete dos/don'ts
 - The voice: technical, warm, brief, never sycophantic
 - The reflection prompting style (for rejection-as-fuel)
 - Quiet hours default behavior
-- Where to find candidate persona content (the gitignored `persona.local.md`)
-
-`persona.local.md` is *generated at runtime* from the `candidate_profile` table by a host-side hook that runs on session creation. Gitignored. Recreated whenever the profile changes.
+- The mandatory `<message to="name">...</message>` output protocol (see [NANOCLAW_INTERNALS.md §6](NANOCLAW_INTERNALS.md))
+- Reference to candidate-specific content rendered from `candidate_profile` (gitignored, per-deployment)
 
 **Container config (`container_configs` table row):**
 - All subagents available
 - All in-process MCP tools available, including DB-write and `send_outreach_email`
-- `permissionMode: "default"` + a `canUseTool` callback (see [AGENT_SDK_PATTERNS.md §6](AGENT_SDK_PATTERNS.md)) — falls through to runtime gating for irreversible actions
-- A `PreToolUse` hook on `mcp__career-pilot__send_outreach_email` enforces `LIVE_MODE` + approval card (see [AGENT_SDK_PATTERNS.md §5](AGENT_SDK_PATTERNS.md))
+- `permissionMode`: NanoClaw upstream default (`bypassPermissions`); irreversible actions gated by the approvals module via per-tool hooks rather than SDK-level permission prompts (see [AGENT_SDK_PATTERNS.md §6](AGENT_SDK_PATTERNS.md) for the security-layer model and [NANOCLAW_INTERNALS.md §11 Δ1](NANOCLAW_INTERNALS.md) for the decision rationale)
+- A `PreToolUse` hook on `mcp__career-pilot__send_outreach_email` enforces `LIVE_MODE` + enqueues an approvals card (see [AGENT_SDK_PATTERNS.md §5](AGENT_SDK_PATTERNS.md))
 - OneCLI scope: full (access to Google OAuth, Telegram, Portkey)
 - Model: `@anthropic-prod/claude-opus-4-7` (Portkey Model Catalog AI Provider)
 - Session JSONL: written to `/workspace/.claude/` (persistent across container restarts via mount)
@@ -329,15 +334,15 @@ A shorter persona for the simulator. Explains:
 
 **Container config:**
 - Subagents: `research-company`, `tailor-resume`, `draft-outreach` only (no `prep-interview`, no `scrape-jobs`)
-- `permissionMode: "dontAsk"` — unlisted tools are denied outright. Combined with the lists below, sandbox is locked down hard.
-- `allowedTools`: `["Read", "WebSearch", "WebFetch", "Agent", "mcp__career-pilot__analyze_jd", "mcp__career-pilot__sanitize_text"]`
+- `permissionMode`: NanoClaw upstream default (`bypassPermissions`) — same provider as the owner. Sandbox isolation comes from `disallowedTools` + maxTurns/budget + container mount geometry, not from per-call permission prompts.
 - `disallowedTools` (bare names → tools removed from context entirely, so the agent doesn't even know they exist): `["Write", "Edit", "Bash", "mcp__career-pilot__update_application", "mcp__career-pilot__record_funnel_event", "mcp__career-pilot__save_outreach_draft", "mcp__career-pilot__send_outreach_email", "mcp__career-pilot__query_gmail", "mcp__career-pilot__query_calendar"]`
+- Effective tool palette (everything not in the disallow list above): `Read`, `WebSearch`, `WebFetch`, `Task`, `mcp__career-pilot__analyze_jd`, `mcp__career-pilot__sanitize_text` — plus whatever NanoClaw built-ins are in the default tool allowlist (the upstream `TOOL_ALLOWLIST` in `providers/claude.ts`)
 - OneCLI scope: separate sub-vault `career-pilot-sandbox` containing only a sandbox-specific Portkey API key with a separate spend cap
 - Model: `@anthropic-sandbox/claude-opus-4-7` (Portkey AI Provider with separate budget)
 - Memory: per-session JSONL only (no cross-session memory)
 - `maxTurns: 30` and `maxBudgetUsd: 0.10` (hard caps to prevent runaway)
 
-**Important Agent SDK gotcha (see [AGENT_SDK_PATTERNS.md §6](AGENT_SDK_PATTERNS.md)):** `allowedTools` does NOT constrain `bypassPermissions` mode. We never use `bypassPermissions` in either agent group. The sandbox uses `dontAsk` (auto-denies unlisted tools); the owner uses `default` + a runtime `canUseTool` callback for irreversible actions.
+**Permission-mode note (see [AGENT_SDK_PATTERNS.md §6](AGENT_SDK_PATTERNS.md) for the full security-layer model):** NanoClaw's vendored Claude provider hard-codes `bypassPermissions`. Both agent groups inherit that. Sandbox restriction relies on `disallowedTools` with bare names (which removes the tools from the agent's context entirely — works regardless of permission mode) + maxTurns + maxBudgetUsd. Owner restriction for irreversible actions relies on per-tool `PreToolUse` hooks that enqueue approvals cards. We don't attempt to use `allowedTools` to constrain `bypassPermissions` — that combination doesn't work.
 
 **Wiring:**
 - `portal` channel → `career-pilot-sandbox`, `session_mode='per-thread'` — each visitor gets a fresh isolated session
@@ -350,7 +355,7 @@ A `scripts/sync-shared-skills.ts` script runs on host startup and after any comm
 
 ### 5. Subagent designs
 
-Five subagents, all read-only. Defined as filesystem agents in `.claude/agents/<name>.md`. The Claude Agent SDK loads them automatically when `settingSources: ["project"]` is set in `query()` options. SDK pinned to **v0.3.150**.
+Five subagents, all read-only. Defined as filesystem agents in `.claude/agents/<name>.md`. The Claude Agent SDK loads them automatically when `settingSources` includes `"project"` and `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set (NanoClaw enables both via `group-init.ts`). SDK pin: `^0.2.128` (NanoClaw upstream) — see [AGENT_SDK_PATTERNS.md §1](AGENT_SDK_PATTERNS.md) for the version caveat and [NANOCLAW_INTERNALS.md §11 Δ2](NANOCLAW_INTERNALS.md) for rationale.
 
 For Agent SDK canonical patterns (hook usage, session persistence, custom tool authoring, cost tracking via `parent_tool_use_id`), see [AGENT_SDK_PATTERNS.md](AGENT_SDK_PATTERNS.md).
 
@@ -388,7 +393,7 @@ Output cached via Portkey semantic cache + a local `research_cache` table (TBD m
 description: Given a master resume and a target role + company research,
   produce 5 tailored resume bullet points and a brief rationale for each.
   Read-only — does not modify the master resume.
-tools: [Read]   # only reads the persona.local.md file inside the workspace
+tools: [Read]   # reads the master resume + persona content composed into the system prompt
 model: opus
 maxTurns: 8
 ```
@@ -643,12 +648,14 @@ Container env on session start contains only OneCLI connection vars + the Portke
 ```bash
 # In .env on the VM
 PORTKEY_BYPASS=true
-ANTHROPIC_API_KEY=sk-ant-...    # raw Anthropic key, injected via OneCLI
+ANTHROPIC_API_KEY=sk-ant-...    # raw Anthropic key, vaulted in OneCLI
 ```
+
+The credential layering is **OneCLI → (Portkey gateway OR direct) → Anthropic**. `PORTKEY_BYPASS=true` toggles only the middle layer — OneCLI is unconditional (NanoClaw's `container-runner.ts` throws and refuses to spawn the container if the OneCLI gateway isn't applied; see [NANOCLAW_INTERNALS.md §9](NANOCLAW_INTERNALS.md)).
 
 When `PORTKEY_BYPASS=true`:
 - Containers spawn with `ANTHROPIC_BASE_URL` set to the default Anthropic endpoint
-- OneCLI injects the raw `ANTHROPIC_API_KEY` per-request
+- OneCLI injects the raw `ANTHROPIC_API_KEY` per-request (same flow as Portkey-mode, different upstream)
 - Portkey-derived telemetry on `/live` shows `—` instead of cache rate / spend
 - Cost tracking falls back to the SDK's `total_cost_usd` estimate (less authoritative)
 
@@ -939,7 +946,7 @@ The viral worst case is bounded by:
 | Compromised Portkey API key | OneCLI vault holds it; rotation via `onecli secrets update`; container restart picks it up |
 | Compromised Anthropic key | Lives only in Portkey vault, never in our infra; rotate in Anthropic console + Portkey integration |
 | Public sandbox abused for cost | Cloudflare Bot Fight Mode → Turnstile → Workers RL (60s burst) → DO per-IP daily cap (10/day) → DO global $5/day cap → output cap. See [CLOUDFLARE_PATTERNS.md §9](CLOUDFLARE_PATTERNS.md). |
-| Public sandbox used to extract the candidate's private data | Sandbox agent group has NO access to private DB or Gmail/Calendar; tools enforced via `disallowedTools` (bare names — removed from context) AND `permissionMode: dontAsk` (defense in depth) |
+| Public sandbox used to extract the candidate's private data | Sandbox agent group has NO access to private DB or Gmail/Calendar — enforced via `disallowedTools` bare-name removal (the tools are stripped from the agent's context entirely so it doesn't even know they exist), reinforced by a per-tool `PreToolUse` hook that blocks calls to any disallowed name, plus the container's mount geometry which does not expose `data/v2.db` to the container at all |
 | PII leak via sanitization bug | Three-pass sanitizer; Pass 3 LLM review; failed sanitization drops the event entirely; manual spot-checks via the `ANONYMIZATION DEMO` panel on `/live` + the `/admin` raw-vs-sanitized inspector |
 | Contact form spam / abuse | Turnstile invisible captcha with `idempotency_key`; 5 submits/IP/hour via Workers RL |
 | SSH access to VM | Cloudflare Access (or IAP); no password auth; key-only |
@@ -1140,7 +1147,7 @@ SETUP.md                               # superseded by nanoclaw.sh + scripts/set
 ```
 README.md                              # rewrite — generic-by-design, points to .specs/
 CLAUDE.md (root)                       # rewrite — orient Claude Code to new structure
-.gitignore                             # add: data/, sessions/, persona.local.md,
+.gitignore                             # add: data/, sessions/, .claude-host-fragments/,
                                        #      .env*, !.env.example, *.dev.db,
                                        #      logs/, .onecli-vault/
 .github/workflows/deploy-frontend.yml  # rewrite from scratch (TanStack Start + wrangler)
