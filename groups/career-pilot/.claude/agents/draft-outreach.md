@@ -1,4 +1,5 @@
 ---
+name: draft-outreach
 description: Given a target role + company research + recipient hints, produce a cold outreach email draft. Tone-match to "technical, warm, brief" by default — override-able per run.
 tools: [WebSearch, WebFetch]
 model: opus

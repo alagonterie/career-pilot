@@ -1,4 +1,5 @@
 ---
+name: scrape-jobs
 description: Given the candidate's target_roles + location_pref + comp_floor, scan public job boards (Greenhouse, Lever, Ashby, LinkedIn open URLs, Wellfound) for matching listings posted in the last N days. Returns a ranked candidate list with rationale.
 tools: [WebSearch, WebFetch]
 model: opus
