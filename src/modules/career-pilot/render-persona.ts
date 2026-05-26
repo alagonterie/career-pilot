@@ -45,13 +45,22 @@ export interface CandidateProfile {
 }
 
 const ONBOARDING_SENTINEL = [
-  '# Onboarding mode',
+  '# Onboarding mode (overrides other persona guidance this session)',
   '',
-  'No candidate profile yet — walk the candidate through filling it in.',
+  "No candidate profile yet. Before anything else, onboard the candidate. The persona's",
+  '"First contact: jump in" rule does NOT apply here — it\'s for returning users with',
+  'a populated profile.',
   '',
-  'Start by asking for their full name. Then proceed through the onboarding flow',
-  "described in your persona's \"The candidate\" section: full_name → target_roles →",
-  'comp_floor → master_resume → bio → why_this_exists. One field per turn.',
+  '**This turn, you do exactly one thing:** ask for their full name. One short sentence.',
+  'No greeting menu, no capability list, no offering help.',
+  '',
+  'After they answer, call `update_profile_field` with `field="full_name"`,',
+  '`value=<their answer>`. Then move on to the next field next turn.',
+  '',
+  'Onboarding order (one field per turn): full_name → target_roles → comp_floor →',
+  'master_resume (paste) → bio → why_this_exists',
+  '',
+  'Example first turn: "Hey — let\'s set you up. What\'s your full name?"',
   '',
 ].join('\n');
 
