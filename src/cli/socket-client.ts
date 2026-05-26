@@ -12,7 +12,13 @@ import { DATA_DIR } from '../config.js';
 import type { RequestFrame, ResponseFrame } from './frame.js';
 import type { Transport } from './transport.js';
 
-export const DEFAULT_SOCKET_PATH = path.join(DATA_DIR, 'ncl.sock');
+// Windows lacks reliable AF_UNIX support for sockets bound under DATA_DIR
+// (Node returns EACCES on listen even with full write perms). Fall back to
+// a Windows named pipe; client and server must agree on the pipe name.
+export const DEFAULT_SOCKET_PATH =
+  process.platform === 'win32'
+    ? '\\\\.\\pipe\\nanoclaw-ncl'
+    : path.join(DATA_DIR, 'ncl.sock');
 
 export class SocketTransport implements Transport {
   constructor(private readonly socketPath: string = DEFAULT_SOCKET_PATH) {}

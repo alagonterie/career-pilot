@@ -45,6 +45,12 @@ import { registerChannelAdapter } from './channel-registry.js';
 const PLATFORM_ID = 'local';
 
 function socketPath(): string {
+  // Windows lacks reliable AF_UNIX support for sockets under DATA_DIR (Node
+  // returns EACCES on listen). Fall back to a Windows named pipe; scripts/
+  // chat.ts (the client) must use the same pipe name.
+  if (process.platform === 'win32') {
+    return '\\\\.\\pipe\\nanoclaw-cli';
+  }
   return path.join(DATA_DIR, 'cli.sock');
 }
 
@@ -62,12 +68,15 @@ function createAdapter(): ChannelAdapter {
 
       // Stale socket cleanup: a previous run that crashed may have left the
       // file behind, and net.createServer refuses to bind to an existing path.
-      try {
-        fs.unlinkSync(sock);
-      } catch (err) {
-        const e = err as NodeJS.ErrnoException;
-        if (e.code !== 'ENOENT') {
-          log.warn('Failed to unlink stale CLI socket (will try to bind anyway)', { sock, err });
+      // Named pipes on Windows aren't files, so unlink/chmod don't apply.
+      if (process.platform !== 'win32') {
+        try {
+          fs.unlinkSync(sock);
+        } catch (err) {
+          const e = err as NodeJS.ErrnoException;
+          if (e.code !== 'ENOENT') {
+            log.warn('Failed to unlink stale CLI socket (will try to bind anyway)', { sock, err });
+          }
         }
       }
 
@@ -78,10 +87,12 @@ function createAdapter(): ChannelAdapter {
           // Tighten perms so only the owner can connect. Unix socket files
           // obey filesystem perms — 0700 on the socket means other local
           // users can't send into this agent.
-          try {
-            fs.chmodSync(sock, 0o600);
-          } catch (err) {
-            log.warn('Failed to chmod CLI socket (continuing)', { sock, err });
+          if (process.platform !== 'win32') {
+            try {
+              fs.chmodSync(sock, 0o600);
+            } catch (err) {
+              log.warn('Failed to chmod CLI socket (continuing)', { sock, err });
+            }
           }
           log.info('CLI channel listening', { sock });
           resolve();
@@ -105,10 +116,13 @@ function createAdapter(): ChannelAdapter {
         server = null;
       }
       // Remove the socket file so a relaunch doesn't trip over it.
-      try {
-        fs.unlinkSync(socketPath());
-      } catch {
-        // swallow
+      // Windows named pipes have no filesystem entry — nothing to clean up.
+      if (process.platform !== 'win32') {
+        try {
+          fs.unlinkSync(socketPath());
+        } catch {
+          // swallow
+        }
       }
     },
 
