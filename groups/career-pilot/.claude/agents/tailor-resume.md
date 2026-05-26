@@ -1,4 +1,5 @@
 ---
+name: tailor-resume
 description: Given a master resume and a target role + company research, produce 5 tailored resume bullet points and a brief rationale for each. Read-only — does not modify the master resume.
 tools: [Read]
 model: opus

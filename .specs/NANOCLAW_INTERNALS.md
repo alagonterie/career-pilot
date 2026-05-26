@@ -391,11 +391,16 @@ composer doesn't know about candidate-profile-style host fragments.
 `groups/<folder>/.claude/agents/*.md` is the standard Claude Code subagent
 location. Mounted to `/workspace/agent/.claude/agents/` and discovered by
 Claude Code automatically because `settingSources: ['project', 'user',
-'local']` and `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` are set.
+'local']` is set AND each file's YAML frontmatter includes a `name:` field
+(the load-bearing requirement — without it the file is silently skipped
+during scan; see [AGENT_SDK_PATTERNS.md §3](AGENT_SDK_PATTERNS.md) for the
+canonical-docs-derived breakdown). Earlier drafts of this section claimed
+`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` was also required; that was wrong
+for CLI 2.1.128 — verified empirically.
 
 So our existing five subagent stub files at
 `groups/career-pilot/.claude/agents/{research-company,tailor-resume,…}.md`
-work as-is — they're loaded by the SDK side, not the composer.
+need `name:` in their frontmatter to be discoverable — added 2026-05-26.
 
 ### Group folder validation
 
@@ -817,10 +822,11 @@ The second option is more spec-purist but loses NanoClaw's pattern of
 
 Standard Claude Code `.claude/agents/<name>.md`. Loaded from
 `/workspace/agent/.claude/agents/` (i.e., `groups/<folder>/.claude/agents/`)
-because `settingSources: ['project', 'user', 'local']` is set + Teams
-enabled via `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`.
+because `settingSources: ['project', 'user', 'local']` is set AND each
+file's frontmatter includes a `name:` field (load-bearing per
+[AGENT_SDK_PATTERNS.md §3](AGENT_SDK_PATTERNS.md)).
 
-Our 5 subagent stubs from Phase 0 are in the right place. They'll be
+Our 5 subagent stubs from Phase 0 now have `name:` fields and are
 discovered automatically.
 
 Restrictions: subagents inherit the parent's tool allowlist. There's no

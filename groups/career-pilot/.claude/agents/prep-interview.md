@@ -1,4 +1,5 @@
 ---
+name: prep-interview
 description: Given a target company + role + interview type + scheduled date, produce an interview prep guide. Read-only research.
 tools: [WebSearch, WebFetch, Read]
 model: opus

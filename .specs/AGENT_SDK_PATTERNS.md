@@ -153,14 +153,37 @@ Skeleton for each (see STRATEGY.md §5 for the actual content per agent):
 
 ```markdown
 ---
-description: <one-sentence trigger description; Claude reads this to decide when to invoke>
-tools: [WebSearch, WebFetch]    # subset; empty means "inherit all from parent"
-model: opus                     # alias; "opus" | "sonnet" | "haiku" | full model ID
-maxTurns: 12                    # hard cap; prevents runaway
+name: research-company          # REQUIRED — lowercase + hyphens; identity comes from here, NOT filename
+description: <one-sentence trigger description; Claude reads this to decide when to delegate>
+tools: [WebSearch, WebFetch]    # subset (allowlist); omitted → inherit all from parent
+model: opus                     # alias ("opus" | "sonnet" | "haiku") | full model ID | "inherit"
+maxTurns: 12                    # advisory; see findings below
 ---
 
 <system prompt body — the agent's persona, rules, output format>
 ```
+
+**Canonical reference:** [code.claude.com/docs/en/sub-agents](https://code.claude.com/docs/en/sub-agents). Read this when in doubt.
+
+> **The `name:` field is REQUIRED.** Per canonical docs: *"identity comes only from the `name` frontmatter field"*. Files without `name:` are silently discarded during the agent registry scan. This is the #1 footgun — we lost hours to it 2026-05-26 because our Phase 0 placeholder agent files omitted it, the spec doc didn't mention it as required, and the SDK fails-silent rather than warning. The Task call then returns *"Agent type 'X' not found"*, which the orchestrator typically falls back from via inline tools (so the user sees a successful-looking turn). Always include `name:`, always assert on tool_result success (not just emission) in tests.
+
+> **`Task` → `Agent` rename (CLI 2.1.63+):** the subagent-dispatch tool's canonical name is now `Agent`, with `Task` still working as an alias. We see both names in tool_use blocks in our session JSONLs — they're the same primitive. Use `Agent` in new prompts; either is fine.
+
+> **Empirical findings (2026-05-26) — other frontmatter fields are mostly advisory:**
+>
+> | Field | Required? | Enforced? | Evidence |
+> |---|---|---|---|
+> | `name` | ✓ Yes | ✓ Yes (load-bearing) | Without it, subagent isn't registered |
+> | `description` | ✓ Yes | ✓ Yes | Orchestrator reads to decide when to delegate |
+> | `model` | No | ✓ Likely | Honored in test runs |
+> | `tools` | No | ✗ No | Subagent calls tools outside its declared palette |
+> | `maxTurns` | No | ✗ No | Subagent ran 26 assistant turns w/ `maxTurns: 12` |
+>
+> Bound subagent budgets at the **prompt level** — explicit "stop after N WebFetches" language in the body. For hard enforcement, switch to the programmatic `agents: {...}` option (loses git-versioned hot-reload).
+
+> **Inheritance from parent CLAUDE.md.** Per canonical docs, *"subagents receive only this system prompt (plus basic environment details), not the full Claude Code system prompt"*. Empirically, our subagents DO inherit our project CLAUDE.md fragments — likely because the project CLAUDE.md is in the subagent's CWD (`/workspace/agent/`) and gets auto-loaded as a separate mechanism from the system prompt. Net effect: a filesystem subagent's effective context is its own .md body + the parent project CLAUDE.md. Each subagent prompt should include a defensive *"you are a subagent"* override that disambiguates instructions written for the orchestrator (e.g., "don't try to call `Agent` to delegate further — it's not available inside subagents per the SDK").
+
+> **`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is NOT required** in CLI 2.1.128, despite earlier spec claims. We verified by removing it from container env — filesystem subagents continue to load fine. Likely an obsolete flag from a previous "Agent Teams" preview that became the regular subagent feature.
 
 **Where they live:**
 

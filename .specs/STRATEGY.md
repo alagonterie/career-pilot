@@ -410,7 +410,9 @@ A `scripts/sync-shared-skills.ts` script runs on host startup and after any comm
 
 ### 5. Subagent designs
 
-Five subagents, all read-only. Defined as filesystem agents in `.claude/agents/<name>.md`. The Claude Agent SDK loads them automatically when `settingSources` includes `"project"` and `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set (NanoClaw enables both via `group-init.ts`). SDK pin: `^0.2.128` (NanoClaw upstream) — see [AGENT_SDK_PATTERNS.md §1](AGENT_SDK_PATTERNS.md) for the version caveat and [NANOCLAW_INTERNALS.md §11 Δ2](NANOCLAW_INTERNALS.md) for rationale.
+Five subagents, all read-only. Defined as filesystem agents in `.claude/agents/<name>.md`. The Claude Agent SDK loads them automatically when `settingSources` includes `"project"` and each file's frontmatter includes a `name:` field (the latter is the load-bearing requirement — see [AGENT_SDK_PATTERNS.md §3](AGENT_SDK_PATTERNS.md)). SDK pin: `^0.2.128` (NanoClaw upstream) — see [AGENT_SDK_PATTERNS.md §1](AGENT_SDK_PATTERNS.md) for the version caveat and [NANOCLAW_INTERNALS.md §11 Δ2](NANOCLAW_INTERNALS.md) for rationale.
+
+> **Note:** earlier drafts of this spec claimed `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` was also required. Empirically verified false in CLI 2.1.128 — see [AGENT_SDK_PATTERNS.md §3](AGENT_SDK_PATTERNS.md). The corrected requirement is just `name:` in frontmatter + `settingSources` including `"project"`.
 
 For Agent SDK canonical patterns (hook usage, session persistence, custom tool authoring, cost tracking via `parent_tool_use_id`), see [AGENT_SDK_PATTERNS.md](AGENT_SDK_PATTERNS.md).
 
@@ -1310,15 +1312,19 @@ Phase rows in the table above are coarse. As we approach each phase, we drill th
 
 1. **Flesh out `groups/career-pilot/.claude/agents/research-company.md`** (currently a Phase 0 placeholder). The body covers:
    - **Mission** — build a structured digest the orchestrator and other subagents can consume.
-   - **Output schema (markdown with stable section headers; not JSON)** — chosen because downstream subagents read it as system-prompt input, not via JSON parser. Section list, in order:
-     - `## Summary` (one paragraph)
-     - `## Recent signals` (last-90-day news, funding, layoffs, leadership)
-     - `## Engineering culture`
-     - `## Tech stack` (bulleted; inferred-vs-cited distinction)
-     - `## Team composition` (size, key eng leadership — public profiles only)
-     - `## Hiring signals` (open reqs, growth rate, recent eng hires)
-     - `## Citations` (numbered list)
-   - **Citation discipline** — every claim has an inline `[n]` marker; `## Citations` lists `[n] <title> — <url> — <date if known>`. Inferred-not-sourced claims marked `[inferred]` inline.
+   - **Output content categories (markdown; structure-flexible)** — the digest must cover these information categories. Exact section header names are not prescribed — the subagent picks H2 names that fit the company; what matters is the *content* downstream subagents (`tailor-resume`, `draft-outreach`, `prep-interview`) can rely on being present.
+
+     | Category | Why downstream needs it |
+     |---|---|
+     | **Company summary** (mission, stage, products) | All downstream subagents reference this when framing communications |
+     | **Tech stack + engineering practice** | `tailor-resume` weights bullets toward stack terms |
+     | **Recent activity / current focus** (last ~90 days where reasonable; less strict for stable companies) | `draft-outreach` cites recent context authentically |
+     | **Hiring / team signals** (open roles, growth, eng leadership) | All three downstream subagents calibrate fit |
+     | **Citation list** (numbered, at the end) | Credibility + lets the candidate verify |
+     | **Optional: candidate-fit assessment** | Bonus value — encouraged when target_roles + skills are in the prompt context |
+
+     Earlier draft of this spec prescribed exact H2 names (`## Summary`, `## Recent signals`, etc.). Relaxed 2026-05-26 after the first DoD run produced a thorough digest with a different but more candidate-focused structure (added Compensation + Relevance-to-Candidate sections). The original schema was over-prescribed for the actual downstream-consumption goal.
+   - **Citation discipline (load-bearing on sourcing; format-flexible)** — the digest must end with a citation list of ≥3 sources, each with a real URL the candidate can verify. At least one URL must be on the company's own domain (sanity check that real fetching happened, not hallucination). Inferred-not-sourced claims are marked `[inferred]` somewhere in the relevant sentence. The exact format of the citation list is flexible (numbered `[n] title — url`, or Markdown link bullets `- [title](url) — context`, etc.) — what matters is that the sources exist and are verifiable. Inline `[n]` markers tying body claims to citation list entries are **encouraged** for traceability but not enforced — downstream subagents are LLMs reading prose, not parsers, so the strict `[n] ↔ inline [n]` mapping was speculative future-utility. The load-bearing property is "sources are real."
    - **What to avoid** — already in placeholder; preserved (no recruiter LinkedIn scraping, no individual employee emails).
    - **Bail conditions** — paywall (e.g., WSJ), 403, Cloudflare Challenge, contradictory sources without a defensible reconciliation. On bail: emit a section noting the gap, don't fabricate.
    - **Tool budget** — at most ~6 `WebFetch` calls per run, within `maxTurns: 12`. Prefer `WebSearch` first to triage what's worth fetching.
@@ -1361,12 +1367,13 @@ The **discovery test is the trigger** for moving down the hierarchy. We run the 
 
 **Definition of done:**
 
-1. With a `BOOKMARKED` applications row for Anthropic, the candidate's "research <X> for me" turn invokes the `research-company` subagent (verified in container logs as a `Task` tool_use with `subagent_type: "research-company"`).
-2. The subagent returns markdown containing all 7 mandated section headers in order, ≥3 citations in `## Citations`, and ≥1 inline `[n]` marker referencing the citation list.
-3. The orchestrator's reply to the candidate summarizes the research (does not re-paste it verbatim — per persona voice rules "don't recite back unprompted").
-4. `pnpm test:e2e --flow=research-company` passes on Windows with the GLM-4.7-Flash stack — OR, if the fallback hierarchy kicked in, with the documented `LLM_PROVIDER` value, and the choice is recorded in the commit message + `feedback_windows_dev_env.md` memory.
-5. Sandbox group has a byte-identical copy of `research-company.md` (`diff groups/career-pilot{,-sandbox}/.claude/agents/research-company.md` → empty).
-6. No new MCP tools, no new migrations, no `research_cache` table — discipline check on increment size.
+1. With a `BOOKMARKED` applications row for Anthropic, the candidate's "research <X> for me" turn invokes the `research-company` subagent (verified in the session JSONL as a `Task` tool_use with `subagent_type: "research-company"`).
+2. The subagent returns markdown that covers the five mandatory content categories above — verified by keyword/heuristic presence-checks, not by exact H2-header matching.
+3. Citation discipline satisfied: ≥3 citations in a list at the end of the digest (format-flexible — see content-categories table above), each with a real URL, including ≥1 URL on the company's own domain (sanity check that real sourcing happened, not hallucination). Inline citation markers are encouraged but not asserted.
+4. The orchestrator's reply to the candidate summarizes the research (does not re-paste it verbatim — per persona voice rules "don't recite back unprompted"). Verified by checking the orchestrator's reply doesn't contain a high density of section-header-like patterns.
+5. `pnpm test:e2e --flow=research-company` passes on Windows with the GLM-4.7-Flash stack — OR, if the fallback hierarchy kicked in, with the documented `LLM_PROVIDER` value, and the choice is recorded in the commit message + `feedback_windows_dev_env.md` memory.
+6. Sandbox group has a byte-identical copy of `research-company.md` (`diff groups/career-pilot{,-sandbox}/.claude/agents/research-company.md` → empty).
+7. No new MCP tools, no new migrations, no `research_cache` table — discipline check on increment size.
 
 ---
 

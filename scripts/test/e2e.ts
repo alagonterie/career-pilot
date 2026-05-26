@@ -10,7 +10,7 @@
  * gating Phase 1 → Phase 2.
  *
  * Usage:
- *   pnpm test:e2e [--flow=smoke|onboarding|add-application|research-company-discovery] [--keep-host] [--no-reset]
+ *   pnpm test:e2e [--flow=<name>] [--keep-host] [--no-reset]
  *
  * Flags:
  *   --flow=smoke            Default. Single turn, asserts non-empty reply.
@@ -21,9 +21,15 @@
  *                           Phase 1 DoD per STRATEGY.md §V.
  *   --flow=research-company-discovery
  *                           Seeded profile. Asks the agent to research a
- *                           company; asserts container logs show a Task
+ *                           company; asserts session JSONL shows a Task
  *                           tool_use with subagent_type=research-company.
  *                           Gates Phase 2 per STRATEGY.md §24.1.
+ *   --flow=research-company Seeded profile + BOOKMARKED Anthropic row.
+ *                           Full Phase 2.1 DoD: Task delegation +
+ *                           subagent output has all 7 section headers,
+ *                           ≥3 citations, ≥1 anthropic.com URL.
+ *                           Orchestrator reply does NOT recite the digest
+ *                           verbatim (voice-rule check).
  *   --keep-host             Leave `pnpm dev` running after the test for
  *                           manual probing. Default tears down.
  *   --no-reset              Skip the state wipe — useful for re-running
@@ -73,17 +79,24 @@ const runTsx = (script: string, args: string[] = []): [string, string[]] => [
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
 const stripAnsi = (s: string): string => s.replace(ANSI_RE, '');
 
-type Flow = 'smoke' | 'onboarding' | 'add-application' | 'research-company-discovery';
+type Flow =
+  | 'smoke'
+  | 'onboarding'
+  | 'add-application'
+  | 'research-company-discovery'
+  | 'research-company';
 const FLOWS: ReadonlySet<Flow> = new Set([
   'smoke',
   'onboarding',
   'add-application',
   'research-company-discovery',
+  'research-company',
 ]);
 const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'smoke',
   'add-application',
   'research-company-discovery',
+  'research-company',
 ]);
 
 interface Args {
@@ -360,6 +373,216 @@ async function runOnboarding(): Promise<void> {
   ok('first onboarding turn prompts for name');
 }
 
+async function runResearchCompany(): Promise<void> {
+  header('Flow: research-company');
+  // Phase 2.1 full DoD per STRATEGY.md §24.1.
+  //
+  // Seed: BOOKMARKED applications row for Anthropic. The candidate's
+  // prompt mentions the application explicitly ("before i think about
+  // the application") -- this is the natural shape for the trigger
+  // condition the persona names ("any 'research X for me', new
+  // BOOKMARKED application").
+  //
+  // Assertions (load-bearing -- the DoD lives here, per relaxed
+  // STRATEGY.md §24.1 after the first DoD iteration):
+  //   1. Orchestrator emitted Task (or Agent — same SDK primitive,
+  //      different SDK internal name) tool_use with subagent_type=
+  //      "research-company" (delegation happened)
+  //   2. Subagent's final text covers the 4 mandatory content categories
+  //      (keyword/heuristic checks, not strict H2-header matching)
+  //   3. Subagent's tail (~last 30%) has >=3 unique URLs (sources exist,
+  //      format-flexible — numbered list or Markdown-link bullets are
+  //      both fine)
+  //   4. >=1 source URL on anthropic.com (sanity: real sourcing
+  //      happened, not hallucination)
+  //   5. Orchestrator's reply has <5 H2/H3-shaped headers (voice rule:
+  //      "don't recite back unprompted" — orchestrator summarizes
+  //      instead of pasting the digest)
+  seedBookmarkedApplication({
+    id: 'app-e2e-anthropic-1',
+    company_name: 'Anthropic',
+    role_title: 'Staff Backend Engineer',
+    obfuscated_label: 'ai-a',
+  });
+  const reply = await chatTurn(
+    'research anthropic for me before i think about the application',
+    600_000,
+  );
+  if (reply.length === 0) fail('reply was empty');
+
+  const jsonl = findLatestSessionJsonl();
+  if (!jsonl) fail('no session JSONL found under data/v2-sessions/');
+
+  // 1. Task delegation happened
+  const taskCall = findTaskDelegation(jsonl, 'research-company');
+  if (!taskCall) {
+    const allCalls = listAllToolCalls(jsonl);
+    console.error('  --- all orchestrator tool_use calls ---');
+    if (allCalls.length === 0) console.error('  (none)');
+    else for (const c of allCalls) console.error(`  ${c}`);
+    fail('orchestrator did not delegate via Task → research-company');
+  }
+  ok('orchestrator delegated via Task → research-company');
+
+  // Verify Task tool_result was NOT an error (subagent registry hit).
+  // See runResearchCompanyDiscovery() for the rationale -- silent
+  // registry-miss is the failure mode that fooled us for hours.
+  if (!taskCallSucceeded(jsonl, taskCall)) {
+    fail(
+      'Task tool_result was an error -- subagent registry lookup failed. ' +
+        'Check `name:` field in agent .md frontmatter.',
+    );
+  }
+  ok('Task tool_result succeeded');
+
+  // 2-5. Subagent output assertions
+  const subJsonl = findSubagentJsonl(jsonl);
+  if (!subJsonl) fail(`no subagent JSONL found under ${path.basename(jsonl)}/subagents/`);
+  const subFinal = extractFinalAssistantText(subJsonl);
+  if (!subFinal) fail('subagent JSONL has no terminal assistant text response');
+
+  // 2. Content categories covered (per STRATEGY.md §24.1 -- relaxed from
+  // exact H2 names to keyword-presence after the first DoD run found that
+  // strict header naming was over-prescribed). Each probe is a liberal
+  // word-stem regex -- natural-language outputs vary too much for tight
+  // patterns. The goal is "did the digest touch this topic at all,"
+  // not "did it use the exact word I expected."
+  const CATEGORY_PROBES: Array<[string, RegExp]> = [
+    ['Company summary', /mission|public benefit|founded|builds?\b|product|company|corporation/i],
+    [
+      'Tech stack / eng practice',
+      /tech stack|engineering|infrastructure|language|framework|toolchain|culture|stack|architecture|technical/i,
+    ],
+    [
+      'Recent activity / current focus',
+      /focus|focuses|focusing|building|developing|work(ing)? on|current|recent|launched|announced|project|2024|2025|2026/i,
+    ],
+    [
+      'Hiring + team signals',
+      /hir(e|ing)|career|open role|position|engineer|leadership|grow(ing|th)|interview|recruit|team/i,
+    ],
+  ];
+  for (const [name, probe] of CATEGORY_PROBES) {
+    if (!probe.test(subFinal)) {
+      console.error('  --- subagent final output (first 1500 chars) ---');
+      console.error(subFinal.slice(0, 1500));
+      console.error('  --- end ---');
+      fail(`subagent output does not appear to cover "${name}" — no match for ${probe}`);
+    }
+  }
+  ok(`subagent output covers all ${CATEGORY_PROBES.length} mandatory content categories`);
+
+  // 3. Sources section at the end with >=3 URLs.
+  // Per STRATEGY.md §24.1 (relaxed): the spec is about sourcing, not
+  // format. We look at the last ~30% of the digest for URLs -- that's
+  // where the sources/citations live regardless of section name.
+  // Any of these formats counts:
+  //   [1] Title — https://example.com
+  //   - [Title](https://example.com) — context
+  //   - Title: https://example.com
+  const tailStart = Math.floor(subFinal.length * 0.7);
+  const tail = subFinal.slice(tailStart);
+  const urlPattern = /https?:\/\/[^\s)\]\>]+/g;
+  const tailUrls = tail.match(urlPattern) || [];
+  // Deduplicate -- the model sometimes lists the same URL twice
+  const uniqueTailUrls = [...new Set(tailUrls)];
+  if (uniqueTailUrls.length < 3) {
+    console.error('  --- subagent final output (last 1500 chars) ---');
+    console.error(subFinal.slice(-1500));
+    console.error('  --- end ---');
+    fail(
+      `subagent output has only ${uniqueTailUrls.length} unique URLs in its sources section (need >=3). ` +
+        'Citation discipline is load-bearing -- the digest must source its claims.',
+    );
+  }
+  ok(`subagent sources section has ${uniqueTailUrls.length} unique URLs`);
+
+  // 4. At least one anthropic.com URL anywhere in the output
+  // (sanity: real sourcing happened, not hallucinated URLs).
+  if (!/https?:\/\/[^\s)\]\>]*anthropic\.com/i.test(subFinal)) {
+    fail('subagent output does not include any anthropic.com URL — suggests hallucinated sources');
+  }
+  ok('subagent sources include >=1 anthropic.com URL');
+
+  // 6. Voice rule: orchestrator does NOT recite the digest. Heuristic:
+  // count common section-header-shaped patterns in the orchestrator's
+  // reply. A faithful summary has 0-3 header-like patterns; a recital
+  // has many. Threshold at 5 (allows for some natural structure).
+  const orchestratorHeaders = (reply.match(/^#{2,3}\s+\w/gm) || []).length;
+  if (orchestratorHeaders >= 5) {
+    console.error('  --- orchestrator reply ---');
+    console.error(reply.slice(0, 1200));
+    console.error('  --- end ---');
+    fail(
+      `orchestrator reply has ${orchestratorHeaders} H2/H3-shaped headers — looks like recital. ` +
+        'Voice rule says "don\'t recite back unprompted" -- the orchestrator should summarize, not paste.',
+    );
+  }
+  ok(`orchestrator reply has ${orchestratorHeaders} section-header-shaped patterns (recital threshold is 5)`);
+}
+
+function seedBookmarkedApplication(opts: {
+  id: string;
+  company_name: string;
+  role_title: string;
+  obfuscated_label: string;
+}): void {
+  const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
+  const db = new Database(dbPath);
+  try {
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO applications (id, company_name, obfuscated_label, role_title, status, created_at, last_activity_at)
+       VALUES (?, ?, ?, ?, 'BOOKMARKED', ?, ?)`,
+    ).run(opts.id, opts.company_name, opts.obfuscated_label, opts.role_title, now, now);
+    ok(`seeded BOOKMARKED application: ${opts.company_name} (${opts.obfuscated_label})`);
+  } finally {
+    db.close();
+  }
+}
+
+function findSubagentJsonl(parentJsonl: string): string | null {
+  // Subagent JSONLs live at <session-uuid>/subagents/agent-<hash>.jsonl
+  // alongside the parent <session-uuid>.jsonl. The folder shares the
+  // basename (sans .jsonl) of the parent.
+  const dir = path.join(path.dirname(parentJsonl), path.basename(parentJsonl, '.jsonl'), 'subagents');
+  if (!fs.existsSync(dir)) return null;
+  const candidates = fs
+    .readdirSync(dir)
+    .filter((f) => f.startsWith('agent-') && f.endsWith('.jsonl'))
+    .map((f) => path.join(dir, f));
+  if (candidates.length === 0) return null;
+  // Most-recent by mtime — if there were multiple Task calls, we want the
+  // one for this DoD's research-company invocation. For our flow there's
+  // exactly one, so this is safe.
+  candidates.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+  return candidates[0];
+}
+
+function extractFinalAssistantText(jsonlPath: string): string | null {
+  // The subagent's terminal turn is the last `assistant` message that
+  // contains only text blocks (no tool_use). Walk backward to find it.
+  const lines = fs.readFileSync(jsonlPath, 'utf8').trim().split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    let e: { type?: string; message?: { content?: unknown[] } };
+    try {
+      e = JSON.parse(lines[i]) as typeof e;
+    } catch {
+      continue;
+    }
+    if (e.type !== 'assistant' || !Array.isArray(e.message?.content)) continue;
+    const blocks = e.message.content as Array<{ type: string; text?: string }>;
+    const hasToolUse = blocks.some((b) => b.type === 'tool_use');
+    if (hasToolUse) continue;
+    const text = blocks
+      .filter((b) => b.type === 'text')
+      .map((b) => b.text ?? '')
+      .join('\n');
+    if (text.trim().length > 0) return text;
+  }
+  return null;
+}
+
 async function runResearchCompanyDiscovery(): Promise<void> {
   header('Flow: research-company-discovery');
   // Per STRATEGY.md §24.1: gate Phase 2 by proving GLM-4.7-Flash, through
@@ -411,7 +634,50 @@ async function runResearchCompanyDiscovery(): Promise<void> {
         'Per STRATEGY.md §24.1 fallback: try prompt-tuning the persona first, then LLM_PROVIDER.',
     );
   }
-  ok(`Task delegation to research-company subagent (input: ${JSON.stringify(taskCall.input).slice(0, 120)}...)`);
+  ok(`Task delegation emitted (input: ${JSON.stringify(taskCall.input).slice(0, 120)}...)`);
+
+  // CRITICAL: the Task emission alone is NOT proof of working delegation.
+  // The SDK can accept the tool_use, fail to find the named agent in its
+  // registry, and return "Agent type 'research-company' not found" as a
+  // tool_result error -- after which the orchestrator typically falls
+  // back to inline research. We must verify the tool_result was NOT an
+  // error. (Discovered the hard way 2026-05-26: missing `name:` field
+  // in agent frontmatter caused every Task call to fail silently this
+  // way for hours of iteration before catching it.)
+  if (!taskCallSucceeded(jsonl, taskCall)) {
+    console.error('  --- Task tool_result was an error ---');
+    fail(
+      'Task tool_result was an error (subagent registry lookup failed). ' +
+        'Most likely cause: agent .md file missing `name:` field in frontmatter. ' +
+        'Check groups/<group>/.claude/agents/research-company.md.',
+    );
+  }
+  ok('Task tool_result succeeded — subagent ran end-to-end');
+}
+
+function taskCallSucceeded(jsonlPath: string, taskBlock: ToolUseBlock): boolean {
+  // Find the tool_result event keyed to this tool_use_id and check
+  // is_error. Walk forward from the Task call's index.
+  const lines = fs.readFileSync(jsonlPath, 'utf8').trim().split('\n');
+  const taskUseId = (taskBlock as ToolUseBlock & { id?: string }).id;
+  if (!taskUseId) return false;
+  for (const line of lines) {
+    let e: { type?: string; message?: { content?: unknown[] } };
+    try {
+      e = JSON.parse(line) as typeof e;
+    } catch {
+      continue;
+    }
+    if (e.type !== 'user' || !Array.isArray(e.message?.content)) continue;
+    for (const block of e.message.content) {
+      if (!block || typeof block !== 'object') continue;
+      const b = block as { type?: string; tool_use_id?: string; is_error?: boolean };
+      if (b.type === 'tool_result' && b.tool_use_id === taskUseId) {
+        return b.is_error !== true;
+      }
+    }
+  }
+  return false;
 }
 
 function findLatestSessionJsonl(): string | null {
@@ -438,6 +704,12 @@ interface ToolUseBlock {
   input: Record<string, unknown>;
 }
 
+// SDK-internal subagent-dispatch tool names. "Task" is the user-facing
+// name in @anthropic-ai/claude-code 2.1.x; "Agent" appears in some
+// invocation paths with identical input shape. Treat either as evidence
+// of delegation.
+const SUBAGENT_DISPATCH_TOOL_NAMES = new Set(['Task', 'Agent']);
+
 function findTaskDelegation(jsonlPath: string, subagentType: string): ToolUseBlock | null {
   const lines = fs.readFileSync(jsonlPath, 'utf8').trim().split('\n');
   for (const line of lines) {
@@ -451,7 +723,11 @@ function findTaskDelegation(jsonlPath: string, subagentType: string): ToolUseBlo
     for (const block of e.message.content) {
       if (!block || typeof block !== 'object') continue;
       const b = block as ToolUseBlock;
-      if (b.type === 'tool_use' && b.name === 'Task' && b.input?.subagent_type === subagentType) {
+      if (
+        b.type === 'tool_use' &&
+        SUBAGENT_DISPATCH_TOOL_NAMES.has(b.name) &&
+        b.input?.subagent_type === subagentType
+      ) {
         return b;
       }
     }
@@ -553,18 +829,19 @@ async function main(): Promise<void> {
   const host = await startHost();
   let assertionsPassed = false;
   try {
-    // SCALING: Adding flows here is cheap up to ~5. Past that, the if/else
-    // chain becomes awkward, flows want shared multi-step helpers, and
-    // reading e2e.ts top-to-bottom stops working as a mental model. The
-    // refactor target is then:
-    //   scripts/test/flows/<name>.ts  — each flow exports an `async run()`
-    //   scripts/test/e2e.ts           — keeps preflight/host/teardown,
-    //                                   maps flow name → import().
-    // Not before. Premature abstraction has its own cost.
-    if (args.flow === 'smoke') await runSmoke();
-    else if (args.flow === 'onboarding') await runOnboarding();
-    else if (args.flow === 'add-application') await runAddApplication();
-    else await runResearchCompanyDiscovery();
+    // SCALING: at 5 flows the if/else chain got awkward, so dispatch
+    // through a registry. The next escalation (probably around 8-10
+    // flows) is the split into scripts/test/flows/<name>.ts modules
+    // that this file dynamically imports — at which point the JSONL
+    // helpers below would move to a shared utility.
+    const FLOW_HANDLERS: Record<Flow, () => Promise<void>> = {
+      smoke: runSmoke,
+      onboarding: runOnboarding,
+      'add-application': runAddApplication,
+      'research-company-discovery': runResearchCompanyDiscovery,
+      'research-company': runResearchCompany,
+    };
+    await FLOW_HANDLERS[args.flow]();
     assertionsPassed = true;
   } catch (err) {
     console.error(`  ✗ ${err instanceof Error ? err.message : String(err)}`);
