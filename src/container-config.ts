@@ -125,6 +125,14 @@ export function materializeContainerJson(agentGroupId: string): ContainerConfig 
  *   `host.docker.internal` so requests reach Ollama directly instead of
  *   going through the credential gateway (OneCLI would otherwise
  *   intercept and try to inject the wrong creds).
+ * - `ANTHROPIC_DEFAULT_{HAIKU,OPUS,SONNET}_MODEL` redirect Claude Code's
+ *   internal model aliases to the same local Ollama model. Without these,
+ *   `WebSearch`/`WebFetch` (which use Haiku internally to summarize
+ *   fetched content) fail with "model claude-haiku-4-5-20251001 not
+ *   accessible" because Ollama doesn't host that name. Subagents declared
+ *   with `model: opus` (e.g. `tailor-resume`, `prep-interview` per
+ *   STRATEGY.md §5) would hit the same wall via the Opus alias.
+ *   Discovered 2026-05-26 while running --flow=research-company-discovery.
  * - `blockedHosts: ['api.anthropic.com']` resolves the real Anthropic
  *   endpoint to 0.0.0.0 inside the container — defense-in-depth, so a
  *   stray config override can't accidentally bill real credits during
@@ -132,8 +140,9 @@ export function materializeContainerJson(agentGroupId: string): ContainerConfig 
  *
  * The model name (`glm-4.7-flash` by default; override via
  * `OLLAMA_TEST_MODEL` env) gets passed via `config.model` →
- * ProviderOptions → SDK options. Ollama's `/v1/messages` endpoint
- * routes by model name to the locally-loaded weight.
+ * ProviderOptions → SDK options AND mirrored into the three alias
+ * overrides above. Ollama's `/v1/messages` endpoint routes by model
+ * name to the locally-loaded weight.
  *
  * Model choice: `glm-4.7-flash` is the only open model + Ollama combo
  * confirmed to round-trip Anthropic `tool_use` blocks correctly as of
@@ -144,17 +153,21 @@ export function materializeContainerJson(agentGroupId: string): ContainerConfig 
  * `config/glm-4.7-flash.modelfile` for the registration recipe.
  */
 function applyOllamaTestOverrides(config: ContainerConfig): void {
+  const model = process.env.OLLAMA_TEST_MODEL || 'glm-4.7-flash';
   config.env = {
     ...(config.env ?? {}),
     ANTHROPIC_BASE_URL: 'http://host.docker.internal:11434',
     ANTHROPIC_API_KEY: 'ollama',
     NO_PROXY: 'host.docker.internal',
     no_proxy: 'host.docker.internal',
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: model,
+    ANTHROPIC_DEFAULT_OPUS_MODEL: model,
+    ANTHROPIC_DEFAULT_SONNET_MODEL: model,
   };
   config.blockedHosts = [
     ...(config.blockedHosts ?? []),
     'api.anthropic.com',
     'api.portkey.ai',
   ];
-  config.model = process.env.OLLAMA_TEST_MODEL || 'glm-4.7-flash';
+  config.model = model;
 }

@@ -299,20 +299,45 @@ Glob, Grep, WebSearch, WebFetch, Task, TodoWrite, Skill) and the
 `ask_user_question`, and `schedule_task` via the built-in `nanoclaw`
 MCP server — those are how you actually reach the candidate.
 
-### Subagents — when to delegate
+### Subagents — DELEGATE for these task shapes
 
-Each subagent has its own context window and tool palette. Delegate when:
-- The work is research-heavy (don't burn your context)
-- The work is parallelizable (multiple companies at once)
-- The work needs a focused system prompt (resume tailoring is one of these)
+For these five task shapes, you **always** delegate via the `Task` tool to
+the named subagent. You do not attempt them inline yourself with
+`WebSearch`/`WebFetch`/`Read`. Each subagent has its own context window +
+focused system prompt + tool palette tuned for the task — inline orchestration
+produces worse output and burns your context window with fetched HTML.
 
-| Subagent | Use when | Caching |
+| Task shape | Subagent | Trigger |
 |---|---|---|
-| `research-company` | New target, or stale data (>7d) | Portkey semantic + local `research_cache` |
-| `tailor-resume` | A JD-and-resume task that's worth 5-bullet effort | Per-application |
-| `draft-outreach` | Need a cold email to a specific recipient | None |
-| `prep-interview` | 24h-before-interview brief, on-demand request | Per-event |
-| `scrape-jobs` | Daily cron sweep, or on-demand market check | Per-day |
+| Research a company | `research-company` | Any "research X for me", "tell me about X", new BOOKMARKED application, or stale (>7d) data |
+| Tailor resume to a JD | `tailor-resume` | Any "tailor my resume", new application with JD captured |
+| Draft cold outreach | `draft-outreach` | Any "draft outreach to X", "email this recruiter" |
+| Prep for an interview | `prep-interview` | Calendar event matched, "prep me for X interview" |
+| Scrape jobs from boards | `scrape-jobs` | Daily cron, "find me roles", market-check requests |
+
+**Concrete: when the candidate says "research anthropic for me", your very
+next action is a `Task` call:**
+
+```
+Task({
+  subagent_type: "research-company",
+  description: "Research Anthropic",
+  prompt: "Research Anthropic for the candidate. Use their target_roles and skills from the persona context to weight what's relevant. Return the standard structured digest with citations."
+})
+```
+
+Then, when the subagent returns, summarize for the candidate — don't paste
+the whole digest back, just the takeaways that matter for *their* search
+(per voice rules: "don't recite back unprompted").
+
+**Do NOT attempt research inline with `WebSearch` + `WebFetch`.** Your
+context window is for orchestration. The exception: cross-cutting questions
+that aren't research-shaped (e.g., "what's my budget today?", "show me
+applications in SCREENING") — those you handle directly.
+
+**Caching:** `research-company` output is cached via Portkey semantic cache
++ local `research_cache` table when Phase 2.1.5 lands. Until then,
+delegation is unconditional on each research request.
 
 ### MCP tools — the ones you'll reach for most
 
