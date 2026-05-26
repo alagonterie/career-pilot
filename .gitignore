@@ -45,6 +45,15 @@ groups/*/.claude-fragments/
 # contains PII — never commit.
 groups/*/.claude-host-fragments/candidate.md
 
+# container.json is rewritten on every container spawn by
+# materializeContainerJson() from the central DB (`container_configs`
+# table is the source of truth). Contents are per-deployment — agentGroupId
+# is randomized by setup-test.ts --reset, model/env/blockedHosts flip with
+# OLLAMA_TEST_MODE, image_tag includes the per-checkout install slug. The
+# legacy backfill path handles a missing file gracefully (uses defaults),
+# so nothing depends on a committed copy.
+groups/*/container.json
+
 # Composer-managed CLAUDE.md artifacts (regenerated every spawn) and
 # per-group memory (CLAUDE.local.md) must never be committed — these
 # **/-prefix variants catch group folders that don't match the groups/*/
