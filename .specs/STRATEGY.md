@@ -496,7 +496,26 @@ Body: scoring rubric (role match, comp signal, company stage match, location mat
 
 ### 6. In-process MCP tools
 
-Defined using the Claude Agent SDK's `tool()` helper, **wrapped in `createSdkMcpServer({ name: "career-pilot", version, tools: [...] })`** and passed via `mcpServers: { "career-pilot": careerPilotMcpServer }`. All tools live in `groups/career-pilot/agent-runner-src/mcp-tools/`. Tool naming convention is auto-derived: `mcp__career-pilot__<tool_name>`.
+**Scope & non-goals (load-bearing — read this first):** All career-pilot MCP tools operate on the local `data/v2.db` funnel-tracking schema. **No tool in any phase auto-submits job applications** (auto-apply is intentionally never built — V2_IDEAS.md §4). "Adding an application" means inserting a row in our internal `applications` table — like recording an opportunity in a CRM, nothing reaches an external job-board. Public-web reading is limited to SDK built-ins (`WebFetch`, `WebSearch`) used by research subagents in Phase 2+; those have anti-bot mitigations (rate limits, polite UA, fail-open behavior). External-API writes are limited to Gmail (via OneCLI-managed OAuth, official API — no scraping) for outreach, and Google Calendar (same model) for RSVPs. Both are approval-card-gated. Nothing else writes externally.
+
+Defined as a regular MCP server registered in the agent-runner's `nanoclaw` MCP server (`container/agent-runner/src/mcp-tools/`). Career-pilot tools live in `container/agent-runner/src/mcp-tools/career-pilot.ts`; each calls `registerTools([...])` at module scope. Tool naming convention is auto-derived: `mcp__nanoclaw__<tool_name>`.
+
+(Note: STRATEGY.md previously specified `createSdkMcpServer` directly per the 0.3.x Agent SDK pattern. NanoClaw upstream's `^0.2.128` SDK is invoked via `pathToClaudeCodeExecutable` and the MCP server is a child process — see NANOCLAW_INTERNALS.md §8. The `registerTools` self-registration pattern in `mcp-tools/server.ts` is the actual integration point.)
+
+#### 6.1 Container → central-DB contract (the system-action pattern)
+
+The container has NO direct write access to `data/v2.db` (the host's long-lived WAL connection precludes cross-mount writes — see NANOCLAW_INTERNALS.md §3 + §7). The pattern, matching NanoClaw's `cli_request` and `schedule_task` round-trip:
+
+1. **Container MCP tool** writes a `kind: 'system'` row to `outbound.db` via `writeMessageOut()`. Content JSON: `{ action: 'career_pilot.<name>', requestId, payload: {...} }`.
+2. **Host delivery sweep** (`src/delivery.ts`) calls the handler registered for that action via `registerDeliveryAction()`. Handler signature `(content, session, inDb)` is the NanoClaw convention — handler accesses central `data/v2.db` via `getDb()`, applies the DB op, and writes a response back to the session's `inbound.db` with `kind: 'system'`, `trigger: 0` (don't wake the agent for this response), and `content: { type: 'career_pilot_response', requestId, frame: { ok, data | error } }`.
+3. **Container MCP tool** polls `inbound.db` for the response with matching `requestId` (matches `findQuestionResponse` pattern in `db/messages-in.ts`). Times out at 10s (DB writes are fast; longer timeout hides real bugs).
+4. **Tool handler** returns the result to the agent as standard MCP content blocks.
+
+Container reads on `data/v2.db` go through the same pattern (system action → host reads → response back). We do NOT mount v2.db into the container — uniform path keeps the design simple and avoids cross-mount stale-cache edge cases.
+
+All career-pilot action handlers register in `src/modules/career-pilot/index.ts`, barrel-imported from `src/modules/index.ts` for side-effect registration at host startup.
+
+#### 6.2 Tool catalog
 
 **Authoring discipline (per [AGENT_SDK_PATTERNS.md §7](AGENT_SDK_PATTERNS.md)):**
 - Tool handlers NEVER throw. Return `{ content: [{ type: "text", text }], isError: true }` on failure — the model sees the error as data and can adapt.
@@ -504,14 +523,17 @@ Defined using the Claude Agent SDK's `tool()` helper, **wrapped in `createSdkMcp
 - Include `annotations: { readOnlyHint: true }` on read-only tools so the SDK can parallelize them.
 - Detailed `description` strings drive selection quality — invest 3-4 sentences per tool.
 
-| Tool | Args (Zod) | Side effect | Owner | Sandbox |
-|---|---|---|---|---|
-| `analyze_jd` | `{ text_or_url: string }` | none | ✓ | ✓ |
-| `parse_email` | `{ raw: string }` | none (via Haiku) | ✓ | ✗ |
-| `sanitize_text` | `{ raw: string, application_id?: string }` | none (regex + DB lookup) | ✓ | ✓ (no application_id) |
-| `update_application` | `{ id: string, patch: object }` | DB write `applications` | ✓ | ✗ |
-| `record_funnel_event` | `{ application_id: string, kind: string, payload: object }` | DB write `funnel_events`; mirrors to `public_audit_trail` via post-write hook | ✓ | ✗ |
-| `save_outreach_draft` | `{ application_id: string, draft: object }` | DB write `funnel_events` (kind `outreach_drafted`) | ✓ | ✗ |
+| Tool | Args | Side effect | Phase | Owner | Sandbox |
+|---|---|---|---|---|---|
+| `update_profile_field` | `{ field: string, value: any }` | UPSERT into `candidate_profile` (single-row table) | 1 | ✓ | ✗ |
+| `update_application` | `{ id: string, patch: object }` | UPSERT into `applications`. INSERT branch requires `patch.company_name + role_title + status`; host assigns `obfuscated_label` deterministically | 1 | ✓ | ✗ |
+| `record_funnel_event` | `{ application_id: string, kind: string, payload: object }` | INSERT into `funnel_events`; sanitization mirror to `public_audit_trail` lands in Phase 3 | 1 | ✓ | ✗ |
+| `get_application` | `{ id: string }` | SELECT one from `applications` | 1 | ✓ | ✗ |
+| `list_applications` | `{ status?: string, limit?: number }` | SELECT from `applications` (filtered) | 1 | ✓ | ✗ |
+| `analyze_jd` | `{ text_or_url: string }` | LLM call (Haiku via OneCLI gateway) → `{level, skills, comp_hint, role_category}`. Deferred from Phase 1 because in-container Haiku call needs the subagent infra | 2 | ✓ | ✓ |
+| `sanitize_text` | `{ raw: string, application_id?: string }` | none (regex + `company_aliases` DB lookup). Deferred because the alias lookup is only useful once multiple applications exist + Phase 3's sanitizer pipeline is its real home | 3 | ✓ | ✓ (no application_id) |
+| `parse_email` | `{ raw: string }` | none (Haiku via OneCLI) | 2 | ✓ | ✗ |
+| `save_outreach_draft` | `{ application_id: string, draft: object }` | INSERT into `funnel_events` (kind `outreach_drafted`) | 2 | ✓ | ✗ |
 | `send_outreach_email` | `{ application_id: string, draft: object }` | **EXTERNAL**: sends via Gmail; gated by LIVE_MODE + approval card | ✓ | ✗ |
 | `schedule_followup` | `{ application_id: string, when: ISO8601, prompt: string }` | NanoClaw native `schedule_task` invocation | ✓ | ✗ |
 | `get_application` | `{ id: string }` | none | ✓ | ✗ |
