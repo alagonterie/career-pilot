@@ -6,17 +6,34 @@ This file tells a Claude Code session opening this repo what it needs to know to
 
 ## Where we are (as of 2026-05-25)
 
-**Branch:** `nanoclaw-rebuild` (off `master`). This branch contains the locked-in v2 architecture specs. Phase 0 (the actual NanoClaw fork landing on disk) has **not yet executed** — the working tree still has the v1 skeleton (an obsolete Next.js frontend stub, an obsolete `backend/src/*.ts` skeleton, etc.). **Don't take cues from the existing code.** It's about to be replaced.
+**Branch:** `nanoclaw-rebuild` (off `master`), pushed to `origin/nanoclaw-rebuild`.
 
-**Status:** Specs are written and reviewed. Next concrete action is Phase 0 from `.specs/STRATEGY.md` §V — fork NanoClaw v2 into this branch, then begin Phase 1 (the career-pilot agent group). See STRATEGY.md §23 for the explicit Phase 0 DELETE/ARCHIVE/ADAPT/KEEP checklist.
+**Status:** Phase 0 complete (NanoClaw v2 vendored + career-pilot scaffolding + apex domain scrubbed). Phase 1 in progress — owner agent persona is written at `groups/career-pilot/CLAUDE.md`. Next concrete work: `persona.local.md` host-side hook + first 6 MCP tools (analyze_jd, sanitize_text, update_application, get_application, list_applications, record_funnel_event).
 
-**Origin:** branch pushed to `origin/nanoclaw-rebuild`. Commits ahead of master.
+**Read `memory/status_current.md` first for the current detailed state.**
 
 ---
 
 ## The specs are the source of truth
 
-All architecture, UX, and delivery decisions live in `.specs/`. Read in this order:
+This project follows **spec-driven development** ([canonical reference](https://github.com/github/spec-kit/blob/main/spec-driven.md)) at the **spec-anchored** level: specs and code coexist, with discipline keeping them aligned. Specs describe intent; code is one implementation of that intent. If they disagree, *one of them is wrong* — fix the spec deliberately (intent changed) or fix the code (it drifted). **Never let them silently diverge.**
+
+### What counts as a spec
+
+The "spec layer" is broader than `.specs/` alone. All of these are first-class spec artifacts:
+
+| Artifact | Specifies |
+|---|---|
+| `.specs/*.md` | Architecture, UX, delivery plan, patterns, recovery, deferred work |
+| `CLAUDE.md` (this file) | Repo orientation + workflow rules |
+| `groups/<name>/CLAUDE.md` | Agent persona — the behavioral contract for that agent |
+| `groups/<name>/.claude/agents/*.md` | Subagent prompts + tool palettes |
+| `src/db/migrations/*.ts` | Schema (the data model is a spec) |
+| `config/defaults.json` | Default tunable values across the four-tier config model |
+
+Treat changes to any of these the same way: update with intent, then align implementation.
+
+### Reading order for `.specs/`
 
 | File | What it covers | Read when |
 |---|---|---|
@@ -27,7 +44,12 @@ All architecture, UX, and delivery decisions live in `.specs/`. Read in this ord
 | `.specs/RECOVERY.md` | Operator manual for kill switches + recovery | Keep open during operations |
 | `.specs/V2_IDEAS.md` | Deferred features (do NOT scope-creep into these) | When tempted to add scope |
 
-If a question's answer isn't in the specs, ask. If it conflicts with the specs, the specs win unless explicitly redirected.
+### The rules
+
+- **If a question's answer isn't in the specs, ask.** If it conflicts with the specs, the specs win unless explicitly redirected.
+- **If a spec is incomplete for the work in front of you, stop and spec it first.** Don't fill gaps with code and document later. That's how drift starts.
+- **New spec sections that drive implementation include a "Definition of done" subsection.** Concrete, verifiable, what gets checked to confirm intent matches reality. Existing specs don't need retroactive churn — apply this habit going forward.
+- **Commit messages reference the spec section the work derives from** (e.g., "per STRATEGY.md §6"). When code can't be derived from spec, that's the signal — either the spec is wrong or we're going off-piste, and either way it needs to surface.
 
 ---
 
@@ -95,7 +117,7 @@ This project has a persistent memory at `C:\Users\alago\.claude\projects\C--Proj
 
 ## Workflow rules for working in this repo
 
-1. **Rigor before code.** This project is the candidate's flagship career artifact. Spec-first, then code. When in doubt: confirm direction with the user before writing.
+1. **Spec-driven discipline first.** Specs are the source of truth (see section above). Spec-first, then code. When the spec is incomplete for the work in front of you, write the spec section first and align with the user before implementing.
 2. **Don't bluff expertise.** If asked to architect on top of a specific framework/library, read its source/docs first. The two research-derived cribsheets (`AGENT_SDK_PATTERNS.md`, `CLOUDFLARE_PATTERNS.md`) are the authoritative deep-dives — refer to them.
 3. **Verify summarized research against primary sources.** Subagent research summaries have already been wrong on this project at least once (confused Agent SDK with Managed Agents). When research findings are consequential, fetch the primary docs.
 4. **Frontend-first thinking.** The backend exists to feed the portal. Don't add backend complexity that doesn't translate into something compelling on `hire.<DOMAIN>`.
@@ -106,7 +128,5 @@ This project has a persistent memory at `C:\Users\alago\.claude\projects\C--Proj
 
 ## What's next (the actionable to-do list)
 
-1. **Rewrite `README.md`** to match the v2 direction (currently still describes the v1 skeleton). It needs to be generic-by-design — the repo is meant to be forkable.
-2. **Phase 0** — execute the fork landing on disk. STRATEGY.md §23 + §V Phase 0. Two commits planned: one for NanoClaw upstream landing, one for our scaffolding additions. Then stop for review.
-3. **Phase 1** — career-pilot agent group + migrations 100-107 + first MCP tools.
-4. **Phases 2-10** — see STRATEGY.md §V milestone plan (10-week phased delivery to `LIVE_MODE=true`).
+1. **Phase 1, continued** — `persona.local.md` host-side hook (generates from `candidate_profile` at session start), then first 6 MCP tools (`analyze_jd`, `sanitize_text`, `update_application`, `get_application`, `list_applications`, `record_funnel_event`). Goal per STRATEGY.md §V Phase 1: "I can say 'add an application for X' and it writes to the DB and confirms."
+2. **Phase 2-10** — see STRATEGY.md §V milestone plan. See `memory/status_current.md` for current detailed state across phases.
