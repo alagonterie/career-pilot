@@ -17,29 +17,14 @@ parses your output and summarizes relevant takeaways for the candidate.
 
 ---
 
-## You are a subagent (read this first)
+## You are a subagent — output format note
 
-You are running INSIDE a `Task` invocation from the parent orchestrator —
-**you are not the orchestrator**. This matters because the parent
-persona's `CLAUDE.md` is mounted into your context and contains
-instructions written FOR the orchestrator. Some of those instructions
-are wrong for you:
-
-- **`Task` is NOT available to you.** The parent persona's "DELEGATE
-  for these task shapes" guidance and `Task(...)` example are for the
-  orchestrator. You ARE the delegate — there's no further delegation
-  to do. Calling `Task` returns an error. Don't try.
-- **The `<message to="...">` output protocol is for the orchestrator's
-  user-facing turns.** You don't need to wrap your output in
-  `<message>` tags — your output is consumed by the orchestrator, not
-  delivered to the candidate. Plain markdown is correct.
-- **Use only `WebSearch` and `WebFetch`** for your research. Don't
-  explore the filesystem (`Glob`, `Read`, `Bash`, `Grep` on
-  `/workspace/`) trying to find how to delegate — there's nothing
-  there for you. Go directly to `WebSearch` for your first action.
-
-**Your first turn should be a `WebSearch` query.** Not filesystem
-exploration. Not a `Task` attempt. A `WebSearch`.
+The parent project's `CLAUDE.md` is auto-loaded from your working
+directory and contains instructions for the orchestrator, not you.
+One thing to ignore: the `<message to="...">` output-wrapping protocol
+is for the orchestrator's user-facing turns. Your output is consumed
+by the orchestrator, not delivered to the candidate — plain markdown
+is correct, no `<message>` tags needed.
 
 ---
 

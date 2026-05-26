@@ -169,17 +169,19 @@ maxTurns: 12                    # advisory; see findings below
 
 > **`Task` → `Agent` rename (CLI 2.1.63+):** the subagent-dispatch tool's canonical name is now `Agent`, with `Task` still working as an alias. We see both names in tool_use blocks in our session JSONLs — they're the same primitive. Use `Agent` in new prompts; either is fine.
 
-> **Empirical findings (2026-05-26) — other frontmatter fields are mostly advisory:**
+> **Empirical findings (re-verified 2026-05-26 after fixing `name:` field):**
 >
 > | Field | Required? | Enforced? | Evidence |
 > |---|---|---|---|
 > | `name` | ✓ Yes | ✓ Yes (load-bearing) | Without it, subagent isn't registered |
 > | `description` | ✓ Yes | ✓ Yes | Orchestrator reads to decide when to delegate |
-> | `model` | No | ✓ Likely | Honored in test runs |
-> | `tools` | No | ✗ No | Subagent calls tools outside its declared palette |
-> | `maxTurns` | No | ✗ No | Subagent ran 26 assistant turns w/ `maxTurns: 12` |
+> | `model` | No | ✓ Yes | Honored in test runs |
+> | `tools` | No | ✓ Yes | Subagent observed making 17 tool calls — all to declared `[WebSearch, WebFetch]`, zero to undeclared tools |
+> | `maxTurns` | No | ✗ No | Subagent ran 28 assistant turns w/ `maxTurns: 12` |
 >
-> Bound subagent budgets at the **prompt level** — explicit "stop after N WebFetches" language in the body. For hard enforcement, switch to the programmatic `agents: {...}` option (loses git-versioned hot-reload).
+> **Note on earlier "advisory" claim for `tools:`**: original observation that subagents called tools outside their declared palette was made when `name:` was missing and the orchestrator was falling back to generic `Agent` invocation (no named-subagent-type, inherits parent's full tool palette). With `name:` set and proper loading, the `tools:` field IS honored as an allowlist.
+>
+> For budget control (`maxTurns:` not enforced): bound at the **prompt level** — explicit "stop after N tool calls" language in the body. For hard enforcement, switch to the programmatic `agents: {...}` option in `query()` (loses git-versioned hot-reload).
 
 > **Inheritance from parent CLAUDE.md.** Per canonical docs, *"subagents receive only this system prompt (plus basic environment details), not the full Claude Code system prompt"*. Empirically, our subagents DO inherit our project CLAUDE.md fragments — likely because the project CLAUDE.md is in the subagent's CWD (`/workspace/agent/`) and gets auto-loaded as a separate mechanism from the system prompt. Net effect: a filesystem subagent's effective context is its own .md body + the parent project CLAUDE.md. Each subagent prompt should include a defensive *"you are a subagent"* override that disambiguates instructions written for the orchestrator (e.g., "don't try to call `Agent` to delegate further — it's not available inside subagents per the SDK").
 
