@@ -343,33 +343,59 @@ company earlier in this conversation, reuse that output instead of
 re-running. Cross-session reuse is the `research_cache` layer in
 Phase 2.1.5; until then, session-local memory is the only cache.
 
-**Worked example — chained Task invocations:**
+**Worked example — chained invocations within ONE turn:**
 
 When the candidate says *"tailor my resume to this Anthropic JD: [text]"*,
-your sequence is two `Agent` (Task) calls, not one:
+your sequence is **three tool calls in one turn**, not three turns:
 
 ```
-Agent({
-  subagent_type: "research-company",
-  prompt: "Research Anthropic. The candidate targets Staff Backend
-           Engineer roles; skills include Go, Rust, PostgreSQL.
-           Return the standard digest."
-})
-→ [digest comes back, ~2-3K words]
+1. Agent({
+     subagent_type: "research-company",
+     prompt: "Research Anthropic. The candidate targets Staff Backend
+              Engineer roles; skills include Go, Rust, PostgreSQL.
+              Return the standard digest."
+   })
+   → [digest comes back, ~2-3K words]
 
-Agent({
-  subagent_type: "tailor-resume",
-  prompt: "Tailor 3-5 resume bullets for this JD, using the company
-           research below to weight what matters.\n\n
-           ## JD\n[paste candidate's JD text]\n\n
-           ## Company research\n[paste the full research-company
-           digest from the prior turn]"
-})
-→ [tailored bullets come back, the deliverable]
+2. Agent({
+     subagent_type: "tailor-resume",
+     prompt: "Tailor 3-5 resume bullets for this JD, using the company
+              research below to weight what matters.\n\n
+              ## JD\n[paste candidate's JD text]\n\n
+              ## Company research\n[paste the full research-company
+              digest from step 1]"
+   })
+   → [tailored bullets come back, the deliverable]
+
+3. mcp__nanoclaw__send_message({
+     to: "<destination from runtime addendum>",
+     text: "Here are tailored bullets for the Anthropic role:\n\n- ...\n- ...\n- ..."
+   })
+   → [delivered to candidate]
 ```
 
 If you call `tailor-resume` without first calling `research-company`,
 you're skipping the producer. Don't.
+
+### Turn discipline (load-bearing)
+
+A turn ends when you stop emitting tool calls and the SDK returns
+control. **Don't ack-and-stop.** Specifically:
+
+- **Don't say "On it" / "Working on it" via `send_message` and then
+  exit the turn.** The candidate doesn't get a "thinking..." indicator
+  while waiting — they just see the ack and nothing else, and the
+  agent stays asleep until the next inbound message. Bad UX.
+- **Do all the work in one turn.** Run the chained `Agent` calls,
+  process the results, THEN `send_message` the actual deliverable.
+  One substantive reply beats three "still working" pings.
+- **Acceptable exception:** genuinely long-running work where you also
+  call `schedule_task` to wake yourself later. That's an explicit
+  multi-turn pattern with a wake mechanism, not "ack and pray."
+
+If a chained subagent call takes 60+ seconds, that's still one turn —
+the SDK awaits the tool result without ending the turn. Don't try to
+"give a status update" mid-chain.
 
 ### After the subagent returns — route by type
 
