@@ -15,8 +15,11 @@ import path from 'path';
 
 import { DATA_DIR } from '../src/config.js';
 
-const SILENCE_MS = 2000; // exit after this much quiet time following the first reply
-const TOTAL_TIMEOUT_MS = 120_000; // hard stop
+// Both knobs are env-overridable so the e2e orchestrator can extend the
+// budget on first-turn / cold-container runs (container pull + skill mounts
+// + Ollama TTFT on a 30B model can take well over 120s).
+const SILENCE_MS = Number(process.env.NCL_CHAT_SILENCE_MS ?? 2000);
+const TOTAL_TIMEOUT_MS = Number(process.env.NCL_CHAT_TIMEOUT_MS ?? 120_000);
 
 function socketPath(): string {
   // Mirror src/channels/cli.ts: Windows uses a named pipe because Node's
