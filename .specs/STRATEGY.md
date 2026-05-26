@@ -309,6 +309,61 @@ The persona content covers:
 - The mandatory `<message to="name">...</message>` output protocol (see [NANOCLAW_INTERNALS.md §6](NANOCLAW_INTERNALS.md))
 - Reference to candidate-specific content rendered from `candidate_profile` (gitignored, per-deployment)
 
+**Render-persona hook** — the bridge from `candidate_profile` to the composed system prompt:
+
+The hook is a host-side function called from `container-runner.ts:buildMounts()` *before* `composeGroupClaudeMd()`. It reads the single `candidate_profile` row, renders a markdown file at `groups/<folder>/.claude-host-fragments/candidate.md`, and returns. The composer then picks up that file on its next scan and includes it as an `@./` import in the composed `CLAUDE.md`.
+
+The hook lives at `src/modules/career-pilot/render-persona.ts` (new module; barrel-imported from `src/modules/index.ts` for side-effect registration). It exports `renderPersonaForGroup(group: AgentGroup): void` — pure-ish (filesystem write, no network, no LLM call). Idempotent: same `candidate_profile` row produces byte-identical `candidate.md` output.
+
+**Field-level mapping** (`candidate_profile` columns → markdown sections in `candidate.md`):
+
+| Profile column | Markdown section | Notes |
+|---|---|---|
+| `full_name` | `# {full_name}` header | First name extracted in-prompt by the agent (via space split); section header is full name. |
+| `display_name` | `> {display_name}` blockquote (if differs from full_name) | The candidate's preferred short form, if set. |
+| `bio` | `## Background` section, content verbatim | Markdown allowed. |
+| `target_roles` (JSON array) | `## Target roles` bullet list | Each array entry → one bullet. |
+| `location_pref` (JSON object) | `## Location` section | Render `remote: true/false` + `hybrid_cities[]` bullets. |
+| `comp_floor` (integer) | `## Comp` section | Formatted as `$XXX,XXX USD/year floor`. |
+| `master_resume` | `## Master resume` section, content verbatim | Markdown allowed; can be long. |
+| `skills` (JSON array) | `## Skills` bullet list | Each array entry → one bullet. |
+| `github_url`, `linkedin_url`, `x_url`, `website_url` | `## Links` section | Markdown link list; only render fields that are non-null. |
+| `why_this_exists` | Excluded | This is for the `/about` portal page, not the agent context. |
+| `headshot_path`, `brand_color_hsl`, `updated_at` | Excluded | Portal styling / metadata, not agent-relevant. |
+
+**Failure modes:**
+
+| Condition | Behavior |
+|---|---|
+| No `candidate_profile` row at all | Write a sentinel `candidate.md` containing just `# Onboarding mode\n\nNo candidate profile yet — walk the candidate through filling it in.`. The persona's onboarding-mode branch then activates. |
+| Row exists, all fields null | Same as above (sentinel onboarding content). |
+| Row exists, some fields null | Render only the populated sections. Skip null-valued sections silently. |
+| JSON-array field contains malformed JSON | Log a warning via `log.warn`; skip just that section (don't crash the spawn). |
+| Markdown-unsafe characters in field values (e.g. backticks in `bio`) | Pass through as-is. The agent reads this as authoritative content, not as user input — no escaping needed. |
+| Write fails (disk full, permission denied) | Throw. The container spawn will fail downstream when `buildMounts` errors; host-sweep retries from `messages_in`. |
+
+**Trigger point:**
+
+Called from `container-runner.ts:buildMounts()`:
+
+```ts
+// In buildMounts, before composeGroupClaudeMd:
+if (agentGroup.folder === 'career-pilot' || agentGroup.folder === 'career-pilot-sandbox') {
+  renderPersonaForGroup(agentGroup);
+}
+composeGroupClaudeMd(agentGroup);
+```
+
+We gate on folder name so the hook is no-op for any other groups (NanoClaw's `main` group, future skill-installed groups, etc.). The career-pilot-sandbox group also gets the render call so the simulator agent sees the public-facing candidate snippet (a sanitized subset of fields — TBD whether sandbox gets the same `candidate.md` or a stripped version; lock in at Phase 4 sanitization work).
+
+**Definition of done:**
+
+1. With an empty `candidate_profile` table, the hook writes the onboarding sentinel file and the agent's first turn matches the persona's onboarding branch (asks for `full_name` first).
+2. With a populated row, the hook produces a markdown file matching the field-mapping table; the composed `CLAUDE.md` imports it; the agent on first turn addresses the candidate by `first(full_name)` and shows awareness of `target_roles` + `comp_floor`.
+3. Bumping `candidate_profile.updated_at` (via the `update_profile_field` MCP tool, which lands later in Phase 1) updates `candidate.md` on the *next* container spawn — sessions are spawn-frequent enough that staleness isn't a meaningful problem (per [NANOCLAW_INTERNALS.md §2](NANOCLAW_INTERNALS.md), containers wake on every inbound trigger and freshly compose every time).
+4. The render is byte-deterministic: running the hook twice with identical profile state produces identical files (we can diff and the diff is empty).
+5. Unit-test coverage: a small Vitest test exercises `renderPersona(profile)` (pure function variant — given a `CandidateProfile` object, returns a string) against three cases: empty row, fully populated row, partial row. The disk-write side runs in the integration test for Commit 2's composer extension.
+
 **Container config (`container_configs` table row):**
 - All subagents available
 - All in-process MCP tools available, including DB-write and `send_outreach_email`
