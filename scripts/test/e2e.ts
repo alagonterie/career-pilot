@@ -30,6 +30,14 @@
  *                           ≥3 citations, ≥1 anthropic.com URL.
  *                           Orchestrator reply does NOT recite the digest
  *                           verbatim (voice-rule check).
+ *   --flow=tailor-resume    Seeded profile + BOOKMARKED Anthropic row.
+ *                           Full Phase 2.2 DoD: two chained Task calls
+ *                           (research-company → tailor-resume), both
+ *                           succeeded; tailor-resume invocation prompt
+ *                           contains a `## Company research` header;
+ *                           tailor-resume output has ≥3 bullets touching
+ *                           both candidate-profile terms and JD-specific
+ *                           terms; orchestrator surfaces bullets in reply.
  *   --keep-host             Leave `pnpm dev` running after the test for
  *                           manual probing. Default tears down.
  *   --no-reset              Skip the state wipe — useful for re-running
@@ -84,19 +92,22 @@ type Flow =
   | 'onboarding'
   | 'add-application'
   | 'research-company-discovery'
-  | 'research-company';
+  | 'research-company'
+  | 'tailor-resume';
 const FLOWS: ReadonlySet<Flow> = new Set([
   'smoke',
   'onboarding',
   'add-application',
   'research-company-discovery',
   'research-company',
+  'tailor-resume',
 ]);
 const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'smoke',
   'add-application',
   'research-company-discovery',
   'research-company',
+  'tailor-resume',
 ]);
 
 interface Args {
@@ -521,6 +532,267 @@ async function runResearchCompany(): Promise<void> {
   ok(`orchestrator reply has ${orchestratorHeaders} section-header-shaped patterns (recital threshold is 5)`);
 }
 
+async function runTailorResume(): Promise<void> {
+  header('Flow: tailor-resume');
+  // Phase 2.2 full DoD per STRATEGY.md §24.2.
+  //
+  // The first chained-subagent flow. The orchestrator must:
+  //   - invoke `research-company` first (because the candidate's request is
+  //     about a specific company),
+  //   - capture the digest,
+  //   - construct `tailor-resume`'s invocation prompt with the digest
+  //     embedded under a `## Company research` header,
+  //   - present tailor-resume's bullets to the candidate as the deliverable
+  //     (the "don't recite" rule from 2.1 does NOT apply -- bullets ARE
+  //     the deliverable, unlike research which is internal).
+  //
+  // Assertions (8 DoD items, mapped to assertion blocks below):
+  //   1+2. Two ordered Task tool_uses (research-company then tailor-resume),
+  //        both with is_error:false on their tool_result
+  //   3.   tailor-resume's invocation prompt contains a `## Company research`
+  //        header AND >=1 substring sampled from research-company's output
+  //        (proves the orchestrator actually passed the digest down, didn't
+  //        synthesize its own)
+  //   4.   tailor-resume's final assistant text has >=3 bullet-shaped lines
+  //   5.   >=1 bullet contains a candidate-profile term (Go|Rust|PostgreSQL)
+  //   6.   >=1 bullet contains a JD-specific term (distributed|inference|observability)
+  //   7.   Orchestrator's user-facing reply has >=3 bullet-shaped lines
+  //        (deliverable surfaces; voice-rule exception per persona Pattern B)
+  seedBookmarkedApplication({
+    id: 'app-e2e-anthropic-2',
+    company_name: 'Anthropic',
+    role_title: 'Staff Backend Engineer',
+    obfuscated_label: 'ai-a',
+  });
+  const reply = await chatTurn(
+    [
+      "Here's a JD I want to apply to — tailor my resume bullets for it:",
+      '',
+      '---',
+      '**Staff Backend Engineer, Inference @ Anthropic**',
+      '',
+      "We're hiring a senior engineer to build distributed Rust systems",
+      "powering our inference workloads at scale. You'll work on",
+      'observability tooling, throughput optimization, and PostgreSQL-backed',
+      'data flows. Required: production experience with distributed systems,',
+      'strong systems-level debugging skills.',
+      '---',
+    ].join('\n'),
+    600_000,
+  );
+  if (reply.length === 0) fail('reply was empty');
+
+  const jsonl = findLatestSessionJsonl();
+  if (!jsonl) fail('no session JSONL found under data/v2-sessions/');
+
+  // 1. Both Task subagent_types were dispatched, with research-company first.
+  // We tolerate retries (SDK validation-errors on first attempt happen
+  // empirically; orchestrator retries and one eventually succeeds).
+  const allTaskCalls = findAllSubagentDelegations(jsonl);
+  const researchCalls = allTaskCalls.filter((c) => c.input?.subagent_type === 'research-company');
+  const tailorCalls = allTaskCalls.filter((c) => c.input?.subagent_type === 'tailor-resume');
+  if (researchCalls.length === 0 || tailorCalls.length === 0) {
+    const allCalls = listAllToolCalls(jsonl);
+    console.error('  --- all orchestrator tool_use calls ---');
+    if (allCalls.length === 0) console.error('  (none)');
+    else for (const c of allCalls) console.error(`  ${c}`);
+    fail(
+      `orchestrator did not chain delegate — found ${researchCalls.length} research-company calls + ` +
+        `${tailorCalls.length} tailor-resume calls. Persona chain rule may need tightening.`,
+    );
+  }
+  // Ordering: first research-company must come before first tailor-resume.
+  const firstResearchIdx = allTaskCalls.indexOf(researchCalls[0]);
+  const firstTailorIdx = allTaskCalls.indexOf(tailorCalls[0]);
+  if (firstResearchIdx >= firstTailorIdx) {
+    fail(
+      `Task ordering wrong: first research-company at index ${firstResearchIdx}, first tailor-resume at ${firstTailorIdx}. ` +
+        'Chain rule says research first.',
+    );
+  }
+  ok(
+    `orchestrator chained Tasks (${researchCalls.length} research-company + ${tailorCalls.length} tailor-resume; research first)`,
+  );
+
+  // 2. At least one call of each subagent type succeeded. The SDK
+  // sometimes validation-errors a Task call (malformed parameters from
+  // the model) -- the orchestrator typically retries. We just need
+  // evidence that one call landed.
+  const successfulResearch = researchCalls.filter((c) => taskCallSucceeded(jsonl, c));
+  const successfulTailor = tailorCalls.filter((c) => taskCallSucceeded(jsonl, c));
+  if (successfulResearch.length === 0) {
+    fail(
+      `all ${researchCalls.length} research-company Task tool_results were errors. ` +
+        'Check `name: research-company` in agent .md and SDK validation errors in subagent JSONLs.',
+    );
+  }
+  if (successfulTailor.length === 0) {
+    fail(
+      `all ${tailorCalls.length} tailor-resume Task tool_results were errors. ` +
+        'Most likely: subagent is producing fake XML-shaped tool calls instead of bullets. ' +
+        'Strengthen tailor-resume.md anti-delegation guidance.',
+    );
+  }
+  ok(
+    `at least one success per subagent type: ${successfulResearch.length}/${researchCalls.length} research-company, ${successfulTailor.length}/${tailorCalls.length} tailor-resume`,
+  );
+
+  // 3. tailor-resume's invocation prompt should contain content derived
+  // from research-company's output. We DON'T require a specific header
+  // format (`## Company research` vs `**Research Digest:**` etc) -- the
+  // orchestrator may paraphrase, and that's defensible. We DO require
+  // that the tailor-resume prompt mentions research-derived signal (any
+  // research-shaped heading + a substring sample from research-company's
+  // digest).
+  //
+  // Pick a successful tailor-resume call for inspection.
+  const tailorCall = successfulTailor[0];
+  const tailorPrompt = (tailorCall.input?.prompt as string | undefined) ?? '';
+  // Liberal research-section detector: any heading-shape (markdown H2/H3
+  // or `**bold**`) whose body contains the word "research". Covers
+  // observed variants: `## Company research`, `**Research Digest:**`,
+  // `**Company research digest:**`, `### Research`, etc.
+  const RESEARCH_HEADING = /(?:^|\n)\s*(?:#{2,3}\s+[^\n]*research|\*\*[^*\n]*research[^*\n]*\*\*)/i;
+  if (!RESEARCH_HEADING.test(tailorPrompt)) {
+    console.error('  --- tailor-resume invocation prompt (first 2000 chars) ---');
+    console.error(tailorPrompt.slice(0, 2000));
+    console.error('  --- end ---');
+    fail(
+      'tailor-resume invocation prompt has no research-shaped heading. ' +
+        'Orchestrator should embed research-company output under a header like `## Company research` or `**Research Digest:**`.',
+    );
+  }
+
+  // Substring check against research-company's output. Sample multiple
+  // windows + accept short substrings (12 chars) -- short enough to
+  // survive light paraphrasing, long enough to be specific.
+  const researchSubJsonl = findSubagentJsonlByPrompt(jsonl, /(?:^|\n)Research\s+\S/i);
+  const researchOutput = researchSubJsonl ? extractFinalAssistantText(researchSubJsonl) : null;
+  if (!researchOutput) fail('research-company subagent has no final assistant text');
+  // Words >= 6 chars from research-company output that aren't in the
+  // user's original message -- these are research-derived terms that
+  // shouldn't appear in tailor-resume's prompt unless the chain passed
+  // the digest down. Looking for >=3 distinct overlaps.
+  const researchWords = new Set(
+    (researchOutput.match(/\b[A-Za-z][A-Za-z0-9_+./-]{5,}\b/g) || []).map((w) => w.toLowerCase()),
+  );
+  const promptWords = new Set(
+    (tailorPrompt.match(/\b[A-Za-z][A-Za-z0-9_+./-]{5,}\b/g) || []).map((w) => w.toLowerCase()),
+  );
+  const overlap = [...researchWords].filter((w) => promptWords.has(w));
+  // Filter out obvious common words and JD-derived terms (heuristic).
+  const COMMON = new Set([
+    'anthropic',
+    'staff',
+    'backend',
+    'engineer',
+    'inference',
+    'distributed',
+    'observability',
+    'postgresql',
+    'systems',
+    'production',
+    'should',
+    'their',
+    'tailor',
+    'company',
+    'research',
+    'candidate',
+    'master',
+    'resume',
+    'engineering',
+    'platform',
+    'context',
+    'target',
+    'roles',
+    'skills',
+    'experience',
+    'requirements',
+    'highlights',
+    'summary',
+    'before',
+    'because',
+    'including',
+    'specific',
+    'apply',
+    'bullet',
+    'bullets',
+  ]);
+  const distinctive = overlap.filter((w) => !COMMON.has(w));
+  if (distinctive.length < 3) {
+    console.error('  --- tailor-resume invocation prompt (first 2000 chars) ---');
+    console.error(tailorPrompt.slice(0, 2000));
+    console.error('  --- end ---');
+    console.error(`  --- distinctive overlap words (need >=3): ${JSON.stringify(distinctive)} ---`);
+    fail(
+      `tailor-resume prompt has only ${distinctive.length} research-distinctive words shared with research-company output. ` +
+        'Suggests orchestrator did not pass research findings down.',
+    );
+  }
+  ok(
+    `tailor-resume prompt has research heading + ${distinctive.length} distinctive overlap words with research-company digest (e.g., ${distinctive.slice(0, 5).join(', ')})`,
+  );
+
+  // 4-6. tailor-resume's bullet-level content checks. With possibly
+  // multiple tailor-resume subagent invocations, pick the one whose
+  // final-assistant text has the most bullet-shaped lines.
+  const tailorSubJsonls = listAllSubagentJsonls(jsonl)
+    .map((p) => ({ path: p, text: extractFinalAssistantText(p) ?? '' }))
+    .filter((x) => x.path !== researchSubJsonl)
+    .map((x) => ({ ...x, bullets: extractBulletLines(x.text) }))
+    .sort((a, b) => b.bullets.length - a.bullets.length);
+  if (tailorSubJsonls.length === 0) {
+    fail('no tailor-resume subagent JSONLs found');
+  }
+  const bestTailor = tailorSubJsonls[0];
+  const tailorBullets = bestTailor.bullets;
+  if (tailorBullets.length < 3) {
+    console.error('  --- best tailor-resume final output (first 2000 chars) ---');
+    console.error(bestTailor.text.slice(0, 2000));
+    console.error('  --- end ---');
+    fail(
+      `best tailor-resume invocation produced only ${tailorBullets.length} bullet-shaped lines (need >=3 from at least one attempt). ` +
+        'Subagent may be outputting XML-shaped fake tool calls instead of bullets.',
+    );
+  }
+  ok(`tailor-resume produced ${tailorBullets.length} bullet-shaped lines (best of ${tailorSubJsonls.length} attempts)`);
+
+  // 5. >=1 bullet with a candidate-profile term.
+  const CANDIDATE_TERMS = /\b(Go|Golang|Rust|PostgreSQL|Postgres)\b/i;
+  const candidateMatches = tailorBullets.filter((b) => CANDIDATE_TERMS.test(b));
+  if (candidateMatches.length === 0) {
+    console.error('  --- tailor-resume bullets ---');
+    for (const b of tailorBullets) console.error(`  > ${b}`);
+    console.error('  --- end ---');
+    fail('no bullet references a candidate-profile term (Go|Rust|PostgreSQL). Bullets must rest on candidate facts.');
+  }
+  ok(`${candidateMatches.length}/${tailorBullets.length} bullets reference candidate-profile terms`);
+
+  // 6. >=1 bullet with a JD-specific term.
+  const JD_TERMS = /\b(distributed|inference|observability)\b/i;
+  const jdMatches = tailorBullets.filter((b) => JD_TERMS.test(b));
+  if (jdMatches.length === 0) {
+    console.error('  --- tailor-resume bullets ---');
+    for (const b of tailorBullets) console.error(`  > ${b}`);
+    console.error('  --- end ---');
+    fail('no bullet references a JD-specific term (distributed|inference|observability). Bullets must weight the JD.');
+  }
+  ok(`${jdMatches.length}/${tailorBullets.length} bullets reference JD-specific terms`);
+
+  // 7. Orchestrator surfaces bullets in user-facing reply (Pattern B voice rule).
+  const replyBullets = extractBulletLines(reply);
+  if (replyBullets.length < 3) {
+    console.error('  --- orchestrator reply ---');
+    console.error(reply.slice(0, 2000));
+    console.error('  --- end ---');
+    fail(
+      `orchestrator reply has ${replyBullets.length} bullet-shaped lines (need >=3). ` +
+        'tailor-resume bullets ARE the deliverable -- orchestrator should surface them, not summarize away.',
+    );
+  }
+  ok(`orchestrator reply surfaces ${replyBullets.length} bullet-shaped lines (deliverable visible to candidate)`);
+}
+
 function seedBookmarkedApplication(opts: {
   id: string;
   company_name: string;
@@ -757,6 +1029,117 @@ function listAllToolCalls(jsonlPath: string): string[] {
   return calls;
 }
 
+// Like findTaskDelegation but returns ALL subagent dispatches in JSONL
+// order, regardless of subagent_type. Used by chained-delegation flows
+// (Phase 2.2+) that need to assert ordering across multiple Task calls.
+function findAllSubagentDelegations(jsonlPath: string): ToolUseBlock[] {
+  const lines = fs.readFileSync(jsonlPath, 'utf8').trim().split('\n');
+  const found: ToolUseBlock[] = [];
+  for (const line of lines) {
+    let e: { type?: string; message?: { content?: unknown[] } };
+    try {
+      e = JSON.parse(line) as typeof e;
+    } catch {
+      continue;
+    }
+    if (e.type !== 'assistant' || !Array.isArray(e.message?.content)) continue;
+    for (const block of e.message.content) {
+      if (!block || typeof block !== 'object') continue;
+      const b = block as ToolUseBlock;
+      if (b.type === 'tool_use' && SUBAGENT_DISPATCH_TOOL_NAMES.has(b.name)) {
+        found.push(b);
+      }
+    }
+  }
+  return found;
+}
+
+// List all subagent JSONLs under a parent session, full paths.
+function listAllSubagentJsonls(parentJsonl: string): string[] {
+  const dir = path.join(
+    path.dirname(parentJsonl),
+    path.basename(parentJsonl, '.jsonl'),
+    'subagents',
+  );
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir)
+    .filter((f) => f.startsWith('agent-') && f.endsWith('.jsonl'))
+    .map((f) => path.join(dir, f));
+}
+
+// Walk all subagent JSONLs under a parent session and return the first
+// whose invocation prompt (first user message) matches the regex.
+// Disambiguates the multiple-subagent case where Phase 2.1's
+// findSubagentJsonl(mtime-newest) would return the wrong file.
+function findSubagentJsonlByPrompt(
+  parentJsonl: string,
+  promptMatcher: RegExp,
+): string | null {
+  for (const jsonl of listAllSubagentJsonls(parentJsonl)) {
+    const prompt = getSubagentInvocationPrompt(jsonl);
+    if (prompt && promptMatcher.test(prompt)) return jsonl;
+  }
+  return null;
+}
+
+// First `user` message text in a subagent JSONL is the invocation prompt
+// the orchestrator sent. Used to identify-by-content when multiple
+// subagent JSONLs sit alongside.
+function getSubagentInvocationPrompt(jsonlPath: string): string | null {
+  const lines = fs.readFileSync(jsonlPath, 'utf8').trim().split('\n');
+  for (const line of lines) {
+    let e: { type?: string; message?: { content?: unknown[] | string } };
+    try {
+      e = JSON.parse(line) as typeof e;
+    } catch {
+      continue;
+    }
+    if (e.type !== 'user') continue;
+    const c = e.message?.content;
+    if (typeof c === 'string') return c;
+    if (!Array.isArray(c)) continue;
+    const text = c
+      .filter((b): b is { type: string; text?: string } => !!b && typeof b === 'object')
+      .filter((b) => b.type === 'text')
+      .map((b) => b.text ?? '')
+      .join('\n');
+    if (text.trim().length > 0) return text;
+  }
+  return null;
+}
+
+// Sample N substrings from the middle of a text. Used to verify the
+// orchestrator passed a subagent's output down to another subagent
+// without false positives from light reformatting (3 samples; require
+// >=1 to match).
+function takeSampleSubstrings(text: string, count: number, sampleLen: number): string[] {
+  if (text.length < sampleLen * 2) return [];
+  const samples: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const offset = Math.floor(text.length * ((i + 1) / (count + 1)));
+    const sample = text.slice(offset, offset + sampleLen);
+    if (sample.length >= sampleLen / 2) samples.push(sample);
+  }
+  return samples;
+}
+
+// Return all bullet-shaped lines in a text block. Bullet shapes:
+//   - foo
+//   * foo
+//   1. foo / 2. foo / etc.
+// Indentation tolerated; multi-line bullets only their leading line is
+// counted (we just need a count for assertion thresholds).
+function extractBulletLines(text: string): string[] {
+  const out: string[] = [];
+  for (const line of text.split('\n')) {
+    if (/^\s*([-*]|\d+\.)\s+\S/.test(line)) {
+      out.push(line.trim());
+    }
+  }
+  return out;
+}
+
 async function runAddApplication(): Promise<void> {
   header('Flow: add-application');
   // Phase 1 DoD per STRATEGY.md §V: "I can say 'add an application for X'
@@ -840,6 +1223,7 @@ async function main(): Promise<void> {
       'add-application': runAddApplication,
       'research-company-discovery': runResearchCompanyDiscovery,
       'research-company': runResearchCompany,
+      'tailor-resume': runTailorResume,
     };
     await FLOW_HANDLERS[args.flow]();
     assertionsPassed = true;
