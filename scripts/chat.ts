@@ -19,6 +19,11 @@ const SILENCE_MS = 2000; // exit after this much quiet time following the first 
 const TOTAL_TIMEOUT_MS = 120_000; // hard stop
 
 function socketPath(): string {
+  // Mirror src/channels/cli.ts: Windows uses a named pipe because Node's
+  // AF_UNIX support on Windows returns EACCES on listen under DATA_DIR.
+  if (process.platform === 'win32') {
+    return '\\\\.\\pipe\\nanoclaw-cli';
+  }
   return path.join(DATA_DIR, 'cli.sock');
 }
 
