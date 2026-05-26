@@ -454,6 +454,22 @@ async function buildContainerArgs(
   // Host gateway
   args.push(...hostGatewayArgs());
 
+  // Per-spawn env overrides + blocked hosts from container.json.
+  // Applied AFTER OneCLI so our values win — used by the Ollama test mode
+  // to redirect ANTHROPIC_BASE_URL to a local Ollama daemon and bypass
+  // the OneCLI proxy for those requests. See `container-config.ts` ->
+  // `applyOllamaTestOverrides` for the test-mode recipe.
+  if (containerConfig.env) {
+    for (const [key, value] of Object.entries(containerConfig.env)) {
+      args.push('-e', `${key}=${value}`);
+    }
+  }
+  if (containerConfig.blockedHosts) {
+    for (const host of containerConfig.blockedHosts) {
+      args.push('--add-host', `${host}:0.0.0.0`);
+    }
+  }
+
   // User mapping
   const hostUid = process.getuid?.();
   const hostGid = process.getgid?.();
