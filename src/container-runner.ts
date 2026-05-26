@@ -27,6 +27,7 @@ import { composeGroupClaudeMd } from './claude-md-compose.js';
 import { getAgentGroup } from './db/agent-groups.js';
 import { getDb, hasTable } from './db/connection.js';
 import { initGroupFilesystem } from './group-init.js';
+import { renderPersonaForGroup } from './modules/career-pilot/render-persona.js';
 import { stopTypingRefresh } from './modules/typing/index.js';
 import { log } from './log.js';
 import { validateAdditionalMounts } from './modules/mount-security/index.js';
@@ -255,6 +256,15 @@ function buildMounts(
   // Sync skill symlinks based on container.json selection before mounting.
   const claudeDir = path.join(DATA_DIR, 'v2-sessions', agentGroup.id, '.claude-shared');
   syncSkillSymlinks(claudeDir, containerConfig);
+
+  // Career-pilot host hook: render the candidate-profile-derived persona
+  // fragment into `.claude-host-fragments/candidate.md` BEFORE the composer
+  // scans the directory. See `src/modules/career-pilot/render-persona.ts`
+  // and `.specs/STRATEGY.md §4`. Gated on folder name so this is a no-op
+  // for every other group on the host.
+  if (agentGroup.folder === 'career-pilot') {
+    renderPersonaForGroup(agentGroup);
+  }
 
   // Compose CLAUDE.md fresh every spawn from the shared base, enabled skill
   // fragments, and MCP server instructions. See `claude-md-compose.ts`.
