@@ -47,8 +47,15 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
-const PNPM_CMD = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
-const TSX_BIN = path.join(REPO_ROOT, 'node_modules', '.bin', process.platform === 'win32' ? 'tsx.cmd' : 'tsx');
+// Bypass pnpm.cmd / tsx.cmd entirely on Windows -- spawn() cannot launch
+// .cmd files without shell: true (EINVAL), and shell: true creates quoting
+// hazards. Calling `node tsx/dist/cli.mjs <script>` is portable and direct.
+const NODE_BIN = process.execPath;
+const TSX_CLI = path.join(REPO_ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+const runTsx = (script: string, args: string[] = []): [string, string[]] => [
+  NODE_BIN,
+  [TSX_CLI, script, ...args],
+];
 
 // Strip ANSI escape sequences from a string so substring matching against
 // log lines is reliable regardless of TTY color settings.
@@ -99,7 +106,8 @@ function preflight(): void {
   // remediation messages already. Inherits stdio so the user sees the
   // diagnostic if it fails.
   try {
-    execSync(`"${TSX_BIN}" "${path.join(REPO_ROOT, 'scripts', 'test', 'check-ollama.ts')}"`, {
+    const [cmd, args] = runTsx(path.join(REPO_ROOT, 'scripts', 'test', 'check-ollama.ts'));
+    execSync(`"${cmd}" ${args.map((a) => `"${a}"`).join(' ')}`, {
       stdio: 'inherit',
       cwd: REPO_ROOT,
     });
@@ -130,9 +138,10 @@ function preflight(): void {
 
 async function resetAndSetup(seedProfile: boolean): Promise<void> {
   header(`Reset + setup${seedProfile ? ' (with seeded profile)' : ''}`);
-  const args = [path.join(REPO_ROOT, 'scripts', 'test', 'setup-test.ts'), '--reset'];
-  if (seedProfile) args.push('--seed-profile');
-  const r = spawn(TSX_BIN, args, { stdio: 'inherit', cwd: REPO_ROOT });
+  const extra = ['--reset'];
+  if (seedProfile) extra.push('--seed-profile');
+  const [cmd, args] = runTsx(path.join(REPO_ROOT, 'scripts', 'test', 'setup-test.ts'), extra);
+  const r = spawn(cmd, args, { stdio: 'inherit', cwd: REPO_ROOT });
   const code = await waitForExit(r);
   if (code !== 0) {
     console.error(`  ✗ setup-test.ts exited ${code}`);
@@ -156,8 +165,9 @@ interface HostHandle {
 async function startHost(): Promise<HostHandle> {
   header('Spawning host (pnpm dev, OLLAMA_TEST_MODE=1)');
 
+  const [hostCmd, hostArgs] = runTsx(path.join(REPO_ROOT, 'src', 'index.ts'));
   const handle: HostHandle = {
-    proc: spawn(PNPM_CMD, ['dev'], {
+    proc: spawn(hostCmd, hostArgs, {
       cwd: REPO_ROOT,
       env: { ...process.env, OLLAMA_TEST_MODE: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -245,8 +255,8 @@ async function teardownHost(h: HostHandle): Promise<void> {
 
 async function chatTurn(text: string, timeoutMs = 180_000): Promise<string> {
   console.log(`  > ${text}`);
-  const chatPath = path.join(REPO_ROOT, 'scripts', 'chat.ts');
-  const proc = spawn(TSX_BIN, [chatPath, text], {
+  const [cmd, args] = runTsx(path.join(REPO_ROOT, 'scripts', 'chat.ts'), [text]);
+  const proc = spawn(cmd, args, {
     cwd: REPO_ROOT,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
