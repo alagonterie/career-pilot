@@ -1298,6 +1298,76 @@ Each phase ends with a commit-and-pause for review. Phases 0-3 are mostly invisi
 - Auto-apply (no — always human-in-the-loop for v1)
 - Mobile native app (the responsive web is enough)
 
+### 24. Phase sub-milestone drill-ins
+
+Phase rows in the table above are coarse. As we approach each phase, we drill the first sub-milestone into a spec section with its own DoD — same discipline as Phase 1's `renderPersona` and `update_application` work. Each drill-in lands here before any code, gets reviewed, then the code lands against the spec. This section grows phase-by-phase.
+
+#### 24.1 Sub-milestone 2.1 — `research-company` subagent end-to-end
+
+**Why this sub-milestone first:** It is the foundational subagent. `tailor-resume`, `draft-outreach`, and `prep-interview` all consume its output, so its output schema is load-bearing for the rest of Phase 2. It is also the only one of the five subagents that is read-only with no external auth (just `WebSearch` + `WebFetch`), making it the cheapest end-to-end test of "does subagent delegation actually work through the local-LLM Anthropic shim?" — a question that gates everything in Phase 2.
+
+**What lands:**
+
+1. **Flesh out `groups/career-pilot/.claude/agents/research-company.md`** (currently a Phase 0 placeholder). The body covers:
+   - **Mission** — build a structured digest the orchestrator and other subagents can consume.
+   - **Output schema (markdown with stable section headers; not JSON)** — chosen because downstream subagents read it as system-prompt input, not via JSON parser. Section list, in order:
+     - `## Summary` (one paragraph)
+     - `## Recent signals` (last-90-day news, funding, layoffs, leadership)
+     - `## Engineering culture`
+     - `## Tech stack` (bulleted; inferred-vs-cited distinction)
+     - `## Team composition` (size, key eng leadership — public profiles only)
+     - `## Hiring signals` (open reqs, growth rate, recent eng hires)
+     - `## Citations` (numbered list)
+   - **Citation discipline** — every claim has an inline `[n]` marker; `## Citations` lists `[n] <title> — <url> — <date if known>`. Inferred-not-sourced claims marked `[inferred]` inline.
+   - **What to avoid** — already in placeholder; preserved (no recruiter LinkedIn scraping, no individual employee emails).
+   - **Bail conditions** — paywall (e.g., WSJ), 403, Cloudflare Challenge, contradictory sources without a defensible reconciliation. On bail: emit a section noting the gap, don't fabricate.
+   - **Tool budget** — at most ~6 `WebFetch` calls per run, within `maxTurns: 12`. Prefer `WebSearch` first to triage what's worth fetching.
+
+2. **Mirror to sandbox group** — copy `groups/career-pilot/.claude/agents/research-company.md` → `groups/career-pilot-sandbox/.claude/agents/research-company.md` (manual copy; the `scripts/sync-shared-skills.ts` mechanism is Phase 4 — don't pre-build).
+
+3. **Verify the invocation path actually works** — see "Risk + fallback" below.
+
+4. **New e2e flow `--flow=research-company`** in `scripts/test/e2e.ts`:
+   - Seed: an `applications` row in `BOOKMARKED` state for "Anthropic" (real company; robust public information; tolerant to web flakiness).
+   - User turn: `"research anthropic for me before i think about the application"`.
+   - Assertions:
+     - Container logs show `Task` tool invocation with `subagent_type: "research-company"`.
+     - Reply contains all 7 section headers verbatim, in order.
+     - Reply contains `[1]`-style citation markers AND a `## Citations` block with ≥3 entries.
+     - At least one citation URL matches `anthropic\.com` (sanity check that real sourcing happened, not hallucination).
+   - Wires into the existing `FLOWS` registry. No DB-write assertion — research is stateless until Phase 2.2 caching lands.
+
+5. **No caching layer.** The `research_cache` table and Portkey semantic-cache wiring are explicitly deferred to Sub-milestone 2.1.5 — cache a schema only after it's verified stable.
+
+**Out of scope (explicit, to keep the increment small):**
+- `analyze_jd` MCP tool (separate sub-milestone — needs sub-LLM via OneCLI gateway)
+- `research_cache` migration + caching path (Sub-milestone 2.1.5)
+- `tailor-resume` subagent (Sub-milestone 2.2)
+- Portkey semantic-cache wiring (depends on Portkey being in the loop, which is itself a Phase 4 concern locally — GLM is the local LLM for Phase 1-3 work)
+
+**Risk + fallback hierarchy:**
+
+The single load-bearing risk is whether GLM-4.7-Flash, through the Ollama `/v1/messages` shim, can correctly emit a `Task` tool-use block. The shim's renderer/parser was the wall for `qwen3-coder` (it could not emit `tool_use` blocks at all). GLM-4.7-Flash passed `update_application` in Phase 1 — a simple custom MCP tool — but the `Task` tool is a Claude Agent SDK built-in whose result is processed by the SDK (not by the orchestrator inline) to spawn a fresh subagent context. Different code path, different risk surface.
+
+If `Task` round-trip fails, the fallback order is **prescribed, not negotiable**:
+
+| Order | Action | Cost | Why this order |
+|---|---|---|---|
+| 1 | **Prompt-tune the orchestrator persona.** Add a concrete `Task` invocation example in the "Subagents — when to delegate" section. Push the delegation rule harder ("for any research task, delegate via Task — do not attempt the research yourself"). | $0 | The cheapest possible knob; might be the only knob needed. |
+| 2 | **Route the orchestrator to a real Anthropic model via `LLM_PROVIDER=claude_test`** (or the production equivalent in prod). The `LLM_PROVIDER` env switch is already part of the local dev story (§16.2) — flipping it sets `ANTHROPIC_BASE_URL` to Anthropic + injects a Portkey AI Provider slug. The subagent itself can still run on GLM if shape-equivalence holds, or also flip up; cost discipline argues for orchestrator-only at first. | Per-call $ | Real Claude has unambiguous `Task` support. This is "spend money to preserve the architecture." |
+| 3 | **Never: orchestrator handles research inline.** | — | This would collapse five subagents into a monolithic orchestrator and break the foundation that Phase 2.2-2.5 rely on. Architectural integrity is preserved at the cost of LLM spend, not at the cost of design. |
+
+The **discovery test is the trigger** for moving down the hierarchy. We run the `--flow=research-company-discovery` first (assertion: `Task` tool_use emitted with the right `subagent_type`), see what GLM does, and only then commit time to fleshing out the prompt body. ~20 minutes of cheap discovery before the larger prompt-writing investment.
+
+**Definition of done:**
+
+1. With a `BOOKMARKED` applications row for Anthropic, the candidate's "research <X> for me" turn invokes the `research-company` subagent (verified in container logs as a `Task` tool_use with `subagent_type: "research-company"`).
+2. The subagent returns markdown containing all 7 mandated section headers in order, ≥3 citations in `## Citations`, and ≥1 inline `[n]` marker referencing the citation list.
+3. The orchestrator's reply to the candidate summarizes the research (does not re-paste it verbatim — per persona voice rules "don't recite back unprompted").
+4. `pnpm test:e2e --flow=research-company` passes on Windows with the GLM-4.7-Flash stack — OR, if the fallback hierarchy kicked in, with the documented `LLM_PROVIDER` value, and the choice is recorded in the commit message + `feedback_windows_dev_env.md` memory.
+5. Sandbox group has a byte-identical copy of `research-company.md` (`diff groups/career-pilot{,-sandbox}/.claude/agents/research-company.md` → empty).
+6. No new MCP tools, no new migrations, no `research_cache` table — discipline check on increment size.
+
 ---
 
 ## Part VI: Open questions

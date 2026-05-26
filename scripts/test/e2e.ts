@@ -10,7 +10,7 @@
  * gating Phase 1 → Phase 2.
  *
  * Usage:
- *   pnpm test:e2e [--flow=smoke|onboarding|add-application] [--keep-host] [--no-reset]
+ *   pnpm test:e2e [--flow=smoke|onboarding|add-application|research-company-discovery] [--keep-host] [--no-reset]
  *
  * Flags:
  *   --flow=smoke            Default. Single turn, asserts non-empty reply.
@@ -19,6 +19,11 @@
  *   --flow=add-application  Seeded profile. Asks the agent to bookmark a
  *                           role; asserts the applications table grew.
  *                           Phase 1 DoD per STRATEGY.md §V.
+ *   --flow=research-company-discovery
+ *                           Seeded profile. Asks the agent to research a
+ *                           company; asserts container logs show a Task
+ *                           tool_use with subagent_type=research-company.
+ *                           Gates Phase 2 per STRATEGY.md §24.1.
  *   --keep-host             Leave `pnpm dev` running after the test for
  *                           manual probing. Default tears down.
  *   --no-reset              Skip the state wipe — useful for re-running
@@ -68,9 +73,18 @@ const runTsx = (script: string, args: string[] = []): [string, string[]] => [
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
 const stripAnsi = (s: string): string => s.replace(ANSI_RE, '');
 
-type Flow = 'smoke' | 'onboarding' | 'add-application';
-const FLOWS: ReadonlySet<Flow> = new Set(['smoke', 'onboarding', 'add-application']);
-const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set(['smoke', 'add-application']);
+type Flow = 'smoke' | 'onboarding' | 'add-application' | 'research-company-discovery';
+const FLOWS: ReadonlySet<Flow> = new Set([
+  'smoke',
+  'onboarding',
+  'add-application',
+  'research-company-discovery',
+]);
+const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
+  'smoke',
+  'add-application',
+  'research-company-discovery',
+]);
 
 interface Args {
   flow: Flow;
@@ -346,6 +360,127 @@ async function runOnboarding(): Promise<void> {
   ok('first onboarding turn prompts for name');
 }
 
+async function runResearchCompanyDiscovery(): Promise<void> {
+  header('Flow: research-company-discovery');
+  // Per STRATEGY.md §24.1: gate Phase 2 by proving GLM-4.7-Flash, through
+  // the Ollama Anthropic shim, can emit a `Task` tool_use block with
+  // `subagent_type: "research-company"` -- i.e., that the SDK's subagent
+  // delegation primitive round-trips through the local-LLM stack at all.
+  //
+  // Fallback hierarchy if this fails (prescribed, not negotiable):
+  //   1. Prompt-tune the orchestrator persona to make Task invocation
+  //      more explicit.
+  //   2. Route the orchestrator to real Anthropic via LLM_PROVIDER
+  //      (§16.2). Spend money to preserve the architecture.
+  //   3. Never: orchestrator handles research inline. The five-subagent
+  //      foundation is load-bearing for Phase 2.2-2.5.
+  //
+  // This is the DISCOVERY flow -- minimal assertion. The full DoD flow
+  // (`--flow=research-company`) lands after the prompt body is fleshed
+  // out and adds output-schema + citation assertions on top of this.
+  //
+  // 10-min timeout because the full subagent chain (Task delegation +
+  // subagent's own WebSearch/WebFetch loop) takes longer than a typical
+  // single-turn flow. The default 5-min cliff is set for smoke and
+  // add-application; delegation flows need more headroom.
+  const reply = await chatTurn('research anthropic for me', 600_000);
+  if (reply.length === 0) fail('reply was empty');
+
+  // Load-bearing signal: the session JSONL holds the full tool_use shape,
+  // including `subagent_type`. Docker logs only show the agent-runner's
+  // final result string, not the in-flight tool calls -- so JSONL is the
+  // right place to assert on delegation.
+  const jsonl = findLatestSessionJsonl();
+  if (!jsonl) fail('no session JSONL found under data/v2-sessions/');
+
+  const taskCall = findTaskDelegation(jsonl, 'research-company');
+  if (!taskCall) {
+    // Dump all tool calls so the mode-of-failure is visible: did the
+    // model attempt research inline (WebSearch/WebFetch), did it call
+    // a different subagent, or did it not tool-call at all?
+    const allCalls = listAllToolCalls(jsonl);
+    console.error('  --- all tool_use calls in this session ---');
+    if (allCalls.length === 0) {
+      console.error('  (no tool calls at all -- model bailed without using tools)');
+    } else {
+      for (const c of allCalls) console.error(`  ${c}`);
+    }
+    console.error('  --- end ---');
+    fail(
+      'no Task tool_use with subagent_type=research-company in session JSONL. ' +
+        'Per STRATEGY.md §24.1 fallback: try prompt-tuning the persona first, then LLM_PROVIDER.',
+    );
+  }
+  ok(`Task delegation to research-company subagent (input: ${JSON.stringify(taskCall.input).slice(0, 120)}...)`);
+}
+
+function findLatestSessionJsonl(): string | null {
+  const sessionsDir = path.join(REPO_ROOT, 'data', 'v2-sessions');
+  if (!fs.existsSync(sessionsDir)) return null;
+  let latest: { path: string; mtime: number } | null = null;
+  const walk = (dir: string): void => {
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, ent.name);
+      if (ent.isDirectory()) walk(full);
+      else if (ent.isFile() && ent.name.endsWith('.jsonl')) {
+        const mtime = fs.statSync(full).mtimeMs;
+        if (!latest || mtime > latest.mtime) latest = { path: full, mtime };
+      }
+    }
+  };
+  walk(sessionsDir);
+  return latest ? (latest as { path: string; mtime: number }).path : null;
+}
+
+interface ToolUseBlock {
+  type: 'tool_use';
+  name: string;
+  input: Record<string, unknown>;
+}
+
+function findTaskDelegation(jsonlPath: string, subagentType: string): ToolUseBlock | null {
+  const lines = fs.readFileSync(jsonlPath, 'utf8').trim().split('\n');
+  for (const line of lines) {
+    let e: { type?: string; message?: { content?: unknown[] } };
+    try {
+      e = JSON.parse(line) as typeof e;
+    } catch {
+      continue;
+    }
+    if (e.type !== 'assistant' || !Array.isArray(e.message?.content)) continue;
+    for (const block of e.message.content) {
+      if (!block || typeof block !== 'object') continue;
+      const b = block as ToolUseBlock;
+      if (b.type === 'tool_use' && b.name === 'Task' && b.input?.subagent_type === subagentType) {
+        return b;
+      }
+    }
+  }
+  return null;
+}
+
+function listAllToolCalls(jsonlPath: string): string[] {
+  const lines = fs.readFileSync(jsonlPath, 'utf8').trim().split('\n');
+  const calls: string[] = [];
+  for (const line of lines) {
+    let e: { type?: string; message?: { content?: unknown[] } };
+    try {
+      e = JSON.parse(line) as typeof e;
+    } catch {
+      continue;
+    }
+    if (e.type !== 'assistant' || !Array.isArray(e.message?.content)) continue;
+    for (const block of e.message.content) {
+      if (!block || typeof block !== 'object') continue;
+      const b = block as ToolUseBlock;
+      if (b.type === 'tool_use') {
+        calls.push(`${b.name} ← ${JSON.stringify(b.input).slice(0, 140)}`);
+      }
+    }
+  }
+  return calls;
+}
+
 async function runAddApplication(): Promise<void> {
   header('Flow: add-application');
   // Phase 1 DoD per STRATEGY.md §V: "I can say 'add an application for X'
@@ -428,7 +563,8 @@ async function main(): Promise<void> {
     // Not before. Premature abstraction has its own cost.
     if (args.flow === 'smoke') await runSmoke();
     else if (args.flow === 'onboarding') await runOnboarding();
-    else await runAddApplication();
+    else if (args.flow === 'add-application') await runAddApplication();
+    else await runResearchCompanyDiscovery();
     assertionsPassed = true;
   } catch (err) {
     console.error(`  ✗ ${err instanceof Error ? err.message : String(err)}`);
