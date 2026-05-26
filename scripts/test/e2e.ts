@@ -42,14 +42,21 @@
  *                           local Ollama daemon via the Anthropic shim.
  *                           Zero LLM cost. Requires Ollama + glm-4.7-flash.
  *   --llm-provider=claude   Routes model calls to real Anthropic via
- *                           OneCLI's gateway. ~$0.30-1/run depending on
- *                           flow. Requires OneCLI gateway running with
- *                           an Anthropic secret registered. All three
- *                           model aliases (haiku/sonnet/opus) get routed
- *                           to Sonnet 4.6 by default (override via
- *                           CLAUDE_TEST_{SONNET,OPUS,HAIKU}_MODEL env).
- *                           Used for "is this issue GLM-specific or
+ *                           OneCLI's gateway. Requires OneCLI gateway
+ *                           running with an Anthropic secret registered.
+ *                           All three model aliases (haiku/sonnet/opus)
+ *                           get routed to Sonnet 4.6 by default (override
+ *                           via CLAUDE_TEST_{SONNET,OPUS,HAIKU}_MODEL
+ *                           env). Used for "is this issue GLM-specific or
  *                           prompt-actually-wrong?" validation.
+ *
+ *                           Observed cost for --flow=tailor-resume:
+ *                           ~$0.75/run = Sonnet $0.50 + Haiku $0.20 +
+ *                           web search $0.06. The Haiku slice is
+ *                           WebFetch/WebSearch internal summarization,
+ *                           which scales with research-company's fetch
+ *                           count (5-10 fetches typical). Flows that
+ *                           don't fetch web content are much cheaper.
  *   --keep-host             Leave `pnpm dev` running after the test for
  *                           manual probing. Default tears down.
  *   --no-reset              Skip the state wipe — useful for re-running
