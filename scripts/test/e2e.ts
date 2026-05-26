@@ -38,6 +38,18 @@
  *                           tailor-resume output has ≥3 bullets touching
  *                           both candidate-profile terms and JD-specific
  *                           terms; orchestrator surfaces bullets in reply.
+ *   --llm-provider=ollama   Default. Routes all model calls through the
+ *                           local Ollama daemon via the Anthropic shim.
+ *                           Zero LLM cost. Requires Ollama + glm-4.7-flash.
+ *   --llm-provider=claude   Routes model calls to real Anthropic via
+ *                           OneCLI's gateway. ~$0.30-1/run depending on
+ *                           flow. Requires OneCLI gateway running with
+ *                           an Anthropic secret registered. All three
+ *                           model aliases (haiku/sonnet/opus) get routed
+ *                           to Sonnet 4.6 by default (override via
+ *                           CLAUDE_TEST_{SONNET,OPUS,HAIKU}_MODEL env).
+ *                           Used for "is this issue GLM-specific or
+ *                           prompt-actually-wrong?" validation.
  *   --keep-host             Leave `pnpm dev` running after the test for
  *                           manual probing. Default tears down.
  *   --no-reset              Skip the state wipe — useful for re-running
@@ -110,14 +122,19 @@ const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'tailor-resume',
 ]);
 
+type LlmProvider = 'ollama' | 'claude';
+const LLM_PROVIDERS: ReadonlySet<LlmProvider> = new Set(['ollama', 'claude']);
+
 interface Args {
   flow: Flow;
   keepHost: boolean;
   noReset: boolean;
+  llmProvider: LlmProvider;
 }
 
 function parseArgs(argv: string[]): Args {
   let flow: Flow = 'smoke';
+  let llmProvider: LlmProvider = 'ollama';
   for (const a of argv) {
     if (a.startsWith('--flow=')) {
       const v = a.slice('--flow='.length) as Flow;
@@ -126,10 +143,18 @@ function parseArgs(argv: string[]): Args {
         process.exit(2);
       }
       flow = v;
+    } else if (a.startsWith('--llm-provider=')) {
+      const v = a.slice('--llm-provider='.length) as LlmProvider;
+      if (!LLM_PROVIDERS.has(v)) {
+        console.error(`unknown llm-provider: ${v} (expected one of: ${[...LLM_PROVIDERS].join('|')})`);
+        process.exit(2);
+      }
+      llmProvider = v;
     }
   }
   return {
     flow,
+    llmProvider,
     keepHost: argv.includes('--keep-host'),
     noReset: argv.includes('--no-reset'),
   };
@@ -148,21 +173,25 @@ function fail(s: string): never {
   process.exit(1);
 }
 
-function preflight(): void {
-  header('Pre-flight');
+function preflight(llmProvider: LlmProvider): void {
+  header(`Pre-flight (llm-provider=${llmProvider})`);
 
-  // 1. Ollama. Delegate to check-ollama.ts — it has the model logic + clear
-  // remediation messages already. Inherits stdio so the user sees the
-  // diagnostic if it fails.
-  try {
-    const [cmd, args] = runTsx(path.join(REPO_ROOT, 'scripts', 'test', 'check-ollama.ts'));
-    execSync(`"${cmd}" ${args.map((a) => `"${a}"`).join(' ')}`, {
-      stdio: 'inherit',
-      cwd: REPO_ROOT,
-    });
-  } catch {
-    console.error('  ✗ Ollama pre-flight failed (see above). Fix and retry.');
-    process.exit(2);
+  // 1. Ollama check — only when actually using Ollama. Claude mode skips
+  // (OneCLI handles the Anthropic creds; if it isn't running, the host
+  // will fail with a clear "OneCLI gateway not applied" later).
+  if (llmProvider === 'ollama') {
+    try {
+      const [cmd, args] = runTsx(path.join(REPO_ROOT, 'scripts', 'test', 'check-ollama.ts'));
+      execSync(`"${cmd}" ${args.map((a) => `"${a}"`).join(' ')}`, {
+        stdio: 'inherit',
+        cwd: REPO_ROOT,
+      });
+    } catch {
+      console.error('  ✗ Ollama pre-flight failed (see above). Fix and retry.');
+      process.exit(2);
+    }
+  } else {
+    ok('Ollama check skipped (using real Claude via OneCLI)');
   }
 
   // 2. Docker. `docker ps` exits non-zero if the daemon isn't reachable.
@@ -211,14 +240,15 @@ interface HostHandle {
   stderr: string;
 }
 
-async function startHost(): Promise<HostHandle> {
-  header('Spawning host (pnpm dev, OLLAMA_TEST_MODE=1)');
+async function startHost(llmProvider: LlmProvider): Promise<HostHandle> {
+  const modeEnvVar = llmProvider === 'claude' ? 'CLAUDE_TEST_MODE' : 'OLLAMA_TEST_MODE';
+  header(`Spawning host (pnpm dev, ${modeEnvVar}=1)`);
 
   const [hostCmd, hostArgs] = runTsx(path.join(REPO_ROOT, 'src', 'index.ts'));
   const handle: HostHandle = {
     proc: spawn(hostCmd, hostArgs, {
       cwd: REPO_ROOT,
-      env: { ...process.env, OLLAMA_TEST_MODE: '1' },
+      env: { ...process.env, [modeEnvVar]: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],
     }),
     stdout: '',
@@ -1201,7 +1231,7 @@ function assertApplicationRow(companyPattern: RegExp): ApplicationRow {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
 
-  preflight();
+  preflight(args.llmProvider);
 
   if (!args.noReset) {
     // FLOWS_NEEDING_SEED skips onboarding mode by pre-populating
@@ -1209,7 +1239,7 @@ async function main(): Promise<void> {
     await resetAndSetup(FLOWS_NEEDING_SEED.has(args.flow));
   }
 
-  const host = await startHost();
+  const host = await startHost(args.llmProvider);
   let assertionsPassed = false;
   try {
     // SCALING: at 5 flows the if/else chain got awkward, so dispatch
