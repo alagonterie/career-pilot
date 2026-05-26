@@ -1,0 +1,320 @@
+/**
+ * Career-pilot MCP tools (Phase 1).
+ *
+ * Five tools that round-trip through the host via the system-action contract
+ * (see STRATEGY.md §6.1 + the helper at `../career-pilot/action.ts`):
+ *
+ *   - update_profile_field   — UPSERT candidate_profile (onboarding-critical)
+ *   - update_application     — UPSERT applications (the "add an application" path)
+ *   - record_funnel_event    — INSERT funnel_events
+ *   - get_application        — SELECT one
+ *   - list_applications      — SELECT filtered
+ *
+ * The persona's "Tools & subagents" section in `groups/career-pilot/
+ * .claude-host-fragments/persona.md` instructs the agent on when to use each.
+ *
+ * Deferred to later phases (per STRATEGY.md §6.2):
+ *   - analyze_jd (Phase 2 — needs sub-LLM via OneCLI gateway)
+ *   - sanitize_text (Phase 3 — sanitizer pipeline)
+ *   - parse_email, save_outreach_draft (Phase 2 — outreach flow)
+ *   - send_outreach_email, query_gmail, query_calendar (Phase 2 — Gmail API)
+ *   - add_learning (Phase 2 — reflection loop)
+ *   - schedule_followup (Phase 2 — leverages NanoClaw schedule_task)
+ */
+import { sendAction } from '../career-pilot/action.js';
+import { registerTools } from './server.js';
+import type { McpToolDefinition } from './types.js';
+
+function ok(text: string, structured?: Record<string, unknown>) {
+  const base = { content: [{ type: 'text' as const, text }] };
+  return structured ? { ...base, structuredContent: structured } : base;
+}
+
+function err(text: string) {
+  return { content: [{ type: 'text' as const, text: `Error: ${text}` }], isError: true };
+}
+
+/** Format an action error frame as a tool error result. */
+function actionErr(action: string, error: { code: string; message: string }) {
+  return err(`${action} failed (${error.code}): ${error.message}`);
+}
+
+// ── update_profile_field ───────────────────────────────────────────────────
+
+const PROFILE_FIELDS = [
+  'full_name',
+  'display_name',
+  'bio',
+  'target_roles',
+  'location_pref',
+  'comp_floor',
+  'master_resume',
+  'skills',
+  'github_url',
+  'linkedin_url',
+  'x_url',
+  'website_url',
+  'why_this_exists',
+  'headshot_path',
+  'brand_color_hsl',
+] as const;
+
+export const updateProfileField: McpToolDefinition = {
+  tool: {
+    name: 'update_profile_field',
+    description:
+      'Update a single field on the candidate_profile (the candidate\'s persona content). Use during onboarding (one field per turn) and any time the candidate explicitly updates their profile. The change takes effect on the NEXT container spawn (the persona render hook re-runs and the agent sees the updated context). For JSON-valued fields (target_roles, location_pref, skills), pass the JSON-encoded string.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        field: {
+          type: 'string',
+          enum: [...PROFILE_FIELDS],
+          description: 'Which candidate_profile column to update.',
+        },
+        value: {
+          description:
+            'New value. For comp_floor pass an integer (USD/year). For target_roles, location_pref, skills pass a JSON-encoded string (e.g. \'["Staff Backend", "Platform"]\'). For null-able fields pass null to clear.',
+        },
+      },
+      required: ['field', 'value'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  async handler(args) {
+    const field = args.field as string;
+    const value = args.value;
+    if (!field || !PROFILE_FIELDS.includes(field as (typeof PROFILE_FIELDS)[number])) {
+      return err(`field must be one of: ${PROFILE_FIELDS.join(', ')}`);
+    }
+    const res = await sendAction<{ field: string }>('career_pilot.update_profile_field', { field, value });
+    if (!res.ok) return actionErr('update_profile_field', res.error);
+    return ok(`Profile field "${field}" updated.`, { field });
+  },
+};
+
+// ── update_application ─────────────────────────────────────────────────────
+
+export const updateApplication: McpToolDefinition = {
+  tool: {
+    name: 'update_application',
+    description:
+      'UPSERT an application row. If `id` doesn\'t exist, INSERT (requires company_name + role_title + status in patch; host assigns obfuscated_label deterministically). If `id` exists, UPDATE only the fields present in patch. Use to bookmark a new role, update status after a signal, or correct mistaken fields. Always follow with record_funnel_event to log the transition.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        id: {
+          type: 'string',
+          description:
+            'Application UUID. Generate a fresh one (any RFC4122-ish string is fine) when creating; reuse an existing id to update.',
+        },
+        patch: {
+          type: 'object',
+          description: 'Fields to set. On INSERT, company_name + role_title + status are REQUIRED.',
+          properties: {
+            company_name: { type: 'string' },
+            company_aliases: {
+              type: 'string',
+              description: 'JSON array of alternate company names for the sanitizer (Phase 3).',
+            },
+            role_title: { type: 'string' },
+            job_url: { type: 'string' },
+            jd_text: { type: 'string' },
+            jd_analyzed: {
+              type: 'string',
+              description: 'JSON: { level, skills, comp_hint, role_category }',
+            },
+            status: {
+              type: 'string',
+              enum: [
+                'BOOKMARKED',
+                'APPLIED',
+                'SCREENING',
+                'TECH_SCREEN',
+                'SYS_DESIGN',
+                'FINAL',
+                'OFFER',
+                'REJECTED',
+                'WITHDRAWN',
+              ],
+            },
+            win_confidence: { type: 'integer', minimum: 0, maximum: 100 },
+            applied_at: { type: 'string', description: 'ISO 8601 timestamp' },
+            public_state: {
+              type: 'string',
+              enum: ['obfuscated', 'partial', 'public'],
+              description: 'Defaults to "obfuscated" on INSERT — only set explicitly via confirm-before approval.',
+            },
+          },
+        },
+      },
+      required: ['id', 'patch'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  async handler(args) {
+    const id = args.id as string;
+    const patch = args.patch as Record<string, unknown>;
+    if (!id || !patch || typeof patch !== 'object') {
+      return err('id and patch are required');
+    }
+    const res = await sendAction<{ id: string; created: boolean; obfuscated_label: string | null }>(
+      'career_pilot.update_application',
+      { id, patch },
+    );
+    if (!res.ok) return actionErr('update_application', res.error);
+    const verb = res.data.created ? 'created' : 'updated';
+    const labelSuffix = res.data.obfuscated_label ? ` (label: ${res.data.obfuscated_label})` : '';
+    return ok(`Application ${verb}: ${id}${labelSuffix}`, res.data);
+  },
+};
+
+// ── record_funnel_event ────────────────────────────────────────────────────
+
+const FUNNEL_EVENT_KINDS = [
+  'status_change',
+  'agent_action',
+  'gmail_signal',
+  'calendar_signal',
+  'reflection_added',
+  'outreach_drafted',
+  'outreach_sent',
+  'interview_scheduled',
+] as const;
+
+export const recordFunnelEvent: McpToolDefinition = {
+  tool: {
+    name: 'record_funnel_event',
+    description:
+      'Log a funnel event for an application. Always call this alongside any state-changing tool — record the transition (with from/to status if applicable) plus a short payload describing what triggered the event. Phase 3 will add automatic sanitization mirror to public_audit_trail.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        application_id: { type: 'string', description: 'The applications.id this event belongs to.' },
+        kind: { type: 'string', enum: [...FUNNEL_EVENT_KINDS] },
+        from_status: {
+          type: 'string',
+          description: 'Previous status (only for kind="status_change").',
+        },
+        to_status: {
+          type: 'string',
+          description: 'New status (only for kind="status_change").',
+        },
+        payload: {
+          type: 'object',
+          description:
+            'Free-form structured payload — schema varies by kind. Common fields: summary (short string), source (gmail_subject / calendar_event_title / agent_reasoning / candidate_message), confidence (0-100).',
+        },
+      },
+      required: ['application_id', 'kind', 'payload'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  async handler(args) {
+    const application_id = args.application_id as string;
+    const kind = args.kind as string;
+    const payload = args.payload as Record<string, unknown>;
+    if (!application_id || !kind || !payload) {
+      return err('application_id, kind, and payload are required');
+    }
+    if (!FUNNEL_EVENT_KINDS.includes(kind as (typeof FUNNEL_EVENT_KINDS)[number])) {
+      return err(`kind must be one of: ${FUNNEL_EVENT_KINDS.join(', ')}`);
+    }
+    const res = await sendAction<{ event_id: string }>('career_pilot.record_funnel_event', {
+      application_id,
+      kind,
+      from_status: args.from_status ?? null,
+      to_status: args.to_status ?? null,
+      payload,
+    });
+    if (!res.ok) return actionErr('record_funnel_event', res.error);
+    return ok(`Funnel event recorded: ${res.data.event_id} (${kind})`, res.data);
+  },
+};
+
+// ── get_application ────────────────────────────────────────────────────────
+
+export const getApplication: McpToolDefinition = {
+  tool: {
+    name: 'get_application',
+    description: 'Fetch one application by id. Returns the full row including jd_analyzed (parsed JSON if present).',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        id: { type: 'string', description: 'Application UUID.' },
+      },
+      required: ['id'],
+    },
+    annotations: { readOnlyHint: true },
+  },
+  async handler(args) {
+    const id = args.id as string;
+    if (!id) return err('id is required');
+    const res = await sendAction<{ application: Record<string, unknown> | null }>(
+      'career_pilot.get_application',
+      { id },
+    );
+    if (!res.ok) return actionErr('get_application', res.error);
+    if (!res.data.application) {
+      return ok(`No application found with id "${id}".`);
+    }
+    return ok(JSON.stringify(res.data.application, null, 2), res.data);
+  },
+};
+
+// ── list_applications ──────────────────────────────────────────────────────
+
+export const listApplications: McpToolDefinition = {
+  tool: {
+    name: 'list_applications',
+    description:
+      'List applications, optionally filtered by status. Returns up to `limit` rows ordered by last_activity_at DESC (most recent activity first). Pass no filter to see the full funnel.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        status: {
+          type: 'string',
+          enum: [
+            'BOOKMARKED',
+            'APPLIED',
+            'SCREENING',
+            'TECH_SCREEN',
+            'SYS_DESIGN',
+            'FINAL',
+            'OFFER',
+            'REJECTED',
+            'WITHDRAWN',
+          ],
+          description: 'Filter to one status. Omit to see all.',
+        },
+        limit: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 200,
+          description: 'Max rows to return (default 50).',
+        },
+      },
+    },
+    annotations: { readOnlyHint: true },
+  },
+  async handler(args) {
+    const res = await sendAction<{ applications: Array<Record<string, unknown>> }>(
+      'career_pilot.list_applications',
+      {
+        status: (args.status as string | undefined) ?? null,
+        limit: (args.limit as number | undefined) ?? 50,
+      },
+    );
+    if (!res.ok) return actionErr('list_applications', res.error);
+    const apps = res.data.applications;
+    if (apps.length === 0) {
+      return ok('No applications found.', { applications: [] });
+    }
+    const summary = apps
+      .map((a) => `- ${a.obfuscated_label} | ${a.role_title} | ${a.status} | ${a.last_activity_at ?? '—'}`)
+      .join('\n');
+    return ok(`${apps.length} application(s):\n${summary}`, res.data);
+  },
+};
+
+registerTools([updateProfileField, updateApplication, recordFunnelEvent, getApplication, listApplications]);
