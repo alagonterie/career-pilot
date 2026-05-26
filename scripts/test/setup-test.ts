@@ -125,6 +125,21 @@ function resetState(): void {
     }
   }
 
+  // Reset the circuit breaker so the next host start doesn't add backoff
+  // from prior failed attempts. In a test loop these are not real crashes —
+  // they're iterative debugging.
+  const cbPath = path.join(DATA_DIR, 'circuit-breaker.json');
+  if (fs.existsSync(cbPath)) {
+    try {
+      fs.unlinkSync(cbPath);
+      console.log('  removed data/circuit-breaker.json');
+    } catch (err) {
+      console.warn(
+        `  could not remove circuit-breaker.json: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   console.log('  reset complete');
 }
 

@@ -253,11 +253,17 @@ async function teardownHost(h: HostHandle): Promise<void> {
   }
 }
 
-async function chatTurn(text: string, timeoutMs = 180_000): Promise<string> {
+// 300s default: container pull + skill mounts + qwen3-coder:30b warm-up
+// + first-token latency can chain into a 2-3 minute first turn even on
+// a 3090.
+async function chatTurn(text: string, timeoutMs = 300_000): Promise<string> {
   console.log(`  > ${text}`);
   const [cmd, args] = runTsx(path.join(REPO_ROOT, 'scripts', 'chat.ts'), [text]);
   const proc = spawn(cmd, args, {
     cwd: REPO_ROOT,
+    // Bump chat.ts's own timeout to match (subtract 10s buffer so chat.ts
+    // exits cleanly with its diagnostic before we kill it).
+    env: { ...process.env, NCL_CHAT_TIMEOUT_MS: String(timeoutMs - 10_000) },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
