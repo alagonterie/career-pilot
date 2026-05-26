@@ -1468,6 +1468,162 @@ The 2.1 escalation ladder (prompt-tune → `LLM_PROVIDER=claude_test` → never 
 
 Several DoD items above were relaxed during the initial implementation run after empirical findings — see commit `0b258e6` for the details. The original-vs-final delta is preserved in this spec section so future readers can see what was over-prescribed: strict `## Company research` header (relaxed to any research-shaped heading), strict substring match against digest (relaxed to distinctive-word overlap), strict "both first-calls succeeded" (relaxed to "at least one call per type"). Same pattern as 2.1: the strict version was speculative; the relaxed version matches actual LLM behavior.
 
+#### 24.3 Sub-milestone 2.3 — `draft-outreach` subagent + Gmail draft creation + first progress emissions
+
+**Why this sub-milestone next:** Third subagent. It is the first subagent that produces an *artifact* outside the project database — a real Gmail draft the candidate can review and send. Three properties make it the right next increment after 2.2:
+
+- It reuses the chained delegation pattern from 2.2 (`research-company` → `draft-outreach`) with no new chaining mechanics.
+- It is the first subagent whose deliverable demands honest grounding from BOTH the master resume (factual claims about the candidate) AND the research digest (concrete recent-work reference for the recipient's company). 2.2 needed master-resume grounding only; 2.3 stresses the "two sources of truth, both must be respected" property that 2.4 and 2.5 will also depend on.
+- It triggers two cross-cutting interface decisions whose absence would block subsequent sub-milestones anyway: (a) shared-subagent-preamble extraction — Task #71, third subagent body crosses the threshold from §24.2's deferral note; and (b) the `record_progress` MCP tool that PORTAL.md §5.2's trace stream already assumes exists. Both belong here, not later.
+
+**Scope re: the broader idea space (resolved at spec time, not punted):**
+
+The user surfaced five candidate enhancements before this spec was written. Resolutions:
+
+| # | Idea | Resolution |
+|---|---|---|
+| 1 | **Gmail draft creation** (not just text) | **In scope for 2.3.** Without it 2.3 is a text generator we would refactor immediately. New MCP tool `create_gmail_draft` lands here. |
+| 2 | **Touch-up / edit an existing draft** | **Deferred to §24.3.1**, a follow-up sub-milestone. Spec leaves the interface open (`create_gmail_draft` returns a `draft_id` we can later pass into `update_gmail_draft`). |
+| 3 | **LinkedIn DMs** as an alternative channel | **Pushed to V2_IDEAS.md** with a feasibility note. LinkedIn does not expose an unrestricted DM-send API; partner-tier and Sales Navigator surfaces don't cover cold outreach to arbitrary users; unofficial scrapers (Phantombuster, Apify-style) violate ToS and risk account bans. Not viable in v1 without unacceptable cost or risk. |
+| 4 | **Transparency footer** ("built with my AI system, see it work at <portal>") | **In scope for 2.3.** Cheap. Template appended to body by the orchestrator (not the subagent — the subagent does not know the portal URL), gated by `preferences.outreach_show_ai_attribution`. Default `true` since this project's mission is showcase. |
+| 5 | **Subagent progress logging** for portal UI | **Writer side lands in 2.3.** New MCP tool `record_progress` given to every subagent's palette; emits sanitized rows to `public_audit_trail` (already specced in PORTAL.md §9). SSE consumption + `/live` rendering stays Phase 5 — PORTAL.md §5.2 already shows the target rendering shape. |
+
+**What lands:**
+
+1. **Flesh out `groups/career-pilot/.claude/agents/draft-outreach.md`** (currently a Phase 0 placeholder). The body covers:
+   - **Mission** — produce a cold outreach email draft (subject + body + recipient justification). The orchestrator materializes the draft in the candidate's Gmail drafts folder via `create_gmail_draft`; the subagent itself does NOT call Gmail. Subagent never sends; only drafts.
+   - **Inputs** — four sources, ordered by trust:
+     1. **Master resume + skills + target_roles** — auto-loaded via `.claude-host-fragments/candidate.md`. *Source of truth for facts about the candidate.*
+     2. **research-company digest** — provided in the orchestrator's invocation prompt under a research-shaped heading. *Source of truth for what to reference about the recipient's world.*
+     3. **JD text** (optional) — provided when the outreach is JD-anchored. *Sharpens the value proposition.*
+     4. **Recipient hints** — provided by the orchestrator under a `## Recipient` heading: `recipient_email` (required) + optional role/title/name. The subagent does NOT guess at or fabricate a recipient.
+   - **Hard constraints** (mirror 2.2's discipline + extend):
+     - NEVER fabricate metrics, employers, dates, technologies, or experience.
+     - NEVER invent a recipient. If the orchestrator did not pass `recipient_email`, refuse with a structured note: *"Need a recipient email or a clearly-named target person before I can draft."*
+     - NEVER reference research-digest claims that the digest marked `[inferred]` as if they were facts about the recipient's company.
+     - Body must be ≤ 200 words (hard cap).
+   - **Voice rules** — *technical, warm, brief*. No greeting boilerplate (`"I hope this email finds you well"`, `"I'm reaching out because"`, `"I came across your company"`). No paragraphs about why the company is great — the recipient already works there. Lead with the value the candidate brings; end with one concrete ask.
+   - **Output format (markdown; labeled sections so the orchestrator can extract mechanically):**
+
+     | Section | Contents |
+     |---|---|
+     | `## Subject` | One line, ≤ 60 chars, specific (not `"hello"`, `"quick question"`, `"introduction"`). |
+     | `## Body` | The email body, ≤ 200 words. Tag substantive claims with `[adapted]` (paraphrasing a master-resume fact) or `[new]` (honest inference) — same discipline as 2.2; the orchestrator strips tags before drafting. The transparency footer (if enabled) is appended by the orchestrator, not the subagent. |
+     | `## Recipient justification` | One short paragraph: who this draft is aimed at, why this role/person, what signal in the research digest pointed at them. Lets the candidate sanity-check. |
+     | `## Honesty notes` (optional, encouraged) | If the JD or research has a hook the candidate cannot honestly claim, call it out. Same pattern as 2.2. |
+   - **Tool palette** — `tools: [record_progress]`. Drop the placeholder's `WebSearch`/`WebFetch` — research is the orchestrator's job, passed in via the digest. No Gmail tool — the orchestrator owns that.
+   - **Progress emissions** — 2 to 4 `record_progress` calls per run at meaningful inflection points (e.g., `understanding-recipient`, `drafting-subject`, `drafting-body`, `final-pass`). ≤ ~80 chars per `detail`.
+   - **What to avoid** — pasting the JD/digest back; producing more than one draft (one focused draft beats three half-drafts); buzzword inflation; faux-familiarity (`"I've been a huge fan of <recipient>'s work for years"` unless the master resume backs it up).
+
+2. **Extract the shared subagent preamble via composer-side inlining.** Pre-spec research (2026-05-26) confirmed Claude Code's `@`-import resolver runs on the group's composed root `CLAUDE.md` only — subagent `.claude/agents/<name>.md` files are loaded by the agent registry as opaque system-prompt strings, with no `@`-import resolution applied. So a literal `@./_shared/subagent-preamble.md` inside a subagent body would be passed to the LLM as-is, not resolved. The load-bearing answer is build-time inlining via the composer:
+
+   - **Sources** committed at `groups/<folder>/.claude/agents-src/<name>.md`. Each source contains an inline directive `<!-- @include _shared/subagent-preamble.md -->` at the point the shared preamble should appear.
+   - **Shared content** committed at `groups/<folder>/.claude/agents-src/_shared/subagent-preamble.md`. Two byte-identical copies (owner + sandbox group) — the per-group composer pass stays self-contained.
+   - **Composer extension** — a new `composeSubagentDefinitions(group)` function in `src/claude-md-compose.ts` (or a sibling file if the file grows uncomfortably). For each `agents-src/<name>.md`, resolve the directive by inlining the shared file's content, write the result to `groups/<folder>/.claude/agents/<name>.md`. Call from `container-runner.buildMounts()` alongside `composeGroupClaudeMd(group)`. Deterministic — same sources produce the same rendered files; stale rendered files for sources that no longer exist get pruned.
+   - **`.gitignore`** — add `groups/*/.claude/agents/*.md` (rendered) and keep `groups/*/.claude/agents-src/**` tracked. Matches the existing "composer-managed files are gitignored" pattern (the root `CLAUDE.md` and `.claude-fragments/` are already gitignored on this principle — see `.gitignore` lines 33-40).
+   - **`@include` syntax** — chosen because it does not collide with Claude Code's `@`-import syntax (`@./path/file.md`) and would never be misinterpreted by an LLM as a real instruction. The directive is HTML-comment-wrapped so even if a renderer pass were skipped, the LLM would see it as inert markup.
+   - **Initial migration step:** existing committed `.claude/agents/<name>.md` files get moved to `.claude/agents-src/<name>.md` with their preamble blocks replaced by the include directive, and the rendered output regenerated. `git rm` the committed rendered files; `git add` the sources.
+
+   Task #71 closes with this extraction.
+
+3. **New MCP tool: `create_gmail_draft`** (orchestrator tool palette only — NOT given to any subagent):
+   - Signature: `create_gmail_draft({ to: string, subject: string, body: string, in_reply_to?: string }) → { draft_id: string, draft_url: string }`.
+   - Implementation: host-side; uses Gmail API (`gmail.users.drafts.create`) with the candidate's Google OAuth refresh token from OneCLI vault. Returns Gmail's draft ID and `https://mail.google.com/mail/u/0/#drafts/<id>`.
+   - **Stub mode**: when `process.env.GMAIL_STUB === '1'`, return a synthetic `draft_id` matching `/^stub-draft-/` and a placeholder URL. The e2e flow runs in stub mode; real Gmail integration is verified manually post-DoD.
+   - **No approval gate.** Drafts don't send; the candidate must explicitly send from Gmail. (The future `send_outreach_email` tool — §24.3.2 or §24.4 — is the one that lands approval-gating, per PORTAL.md §6.3.)
+
+4. **New MCP tool: `record_progress`** (given to every subagent's `tools:` palette, retroactively patched into `research-company.md` and `tailor-resume.md` too):
+   - Signature: `record_progress({ stage: string, detail: string }) → { ok: true }`.
+   - Implementation: host-side; writes a row to `public_audit_trail` (specced in PORTAL.md §9) with: `session_id` (from MCP request context), `subagent_name` (from session metadata), `stage`, `detail`, `ts`. `detail` runs through the §9 regex sanitization pass before commit. The LLM context-sensitivity pass is deferred to Phase 5 — for 2.3, regex is sufficient since `detail` is short and bounded.
+   - **Token-economic guidance** — every subagent's prompt caps at 2–4 calls per run; the writer rejects (returns `{ ok: false, reason: 'rate-limit' }`) the 7th call per session-subagent-run.
+
+5. **`candidate_profile` schema add** — new column `gmail_account` (TEXT, nullable). Migration in `src/db/migrations/`. The OAuth refresh token itself stays in OneCLI vault; only the email address (e.g., `the-candidate@gmail.com`) lives in the DB. The orchestrator reads this column to confirm *"drafting from your Gmail (`the-candidate@gmail.com`)"* in user-facing replies.
+
+6. **`preferences` table additions:**
+   - `outreach_show_ai_attribution` (BOOLEAN, default `true`).
+   - `outreach_attribution_template` (TEXT, default: `"\n\n---\n_This draft was prepared by career-pilot, my autonomous job-search agent system. See it work live at <portal_url>._"`).
+   - Natural-language setter pattern from §17 ("set my outreach attribution to ...") — the orchestrator updates via `update_preference` (existing tool from Phase 1).
+
+7. **Update the orchestrator persona** at `groups/career-pilot/.claude-host-fragments/persona.md`:
+   - Add `draft-outreach` to the trigger-phrase table (`"draft outreach to X"`, `"write a cold email for <role/company>"`, `"draft an intro to <person> at <company>"`).
+   - Add the chain rule (same shape as 2.2): **"Before invoking `draft-outreach`, invoke `research-company` first if and only if the company isn't already covered in this session. Pass the digest under a research-shaped heading into `draft-outreach`'s prompt. Also pass `recipient_email` (extracted from the candidate's turn) under a `## Recipient` heading. If the candidate's turn lacks a recipient email AND they did not say 'just suggest a recipient', ask them for one before delegating — `draft-outreach` will refuse without one."**
+   - Add a Pattern B variant for outreach: after `draft-outreach` returns, the orchestrator calls `create_gmail_draft` with the extracted subject/body/recipient, then surfaces a *summary* to the candidate (NOT the full body) — *"Draft saved to your Gmail: \"<subject>\" → jane@example.com. Open Gmail to review and send. (id `r-...`)"*. Echoing the full body is redundant once the canonical artifact lives in Gmail.
+   - Attribution footer: if `preferences.outreach_show_ai_attribution = true`, the orchestrator appends `preferences.outreach_attribution_template` (with `<portal_url>` substituted) to the `body` arg of `create_gmail_draft` — NOT to the subagent's input. The subagent stays focused on content; the orchestrator handles the wink.
+   - Voice rule for revision asks (foreshadowing §24.3.1): for 2.3, the orchestrator re-invokes `draft-outreach` on a clean restart when the candidate asks for changes — iterative-edit-in-place is §24.3.1 territory.
+
+8. **Mirror to sandbox group** — `groups/career-pilot-sandbox/.claude/agents/draft-outreach.md` copied byte-identical. **But the sandbox container config differs:** sandbox does NOT mount Gmail OAuth credentials in OneCLI scope, and `create_gmail_draft` is in the sandbox orchestrator's `disallowedTools` (bare name — removes from context per AGENT_SDK_PATTERNS.md §6). The sandbox simulator surfaces *generated text* faithfully (Pattern B) but cannot materialize a real draft. Simulator UI labels this: *"Sandbox runs do not save drafts to a real Gmail account."*
+
+9. **OneCLI vault setup for Gmail** — Phase 2.3 lands the *manual* registration path:
+   ```
+   onecli secrets create --name Gmail --type oauth_refresh --value <token> --host-pattern www.googleapis.com
+   ```
+   …after obtaining a Google OAuth refresh token via the Google OAuth Playground or `gcloud auth`. **Full Telegram-driven OAuth onboarding wizard is Phase 3+.** For 2.3 the e2e runs in `GMAIL_STUB=1` mode; real Gmail is verified manually post-DoD.
+
+10. **New e2e flow `--flow=draft-outreach`** in `scripts/test/e2e.ts`:
+    - Preconditions:
+      - `--seed-profile` populates `candidate_profile` (existing Test Candidate seed).
+      - Seed `candidate_profile.gmail_account = 'test-candidate@example.com'`.
+      - Seed `preferences.outreach_show_ai_attribution = false` for the primary flow (keeps body word-count assertion clean; a separate `--flow=draft-outreach-with-attribution` covers the footer path).
+      - An `applications` row for Anthropic in `BOOKMARKED` state.
+    - `GMAIL_STUB=1` set on host spawn.
+    - User turn: *"Draft a cold outreach to jane.doe@anthropic.com for the Staff Backend Engineer Inference role — here's the JD: <inlined block>"*.
+    - Assertions (retry-tolerant, modeled on §24.2):
+      - Both subagent types dispatched, research-company first; at least one call per type succeeded.
+      - `draft-outreach`'s invocation prompt contains a research-shaped heading AND a `## Recipient` heading carrying `jane.doe@anthropic.com`.
+      - Best `draft-outreach` attempt contains `## Subject`, `## Body`, `## Recipient justification` (any order).
+      - Subject ≤ 60 chars; NOT one of `"hello"`, `"quick question"`, `"introduction"`.
+      - Body word count ≤ 200; lacks regex-matched boilerplate phrases.
+      - Body references ≥ 2 distinctive 6+-char words from the research digest.
+      - Body references ≥ 1 candidate-profile term (`Go`/`Golang`/`Rust`/`PostgreSQL`/`Postgres`).
+      - `create_gmail_draft` tool_use observed with `to: "jane.doe@anthropic.com"`, non-empty subject/body, returned `draft_id` matching `/^stub-draft-/`.
+      - ≥ 2 `record_progress` rows in `public_audit_trail` keyed to that subagent run.
+      - Orchestrator's user-facing reply mentions draft_id + recipient email but NOT the full body (assert reply < 400 chars OR contains `"Open Gmail"`).
+    - Wires into `FLOW_HANDLERS` + `FLOWS_NEEDING_SEED`. 600s timeout (chained flow).
+
+11. **V2_IDEAS.md update** — add:
+    > **LinkedIn DM-based outreach.** Considered for Phase 2.3 (`draft-outreach`) as an alternative channel to Gmail. Deferred indefinitely. LinkedIn does not expose an unrestricted DM-send API; partner-tier (Marketing, Sales Navigator) surfaces don't cover cold outreach to arbitrary users; unofficial scrapers rely on cookie-based session impersonation that violates LinkedIn's ToS and risks account bans. Revisit only if LinkedIn ships an official DM-send API on their public REST surface.
+
+12. **Root CLAUDE.md** (the orientation doc) — update the "Locked architectural decisions" subagents row: `draft-outreach` is no longer "all read-only" — it is Pattern B with one reversible external write (Gmail draft). Add a footnote: *"`draft-outreach` writes Gmail drafts via the orchestrator's `create_gmail_draft` tool — reversible (no send), no approval gate. The future `send_outreach_email` tool will be approval-gated per PORTAL.md §6.3."*
+
+**Out of scope (explicit, to keep the increment small):**
+- `update_gmail_draft` MCP tool — §24.3.1, follow-up sub-milestone. For 2.3, subagent re-invocation covers the "I want changes" path.
+- `send_outreach_email` — §24.3.2 or §24.4 depending on Phase 2.4 ordering. Lands the approval-card pattern.
+- Telegram-driven Gmail OAuth onboarding wizard — Phase 3+.
+- SSE delivery of `public_audit_trail` rows to the portal — Phase 5 (`/api/activity/stream`).
+- LLM-based context-sensitivity sanitization on `record_progress` detail — Phase 5 (regex pass sufficient for 2.3).
+- Recipient-suggestion subagent (orchestrator picking "who at this company is most likely to read this") — later sub-milestone. For 2.3, recipient comes from the candidate's turn.
+
+**Risk + fallback hierarchy:**
+
+| Risk | Probability | Fallback |
+|---|---|---|
+| **A. Orchestrator skips the chain** — calls `draft-outreach` without `research-company` first | Medium (same surface as 2.2). | Reuse 2.2's mitigations: chain rule reads "MUST", worked example in persona showing both Tasks + the `create_gmail_draft` call. If still failing under GLM, document and proceed. |
+| **B. Subagent fabricates a recipient when none provided** | Medium (LLMs hallucinate plausible names). | Two layers: subagent's hard-constraint refuses without `recipient_email`; orchestrator's chain rule asks the candidate before delegating. If GLM still fabricates, assertion catches it (`create_gmail_draft.to` must match the address from the user turn); fix in prompt; escalate to Claude validation per 2.1's ladder. |
+| **C. Body exceeds 200 words** | Low-medium (LLMs prefer length). | Hard constraint in prompt + "produce, then trim" instruction. Assertion catches it. If GLM consistently overruns, add a self-review final step in the prompt. |
+| **D. Sandbox inherits `create_gmail_draft`** | Low (config separation is mature) but high-impact (sandbox visitor materializes a real Gmail draft = privacy breach). | Sandbox container config's `disallowedTools` includes `"create_gmail_draft"` (bare name — removes from context). Manual smoke-test during DoD: spin up a sandbox session, ask for draft-outreach, confirm orchestrator either refuses or produces text-only output. |
+| **E. `record_progress` floods the trace stream** | Low-medium (subagents may over-call). | Prompt caps at 2-4 calls/run; server-side hard cap rejects 7th call. If observed runs exceed 6 calls regularly, tighten the prompt. |
+| **F. Voice off** — body sounds generic / robotic | Medium under GLM. | Same fallback as 2.2: escalate to Claude validation via `LLM_PROVIDER=claude_test` (cost: ~$0.75/run per [[reference-claude-validation-cost]]). Voice nuance is the harder-to-measure deliverable; e2e catches gross failures but not nuance. |
+
+**Definition of done:**
+
+1. With `--seed-profile` + `gmail_account` set + a `BOOKMARKED` Anthropic application + `GMAIL_STUB=1`, the candidate's *"draft outreach to <email> for <role>"* turn produces chained `research-company` → `draft-outreach` Task calls with at least one success per type.
+2. The orchestrator's `draft-outreach` invocation prompt contains a research-shaped heading AND a `## Recipient` heading carrying the candidate-provided email.
+3. `draft-outreach`'s output contains `## Subject`, `## Body`, `## Recipient justification` (any order). Subject ≤ 60 chars; body ≤ 200 words; body lacks the boilerplate phrases listed in the e2e assertions.
+4. Body references ≥ 2 distinctive research-derived words AND ≥ 1 candidate-profile term.
+5. The orchestrator calls `create_gmail_draft` with `to=<the candidate-provided email>`, gets back a stub draft_id, and surfaces draft_id + recipient (NOT the full body) to the candidate.
+6. `draft-outreach` emits ≥ 2 `record_progress` calls during the run; sanitized rows land in `public_audit_trail` keyed to that subagent run.
+7. `pnpm test:e2e --flow=draft-outreach` passes on Windows with GLM-4.7-Flash — OR with the documented `LLM_PROVIDER` fallback, choice recorded in commit message + `feedback_windows_dev_env.md` memory.
+8. Manual smoke-test (sandbox): requesting a draft outreach in `career-pilot-sandbox` either refuses with a clear message OR produces text-only output with no `create_gmail_draft` call. Verified by inspecting the sandbox session JSONL.
+9. Sandbox group has a byte-identical copy of `draft-outreach.md`.
+10. Shared subagent preamble extracted to `groups/career-pilot/.claude/_shared/subagent-preamble.md` (or whichever path the implementation lands on); all three subagent files load from it; Task #71 closes.
+11. Migrations applied: `gmail_account` column on `candidate_profile`; `outreach_show_ai_attribution` + `outreach_attribution_template` keys in `preferences`.
+12. `V2_IDEAS.md` updated with the LinkedIn DM deferral note.
+13. Root CLAUDE.md "Locked architectural decisions" subagents row updated: `draft-outreach` is Pattern B with one reversible external write (Gmail draft creation); the read-only blanket statement is footnoted accordingly.
+
+#### 24.3.1 Sub-milestone 2.3.1 — `update_gmail_draft` + iterative refinement (deferred follow-up)
+
+**One-paragraph stub** — the candidate's natural reaction to a `draft-outreach` result is *"I like it, but change X."* For 2.3 the orchestrator handles that by re-invoking `draft-outreach` on a clean restart, which loses the prior draft. §24.3.1 adds an `update_gmail_draft({ draft_id, subject?, body? }) → { ok: true }` orchestrator tool and an "edit" code path in the persona: when the candidate references a specific draft and asks for changes, the orchestrator invokes `draft-outreach` with the prior draft body in context (as a fourth input source under `## Prior draft`) plus the candidate's revision instructions, then calls `update_gmail_draft` instead of `create_gmail_draft`. Same DoD shape as 2.3 minus the chain assertion (no fresh research needed for an edit). Scoped as a separate sub-milestone because (a) it requires the orchestrator to track the most-recent `draft_id` per recipient-or-thread in the session (a small new state surface), and (b) the prompt-engineering for "preserve what's good, change what's asked" is its own risk surface. Defer until 2.3 DoD lands; revisit ordering vs Phase 2.4 (`prep-interview`) at that point.
+
 ---
 
 ## Part VI: Open questions

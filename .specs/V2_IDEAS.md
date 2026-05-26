@@ -113,3 +113,18 @@ Beyond per-company `research-company` cache, build a per-industry knowledge base
 We chose the Agent SDK (in-process library) over Managed Agents (Anthropic-hosted REST). If session state grows large, Managed Agents' hosted infrastructure may be more cost-effective than self-hosting. The Agent SDK overview docs explicitly mention this as a "prototype here, migrate to Managed Agents in production" pattern.
 
 **Reactivate when:** session storage / container lifecycle costs justify the migration.
+
+---
+
+## 14. LinkedIn DM-based outreach
+
+Considered for Phase 2.3 (`draft-outreach`) as an alternative channel to Gmail. The orchestrator drafts a cold InMail-style message via the same `draft-outreach` chain (research-company → draft-outreach) and pushes it to LinkedIn as a saved draft or direct DM.
+
+**Why deferred indefinitely:** LinkedIn does not expose an unrestricted DM-send API for arbitrary users.
+- The official **LinkedIn API** (Marketing API, Sales Navigator API) is partner-tier only and covers content posting + ATS integrations, not cold outreach to arbitrary individuals.
+- **InMail** requires Sales Navigator or Recruiter seats and is not programmatically automatable through any public surface.
+- **Unofficial scrapers** (Phantombuster, Apify-style cookie-session impersonators) violate LinkedIn's ToS, risk account bans, and would put the candidate's primary professional surface at risk — unacceptable cost/benefit for v1.
+
+Gmail covers the cold-outreach channel for v1 with a real, official, low-risk API.
+
+**Reactivate when:** LinkedIn ships an official DM-send endpoint on their public REST surface (and only then). No expected timeline.
