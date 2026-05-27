@@ -78,3 +78,30 @@ export interface SourceAdapter {
   source: Source;
   list(token: string): Promise<JobLeadPayload[]>;
 }
+
+/**
+ * Minimal per-posting summary returned by `fetch_source` to the subagent.
+ *
+ * The subagent uses these to judge "engineering or not" without needing
+ * the full description payload. After deciding to keep a posting, the
+ * subagent calls `record_job_lead({ source, source_job_id })` — the
+ * host looks up the full JobLeadPayload from the in-process TTL cache
+ * (see src/scrape-jobs/payload-cache.ts) and writes the full row.
+ *
+ * Rationale: the SDK's subagent-side inline tool-result cap (~50-60KB)
+ * is tighter than the orchestrator's. Returning full payloads spilled
+ * to file, which the subagent couldn't access (no Read tool in its
+ * palette by design). Summaries are ~150-250 bytes each → 60 summaries
+ * ≈ 9-15KB, well under cap. STRATEGY.md §24.5 issue #2.
+ */
+export interface PostingSummary {
+  source: Source;
+  source_job_id: string;
+  title: string;
+  company: string;
+  location_raw?: string | null;
+  workplace_type?: 'remote' | 'hybrid' | 'onsite' | null;
+  /** ~120-char excerpt of description_text. Empty string if the source
+   *  provided no description. */
+  snippet: string;
+}
