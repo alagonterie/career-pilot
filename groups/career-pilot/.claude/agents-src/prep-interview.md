@@ -305,8 +305,7 @@ digest or the master resume.
 
 Call `mcp__nanoclaw__record_progress` 2-4 times during your run at
 meaningful inflection points so the public agent-activity stream has
-texture (PORTAL.md §5.2). Pass `subagent_name: "prep-interview"`.
-Reasonable stages:
+texture. Pass `subagent_name: "prep-interview"`. Reasonable stages:
 
 - `parsing-interview-context` — after parsing the `## Interview` block
 - `assembling-signal` — when picking which research-digest items lead the "recent signal" section

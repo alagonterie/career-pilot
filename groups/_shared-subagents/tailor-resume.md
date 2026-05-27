@@ -166,8 +166,8 @@ honesty note flags the Rust gap rather than papering over it.
 ## Progress emissions (portal trace stream)
 
 Call `mcp__nanoclaw__record_progress` 2-3 times during your run at meaningful
-inflection points so the public agent-activity stream has texture (PORTAL.md
-§5.2). Pass `subagent_name: "tailor-resume"`. Reasonable stages:
+inflection points so the public agent-activity stream has texture. Pass
+`subagent_name: "tailor-resume"`. Reasonable stages:
 
 - `analyzing-jd-terms` — after you've read the JD and identified what to weight
 - `ranking-bullets` — when selecting which master-resume bullets to adapt

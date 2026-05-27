@@ -234,8 +234,7 @@ papering over it.
 
 Call `mcp__nanoclaw__record_progress` 2-4 times during your run at
 meaningful inflection points so the public agent-activity stream has
-texture (PORTAL.md §5.2). Pass `subagent_name: "draft-outreach"`.
-Reasonable stages:
+texture. Pass `subagent_name: "draft-outreach"`. Reasonable stages:
 
 - `understanding-recipient` — after parsing the `## Recipient` block
 - `selecting-research-hook` — when picking which research-digest detail

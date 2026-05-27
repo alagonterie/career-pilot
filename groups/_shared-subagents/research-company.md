@@ -145,8 +145,8 @@ list with ≥3 entries including ≥1 on `acme.com`. Return.
 ## Progress emissions (portal trace stream)
 
 Call `mcp__nanoclaw__record_progress` 2-4 times during your run at meaningful
-inflection points so the public agent-activity stream has texture (PORTAL.md
-§5.2). Pass your own `subagent_name: "research-company"`. Reasonable stages:
+inflection points so the public agent-activity stream has texture. Pass your
+own `subagent_name: "research-company"`. Reasonable stages:
 
 - `triaging-search` — after your first 1-2 `WebSearch` calls land
 - `fetching-eng-blog` — when starting your highest-value `WebFetch`
