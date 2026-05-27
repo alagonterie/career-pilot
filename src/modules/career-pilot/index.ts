@@ -13,6 +13,7 @@ import {
   handleGetApplication,
   handleListApplications,
   handleRecordFunnelEvent,
+  handleRecordProgress,
   handleUpdateApplication,
   handleUpdateProfileField,
 } from './actions.js';
@@ -22,3 +23,4 @@ registerDeliveryAction('career_pilot.update_application', handleUpdateApplicatio
 registerDeliveryAction('career_pilot.record_funnel_event', handleRecordFunnelEvent);
 registerDeliveryAction('career_pilot.get_application', handleGetApplication);
 registerDeliveryAction('career_pilot.list_applications', handleListApplications);
+registerDeliveryAction('career_pilot.record_progress', handleRecordProgress);

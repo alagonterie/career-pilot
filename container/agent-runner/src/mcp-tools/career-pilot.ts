@@ -318,4 +318,48 @@ export const listApplications: McpToolDefinition = {
   },
 };
 
-registerTools([updateProfileField, updateApplication, recordFunnelEvent, getApplication, listApplications]);
+// ── record_progress ────────────────────────────────────────────────────────
+
+export const recordProgress: McpToolDefinition = {
+  tool: {
+    name: 'record_progress',
+    description:
+      'Emit a short progress marker that surfaces on the portal\'s live agent-activity stream (PORTAL.md §5.2). Call 2-4 times per run at meaningful inflection points (e.g., stage="understanding-recipient", "drafting-subject", "drafting-body", "final-pass"). The host caps you at 6 calls per session-subagent-run — over-call returns a RATE_LIMITED error. Subagent identifies itself via `subagent_name` (your frontmatter `name:` value). Detail is short prose (≤80 chars target, 200 cap); PII (emails, phone numbers) is regex-redacted before persistence. This tool is fire-and-forget — its result does not influence your output.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        subagent_name: {
+          type: 'string',
+          description: 'Your own subagent name from your frontmatter (e.g. "draft-outreach", "research-company"). Used to attribute the progress row.',
+        },
+        stage: {
+          type: 'string',
+          description: 'Short stage identifier (kebab-case, ≤32 chars). Examples: "understanding-recipient", "drafting-subject", "drafting-body", "final-pass", "researching-funding", "extracting-jd-terms".',
+        },
+        detail: {
+          type: 'string',
+          description: 'One-line prose describing what you\'re doing right now (≤80 chars target). Visible to portal visitors on the public trace stream — keep it candidate-friendly, no PII (it gets regex-sanitized anyway).',
+        },
+      },
+      required: ['subagent_name', 'stage', 'detail'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  async handler(args) {
+    const subagent_name = args.subagent_name as string;
+    const stage = args.stage as string;
+    const detail = args.detail as string;
+    if (!subagent_name || !stage || !detail) {
+      return err('subagent_name, stage, and detail are all required');
+    }
+    const res = await sendAction<{ id: string; stage: string }>('career_pilot.record_progress', {
+      subagent_name,
+      stage,
+      detail,
+    });
+    if (!res.ok) return actionErr('record_progress', res.error);
+    return ok(`Progress recorded (${stage}).`, res.data);
+  },
+};
+
+registerTools([updateProfileField, updateApplication, recordFunnelEvent, getApplication, listApplications, recordProgress]);

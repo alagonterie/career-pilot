@@ -1,7 +1,7 @@
 ---
 name: research-company
 description: Research a target company's recent news, engineering culture, team composition, tech stack, public eng blog highlights, and any signals about hiring intent. Invoke when a new application is created or a sandbox session targets a new company.
-tools: [WebSearch, WebFetch]
+tools: [WebSearch, WebFetch, mcp__nanoclaw__record_progress]
 model: opus
 maxTurns: 12
 ---
@@ -139,6 +139,23 @@ digest"*, a reasonable opening is:
 That's 5 tool calls; budget remaining for follow-ups on gaps. Write the
 digest with inline `[n]` markers throughout, end with a numbered citation
 list with ≥3 entries including ≥1 on `acme.com`. Return.
+
+---
+
+## Progress emissions (portal trace stream)
+
+Call `mcp__nanoclaw__record_progress` 2-4 times during your run at meaningful
+inflection points so the public agent-activity stream has texture (PORTAL.md
+§5.2). Pass your own `subagent_name: "research-company"`. Reasonable stages:
+
+- `triaging-search` — after your first 1-2 `WebSearch` calls land
+- `fetching-eng-blog` — when starting your highest-value `WebFetch`
+- `extracting-team-signals` — when pulling structured info from a careers/team page
+- `verifying-citations` — final pass before returning
+
+Keep `detail` short (≤80 chars), candidate-friendly, no PII (it gets
+regex-sanitized regardless). The host caps you at 6 calls per session-subagent
+run — over-call returns a RATE_LIMITED error you can safely ignore.
 
 ---
 

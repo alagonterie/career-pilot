@@ -1,7 +1,7 @@
 ---
 name: draft-outreach
 description: Given a target role + company research + recipient hints, produce a cold outreach email draft. Tone-match to "technical, warm, brief" by default — override-able per run.
-tools: [WebSearch, WebFetch]
+tools: [mcp__nanoclaw__record_progress]
 model: opus
 maxTurns: 8
 ---
