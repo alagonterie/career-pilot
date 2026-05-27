@@ -50,6 +50,13 @@ export interface ProviderOptions {
    * through to the underlying SDK. If omitted, the SDK default is used.
    */
   effort?: string;
+  /**
+   * Per-group tool removals appended to the provider's static
+   * disallow list. Used by the career-pilot-sandbox group to remove
+   * `mcp__nanoclaw__create_gmail_draft` from the agent's SDK context.
+   * See host-side migration 109 + STRATEGY.md §24.3 task #86.
+   */
+  extraDisallowedTools?: string[];
 }
 
 export interface QueryInput {

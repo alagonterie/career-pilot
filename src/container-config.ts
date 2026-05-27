@@ -57,6 +57,14 @@ export interface ContainerConfig {
    * agent is supposed to be running against local Ollama.
    */
   blockedHosts?: string[];
+  /**
+   * Tools to remove from the agent's SDK context via the Agent SDK's
+   * `disallowedTools` option (mcp__<server>__<name> form or SDK
+   * built-in names). Concatenated with the static SDK_DISALLOWED_TOOLS
+   * list at provider construction time. Per-group SDK-level isolation —
+   * see container/agent-runner/src/providers/claude.ts and migration 109.
+   */
+  disallowedTools?: string[];
 }
 
 /** Build a `ContainerConfig` from a DB row + agent group identity. */
@@ -77,7 +85,21 @@ export function configFromDb(row: ContainerConfigRow, group: AgentGroup): Contai
     maxMessagesPerPrompt: row.max_messages_per_prompt ?? undefined,
     model: row.model ?? undefined,
     effort: row.effort ?? undefined,
+    disallowedTools: parseDisallowedTools(row.disallowed_tools),
   };
+}
+
+/** Parse the JSON-array text column; tolerate missing/legacy rows (pre-109). */
+function parseDisallowedTools(raw: string | null | undefined): string[] | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return undefined;
+    const tools = parsed.filter((x): x is string => typeof x === 'string');
+    return tools.length > 0 ? tools : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
