@@ -362,4 +362,61 @@ export const recordProgress: McpToolDefinition = {
   },
 };
 
-registerTools([updateProfileField, updateApplication, recordFunnelEvent, getApplication, listApplications, recordProgress]);
+// ── create_gmail_draft ─────────────────────────────────────────────────────
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export const createGmailDraft: McpToolDefinition = {
+  tool: {
+    name: 'create_gmail_draft',
+    description:
+      "Materialize a Gmail draft on the candidate's behalf. Reversible (no send) — the candidate opens Gmail to review and send. ONLY available in the owner agent group; sandbox sessions get a FORBIDDEN error. Body should already include the candidate's full email content (do NOT append signature/footer here — the orchestrator handles attribution via preferences.outreach_show_ai_attribution before calling). Returns { draft_id, draft_url }. When GMAIL_STUB=1 is set in the host env (e2e/test mode), draft_id matches /^stub-draft-/ and no real Gmail API call happens. The future send_outreach_email tool is the one that lands approval-gating; this one does not need approval since drafts cannot be sent automatically.",
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        to: {
+          type: 'string',
+          description: 'Recipient email address (RFC 5322). Validated server-side; non-email strings are rejected.',
+        },
+        subject: {
+          type: 'string',
+          description: 'Email subject line. The drafter subagent produces this under its `## Subject` section; the orchestrator extracts it.',
+        },
+        body: {
+          type: 'string',
+          description: 'Email body. The drafter subagent produces this under its `## Body` section. If preferences.outreach_show_ai_attribution=true, the orchestrator appends preferences.outreach_attribution_template here BEFORE calling — do not double-append.',
+        },
+        in_reply_to: {
+          type: 'string',
+          description: 'Optional RFC 5322 message-id to thread this draft as a reply. Leave omitted for cold outreach.',
+        },
+      },
+      required: ['to', 'subject', 'body'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  async handler(args) {
+    const to = args.to as string;
+    const subject = args.subject as string;
+    const body = args.body as string;
+    const in_reply_to = args.in_reply_to as string | undefined;
+    if (!to || !EMAIL_RE.test(to)) {
+      return err('to must be a valid email address');
+    }
+    if (!subject || typeof subject !== 'string') {
+      return err('subject is required (non-empty string)');
+    }
+    if (!body || typeof body !== 'string') {
+      return err('body is required (non-empty string)');
+    }
+    const res = await sendAction<{ draft_id: string; draft_url: string; stub?: boolean }>(
+      'career_pilot.create_gmail_draft',
+      { to, subject, body, in_reply_to: in_reply_to ?? null },
+    );
+    if (!res.ok) return actionErr('create_gmail_draft', res.error);
+    const stubNote = res.data.stub ? ' (stub mode)' : '';
+    return ok(`Draft saved${stubNote}: "${subject}" → ${to} (id ${res.data.draft_id}). Open Gmail to review and send.`, res.data);
+  },
+};
+
+registerTools([updateProfileField, updateApplication, recordFunnelEvent, getApplication, listApplications, recordProgress, createGmailDraft]);
