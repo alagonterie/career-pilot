@@ -66,6 +66,26 @@
  *                           ≥1 record_progress row, orchestrator's reply
  *                           mentions lead count + ≥1 specific company/role
  *                           (Pattern B writer variant).
+ *   --flow=daily-briefing   Seeded profile + 5 pre-inserted job_leads
+ *                           (high-relevance seeds aligned to target_roles).
+ *                           Phase 3.1 §24.6 DoD: container spawn invokes
+ *                           bootstrap (messages_in has kind='task'
+ *                           series_id='daily-briefing' recurrence cron);
+ *                           sending `[scheduled trigger: daily-briefing]`
+ *                           as a chat message triggers the persona handler;
+ *                           orchestrator calls query_job_leads then
+ *                           rank_leads then emits <message> with ≥1 lead
+ *                           OR no <message> (silent-skip if all leads
+ *                           filtered below floor); job_leads.llm_score
+ *                           populated for the ranked subset. Note: full
+ *                           cron-driven firing (host-sweep triggers due
+ *                           task → container poll-loop → synthetic turn)
+ *                           is upstream NanoClaw correctness and not
+ *                           re-tested here; this flow validates the
+ *                           bootstrap + persona-handler + rank_leads
+ *                           round-trip. rank_leads always uses Haiku via
+ *                           Portkey regardless of --llm-provider; cost
+ *                           ~$0.05/run for the Haiku call.
  *   --llm-provider=ollama   Default. Routes all model calls through the
  *                           local Ollama daemon via the Anthropic shim.
  *                           Zero LLM cost. Requires Ollama + glm-4.7-flash.
@@ -143,7 +163,8 @@ type Flow =
   | 'tailor-resume'
   | 'draft-outreach'
   | 'prep-interview'
-  | 'scrape-jobs';
+  | 'scrape-jobs'
+  | 'daily-briefing';
 const FLOWS: ReadonlySet<Flow> = new Set([
   'smoke',
   'onboarding',
@@ -154,6 +175,7 @@ const FLOWS: ReadonlySet<Flow> = new Set([
   'draft-outreach',
   'prep-interview',
   'scrape-jobs',
+  'daily-briefing',
 ]);
 const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'smoke',
@@ -164,6 +186,7 @@ const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'draft-outreach',
   'prep-interview',
   'scrape-jobs',
+  'daily-briefing',
 ]);
 
 type LlmProvider = 'ollama' | 'claude';
@@ -1956,6 +1979,299 @@ async function runScrapeJobs(): Promise<void> {
   ok(`orchestrator reply surfaces count AND specific company "${mentionedCompany}" — Pattern B faithful`);
 }
 
+function seedFakeJobLeads(): Array<{ id: string; company: string; title: string }> {
+  // Five high-relevance seeds aligned to the standard Test Candidate's
+  // target_roles (Staff/Senior Backend, Platform, EM). Built so Haiku will
+  // reliably score them above the default floor (40) — gives the
+  // daily-briefing happy path a stable assertion target.
+  const now = new Date().toISOString();
+  const SEEDS: Array<{
+    id: string;
+    source: 'greenhouse' | 'lever';
+    source_job_id: string;
+    title: string;
+    company: string;
+    location_raw: string;
+    workplace_type: 'remote' | 'hybrid' | 'onsite';
+    description_text: string;
+    rules_score: number;
+  }> = [
+    {
+      id: 'lead-test-anthropic-1',
+      source: 'greenhouse',
+      source_job_id: 'gh-anthropic-staff-be-1',
+      title: 'Staff Backend Engineer, Inference',
+      company: 'Anthropic',
+      location_raw: 'San Francisco, CA',
+      workplace_type: 'remote',
+      description_text:
+        'Build agent infrastructure at the LLM frontier. Go, Rust, PostgreSQL. Distributed systems at scale.',
+      rules_score: 78,
+    },
+    {
+      id: 'lead-test-stripe-1',
+      source: 'greenhouse',
+      source_job_id: 'gh-stripe-senior-be-1',
+      title: 'Senior Software Engineer, Payments Platform',
+      company: 'Stripe',
+      location_raw: 'New York, NY',
+      workplace_type: 'hybrid',
+      description_text:
+        'Build the payments engine. Python, Go, Kubernetes, AWS. High-volume distributed systems.',
+      rules_score: 71,
+    },
+    {
+      id: 'lead-test-vercel-1',
+      source: 'lever',
+      source_job_id: 'lever-vercel-platform-1',
+      title: 'Platform Engineer, CDN',
+      company: 'Vercel',
+      location_raw: 'Remote',
+      workplace_type: 'remote',
+      description_text:
+        'Edge platform engineering. TypeScript, Rust, Kubernetes, Docker. Distributed systems and API design.',
+      rules_score: 69,
+    },
+    {
+      id: 'lead-test-discord-1',
+      source: 'greenhouse',
+      source_job_id: 'gh-discord-em-1',
+      title: 'Engineering Manager, Trust & Safety',
+      company: 'Discord',
+      location_raw: 'San Francisco, CA',
+      workplace_type: 'hybrid',
+      description_text:
+        'Lead a platform engineering team. Distributed systems, real-time messaging, Python and Go.',
+      rules_score: 64,
+    },
+    {
+      id: 'lead-test-linear-1',
+      source: 'lever',
+      source_job_id: 'lever-linear-senior-be-1',
+      title: 'Senior Backend Engineer',
+      company: 'Linear',
+      location_raw: 'Remote',
+      workplace_type: 'remote',
+      description_text:
+        'Build the issue-tracking backend. TypeScript, PostgreSQL, distributed systems, API design.',
+      rules_score: 58,
+    },
+  ];
+
+  const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
+  const db = new Database(dbPath);
+  try {
+    // Fake but valid-shape content_fingerprint (16-char hex). The real one
+    // is a SimHash; for the e2e it just needs to be non-null per schema.
+    const fakeFingerprint = (i: number): string => i.toString(16).padStart(16, '0');
+    const stmt = db.prepare(`
+      INSERT INTO job_leads (
+        id, source, source_board_token, source_job_id, source_url, apply_url,
+        content_fingerprint, title, company, location_raw, workplace_type,
+        description_text,
+        first_seen_at, last_seen_at, rules_score, status, status_changed_at
+      ) VALUES (
+        @id, @source, NULL, @source_job_id, @source_url, NULL,
+        @content_fingerprint, @title, @company, @location_raw, @workplace_type,
+        @description_text,
+        @now, @now, @rules_score, 'new', @now
+      )
+    `);
+    SEEDS.forEach((s, i) => {
+      stmt.run({
+        id: s.id,
+        source: s.source,
+        source_job_id: s.source_job_id,
+        source_url: `https://${s.company.toLowerCase()}.example/jobs/${s.source_job_id}`,
+        content_fingerprint: fakeFingerprint(i + 1),
+        title: s.title,
+        company: s.company,
+        location_raw: s.location_raw,
+        workplace_type: s.workplace_type,
+        description_text: s.description_text,
+        rules_score: s.rules_score,
+        now,
+      });
+    });
+    ok(`seeded ${SEEDS.length} fake job_leads (Anthropic, Stripe, Vercel, Discord, Linear)`);
+  } finally {
+    db.close();
+  }
+  return SEEDS.map((s) => ({ id: s.id, company: s.company, title: s.title }));
+}
+
+function findCareerPilotInboundDb(): string | null {
+  // Walk data/v2-sessions/<agentGroupId>/<sessionId>/inbound.db. The e2e
+  // resets state per run so there's at most one career-pilot session.
+  const sessionsDir = path.join(REPO_ROOT, 'data', 'v2-sessions');
+  if (!fs.existsSync(sessionsDir)) return null;
+  for (const groupDir of fs.readdirSync(sessionsDir, { withFileTypes: true })) {
+    if (!groupDir.isDirectory()) continue;
+    const groupPath = path.join(sessionsDir, groupDir.name);
+    for (const sessDir of fs.readdirSync(groupPath, { withFileTypes: true })) {
+      if (!sessDir.isDirectory()) continue;
+      const inboundPath = path.join(groupPath, sessDir.name, 'inbound.db');
+      if (fs.existsSync(inboundPath)) return inboundPath;
+    }
+  }
+  return null;
+}
+
+async function runDailyBriefing(): Promise<void> {
+  header('Flow: daily-briefing');
+  // Phase 3.1 §24.6 full DoD.
+  //
+  // Validates the heartbeat-foundation slice: host bootstrap creates
+  // the recurring daily-briefing task; persona handler responds to the
+  // synthetic trigger by querying the pool, ranking with Haiku, and
+  // emitting a Pattern B briefing (or silent-skipping with an
+  // <internal> note when filtered to zero).
+  //
+  // Trigger mechanism: we send `[scheduled trigger: daily-briefing]`
+  // as a chat message rather than waiting for a real cron fire. The
+  // persona handler is shape-agnostic about how the trigger arrived
+  // (cron-fired synthetic turn vs literally-typed string), so this
+  // is a faithful test of the handler path. The cron-fire path itself
+  // (host-sweep delivering a due task) is upstream NanoClaw and not
+  // re-tested here.
+  //
+  // rank_leads ALWAYS uses Haiku via Portkey regardless of
+  // --llm-provider — cost ~$0.05/run for the rank call. Plus an
+  // orchestrator turn in whatever provider mode is set.
+  const seeds = seedFakeJobLeads();
+
+  const reply = await chatTurn('[scheduled trigger: daily-briefing]', 300_000);
+
+  // ── Assertion 1: bootstrap fired (messages_in has the task row) ──
+  const inboundPath = findCareerPilotInboundDb();
+  if (!inboundPath) fail('no career-pilot session inbound.db found under data/v2-sessions/');
+  const inDb = new Database(inboundPath, { readonly: true });
+  try {
+    const row = inDb
+      .prepare(
+        "SELECT id, kind, status, recurrence, content, series_id FROM messages_in WHERE series_id = 'daily-briefing' LIMIT 1",
+      )
+      .get() as
+      | {
+          id: string;
+          kind: string;
+          status: string;
+          recurrence: string;
+          content: string;
+          series_id: string;
+        }
+      | undefined;
+    if (!row) {
+      fail(
+        'bootstrap did not insert a daily-briefing task. ' +
+          'Expected messages_in row with series_id=\'daily-briefing\' kind=\'task\'.',
+      );
+    }
+    if (row.kind !== 'task') fail(`daily-briefing row has kind='${row.kind}', expected 'task'`);
+    if (!row.recurrence) fail('daily-briefing row has null recurrence, expected a cron expression');
+    const content = JSON.parse(row.content) as { prompt: string };
+    if (!content.prompt?.includes('daily-briefing')) {
+      fail(`daily-briefing row content.prompt missing trigger sentinel: ${content.prompt}`);
+    }
+    ok(`bootstrap inserted task: series_id=daily-briefing recurrence='${row.recurrence}'`);
+  } finally {
+    inDb.close();
+  }
+
+  // ── Assertion 2: orchestrator called query_job_leads ──
+  const jsonl = findLatestSessionJsonl();
+  if (!jsonl) fail('no session JSONL found under data/v2-sessions/');
+
+  const allCalls = listAllToolCalls(jsonl);
+  const queryCalls = allCalls.filter(
+    (c) => c.startsWith('mcp__nanoclaw__query_job_leads') || c.startsWith('query_job_leads'),
+  );
+  if (queryCalls.length === 0) {
+    console.error('  --- all orchestrator tool calls ---');
+    for (const c of allCalls) console.error(`  ${c}`);
+    fail(
+      'orchestrator did not call query_job_leads. The daily-briefing handler ' +
+        'starts with query_job_leads per the persona workflow.',
+    );
+  }
+  ok(`orchestrator called query_job_leads ${queryCalls.length} time(s)`);
+
+  // ── Assertion 3: orchestrator called rank_leads ──
+  const rankCalls = allCalls.filter(
+    (c) => c.startsWith('mcp__nanoclaw__rank_leads') || c.startsWith('rank_leads'),
+  );
+  if (rankCalls.length === 0) {
+    console.error('  --- all orchestrator tool calls ---');
+    for (const c of allCalls) console.error(`  ${c}`);
+    fail(
+      'orchestrator did not call rank_leads. The handler queries the pool then ' +
+        'rank_leads to score against the candidate brief.',
+    );
+  }
+  ok(`orchestrator called rank_leads ${rankCalls.length} time(s)`);
+
+  // ── Assertion 4: job_leads has llm_score populated for ≥1 seed row ──
+  const centralPath = path.join(REPO_ROOT, 'data', 'v2.db');
+  const centralDb = new Database(centralPath, { readonly: true });
+  let scoredRows: Array<{ id: string; company: string; llm_score: number }>;
+  try {
+    scoredRows = centralDb
+      .prepare(
+        "SELECT id, company, llm_score FROM job_leads WHERE llm_score IS NOT NULL AND id LIKE 'lead-test-%'",
+      )
+      .all() as Array<{ id: string; company: string; llm_score: number }>;
+  } finally {
+    centralDb.close();
+  }
+  if (scoredRows.length === 0) {
+    fail(
+      'no seeded job_leads have llm_score populated. ' +
+        'rank_leads should write llm_score back to the DB for the ranked subset.',
+    );
+  }
+  ok(
+    `${scoredRows.length} of ${seeds.length} seeded leads have llm_score populated ` +
+      `(top: ${scoredRows.sort((a, b) => b.llm_score - a.llm_score).slice(0, 3).map((r) => `${r.company}=${r.llm_score}`).join(', ')})`,
+  );
+
+  // ── Assertion 5: reply does NOT echo the trigger sentinel ──
+  if (reply.toLowerCase().includes('[scheduled trigger:')) {
+    console.error('  --- orchestrator reply (first 1000 chars) ---');
+    console.error(reply.slice(0, 1000));
+    console.error('  --- end ---');
+    fail(
+      'orchestrator reply echoes the trigger sentinel string. ' +
+        'Persona §"Scheduled wakeups" load-bearing rule: never acknowledge the sentinel in the chat reply.',
+    );
+  }
+  ok('orchestrator reply does not echo the trigger sentinel');
+
+  // ── Assertion 6: briefing OR silent-skip (both valid) ──
+  // If reply is non-empty AND mentions ≥1 seeded company, it's a faithful
+  // briefing. If reply is effectively empty (or only an <internal> note
+  // that the framework swallowed), it's a legitimate silent-skip.
+  const seededCompanies = new Set(seeds.map((s) => s.company.toLowerCase()));
+  const replyLower = reply.toLowerCase();
+  const mentionedCompany = [...seededCompanies].find((c) => replyLower.includes(c));
+  const briefingEmitted = reply.length > 30 && mentionedCompany !== undefined;
+  const silentSkip = reply.trim().length === 0;
+  if (!briefingEmitted && !silentSkip) {
+    console.error('  --- orchestrator reply (first 1000 chars) ---');
+    console.error(reply.slice(0, 1000));
+    console.error('  --- end ---');
+    console.error(`  --- seeded companies: ${[...seededCompanies].join(', ')} ---`);
+    fail(
+      'reply is neither a faithful briefing (≥1 specific company mentioned) ' +
+        'nor a silent-skip (empty reply). Persona handler should do one or the other.',
+    );
+  }
+  if (briefingEmitted) {
+    ok(`briefing emitted — mentions specific company "${mentionedCompany}" (Pattern B faithful)`);
+  } else {
+    ok('silent-skip — no <message> emitted (legitimate when all leads filtered below floor)');
+  }
+}
+
 function seedBookmarkedApplication(opts: {
   id: string;
   company_name: string;
@@ -2444,6 +2760,7 @@ async function main(): Promise<void> {
       'draft-outreach': runDraftOutreach,
       'prep-interview': runPrepInterview,
       'scrape-jobs': runScrapeJobs,
+      'daily-briefing': runDailyBriefing,
     };
     await FLOW_HANDLERS[args.flow]();
     assertionsPassed = true;
