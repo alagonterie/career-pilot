@@ -48,25 +48,29 @@ no dispatch happens. Documented escalation in STRATEGY.md §24.5
 empirical iteration log. Long-term fix: parser-side `<Agent>` XML
 recovery similar to Phase 2.3 task #87's lenient `<message>` parser.
 
-**v1.0 e2e status: architecturally green, assertion-flaky pending
-follow-ups.** All wiring assertions (dispatch, fetch_source called,
-query_job_leads called, Pattern B reply) pass consistently. The
-`record_job_lead ≥ 1 row` assertion is non-deterministic on live ATS
-data — see STRATEGY.md §24.5 open issues #1 (readonly DB intermittent)
-+ #3 (narrow test-candidate profile vs live freshest-batch sales
-skew). Three remediation paths documented in §24.5. Expected to land
-green in a fresh-context session targeting those issues.
+**v1.0 e2e status (post-investigation, 2026-05-27): architecturally
+green; `record_job_lead ≥ 1 row` assertion blocked on issue #2
+(payload truncation), which is the next fix.** All wiring assertions
+(dispatch, fetch_source called, query_job_leads called, Pattern B
+reply) pass consistently. The `record_job_lead ≥ 1 row` assertion
+fails because the SDK's subagent-side inline tool-result cap spills
+fetch_source results to file and the subagent has no `Read` tool —
+issue #2 in STRATEGY.md §24.5. The "intermittent readonly DB error"
+(issue #1) was disproven via stack-trace instrumentation — it was
+orchestrator hallucination, not real infrastructure rot.
 
 Critical subset to check first if the run fails:
 
 - Subagent dispatched at least once (architectural wiring works).
 - `fetch_source` returned a non-empty postings array (the seed targets
   are live and reachable).
-- No `MCP error -32603: attempt to write a readonly database` error
-  in the tool_result stream — that's the open infrastructure issue,
-  see §24.5 open issue #1.
-- At least one `record_job_lead` call landed (subagent pre-record
-  judgment is not 100% drops — see §24.5 open issue #3 if all dropped).
+- If the orchestrator's reply narrates a "readonly database" or
+  similar SQLite error: that's hallucination, not a real error
+  (see STRATEGY.md §24.5 issue #1). The real cause is downstream —
+  check the next bullet.
+- At least one `record_job_lead` call landed. If zero: either the
+  subagent couldn't read fetch_source's spilled-to-file results
+  (issue #2) or pre-record judgment dropped everything (issue #3).
 - Recorded leads all have non-null `content_fingerprint` (16-char hex)
   and `rules_score` (0-100). Null in either column = host compute path
   is broken.

@@ -188,7 +188,7 @@ export async function handleRecordJobLead(
       data: { id: finalId, inserted_or_updated: insertedOrUpdated, rules_score: score, content_fingerprint: fingerprint },
     });
   } catch (err) {
-    log.error('handleRecordJobLead failed', { err: err instanceof Error ? err.message : String(err) });
+    log.error('handleRecordJobLead failed', { err });
     writeResponse(inDb, requestId, {
       ok: false,
       error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },
@@ -287,7 +287,7 @@ export async function handleQueryJobLeads(
 
     writeResponse(inDb, requestId, { ok: true, data: { leads, total: totalRow.n } });
   } catch (err) {
-    log.error('handleQueryJobLeads failed', { err: err instanceof Error ? err.message : String(err) });
+    log.error('handleQueryJobLeads failed', { err });
     writeResponse(inDb, requestId, {
       ok: false,
       error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },
@@ -505,7 +505,7 @@ export async function handleFetchSource(
       data: { postings: allPostings, boards_scanned: targets.length, postings_total: allPostings.length },
     });
   } catch (err) {
-    log.error('handleFetchSource failed', { err: err instanceof Error ? err.message : String(err) });
+    log.error('handleFetchSource failed', { err });
     writeResponse(inDb, requestId, {
       ok: false,
       error: { code: 'FETCH_ERROR', message: err instanceof Error ? err.message : String(err) },
