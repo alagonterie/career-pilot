@@ -22,6 +22,7 @@
  */
 import type Database from 'better-sqlite3';
 
+import { getAgentGroup } from '../../db/agent-groups.js';
 import { getDb } from '../../db/connection.js';
 import { insertMessage } from '../../db/session-db.js';
 import { log } from '../../log.js';
@@ -217,6 +218,115 @@ export async function handleRecordProgress(
       error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },
     });
   }
+}
+
+// ── create_gmail_draft ─────────────────────────────────────────────────────
+
+const STUB_DRAFT_PREFIX = 'stub-draft-';
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const BODY_HARD_CAP = 8_000;
+
+/**
+ * Materialize a Gmail draft on the candidate's behalf. Reversible (no send) —
+ * the candidate must explicitly send from Gmail. No approval gate; the future
+ * `send_outreach_email` tool is the one that lands approval-gating per
+ * PORTAL.md §6.3.
+ *
+ * Stub mode: when `process.env.GMAIL_STUB === '1'`, returns a synthetic
+ * `draft_id` matching `/^stub-draft-/` without touching the Gmail API. The
+ * e2e flow runs in stub mode; real Gmail integration is verified manually
+ * post-DoD.
+ *
+ * Sandbox isolation (Phase 2.3 simplification): host-side group-folder check
+ * refuses for any folder other than `career-pilot`. The spec's preferred
+ * mechanism is `disallowedTools` removal from the SDK context (per AGENT_SDK_
+ * PATTERNS.md §6) — wiring that requires a `disallowedTools` field through
+ * the container-config → container.json → provider-options stack. Filed as
+ * follow-up (see task tracker); for Phase 2.3 the host-side refusal
+ * satisfies DoD #8 (sandbox returns a clear error rather than materializing
+ * a draft).
+ */
+export async function handleCreateGmailDraft(
+  content: Record<string, unknown>,
+  session: Session,
+  inDb: Database.Database,
+): Promise<void> {
+  const requestId = reqId(content);
+  const p = payload(content);
+  const to = p.to as string;
+  const subject = p.subject as string;
+  const body = p.body as string;
+  const in_reply_to = (p.in_reply_to as string | null | undefined) ?? null;
+
+  // Sandbox isolation: only the owner agent group can materialize Gmail drafts.
+  const group = getAgentGroup(session.agent_group_id);
+  if (!group || group.folder !== 'career-pilot') {
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: {
+        code: 'FORBIDDEN',
+        message: 'create_gmail_draft is not available in this agent group (sandbox sessions cannot materialize real Gmail drafts).',
+      },
+    });
+    return;
+  }
+
+  if (!to || !EMAIL_RE.test(to)) {
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'BAD_ARGS', message: 'to must be a valid email address' },
+    });
+    return;
+  }
+  if (!subject || typeof subject !== 'string') {
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'BAD_ARGS', message: 'subject is required (non-empty string)' },
+    });
+    return;
+  }
+  if (!body || typeof body !== 'string') {
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'BAD_ARGS', message: 'body is required (non-empty string)' },
+    });
+    return;
+  }
+  if (body.length > BODY_HARD_CAP) {
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: {
+        code: 'BAD_ARGS',
+        message: `body exceeds hard cap (${body.length} > ${BODY_HARD_CAP} chars). The prompt-level cap is ≤200 words — something went wrong upstream.`,
+      },
+    });
+    return;
+  }
+
+  const stubMode = process.env.GMAIL_STUB === '1';
+  if (stubMode) {
+    const draft_id = `${STUB_DRAFT_PREFIX}${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const draft_url = `https://mail.google.com/mail/u/0/#drafts/${draft_id}`;
+    log.info('create_gmail_draft (stub)', { to, subject, body_chars: body.length, draft_id });
+    writeResponse(inDb, requestId, {
+      ok: true,
+      data: { draft_id, draft_url, stub: true, in_reply_to },
+    });
+    return;
+  }
+
+  // Real Gmail integration — TODO Phase 3+ (full OAuth onboarding wizard).
+  // For Phase 2.3, real-mode lands behind a stub call against the Gmail API
+  // via OneCLI-vaulted OAuth refresh token (host-pattern www.googleapis.com).
+  // Until manual OneCLI registration is done, this branch returns a clear
+  // error rather than half-implementing.
+  writeResponse(inDb, requestId, {
+    ok: false,
+    error: {
+      code: 'NOT_IMPLEMENTED',
+      message: 'Real Gmail draft creation is not yet wired (Phase 3+). Run with GMAIL_STUB=1 for now.',
+    },
+  });
 }
 
 // ── update_application (UPSERT) ────────────────────────────────────────────

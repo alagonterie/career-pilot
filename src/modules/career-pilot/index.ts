@@ -10,6 +10,7 @@
 import { registerDeliveryAction } from '../../delivery.js';
 
 import {
+  handleCreateGmailDraft,
   handleGetApplication,
   handleListApplications,
   handleRecordFunnelEvent,
@@ -24,3 +25,4 @@ registerDeliveryAction('career_pilot.record_funnel_event', handleRecordFunnelEve
 registerDeliveryAction('career_pilot.get_application', handleGetApplication);
 registerDeliveryAction('career_pilot.list_applications', handleListApplications);
 registerDeliveryAction('career_pilot.record_progress', handleRecordProgress);
+registerDeliveryAction('career_pilot.create_gmail_draft', handleCreateGmailDraft);
