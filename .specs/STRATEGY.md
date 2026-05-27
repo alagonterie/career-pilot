@@ -1636,6 +1636,139 @@ Same arc as §24.1 and §24.2: the strict version was speculative; the relaxed v
 
 **One-paragraph stub** — the candidate's natural reaction to a `draft-outreach` result is *"I like it, but change X."* For 2.3 the orchestrator handles that by re-invoking `draft-outreach` on a clean restart, which loses the prior draft. §24.3.1 adds an `update_gmail_draft({ draft_id, subject?, body? }) → { ok: true }` orchestrator tool and an "edit" code path in the persona: when the candidate references a specific draft and asks for changes, the orchestrator invokes `draft-outreach` with the prior draft body in context (as a fourth input source under `## Prior draft`) plus the candidate's revision instructions, then calls `update_gmail_draft` instead of `create_gmail_draft`. Same DoD shape as 2.3 minus the chain assertion (no fresh research needed for an edit). Scoped as a separate sub-milestone because (a) it requires the orchestrator to track the most-recent `draft_id` per recipient-or-thread in the session (a small new state surface), and (b) the prompt-engineering for "preserve what's good, change what's asked" is its own risk surface. Defer until 2.3 DoD lands; revisit ordering vs Phase 2.4 (`prep-interview`) at that point.
 
+#### 24.4 Sub-milestone 2.4 — `prep-interview` subagent + chain rule tightening
+
+**Why this sub-milestone next:** Fourth subagent. It closes the chained-delegation pattern question at N=4 — once `prep-interview` lands, every "consumer subagent" we've designed in Phase 2 has proven the orchestrator can fan a research digest into a downstream deliverable, with no consumer-specific schema drift in the research output. Three properties make it the right next increment after 2.3:
+
+- **Different consumer profile from 2.2 and 2.3** — `tailor-resume` and `draft-outreach` both consume research for *tech-stack + recent-work* angles. `prep-interview` instead consumes research for *team/people signal + recent news* angles (who runs the org, what they're shipping, what's in the press this week). If the existing research digest covers prep-interview cleanly, the schema is stable for Phase 3. If gaps surface (e.g., prep-interview wants explicit interviewer-name extraction that research-company doesn't capture), that's load-bearing signal that the research output needs Phase 5+ enrichment.
+- **First multi-target render output** — `tailor-resume` renders to chat. `draft-outreach` renders to Gmail. `prep-interview` is the first subagent whose output is read in TWO contexts at different times: (a) the candidate reads it on Telegram on the way to the interview (skimmable, phone-formatted), and (b) post-interview, a sanitized version may render to the `/funnel` public detail panel ([[PORTAL.md §5.7]]). The subagent body must produce markdown that survives both contexts — not a portal-only artifact, not a chat-only artifact. This is a discipline check for the rest of Phase 2 deliverables that will eventually surface on the portal.
+- **No new infrastructure** — no new MCP tools, no new migrations, no new auth integrations. The increment exists purely to flex the existing pattern. Same discipline check §24.2 applied: "small clean increment > bundled scope creep." If we discover gaps requiring infra, we surface them as follow-up sub-milestones (§24.4.1+) rather than expanding this one.
+
+**Within-session research reuse — promoted to chain-rule consistency (no new infrastructure):**
+
+Phase 2.1.5 specced cross-session `research_cache` (table keyed by `company_domain + weekly_date_bucket` + Portkey semantic cache); explicitly deferred to Phase 4 alongside Portkey wiring. The persona already contains the within-session reuse rule (lines 341-344): *"if research-company already ran for the same company earlier in this conversation, reuse that output instead of re-running."* What 2.4 adds is **consistency across the chain-rule table** — the per-row rules currently disagree:
+
+- `tailor-resume` row: *"**ALWAYS** run research first. No exceptions."* (says "no exceptions" but the general rule below contradicts this for session-local reuse)
+- `draft-outreach` row: *"**ALWAYS** run research first (unless covered earlier in this session)."* (correctly captures the rule)
+- `prep-interview` row: *"(Phase 2.4) Research always; tailoring when the round is 'talk through your resume'."* (placeholder)
+
+2.4 tightens all three to the same wording: *"**ALWAYS** run research first (unless covered earlier in this session)."* This is a one-edit clarification, not a behavioral change — the general rule already governs.
+
+**The real `research_cache` is still deferred:** cross-session reuse, weekly bucketing, Portkey semantic-cache wiring all stay in Phase 4. The argument for the deferral hasn't changed: (a) Phase 2 runs on local Ollama at $0/call so the cost argument doesn't bite yet, (b) we should not lock in a `company_research` schema before we've seen what all 5 subagents — including `scrape-jobs` in §24.5 — actually consume from research output, (c) Phase 4's Portkey wiring is the natural moment to add the cross-session layer because the dual-cache design has always paired local table + Portkey semantic cache (see §16 line 445).
+
+**What lands:**
+
+1. **Flesh out `groups/career-pilot/.claude/agents-src/prep-interview.md`** (currently a Phase 0 placeholder). Owner-only — `prep-interview` is NOT in the sandbox group per the locked decision (sandbox has the first three subagents only). The body covers:
+   - **Mission** — produce a focused interview prep guide for a specific interview event. Pulls fresh signal from the orchestrator-provided research digest + interview-type-specific guidance (behavioral, technical screen, system design, final round). Read-only — does not modify any DB state; the orchestrator owns funnel updates.
+   - **Inputs** — four sources, ordered by trust:
+     1. **Master resume + skills + target_roles** — auto-loaded via `.claude-host-fragments/candidate.md`. *Source of truth for the candidate's actual experience and what to lean into.*
+     2. **research-company digest** — provided in the orchestrator's invocation prompt under a research-shaped heading. *Source of truth for what to anchor company-specific prep against.*
+     3. **Interview event details** — provided in the orchestrator's invocation prompt under `## Interview`: `interview_type` (one of `behavioral` / `technical_screen` / `system_design` / `final_round` — extensible), `role` (target role title), optional `scheduled_at` (ISO 8601 or natural-language date), optional `interviewer_name`/`interviewer_title`. The orchestrator extracts these from the candidate's turn; if the candidate did not specify `interview_type`, the orchestrator asks once before delegating (`prep-interview` will refuse without it — same shape as `draft-outreach` refusing without `recipient_email`).
+     4. **tailor-resume bullets** (optional) — provided when the interview is a behavioral or final-round "walk me through your resume" framing. The orchestrator passes the prior tailor-resume output under `## Tailored bullets` if available; the subagent uses these to align its pitch-framing section with what the candidate has already prepared.
+   - **Hard constraints** (mirror 2.2/2.3 discipline):
+     - NEVER fabricate experience the candidate doesn't have. If a likely interview topic has no honest analogue in the master resume, surface it in the honesty section, do not paper over it.
+     - NEVER invent interviewer-specific claims (e.g., "based on Jane's LinkedIn..." when no LinkedIn data was provided).
+     - NEVER reference research-digest claims marked `[inferred]` as if they were facts.
+     - Output ≤ ~600 words total (skimmable on phone; soft cap, hard cap ~800).
+   - **Voice rules** — *technical, warm, brief*. No interview-coach platitudes (`"remember to be your authentic self"`, `"interviewers want to see passion"`). No generic STAR-method explainers — assume the candidate knows the framework. Concrete, role-and-company-specific guidance only.
+   - **Output format (markdown; structure-flexible — exact H2 names not prescribed, the subagent picks names that fit the role and interview type)** — four mandatory content categories:
+
+     | Category | Why it matters |
+     |---|---|
+     | **Recent company signal (3-5 items)** | What the candidate should know walking in that's *current* — last product launch, last funding event, recent eng blog post, public scuffle. Each item one line; cite the research digest's source when traceable. |
+     | **Likely question themes by interview type** | 4-7 themes specific to this `interview_type` + `role`. Not generic ("tell me about yourself"); themes the company is statistically likely to probe given the role + their tech stack from research. |
+     | **Pitch framing — what to lean into** | 3-5 specific points from the candidate's master resume (or tailor-resume bullets if provided) that map cleanly onto this role's needs. One sentence each. If the round is "walk through your resume", this section is the spine. |
+     | **Questions to ask the interviewer (3-5)** | Specific, research-grounded questions that signal the candidate has done their homework. Not generic ("what's the culture like"); questions only answerable by someone *inside* this company. Mark `[research-derived]` per question to show the anchor. |
+   - **Honesty notes section (optional, encouraged)** — same pattern as 2.2/2.3. If the role asks for X and the master resume is light on X, name the gap and suggest a framing rather than papering over it.
+   - **Tool palette** — `tools: [record_progress]`. No `WebSearch`/`WebFetch` — the orchestrator's research digest is the source of recent signal; if it's stale, the candidate or orchestrator triggers a fresh `research-company` invocation, not a fetch-from-subagent shortcut. (Note: the current placeholder lists `[WebSearch, WebFetch, Read]` — those get removed when fleshed out. A future sub-milestone may add `[WebSearch]` if "last-48-hour news pulled at prep time" becomes a real ask; not in 2.4 scope.)
+   - **Progress emissions** — 2 to 4 `record_progress` calls per run at meaningful inflection points (e.g., `parsing-interview-context`, `assembling-themes`, `framing-pitch`, `final-pass`). ≤ ~80 chars per `detail`.
+   - **What to avoid** — pasting the JD/digest back; pure-generic interview advice (the candidate has access to Google); STAR-method explainers (assumed background); coaching language about "confidence" or "authenticity"; bullet inflation (>~25 bullets total across all sections).
+   - **maxTurns: 10**.
+
+2. **Update the orchestrator persona** at `groups/career-pilot/.claude-host-fragments/persona.md`:
+   - **Tighten the chain-rule table** — three rows updated to consistent wording:
+     - `tailor-resume`: *"**ALWAYS** run research first (unless covered earlier in this session)."* (was "No exceptions" — now matches draft-outreach.)
+     - `draft-outreach`: unchanged (already correct).
+     - `prep-interview`: *"**ALWAYS** run research first (unless covered earlier in this session). Pass the digest under a research-shaped heading AND pass interview event details under `## Interview` (see 'Interview event extraction' below). prep-interview refuses without `interview_type`. Optionally pass prior tailor-resume bullets under `## Tailored bullets` when the round is 'walk through your resume'."*
+   - **Add `prep-interview` to the trigger-phrase table:** `"prep me for X interview"`, `"help me prepare for the <company> <round>"`, `"interview prep for <role>"`, calendar-triggered prep (24h-before — Phase 5+).
+   - **Add an "Interview event extraction" subsection** parallel to "Recipient extraction" in the persona. Pattern:
+     1. Look for interview type in the candidate's turn (behavioral / technical screen / system design / final round / panel / final).
+     2. Look for scheduled date if mentioned ("next Tuesday", "2026-06-02 at 10am").
+     3. Look for interviewer name if mentioned ("with Jane Chen", "interviewing with the Inference lead").
+     4. If `interview_type` is missing AND the candidate did not say "I don't know what kind of round", ask once: *"What kind of round — technical screen, behavioral, system design, or final?"*. prep-interview refuses without `interview_type`.
+   - **Add a worked example for prep-interview** mirroring the 2.3 outreach example's shape — three or four tool calls in one turn (research-company → optionally tailor-resume → prep-interview → final `<message>` reply). Critical-substitution warning (`<<...>>` markers are instructions, not content) repeated for the prep-interview prompt.
+   - **Pattern B routing note for prep-interview** — surface the deliverable faithfully (same as tailor-resume/draft-outreach). Strip `[research-derived]` and any other machine-format tags before sending to the candidate. Do NOT summarize the prep guide down to 2 sentences — the candidate asked for a prep guide, surface the prep guide. (Same Pattern B exception logic as Phase 2.2; NOT the Pattern B exception used for outreach, since the prep guide IS the artifact the candidate reads on Telegram on the way to the interview.)
+
+3. **Composer extension already covers this subagent** — `composeSubagentDefinitions(group)` (added in §24.3 via #85) auto-renders `agents-src/prep-interview.md` to `agents/prep-interview.md` on container spawn. No composer change needed for 2.4. The shared subagent preamble already includes prep-interview's `<!-- @include _shared/subagent-preamble.md -->` directive (Phase 0 placeholder retains it).
+
+4. **No sandbox mirror** — prep-interview is owner-only. Sandbox's `disallowedTools` (per §24.3 + #86) does NOT need to include `prep-interview` because subagents are resolved from the per-group `agents/` directory; the sandbox group has no `prep-interview.md` source and therefore no rendered file, so the orchestrator cannot delegate to it from a sandbox session. Defense-in-depth: confirm during 2.4 manual smoke that the sandbox orchestrator either refuses or produces a graceful "this subagent is not available in the sandbox" message when asked for interview prep.
+
+5. **New e2e flow `--flow=prep-interview`** in `scripts/test/e2e.ts`:
+   - Preconditions:
+     - `--seed-profile` populates `candidate_profile` (existing Test Candidate seed).
+     - An `applications` row for Anthropic in `BOOKMARKED` or `SCREENING` state.
+   - User turn: *"Prep me for a technical screen at Anthropic for the Staff Backend Engineer role — interview is next Tuesday."* (Mentions interview_type, role, and a scheduled date — covers the happy path. A separate test case can cover the "candidate forgot interview_type → orchestrator asks once" path; not blocking for DoD.)
+   - Assertions (retry-tolerant, modeled on §24.2 / §24.3):
+     - Both subagent types dispatched, research-company first; at least one call per type succeeded.
+     - `prep-interview`'s invocation prompt contains a research-shaped heading AND an `## Interview` heading carrying `interview_type: technical_screen` (or whatever normalized form the orchestrator settles on — assertion accepts `technical_screen`, `technical screen`, `Technical Screen` substring matches).
+     - Best `prep-interview` attempt contains at least 2 of the 4 mandatory content categories (relaxed from "all 4 required" — see "expected empirical relaxations" below).
+     - Output references ≥ 3 distinctive 6+-char words from the research digest (mirrors §24.2/§24.3's research-traceability check).
+     - Output references ≥ 1 candidate-profile term (`Go`/`Golang`/`Rust`/`PostgreSQL`/`Postgres`).
+     - Output mentions the specific interview type (case-insensitive substring match on `technical screen` / `technical_screen`).
+     - Output word count between 100 and 800 (skimmable + bounded).
+     - `prep-interview` emits ≥ 2 `record_progress` rows in `public_audit_trail` keyed to that subagent run.
+     - Orchestrator's user-facing reply surfaces the prep guide (≥ 200 chars OR contains ≥ 3 of: `question`, `theme`, `framing`, `recent`, `ask`) — Pattern B faithfulness check.
+   - Wires into `FLOW_HANDLERS` + `FLOWS_NEEDING_SEED`. 900s timeout (chained flow — same as §24.3).
+
+**Out of scope (explicit, to keep the increment small):**
+- Cross-session `research_cache` table + `get_or_cache_research` MCP tool — Phase 4 with Portkey semantic-cache wiring (per Sub-milestone 2.1.5).
+- `send_outreach_email` — §24.3.2 follow-up.
+- Calendar-triggered auto-prep (24h-before) — Phase 5+ (requires `query_calendar` integration + the scheduling daemon).
+- Interview scheduling DB schema (`interview_events` table) — Phase 5+. For 2.4 the orchestrator passes `interview_type` + optional `scheduled_at` as free-text in the invocation prompt; no structured event tracking yet.
+- `WebSearch` in prep-interview's tool palette — deferred until "last-48-hour news pulled at prep time" surfaces as a real ask.
+- `/funnel` public detail panel rendering of post-interview prep guide — Phase 7+ (portal phase).
+- Recipient-suggestion / interviewer-suggestion subagent (orchestrator picking "who is most likely to be on this panel given the role") — later sub-milestone.
+
+**Risk + fallback hierarchy:**
+
+| Risk | Probability | Fallback |
+|---|---|---|
+| **A. Orchestrator skips the chain** — calls `prep-interview` without `research-company` first | Medium (same surface as 2.2/2.3). | Reuse the 2.2/2.3 mitigations: tightened chain rule in persona, worked example showing both Tasks. If still failing under GLM, document and proceed. |
+| **B. Subagent refuses to surface honesty gaps** — produces generic prep when the candidate is light on the role's core ask | Medium under GLM (model size bias toward "be helpful" over "be honest"). | Strengthen the prompt's "honesty notes encouraged" rule with a worked counter-example. If GLM still papers over gaps, this is a model-capability ceiling — escalate to Claude validation. |
+| **C. Output exceeds word cap / runs long** | Medium (interview prep is naturally verbose). | Hard constraint in prompt + "produce, then trim" instruction. e2e assertion catches it. Soft cap 600 / hard cap 800 gives breathing room without unbounded growth. |
+| **D. Questions-to-ask section is generic** ("what's the culture like") | Medium-high under GLM (the easy default). | Prompt-level requirement: each question must reference a specific item from the research digest, marked `[research-derived]`. e2e assertion (research-word-overlap) catches blanket genericness; nuance gets caught by Claude-validation cost on demand. |
+| **E. Persona's chain-rule tightening regresses tailor-resume / draft-outreach behavior** | Low (wording is now identical to draft-outreach which already works) but worth a manual smoke. | Manual re-run of `--flow=tailor-resume` and `--flow=draft-outreach` after the persona edit to confirm no behavior change. Adds ~30 min of test time during 2.4 DoD. |
+
+The 2.1 escalation ladder (prompt-tune → `LLM_PROVIDER=claude` → never go inline) applies recursively if any of A/B/C/D blocks DoD.
+
+**Definition of done:**
+
+1. With `--seed-profile` + a `BOOKMARKED`-or-`SCREENING` Anthropic application, the candidate's *"prep me for a technical screen at Anthropic for <role>, interview is <date>"* turn produces chained `research-company` → `prep-interview` Task calls with at least one success per type.
+2. The orchestrator's `prep-interview` invocation prompt contains a research-shaped heading AND an `## Interview` heading carrying a normalized `interview_type` value.
+3. `prep-interview`'s output contains at least 2 of the 4 mandatory content categories (recent company signal / question themes / pitch framing / questions to ask).
+4. Output references ≥ 3 distinctive research-derived words AND ≥ 1 candidate-profile term AND mentions the specific interview type.
+5. Output word count between 100 and 800.
+6. `prep-interview` emits ≥ 2 `record_progress` calls during the run; sanitized rows land in `public_audit_trail` keyed to that subagent run.
+7. Orchestrator's user-facing reply surfaces the prep guide faithfully (≥ 200 chars OR contains ≥ 3 of the deliverable-keyword set).
+8. `pnpm test:e2e --flow=prep-interview` passes on Windows with GLM-4.7-Flash — OR with the documented `LLM_PROVIDER` fallback, choice recorded in commit message + `feedback_windows_dev_env.md` memory.
+9. Manual smoke-test: re-running `--flow=tailor-resume` and `--flow=draft-outreach` after the persona chain-rule tightening still passes — confirms the wording change didn't regress earlier flows.
+10. No new MCP tools, no new migrations, no new auth integrations — discipline check on increment size.
+11. Manual smoke (sandbox): requesting `prep-interview` in `career-pilot-sandbox` either refuses with a clear message OR doesn't dispatch (since the subagent file doesn't exist in that group).
+
+**Empirical iteration log (single-run green — happy surprise):**
+
+Unlike §24.1 (multiple iterations to land), §24.2 (relaxed-on-first-run pattern), and §24.3 (8 iterations), Phase 2.4 landed DoD on iteration #2. Documenting the arc for future spec readers:
+
+- **Iteration #1 — prep-interview subagent refused** because the orchestrator's invocation prompt didn't actually paste the research digest. The orchestrator wrote *"Use the research results from the Anthropic company research as the company-research digest"* — pointing at "above" research that, from the subagent's POV (a fresh session), didn't exist. The subagent (correctly identifying empty input) refused with a structured `## Cannot proceed` line. The orchestrator's fallback was to generate the prep guide inline using its own context — which produced a perfectly good guide that surfaced to the candidate, but the e2e asserts on the subagent's output (where the deliverable should originate), so the run failed at content-category-count.
+- **Two-pronged fix landed before iteration #2:**
+  - **Subagent body softened** — research is now framed as "when present, this is your source of company-specific signal..." with an explicit *"do NOT refuse on missing research; produce a best-effort guide and surface the gap in honesty notes"* path. The subagent refuses ONLY on missing `interview_type` (the actually load-bearing trigger info), not on missing research. Rationale: an empty refusal helps nobody; thin prep + honesty note teaches the orchestrator it dropped the input.
+  - **Persona tightened** with a load-bearing callout at the top of the chaining section: *"Subagents are fresh sessions. They do NOT see your conversation history, do NOT see prior tool calls, do NOT see 'the research above.'"* Plus a list of explicit anti-patterns (`"Use the research results from above"`, `"Reference the prior digest"`, `<<paste research>>` markers as content) vs the one correct pattern (full digest text pasted verbatim into `prompt:`).
+- **Iteration #2 — all 10 assertions green.** GLM pasted the digest properly into prep-interview's invocation prompt (assertion: prep-interview prompt contains a research-shaped heading), the subagent produced 4/4 mandatory content categories with 42 distinctive research-derived terms, 598 words (well within the 100-800 cap), 5 `record_progress` rows. The orchestrator's reply was 4631 chars surfacing the prep guide faithfully (Pattern B).
+
+**Lesson encoded for future sub-milestones:** "Subagents are fresh sessions" is a load-bearing prompt-engineering point that GLM (and probably other small models) does not internalize on its own. When the same failure mode recurs in §24.5 (`scrape-jobs`) or Phase 3+, look to the persona's chaining section *first* — making the fresh-session constraint explicit + anti-pattern-driven is cheaper than per-subagent prompt tightening. Co-locating the warning at the chaining section means every consumer subagent benefits without per-row duplication.
+
+**One minor wart, not load-bearing:** GLM emitted `<messaging to="...">` (typo, missing the 'e') in one of its passes — the lenient parser (Phase 2.3 task #87) handled it by dispatching the result via the next clean retry, but the host did log a `WARNING: agent output had no <message to="..."> blocks` line. If this typo recurs across sessions in Phase 3+, the parser could be extended to accept `messaging` as a tag-name synonym; for now the retry path covers it.
+
 ---
 
 ## Part VI: Open questions

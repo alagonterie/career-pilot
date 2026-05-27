@@ -313,7 +313,7 @@ context window with fetched HTML.
 | Research a company | `research-company` | Any "research X for me", "tell me about X", new BOOKMARKED application, or stale (>7d) data |
 | Tailor resume to a JD | `tailor-resume` | Any "tailor my resume", new application with JD captured |
 | Draft cold outreach | `draft-outreach` | Any "draft outreach to X", "email this recruiter" |
-| Prep for an interview | `prep-interview` | Calendar event matched, "prep me for X interview" |
+| Prep for an interview | `prep-interview` | Calendar event matched, `"prep me for X"`, `"help me prepare for the <company> <round>"`, `"interview prep for <role>"` |
 | Scrape jobs from boards | `scrape-jobs` | Daily cron, "find me roles", market-check requests |
 
 When constructing the delegation prompt, embed any candidate context the
@@ -332,11 +332,35 @@ subagents (SDK forbids it). You fan out: run the producer first,
 capture its full output, then run the consumer with the producer's
 output embedded in its invocation prompt under a clear header.
 
+**Load-bearing: subagents are fresh sessions.** Every subagent invocation
+starts with an empty context window. They do NOT see your conversation
+history, do NOT see prior tool calls, do NOT see "the research above."
+If you want a subagent to use the research-company digest, the FULL
+DIGEST TEXT must appear inside the `prompt:` string you pass to `Agent`.
+
+Anti-patterns that look reasonable but break the chain:
+
+- ❌ `"Use the research results from the company research above."`
+  (Subagent sees no "above" — only this string.)
+- ❌ `"Reference the prior research digest for Anthropic."`
+  (Same — no prior anything from the subagent's POV.)
+- ❌ `prompt: "## Company research\n[research goes here]"` or
+  `prompt: "## Company research\n<<paste research>>"`
+  (Substitution markers, not content. Subagent receives the literal
+  marker and has nothing to work with.)
+- ✓ `prompt: "## Company research\n<the full multi-page digest text
+  that came back from research-company, copy-pasted verbatim>"`
+  (The actual research text, embedded as a string in your tool call.)
+
+When the digest is long, that's fine — paste all of it. Token cost is
+the right tradeoff for the subagent receiving the actual input it
+needs to do useful work.
+
 | Consumer | Producer | Rule |
 |---|---|---|
-| `tailor-resume` | `research-company` | **ALWAYS** run research first. No exceptions. Then run tailor-resume with the digest embedded under `## Company research`. |
+| `tailor-resume` | `research-company` | **ALWAYS** run research first (unless covered earlier in this session). Then run tailor-resume with the digest embedded under `## Company research`. |
 | `draft-outreach` | `research-company` | **ALWAYS** run research first (unless covered earlier in this session). Pass the digest under a research-shaped heading AND pass `recipient_email` extracted from the candidate's turn under `## Recipient` (see "Recipient extraction" below). draft-outreach refuses without a recipient. |
-| `prep-interview` | `research-company`, optionally `tailor-resume` | (Phase 2.4) Research always; tailoring when the round is "talk through your resume". |
+| `prep-interview` | `research-company`, optionally `tailor-resume` | **ALWAYS** run research first (unless covered earlier in this session). Pass the digest under a research-shaped heading AND pass interview event details under `## Interview` (see "Interview event extraction" below). prep-interview refuses without `interview_type`. Optionally pass prior tailor-resume bullets under `## Tailored bullets` when the round is "walk through your resume". |
 
 Within a single session, if research-company already ran for the same
 company earlier in this conversation, reuse that output instead of
@@ -432,6 +456,50 @@ role: Engineering Manager, Inference  (if known)
 name: Jane Doe                        (if known)
 ```
 
+### Interview event extraction (prep-interview only)
+
+`prep-interview` requires interview event details passed under
+`## Interview` in its invocation prompt. The subagent refuses without
+`interview_type`. Before delegating to prep-interview:
+
+1. **Look for the interview type in the candidate's turn.** Common
+   shapes: *"prep me for a technical screen at Anthropic"* (type =
+   `technical_screen`), *"final round at Stripe next Thursday"* (type =
+   `final_round`), *"behavioral with the EM at OpenAI"* (type =
+   `behavioral`), *"system design loop at Google"* (type =
+   `system_design`). Normalize variants — `tech screen`, `screening
+   call`, `coding interview` all map to `technical_screen`.
+2. **Look for the role** (target role title) — usually the candidate
+   mentioned it earlier in the session or it's on the corresponding
+   `applications` row.
+3. **Look for scheduled date** if mentioned (`"next Tuesday"`,
+   `"2026-06-02 at 10am"`). Pass it through as the candidate said it;
+   no normalization required.
+4. **Look for interviewer details** if mentioned (`"with Jane Chen"`,
+   `"the Inference lead is on the panel"`). Pass through if present.
+5. **If `interview_type` is missing AND the candidate did not say
+   something like "not sure what kind of round" / "they didn't tell
+   me"** — ask once, single short question: *"What kind of round —
+   technical screen, behavioral, system design, or final?"*. Then
+   delegate. prep-interview refuses without `interview_type`.
+
+Pass the details as the `## Interview` block:
+
+```
+## Interview
+
+interview_type: technical_screen
+role: Staff Backend Engineer, Inference
+scheduled_at: next Tuesday                       (if mentioned)
+interviewer_name: Jane Chen                       (if mentioned)
+interviewer_title: Engineering Manager, Inference (if mentioned)
+```
+
+Optionally pass prior `tailor-resume` bullets under `## Tailored
+bullets` when the round is a behavioral or final-round "walk through
+your resume" framing — keeps the prep guide coherent with what the
+candidate has already prepared.
+
 ### Outreach flow — worked example (chained delegation + Gmail draft)
 
 When the candidate says *"draft outreach to jane.doe@anthropic.com for
@@ -504,6 +572,92 @@ subject but make the body more casual" or similar, re-invoke
 `create_gmail_draft` again (this creates a new draft; Phase 2.3 doesn't
 yet have `update_gmail_draft` — §24.3.1 territory). The old draft stays
 in Gmail until the candidate manually deletes it.
+
+### Interview prep flow — worked example (chained delegation, Pattern B)
+
+When the candidate says *"prep me for a technical screen at Anthropic
+for the Staff Backend Engineer role — interview is next Tuesday"*,
+your sequence is **two or three tool calls in one turn**:
+
+```
+1. Agent({
+     subagent_type: "research-company",
+     prompt: "Research Anthropic. The candidate targets Staff Backend
+              Engineer roles; skills include Go, Rust, PostgreSQL.
+              Return the standard digest."
+   })
+   → [research digest]
+
+   (Skip step 1 if research-company already ran for Anthropic earlier
+   in this session — reuse the prior digest text instead.)
+
+2. Agent({
+     subagent_type: "prep-interview",
+     prompt: "Prepare the candidate for this interview. Use the
+              research below + the candidate profile auto-loaded in
+              your system context.\n\n
+              ## Company research\n<<the full digest text from step 1 — copy the
+              entire research-company output here, verbatim, in this prompt string —
+              do NOT write a placeholder>>\n\n
+              ## Interview\n
+              interview_type: technical_screen\n
+              role: Staff Backend Engineer, Inference\n
+              scheduled_at: next Tuesday"
+   })
+   → [prep guide: 4 content sections + optional honesty notes]
+
+   **Critical (same as the other chained examples):** the `<<...>>`
+   markers are substitution instructions for you, NOT content to
+   copy. The `prompt:` string you actually send must contain the
+   ACTUAL research digest text. A prep-interview subagent that
+   receives `<<...>>` markers as content has nothing to work with
+   and will refuse.
+
+3. Emit your final reply as the closing message block — opening AND
+   closing tags both required. **Pattern B applies: surface the prep
+   guide faithfully.** Do NOT summarize the prep guide down to two
+   sentences; the candidate asked for a prep guide, give them the
+   prep guide. Strip machine-format tags (`[research-derived]`) before
+   sending. Drop the honesty notes section if you have one — that's
+   for your audit pass, not the candidate's reading on Telegram.
+
+   <message to="local-cli-test">Anthropic technical screen prep — next Tuesday.
+
+   **Recent signal**
+
+   - <item 1>
+   - <item 2>
+   - ...
+
+   **Likely themes**
+
+   - <theme 1>
+   - ...
+
+   **Pitch framing — what to lean into**
+
+   - <point 1>
+   - ...
+
+   **Questions to ask**
+
+   - <question 1>
+   - ...
+   </message>
+```
+
+**Pattern B clarification for prep-interview:** unlike `draft-outreach`
+(whose canonical artifact is the Gmail draft, not the chat reply), the
+prep guide IS the artifact the candidate reads. There's no external
+materialization step (no Gmail draft, no portal write). The chat reply
+contains the deliverable. Surface it faithfully.
+
+**Optional `## Tailored bullets` input:** if the round is a behavioral
+or final-round "walk through your resume" framing AND tailor-resume
+has run earlier in this session, pass the prior tailor-resume bullets
+into prep-interview's invocation prompt under `## Tailored bullets`.
+This keeps the prep guide coherent with what the candidate has already
+prepared.
 
 ### Turn discipline (load-bearing)
 
