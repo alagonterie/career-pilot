@@ -125,6 +125,100 @@ export async function handleUpdateProfileField(
   }
 }
 
+// ── record_progress ────────────────────────────────────────────────────────
+
+const PROGRESS_DETAIL_CAP = 200;
+const PROGRESS_PER_SESSION_CAP = 6;
+
+/**
+ * Minimal PII sanitization for `record_progress` detail strings — the
+ * Phase 2.3 stand-in for `src/modules/portal/sanitizer.ts`'s full
+ * three-pass pipeline (Phase 3). Emails + phone-shaped digits get
+ * redacted. Detail strings are short by construction (cap 200 chars) so
+ * the inline regex pass is sufficient for the writer; the LLM
+ * context-sensitivity pass is the Phase 3 add-on.
+ */
+function sanitizeProgressDetail(raw: string): string {
+  return raw
+    .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '[email]')
+    .replace(/(?:\+?\d[\s.()-]?){9,}/g, '[phone]');
+}
+
+export async function handleRecordProgress(
+  content: Record<string, unknown>,
+  session: Session,
+  inDb: Database.Database,
+): Promise<void> {
+  const requestId = reqId(content);
+  const p = payload(content);
+  const subagent_name = p.subagent_name as string;
+  const stage = p.stage as string;
+  const detail = p.detail as string;
+
+  if (!subagent_name || !stage || typeof detail !== 'string' || !detail) {
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'BAD_ARGS', message: 'subagent_name, stage, and detail are required (detail must be a non-empty string)' },
+    });
+    return;
+  }
+
+  const detailCapped = detail.length > PROGRESS_DETAIL_CAP ? `${detail.slice(0, PROGRESS_DETAIL_CAP - 3)}...` : detail;
+  const summary = sanitizeProgressDetail(detailCapped);
+
+  try {
+    const db = getDb();
+
+    // Per-(session, subagent) soft rate-limit. Approximates "per-run" — a
+    // single Task call doesn't have a stable run_id exposed to MCP handlers,
+    // and sessions are short-lived (~5 min ceiling), so per-session counting
+    // is a workable proxy. Spec calls for 7th-call rejection (cap=6 prior).
+    const sessionLike = `%"session_id":"${session.id}"%`;
+    const count = (
+      db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM public_audit_trail
+            WHERE category = 'subagent_progress'
+              AND agent_name = @agent
+              AND details_json LIKE @sessionLike`,
+        )
+        .get({ agent: subagent_name, sessionLike }) as { n: number }
+    ).n;
+    if (count >= PROGRESS_PER_SESSION_CAP) {
+      writeResponse(inDb, requestId, {
+        ok: false,
+        error: {
+          code: 'RATE_LIMITED',
+          message: `record_progress cap reached (${count} prior calls for ${subagent_name} in this session)`,
+        },
+      });
+      return;
+    }
+
+    const id = generateId('prog');
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO public_audit_trail (id, ts, category, agent_name, summary, details_json)
+       VALUES (@id, @ts, @category, @agent_name, @summary, @details_json)`,
+    ).run({
+      id,
+      ts: now,
+      category: 'subagent_progress',
+      agent_name: subagent_name,
+      summary,
+      details_json: JSON.stringify({ stage, session_id: session.id }),
+    });
+
+    writeResponse(inDb, requestId, { ok: true, data: { id, stage } });
+  } catch (err) {
+    log.error('handleRecordProgress failed', { subagent_name, err });
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
 // ── update_application (UPSERT) ────────────────────────────────────────────
 
 const APPLICATION_COLUMNS = [
