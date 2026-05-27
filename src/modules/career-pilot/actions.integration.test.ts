@@ -22,7 +22,9 @@ import { closeDb, getDb, initTestDb } from '../../db/connection.js';
 import { runMigrations } from '../../db/migrations/index.js';
 import { ensureSchema, openInboundDb } from '../../db/session-db.js';
 import type { Session } from '../../types.js';
+import { createAgentGroup } from '../../db/agent-groups.js';
 import {
+  handleCreateGmailDraft,
   handleGetApplication,
   handleListApplications,
   handleRecordFunnelEvent,
@@ -397,6 +399,142 @@ describe('handleGetApplication + handleListApplications', () => {
     if (resp.frame.ok) {
       const data = resp.frame.data as { applications: Array<Record<string, unknown>> };
       expect(data.applications).toHaveLength(1);
+    }
+  });
+});
+
+// ── create_gmail_draft ─────────────────────────────────────────────────────
+
+// Phase 2.3 sandbox-isolation smoke test (closes DoD #8). The handler
+// refuses any session whose agent_group_id resolves to a folder !==
+// 'career-pilot'. Verified by seeding both groups + flipping the session
+// agent_group_id between them.
+
+const OWNER_SESSION: Session = {
+  ...FAKE_SESSION,
+  id: 'sess-owner',
+  agent_group_id: 'ag-owner',
+};
+const SANDBOX_SESSION: Session = {
+  ...FAKE_SESSION,
+  id: 'sess-sandbox',
+  agent_group_id: 'ag-sandbox',
+};
+
+function seedAgentGroups(): void {
+  createAgentGroup({
+    id: 'ag-owner',
+    name: 'Career Pilot',
+    folder: 'career-pilot',
+    agent_provider: null,
+    created_at: '2026-05-27T00:00:00Z',
+  });
+  createAgentGroup({
+    id: 'ag-sandbox',
+    name: 'Career Pilot Sandbox',
+    folder: 'career-pilot-sandbox',
+    agent_provider: null,
+    created_at: '2026-05-27T00:00:00Z',
+  });
+}
+
+describe('handleCreateGmailDraft', () => {
+  let originalGmailStub: string | undefined;
+
+  beforeEach(() => {
+    seedAgentGroups();
+    originalGmailStub = process.env.GMAIL_STUB;
+  });
+
+  afterAll(() => {
+    if (originalGmailStub === undefined) {
+      delete process.env.GMAIL_STUB;
+    } else {
+      process.env.GMAIL_STUB = originalGmailStub;
+    }
+  });
+
+  it('returns stub draft_id in GMAIL_STUB=1 mode for owner session', async () => {
+    process.env.GMAIL_STUB = '1';
+    const c = actionContent('career_pilot.create_gmail_draft', {
+      to: 'jane.doe@example.com',
+      subject: 'Test subject line',
+      body: 'Hi Jane, test outreach body content.',
+    });
+    await handleCreateGmailDraft(c, OWNER_SESSION, inDb);
+
+    const resp = readResponse(c.requestId);
+    expect(resp.frame.ok).toBe(true);
+    if (resp.frame.ok) {
+      const data = resp.frame.data as { draft_id: string; draft_url: string; stub: boolean };
+      expect(data.stub).toBe(true);
+      expect(data.draft_id).toMatch(/^stub-draft-/);
+      expect(data.draft_url).toContain(data.draft_id);
+    }
+  });
+
+  it('refuses with FORBIDDEN when session belongs to sandbox group (DoD #8)', async () => {
+    process.env.GMAIL_STUB = '1';
+    const c = actionContent('career_pilot.create_gmail_draft', {
+      to: 'jane.doe@example.com',
+      subject: 'Test subject',
+      body: 'Test body',
+    });
+    await handleCreateGmailDraft(c, SANDBOX_SESSION, inDb);
+
+    const resp = readResponse(c.requestId);
+    expect(resp.frame.ok).toBe(false);
+    if (!resp.frame.ok) {
+      expect(resp.frame.error.code).toBe('FORBIDDEN');
+      expect(resp.frame.error.message).toMatch(/sandbox/i);
+    }
+  });
+
+  it('returns NOT_IMPLEMENTED when GMAIL_STUB is not set (real Gmail path is Phase 3+)', async () => {
+    delete process.env.GMAIL_STUB;
+    const c = actionContent('career_pilot.create_gmail_draft', {
+      to: 'jane.doe@example.com',
+      subject: 'Test',
+      body: 'Body',
+    });
+    await handleCreateGmailDraft(c, OWNER_SESSION, inDb);
+
+    const resp = readResponse(c.requestId);
+    expect(resp.frame.ok).toBe(false);
+    if (!resp.frame.ok) {
+      expect(resp.frame.error.code).toBe('NOT_IMPLEMENTED');
+    }
+  });
+
+  it('rejects invalid email with BAD_ARGS', async () => {
+    process.env.GMAIL_STUB = '1';
+    const c = actionContent('career_pilot.create_gmail_draft', {
+      to: 'not-an-email',
+      subject: 'Test',
+      body: 'Body',
+    });
+    await handleCreateGmailDraft(c, OWNER_SESSION, inDb);
+
+    const resp = readResponse(c.requestId);
+    expect(resp.frame.ok).toBe(false);
+    if (!resp.frame.ok) {
+      expect(resp.frame.error.code).toBe('BAD_ARGS');
+    }
+  });
+
+  it('rejects empty body with BAD_ARGS', async () => {
+    process.env.GMAIL_STUB = '1';
+    const c = actionContent('career_pilot.create_gmail_draft', {
+      to: 'jane@example.com',
+      subject: 'Test',
+      body: '',
+    });
+    await handleCreateGmailDraft(c, OWNER_SESSION, inDb);
+
+    const resp = readResponse(c.requestId);
+    expect(resp.frame.ok).toBe(false);
+    if (!resp.frame.ok) {
+      expect(resp.frame.error.code).toBe('BAD_ARGS');
     }
   });
 });
