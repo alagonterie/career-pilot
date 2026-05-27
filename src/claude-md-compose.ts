@@ -162,52 +162,83 @@ export function composeGroupClaudeMd(group: AgentGroup): void {
 }
 
 /**
- * Render subagent definitions from `groups/<folder>/.claude/agents-src/*.md`
+ * Render subagent definitions for an agent group, combining:
+ *   1. Shared sources at `groups/_shared-subagents/*.md` (canonical for
+ *      cross-group subagents — research-company, tailor-resume, etc.)
+ *   2. Per-group sources at `groups/<folder>/.claude/agents-src/*.md`
+ *      (group-only subagents OR per-group overrides of shared files)
  * into the Claude-Code-discoverable location
  * `groups/<folder>/.claude/agents/*.md`, resolving
  * `<!-- @include <relative-path> -->` directives by inlining the referenced
- * file's content. Paths in the directive are relative to `agents-src/`.
+ * file's content.
  *
- * Why this exists: Claude Code's `@`-import resolver runs on the composed
- * root CLAUDE.md only — subagent definitions are loaded by the agent
- * registry as opaque system-prompt strings, so a literal `@./fragment`
- * import inside a subagent body would not be resolved. We do the resolution
- * at compose time instead. See `.specs/STRATEGY.md §24.3` item 2 for the
- * full rationale.
+ * Layering rules:
+ *   - When a filename appears in BOTH the shared dir AND the per-group
+ *     dir, the per-group file wins (lets one group diverge a specific
+ *     subagent — e.g., a sandbox-only "you're in the simulator" hint).
+ *   - `@include` paths are resolved against the source's own directory
+ *     FIRST, with the shared directory as fallback. So a per-group
+ *     override can still pull `_shared/subagent-preamble.md` from the
+ *     shared dir without duplicating it.
+ *
+ * Why this exists at all: Claude Code's `@`-import resolver runs on the
+ * composed root CLAUDE.md only — subagent definitions are loaded by the
+ * agent registry as opaque system-prompt strings. We do `@include`
+ * resolution at compose time. See `.specs/STRATEGY.md §24.3` item 2 for
+ * the original rationale and task #85 for the cross-group dedup refactor.
  *
  * Deterministic — same sources produce the same rendered files. Stale
  * rendered files (no corresponding source) are pruned. Throws on a missing
- * include target so authoring errors surface loudly instead of producing
- * subagents whose system prompts contain literal `<!-- @include ... -->`
- * markers.
+ * include target so authoring errors surface loudly.
  *
  * Runs on every spawn from `container-runner.buildMounts()` alongside
  * `composeGroupClaudeMd(group)`.
  */
 export function composeSubagentDefinitions(group: AgentGroup): void {
   const groupDir = path.resolve(GROUPS_DIR, group.folder);
-  const srcDir = path.join(groupDir, '.claude', 'agents-src');
+  const perGroupSrcDir = path.join(groupDir, '.claude', 'agents-src');
+  const sharedSrcDir = path.resolve(GROUPS_DIR, '_shared-subagents');
   const renderedDir = path.join(groupDir, '.claude', 'agents');
 
-  if (!fs.existsSync(srcDir)) {
-    return;
+  // Build the source map: shared sources first, then per-group sources
+  // overwrite on name collision. Map value carries the source dir so the
+  // include resolver knows where to look first.
+  type SourceEntry = { srcPath: string; srcDir: string };
+  const sources = new Map<string, SourceEntry>();
+
+  if (fs.existsSync(sharedSrcDir)) {
+    for (const entry of fs.readdirSync(sharedSrcDir)) {
+      if (!entry.endsWith('.md')) continue;
+      const srcPath = path.join(sharedSrcDir, entry);
+      if (!fs.statSync(srcPath).isFile()) continue;
+      sources.set(entry, { srcPath, srcDir: sharedSrcDir });
+    }
   }
+
+  if (fs.existsSync(perGroupSrcDir)) {
+    for (const entry of fs.readdirSync(perGroupSrcDir)) {
+      if (!entry.endsWith('.md')) continue;
+      const srcPath = path.join(perGroupSrcDir, entry);
+      if (!fs.statSync(srcPath).isFile()) continue;
+      sources.set(entry, { srcPath, srcDir: perGroupSrcDir });
+    }
+  }
+
+  if (sources.size === 0) return;
 
   fs.mkdirSync(renderedDir, { recursive: true });
 
-  const sourceNames = new Set<string>();
-  for (const entry of fs.readdirSync(srcDir)) {
-    if (!entry.endsWith('.md')) continue;
-    const srcPath = path.join(srcDir, entry);
-    if (!fs.statSync(srcPath).isFile()) continue;
-    sourceNames.add(entry);
-    const rendered = renderSubagentSource(srcPath, srcDir);
-    writeAtomic(path.join(renderedDir, entry), rendered);
+  for (const [name, entry] of sources) {
+    // Per-group sources fall back to shared dir on @include misses; shared
+    // sources have no fallback (they're self-contained).
+    const fallbackDir = entry.srcDir === perGroupSrcDir ? sharedSrcDir : null;
+    const rendered = renderSubagentSource(entry.srcPath, entry.srcDir, fallbackDir);
+    writeAtomic(path.join(renderedDir, name), rendered);
   }
 
   for (const existing of fs.readdirSync(renderedDir)) {
     if (!existing.endsWith('.md')) continue;
-    if (sourceNames.has(existing)) continue;
+    if (sources.has(existing)) continue;
     const existingPath = path.join(renderedDir, existing);
     if (!fs.statSync(existingPath).isFile()) continue;
     fs.unlinkSync(existingPath);
@@ -216,25 +247,40 @@ export function composeSubagentDefinitions(group: AgentGroup): void {
 
 const SUBAGENT_INCLUDE_PATTERN = /^[ \t]*<!--\s*@include\s+(\S+)\s*-->[ \t]*$/gm;
 
-function renderSubagentSource(srcPath: string, srcDir: string): string {
+function renderSubagentSource(srcPath: string, primarySrcDir: string, fallbackSrcDir: string | null): string {
   const body = fs.readFileSync(srcPath, 'utf8');
   return body.replace(SUBAGENT_INCLUDE_PATTERN, (_match, relativePath: string) => {
-    const includePath = path.resolve(srcDir, relativePath);
-    const includeRel = path.relative(srcDir, includePath);
-    if (includeRel.startsWith('..') || path.isAbsolute(includeRel)) {
-      throw new Error(
-        `Subagent source ${path.relative(process.cwd(), srcPath)} includes path ` +
-          `outside agents-src/: ${relativePath}`,
-      );
+    const primaryPath = resolveInclude(primarySrcDir, relativePath, srcPath);
+    if (primaryPath && fs.existsSync(primaryPath)) {
+      return fs.readFileSync(primaryPath, 'utf8').trimEnd();
     }
-    if (!fs.existsSync(includePath)) {
-      throw new Error(
-        `Subagent source ${path.relative(process.cwd(), srcPath)} includes missing file: ` +
-          `${relativePath} (resolved to ${path.relative(process.cwd(), includePath)})`,
-      );
+    if (fallbackSrcDir) {
+      const fallbackPath = resolveInclude(fallbackSrcDir, relativePath, srcPath);
+      if (fallbackPath && fs.existsSync(fallbackPath)) {
+        return fs.readFileSync(fallbackPath, 'utf8').trimEnd();
+      }
     }
-    return fs.readFileSync(includePath, 'utf8').trimEnd();
+    throw new Error(
+      `Subagent source ${path.relative(process.cwd(), srcPath)} includes missing file: ` +
+        `${relativePath} (looked in ${path.relative(process.cwd(), primarySrcDir)}` +
+        `${fallbackSrcDir ? ` and ${path.relative(process.cwd(), fallbackSrcDir)}` : ''})`,
+    );
   });
+}
+
+/** Resolve a relative include path against a base dir, returning the
+ * absolute path if the result stays inside the base dir, or null otherwise.
+ * Defense against `../` escaping the source tree. */
+function resolveInclude(baseDir: string, relativePath: string, contextSrc: string): string | null {
+  const absPath = path.resolve(baseDir, relativePath);
+  const rel = path.relative(baseDir, absPath);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error(
+      `Subagent source ${path.relative(process.cwd(), contextSrc)} includes path ` +
+        `outside ${path.relative(process.cwd(), baseDir)}: ${relativePath}`,
+    );
+  }
+  return absPath;
 }
 
 /**
