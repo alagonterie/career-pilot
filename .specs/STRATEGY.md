@@ -280,6 +280,86 @@ CREATE TABLE simulator_runs (
   shareable           INTEGER DEFAULT 1,         -- 0 if visitor opted out of cache
   expires_at          TEXT                       -- 30 days TTL
 );
+
+-- job_leads — the continuously-maintained pool the orchestrator queries for
+-- discovered roles. Written by `scrape-jobs` subagent (see §24.5); read by the
+-- orchestrator at user-trigger time in v1.0 and at daily-briefing time in
+-- Phase 3+. Not the same as `applications`: a lead is "we noticed this exists";
+-- an application is "we engaged with it." Leads → applications bridge via
+-- `application_id` (NULL until promoted).
+CREATE TABLE job_leads (
+  -- Identity (internal)
+  id                  TEXT PRIMARY KEY,
+  -- Source identity (natural dedup key, within-source)
+  source              TEXT NOT NULL,             -- 'greenhouse' | 'lever' | 'ashby' | 'workday'
+                                                 -- | 'hn-whoishiring' | 'yc-was' | 'linkedin-guest'
+                                                 -- | 'remoteok' | 'remotive' | 'usajobs'
+                                                 -- | 'adzuna' | 'jsearch' | 'jsonld'
+                                                 -- v1.0: 'greenhouse' | 'lever' only
+  source_board_token  TEXT,                      -- the ATS board_token (NULL for non-ATS sources)
+  source_job_id       TEXT NOT NULL,             -- Greenhouse `id`, Lever `id`, HN comment id, etc.
+  source_url          TEXT NOT NULL,             -- canonical URL on source
+  apply_url           TEXT,                      -- distinct apply URL when source separates them
+
+  -- Cross-source dedup fingerprint (computed at insert; Hamming-distance compare in app code)
+  content_fingerprint TEXT NOT NULL,             -- 64-bit SimHash stored as hex string (16 chars)
+                                                 -- over normalize(title + company + location + description[:4000])
+  fingerprint_cluster_id TEXT,                   -- populated by weekly background dedup; canonical lead id
+
+  -- Core fields (normalized)
+  title               TEXT NOT NULL,
+  company             TEXT NOT NULL,
+  company_domain      TEXT,                      -- derived when possible (for cross-source matching)
+  location_raw        TEXT,                      -- as published by source
+  is_remote           INTEGER,                   -- 0/1, NULL when source doesn't specify
+  workplace_type      TEXT,                      -- 'remote' | 'hybrid' | 'onsite' | NULL
+  remote_region       TEXT,                      -- 'US' | 'EU' | 'GLOBAL' | NULL (parsed from text)
+  employment_type     TEXT,                      -- 'full-time' | 'contract' | 'intern' | NULL
+
+  -- Comp (all nullable; absence is common)
+  comp_min_usd        INTEGER,
+  comp_max_usd        INTEGER,
+  comp_currency       TEXT DEFAULT 'USD',
+  comp_period         TEXT,                      -- 'year' | 'hour' | 'month'
+  has_equity          INTEGER,                   -- 0/1, NULL when unspecified
+
+  -- Free-text content
+  description_html    TEXT,
+  description_text    TEXT,                      -- stripped + normalized (also used for fingerprint)
+
+  -- Lifecycle timestamps
+  source_posted_at    TEXT,                      -- ISO 8601, as published by source
+  first_seen_at       TEXT NOT NULL,             -- when we first ingested this lead
+  last_seen_at        TEXT NOT NULL,             -- updated on each re-poll that re-encounters it
+  closed_at           TEXT,                      -- ISO 8601, set on 404/410 or N-consecutive-feed-absence
+  closed_reason       TEXT,                      -- 'http_404' | 'feed_absent' | 'manual' | NULL
+
+  -- Scoring (cheap, deterministic; computed at insert. See §24.5 for formula)
+  rules_score         INTEGER,                   -- 0-100
+  rules_score_reasons TEXT,                      -- JSON: per-component score breakdown
+
+  -- LLM scoring (lazy; populated by daily-briefing flow in Phase 3, NOT by scrape-jobs)
+  llm_score           INTEGER,                   -- 0-100
+  llm_score_reasons   TEXT,                      -- JSON: {why_match, concerns, confidence}
+  llm_scored_at       TEXT,
+  llm_scored_brief_hash TEXT,                    -- so we know to re-score if brief changed
+
+  -- Funnel state
+  status              TEXT NOT NULL DEFAULT 'new',  -- 'new' | 'reviewed' | 'queued' | 'applied'
+                                                    -- | 'rejected' | 'archived'
+  status_changed_at   TEXT NOT NULL,
+  application_id      TEXT REFERENCES applications(id),  -- NULL until promoted to applications
+
+  -- Raw payload (for re-parsing if our normalization improves)
+  raw_payload         TEXT,                      -- JSON, the original source response trimmed to relevant fields
+
+  UNIQUE (source, source_job_id)                 -- within-source dedup key for ON CONFLICT upsert
+);
+CREATE INDEX idx_job_leads_source_lookup ON job_leads(source, source_job_id);
+CREATE INDEX idx_job_leads_fingerprint   ON job_leads(content_fingerprint);
+CREATE INDEX idx_job_leads_active_recent ON job_leads(status, first_seen_at DESC) WHERE closed_at IS NULL;
+CREATE INDEX idx_job_leads_rules_score   ON job_leads(rules_score DESC) WHERE status = 'new' AND closed_at IS NULL;
+CREATE INDEX idx_job_leads_company       ON job_leads(company);
 ```
 
 **Schema rules:**
@@ -485,16 +565,17 @@ Body: prep structure (company-specific signal, recent eng work, likely question 
 #### `scrape-jobs`
 
 ```yaml
-description: Given the candidate's target_roles + location_pref + comp_floor,
-  scan public job boards (Greenhouse, Lever, Ashby, LinkedIn open URLs,
-  Wellfound) for matching listings posted in the last N days. Returns a
-  ranked candidate list with rationale.
-tools: [WebSearch, WebFetch]
+description: Polls public job-board sources (v1.0: Greenhouse + Lever ATS public APIs)
+  and writes discovered roles into the `job_leads` table as a continuously-maintained
+  pool the orchestrator queries on user trigger (v1.0) and daily briefing (Phase 3+).
+  Pool-first design: cheap deterministic rules-score at insert; LLM ranking deferred
+  to draw time in Phase 3.
+tools: [WebFetch, record_job_lead, query_job_leads, update_job_lead_status]
 model: opus
 maxTurns: 20
 ```
 
-Body: scoring rubric (role match, comp signal, company stage match, location match), output format (ranked list with confidence + rationale), explicit guidance to skip noise (recruiter spam, generic FAANG postings the candidate already knows about, expired listings).
+**Spec authority:** §24.5 supersedes this Phase 0 placeholder — see there for v1.0 scope (sources, brief input, scoring formula, DoD). The v1.0 design differs from this placeholder in two material ways: (1) writer not consumer — writes `job_leads` rows, does not return a ranked list to the orchestrator; (2) ATS direct (Greenhouse + Lever) replaces the older "LinkedIn open URLs, Wellfound" framing per the research in `.specs/research/PHASE_2_5_JOB_BOARDS.md`. The "ranked list with rationale" output framing migrates to the daily-briefing flow in Phase 3 where LLM scoring lives.
 
 ### 6. In-process MCP tools
 
@@ -544,6 +625,11 @@ All career-pilot action handlers register in `src/modules/career-pilot/index.ts`
 | `query_calendar` | `{ range: { start, end } }` | none (proxied via OneCLI) | ✓ | ✗ |
 | `add_learning` | `{ application_id?: string, kind: string, reflections: object }` | DB write `learnings` | ✓ | ✗ |
 | `update_profile_field` | `{ field: string, value: any }` | DB write `candidate_profile` | ✓ | ✗ |
+| `record_job_lead` | `{ source, source_job_id, source_url, title, company, ...full payload }` | UPSERT into `job_leads` on `(source, source_job_id)`; computes `content_fingerprint` + `rules_score` host-side. Returns `{ id, inserted_or_updated, rules_score }`. | 2.5 | ✓ | ✗ |
+| `query_job_leads` | `{ status?: 'new'\|'reviewed'\|'queued'\|'applied'\|'rejected'\|'archived', source?: 'greenhouse'\|'lever', min_rules_score?: number, since?: ISO8601, company?: string, not_yet_llm_scored?: boolean, limit?: number (default 20, cap 100), order_by?: 'rules_score'\|'first_seen_at'\|'last_seen_at' }` | SELECT from `job_leads` with the above typed filters (NOT a loose `filter` object — typed args so the SDK exposes the enum shape to the model at zero token cost). Returns `{ leads: JobLead[], total: number }`. Read-only — `annotations.readOnlyHint=true` so the SDK can parallelize. Source enum expands as v1.1+ sources land. Future complex query needs (OR composition, fuzzy company match) get a separate `query_job_leads_advanced` tool when an actual flow demands them — do not pre-build. | 2.5 | ✓ | ✗ |
+| `update_job_lead_status` | `{ id: string, status: 'new'\|'reviewed'\|'queued'\|'applied'\|'rejected'\|'archived', reason?: string }` | UPDATE `job_leads.status` + `status_changed_at`. Funnel transition. | 2.5 | ✓ | ✗ |
+| `discover_ats_board` | `{ careers_url: string }` | Read-only (no DB write). Fetches the careers page and detects `boards.greenhouse.io/<token>` or `jobs.lever.co/<site>` patterns. Returns `{ ats?, token?, confidence }`. Nice-to-have in v1.0; defers if cost is high. | 2.5 | ✓ | ✗ |
+| `fetch_source` | `{ priority?: 'A'\|'B'\|'C', company?: string, since?: ISO8601, limit?: number (default 200, cap 500) }` | Read-only outbound (no DB write). Host-side action reads the seed list `groups/career-pilot/data/ats-targets.json`, filters to matching boards (by `priority` and/or `company`), fetches each board's public API (Greenhouse `/v1/boards/{token}/jobs?content=true` or Lever `/v0/postings/{site}?mode=json`), normalizes via `src/scrape-jobs/sources/{source}.ts`, and returns `{ postings: JobLeadPayload[], boards_scanned: number, postings_total: number }`. Aggregates across boards so the subagent makes 1-2 calls per run (not 30-50). Honors per-source crawl-delay + caches each board's response 1h with ETag conditional GET. `scrape-jobs` subagent calls this rather than hitting the URLs directly so OneCLI gateway policy applies and the polite-fetch logic isn't reinvented per subagent. | 2.5 | ✓ | ✗ |
 
 Each tool is a single TS file in `mcp-tools/`. The barrel `mcp-tools/index.ts` exports `careerPilotMcpServer` (the `createSdkMcpServer` result). Tool visibility per agent group is controlled by the `allowedTools` / `disallowedTools` settings in `container_configs` (see §4) — NOT by the barrel.
 
@@ -1771,6 +1857,143 @@ Unlike §24.1 (multiple iterations to land), §24.2 (relaxed-on-first-run patter
 **Lesson encoded for future sub-milestones:** "Subagents are fresh sessions" is a load-bearing prompt-engineering point that GLM (and probably other small models) does not internalize on its own. When the same failure mode recurs in §24.5 (`scrape-jobs`) or Phase 3+, look to the persona's chaining section *first* — making the fresh-session constraint explicit + anti-pattern-driven is cheaper than per-subagent prompt tightening. Co-locating the warning at the chaining section means every consumer subagent benefits without per-row duplication.
 
 **One minor wart, not load-bearing:** GLM emitted `<messaging to="...">` (typo, missing the 'e') in one of its passes — the lenient parser (Phase 2.3 task #87) handled it by dispatching the result via the next clean retry, but the host did log a `WARNING: agent output had no <message to="..."> blocks` line. If this typo recurs across sessions in Phase 3+, the parser could be extended to accept `messaging` as a tag-name synonym; for now the retry path covers it.
+
+#### 24.5 Sub-milestone 2.5 — `scrape-jobs` subagent + `job_leads` pool
+
+**Why this sub-milestone next:** Fifth and final Phase-2 subagent. Closes the subagent catalog. Materially different shape from 2.1-2.4: `scrape-jobs` is a **writer**, not a consumer — it produces durable backend state (the `job_leads` table) the orchestrator queries in *every other flow* from Phase 3 onward. Per the framing locked in memory ([[project-job-leads-heartbeat]]): *the job-lead pool is the orchestrator's continuously-maintained world-model, not a fire-and-forget log.* That elevates the quality bar — bad leads compound into bad downstream applications.
+
+Three properties make it the right increment after 2.4:
+
+- **No chain rule** — this is the first Phase-2 subagent that doesn't pair with `research-company` by default. It stands alone. The chain-rule discipline we've been tightening across 2.2/2.3/2.4 doesn't apply. (One exception: the orchestrator MAY pair `research-company` with `scrape-jobs` for the narrow trigger "what's new at <company>" — see persona changes below — but that's a discretionary route, not the always-rule.)
+- **Writer pattern, first in Phase 2** — `record_job_lead` is the first MCP tool a subagent calls to *create durable backend state*. Prior subagents either read-only (research, prep-interview) or wrote through orchestrator-mediated tools (draft-outreach → `create_gmail_draft` is host-side, mediated). This is the cleanest test of the container→host write contract under subagent invocation.
+- **External-fetch surface** — `scrape-jobs` is the only subagent that fetches from non-LLM external URLs at runtime in Phase 2 (research-company also uses WebFetch, but its anti-bot mitigations are the same). Greenhouse + Lever public ATS APIs are designed for this — Greenhouse documents the Job Board API as *"publicly accessible, cached, not rate limited"* ([Greenhouse API docs](https://harvestdocs.greenhouse.io/docs/api-rate-limiting)); Lever's `robots.txt` requests `Crawl-delay: 1` and we honor it.
+
+The full research backing this milestone lives at `.specs/research/PHASE_2_5_JOB_BOARDS.md` — 846 lines, primary-source-cited, covering source landscape (Q1), filter-input model (Q2), schema + dedup (Q3), and surfacing pattern (Q4). The recommendations in this section are the implementation cut of that research, scoped down for a single shippable v1.0 increment.
+
+**Pool-first architecture (the v1.0 anchor):**
+
+`scrape-jobs` writes raw lead rows to `job_leads` with a cheap deterministic `rules_score` computed at insert. **No LLM scoring at insert.** LLM ranking lands in Phase 3 (daily briefing) where it scores the orchestrator-drawn shortlist against the *current* brief — scoring at draw time avoids baking-in stale scores against an evolving brief. v1.0 ships the pool + the rules-score + the orchestrator's user-trigger surface; the daily-briefing LLM ranker lands in Phase 3.
+
+**v1.0 scope cut (deliberately tighter than the research's full implementation map):**
+
+The research file's implementation map includes 5 sources, 5 MCP tools, cron scheduling, background dedup, killer-match push. v1.0 ships the minimum that proves the pool-first architecture works end-to-end. Deferrals:
+
+- **Sources: Greenhouse + Lever only.** Both ATS direct, near-identical interface shape (list endpoint → JSON array → normalize), free + unauthenticated, highest-coverage. Ashby + YC WaaS + HN monthly batch + LinkedIn-guest = v1.1+.
+- **MCP tools: 3 essential + 1 nice-to-have.** `record_job_lead`, `query_job_leads`, `update_job_lead_status` are essential. `discover_ats_board` lands if cost is low — it's a small helper, not load-bearing for v1.0. `get_candidate_profile` from the research's Q2 design is **deferred** — the persona-render hook (Phase 1) already mounts `candidate.md` into every subagent's fragments dir, so structured `target_roles` / `location_pref` / `comp_floor` / `skills` are already in `scrape-jobs`'s system prompt. v1.0 reads from that; we add a structured-data MCP tool only if the rendered fragment proves insufficient.
+- **Cron scheduling: deferred to Phase 3.** v1.0 runs on-demand from the orchestrator only — user types "refresh job leads" or "find AI roles at Stripe", orchestrator delegates to `scrape-jobs`. Cron + daily briefing land in Phase 3 wired together.
+- **Background dedup job (SimHash cluster computation): deferred.** Within-source dedup via `UNIQUE (source, source_job_id)` is in v1.0 — that's the bulk of duplicate volume from re-polls. Cross-source dedup (SimHash cluster assignment) needs ≥2 sources active and isn't useful with only Greenhouse + Lever (a Greenhouse role and a Lever role of the same job are vanishingly rare — these are the source-of-record ATSes, not aggregators). Defer to v1.2 when aggregators (RemoteOK / Remotive) land. v1.0 schema *includes* the `content_fingerprint` column; it just doesn't run the clustering job.
+- **Killer-match push (rules_score ≥ 90 + recent + Tier-A source): deferred to Phase 3.** Needs the orchestrator-notify primitive that the daily-briefing flow introduces.
+- **LLM ranking at draw time: deferred to Phase 3.** v1.0 returns leads ordered by `rules_score DESC` from `query_job_leads`. Good enough for a v1.0 surface where the user is in-loop.
+
+The result: Phase 2.5 v1.0 is structurally the same size as Phase 2.3 (one new subagent + a small handful of MCP tools + one DB migration + one e2e flow). The deferred items are real but not on the v1.0 critical path.
+
+**What lands:**
+
+1. **DB migration** — `src/db/migrations/NNNN_job_leads.ts` adds the `job_leads` table per the §3 schema (full schema there; not duplicated here). Append-only, SQLite dialect.
+
+2. **MCP tool surfaces (§6.2 rows)** — `record_job_lead`, `query_job_leads`, `update_job_lead_status`, `discover_ats_board`. All four follow the container → host system-action pattern (§6.1) — container tool writes outbound, host applies DB op, response back via inbound. Tool handlers live in `container/agent-runner/src/mcp-tools/career-pilot.ts`; action handlers in `src/modules/career-pilot/`.
+   - `record_job_lead` **host-side computes `content_fingerprint` + `rules_score`** before insert. The subagent doesn't compute these — they're deterministic functions of the payload and the candidate profile. The fingerprint normalize-and-SimHash function lives in `src/modules/career-pilot/lead-fingerprint.ts`; the rules-score function in `src/modules/career-pilot/lead-rules-score.ts`. Both pure, both unit-tested.
+   - **SimHash without native popcount:** SQLite has no built-in bit-counting, so `content_fingerprint` is stored as a 16-char hex string. Cross-source dedup (background job, deferred to v1.2) computes Hamming distance in app code, not SQL. v1.0 indexes the column for future use but doesn't query against it.
+
+3. **Source adapter modules** — `src/scrape-jobs/sources/greenhouse.ts` + `src/scrape-jobs/sources/lever.ts`, each implementing a common `{ list(boardToken): JobPosting[], normalize(raw): JobLeadPayload }` interface. The shared interface lives at `src/scrape-jobs/types.ts`. **These run host-side, not in the container** — the subagent calls `record_job_lead` per discovered posting, but the actual HTTP fetches to Greenhouse/Lever live in the host's `scrape-jobs` action. Container-side, the subagent calls a `fetch_source(source, board_token)` MCP tool that round-trips to the host, which fetches and returns normalized postings; the subagent iterates and calls `record_job_lead` per posting it judges worth recording. Rationale: keeps OneCLI-mediated outbound HTTPS on the host (where the gateway policy applies) rather than in container shell; also avoids each subagent reinventing the polite-fetch + rate-limit + ETag wheel. **Add `fetch_source` to the §6.2 tool list — that's the fifth tool.**
+
+4. **Seed data** — `groups/career-pilot/data/ats-targets.json` with 30-50 hand-curated entries. Schema: `[{ company, ats: 'greenhouse'|'lever', token, priority: 'A'|'B'|'C', notes? }]`. Initial v1.0 cohort focuses on: AI labs (Anthropic, OpenAI, Cohere, Mistral, Inflection where active), AI-native startups (Replicate, Modal, Together, LangChain, Pinecone, etc. where ATS-discoverable), high-signal infra (Stripe, Cloudflare, Vercel, Linear, Notion), YC-recent AI cohort. Curated, version-controlled, grows organically. **This list IS the candidate's target-employer surface for v1.0 — its quality matters.** First-pass curation is part of this milestone's work.
+
+5. **Subagent body** — `groups/career-pilot/.claude/agents-src/scrape-jobs.md` fleshed out from Phase 0 placeholder. Mission: poll the targets list per the orchestrator's brief, decide which postings are worth recording (apply common-sense filters before calling `record_job_lead` — drop obviously-wrong roles like sales/marketing/legal), record what passes, return a faithful summary of what landed. Inputs: orchestrator brief (free-text), candidate profile via mounted `candidate.md` fragment, optional `## Targets override` block in invocation prompt if the orchestrator wants to constrain to a subset. Hard constraints: NEVER fabricate postings (record only what `fetch_source` returned); NEVER record obvious off-target roles even if the company is on the targets list; emit progress markers per source poll. Voice: short summary, Pattern B (the deliverable IS the chat reply — number-of-leads + N highlights, not a regurgitation of every lead).
+
+6. **Persona updates** at `groups/career-pilot/.claude-host-fragments/persona.md`:
+   - **Add `scrape-jobs` to the subagent list** with the writer-pattern callout: *"unique among subagents — writes durable backend state to `job_leads`. No chain rule by default. Trigger phrases: 'refresh job leads', 'find new roles', 'find AI roles at <company>', 'scan job boards for <criteria>'."*
+   - **Add a chain-rule table row** that says *"none by default"* — and note the one optional pairing: *"when the trigger is 'what's new at <company>', the orchestrator MAY chain `research-company` first to enrich the brief with current company context, then `scrape-jobs` with the targets narrowed to that company. Optional — not required."*
+   - **Add a worked example** showing the simple case (1 tool call: `scrape-jobs`) and the optional-chain case (2 tool calls: `research-company` → `scrape-jobs` for "what's new at <co>"). Per the [[decision-persona-skill-refactor]] note, opportunistically check whether the worked-examples block can be consolidated as part of this edit — the three chained examples have significant shape overlap.
+   - **Add Pattern B routing note** — scrape-jobs's chat reply is the artifact. The orchestrator surfaces it faithfully (number of leads landed, top 3-5 highlights). The full lead pool lives in `job_leads` for the orchestrator to query later via `query_job_leads`.
+
+7. **Subagent VERIFICATION.md** sibling file at `groups/career-pilot/.claude/agents-src/scrape-jobs.VERIFICATION.md` (or matching the established naming) — same pattern as 2.3/2.4: runtime DoD lives next to the runtime artifact, not inline in the persona.
+
+8. **New e2e flow `--flow=scrape-jobs`** in `scripts/test/e2e.ts`:
+   - Preconditions: `--seed-profile` populates `candidate_profile`; `ats-targets.json` is seeded with at least 3 known-good Greenhouse boards (Anthropic, Stripe, one other — actual production-ATS endpoints, hit live during the test).
+   - User turn: *"Refresh my job leads — focus on AI/ML roles."*
+   - Assertions (retry-tolerant):
+     - `scrape-jobs` subagent dispatched ≥ 1 time.
+     - At least one `fetch_source` MCP call landed (subagent called the host fetch).
+     - At least one `record_job_lead` row landed in `job_leads`.
+     - All recorded leads have non-null `content_fingerprint` + `rules_score` (host-side compute path works).
+     - At least one lead has `rules_score > 0` (rules-score formula matched at least one keyword/location/comp signal).
+     - Re-running the same flow within the same test does NOT insert duplicates (within-source dedup works — same `(source, source_job_id)` upserts on conflict, `last_seen_at` advances).
+     - `scrape-jobs` emits ≥ 1 `record_progress` row (wiring proof, per 2.3/2.4 relaxation).
+     - Orchestrator's user-facing reply surfaces the result faithfully — mentions a lead count AND ≥ 1 specific company/role (Pattern B).
+   - Wires into `FLOW_HANDLERS` + `FLOWS_NEEDING_SEED`. 600s timeout (no chain, simpler than 2.3/2.4).
+
+**Out of scope (explicit, to keep the increment small):**
+
+- LLM scoring of leads at any time — Phase 3 daily-briefing flow.
+- Cross-session research cache — Phase 4 (per Sub-milestone 2.1.5).
+- Cron scheduling for `scrape-jobs` — Phase 3 (paired with daily-briefing schedule).
+- Killer-match push notifications — Phase 3.
+- Background dedup job (SimHash cluster computation) — v1.2 when aggregators land.
+- Sources beyond Greenhouse + Lever — v1.1+ per the research file's implementation map.
+- LinkedIn-guest fetcher — v1.1+ behind feature flag, with the 5s pacing + abuse-detection backoff discipline from the research file's §LinkedIn pacing section.
+- Aggregator APIs (Adzuna, JSearch, RemoteOK, Remotive, USAJOBS) — v1.2+.
+- Lead-to-application promotion flow (`update_job_lead_status('applied')` paired with `update_application` to create the `applications` row) — touch-point exists in v1.0 schema (`application_id` FK) but the orchestrator-side flow lands in Phase 3.
+- `/funnel` portal rendering of leads — Phase 7+ (portal phase).
+- Sandbox mirror — `scrape-jobs` is owner-only. Sandbox group has only the first three subagents (research-company, tailor-resume, draft-outreach) per the locked decision. No `scrape-jobs.md` source in the sandbox group → no rendered file → orchestrator cannot delegate to it from a sandbox session.
+
+**Risk + fallback hierarchy:**
+
+| Risk | Probability | Fallback |
+|---|---|---|
+| **A. ATS endpoint is unreachable from the GCP VM** (Cloudflare WAF on Greenhouse/Lever blocks egress IPs) | Low — these endpoints are designed for arbitrary consumption per Greenhouse's *"publicly accessible"* documentation. Verify during initial e2e run. | If blocked: route fetches through a User-Agent that identifies a careers-aggregator pattern, OR add a retry-with-backoff. If sustained block: escalate to operator. |
+| **B. Subagent fabricates lead rows** (records postings that `fetch_source` didn't return) | Medium under GLM (model size bias toward "produce output"). | Hard constraint in subagent body: *"every `record_job_lead` call MUST cite a `source_job_id` that appeared in a prior `fetch_source` response within this same session. Never invent."* e2e asserts on this via: spy on `fetch_source` returns vs `record_job_lead` calls, fail if mismatch. |
+| **C. Subagent records obvious off-target roles** (records "Sales Manager" at Anthropic when brief says "AI/ML eng") | Medium-high under GLM (the easy default is "record everything"). | Prompt-level filter: subagent runs a pre-record judgment per posting — title must contain target-role keywords OR description-first-200-chars must reference target tech. If brief includes "AI/ML eng" and posting title is "Senior Sales Engineer", drop. e2e asserts at least 80% of recorded leads have `rules_score > 0` (catches blanket recording). |
+| **D. `fetch_source` host action floods Greenhouse/Lever** (no inter-request throttle, no per-board ETag cache) | Medium during dev iteration. | Implement per-source crawl-delay + ETag-based conditional GET in the host action (`If-None-Match` header; on 304, mark all boards' postings as `last_seen_at = NOW()` without per-posting upsert). Honor Lever's `Crawl-delay: 1`. Cache board responses 1h in-process. |
+| **E. Pool grows unbounded** (no closed-detection in v1.0; `last_seen_at` doesn't advance for postings absent from feed) | Medium. v1.0 explicitly defers the close-detection job. | Acceptable for v1.0 — leads accumulate, `query_job_leads` defaults to `closed_at IS NULL`. Phase 3 adds the close-detection sweep when daily-briefing lands. |
+| **F. SimHash hex storage breaks future Hamming queries** (storing as hex string defers the bit-math to app code) | Low — deliberate tradeoff. | Hamming compare runs in app code (the background dedup job, v1.2+); v1.0 indexes the column but doesn't query against it. Document the tradeoff in `lead-fingerprint.ts` header. |
+| **G. Persona's new worked example bloats persona past GLM attention budget** (per [[decision-persona-skill-refactor]] watch-item) | Medium — Phase 2.4 already pushed the persona long. | Opportunistic trim while editing: consolidate the 3 chained worked examples to 1 strong example + "same shape for tailor-resume, draft-outreach, prep-interview." If trim drops attention quality on those flows, revert to per-flow examples and pull the skill-refactor decision forward to Phase 2.6 instead of Phase 3 start. |
+
+The 2.1 escalation ladder (prompt-tune → `LLM_PROVIDER=claude` → never go inline) applies recursively if any of A-G blocks DoD.
+
+**Definition of done:**
+
+1. `--flow=scrape-jobs` passes on Windows with GLM-4.7-Flash (or with documented `LLM_PROVIDER` fallback, choice recorded in commit message). All assertions green.
+2. `scrape-jobs` subagent dispatched and successfully called `fetch_source` ≥ 1 time and `record_job_lead` ≥ 1 time.
+3. `job_leads` contains ≥ 5 rows after a fresh run against the seeded ats-targets list (≥ 3 Greenhouse + ≥ 3 Lever boards, expecting ≥ 1 posting per board on average).
+4. All recorded leads have non-null `content_fingerprint` (16-char hex) and `rules_score` (0-100) — host-side compute path works.
+5. ≥ 80% of recorded leads have `rules_score > 0` (the prompt-level pre-record judgment is filtering off-target roles, not recording everything).
+6. Within-source dedup works: re-running `--flow=scrape-jobs` immediately does NOT insert duplicate rows — the second run advances `last_seen_at` on existing rows via `ON CONFLICT (source, source_job_id) DO UPDATE`.
+7. `scrape-jobs` emits ≥ 1 `record_progress` row in `public_audit_trail` keyed to that subagent run.
+8. Orchestrator's user-facing reply surfaces the result faithfully — mentions a lead count AND ≥ 1 specific company/role (Pattern B faithfulness).
+9. No new auth integrations. No new migrations beyond `NNNN_job_leads.ts`. Discipline check on increment size.
+10. Manual smoke (sandbox): requesting `scrape-jobs` in `career-pilot-sandbox` either refuses with a clear message OR doesn't dispatch (subagent file absent in that group). Same defense-in-depth as §24.4 item 11.
+11. **Heartbeat smoke (informal, not blocking):** after the run, a follow-up user turn — *"any new AI roles I should care about?"* — produces an orchestrator response that calls `query_job_leads` and surfaces leads from the pool. Validates that the pool functions as the orchestrator's queryable world-model ([[project-job-leads-heartbeat]] framing).
+
+**Expected empirical relaxations (recording the prediction before iterating; check at DoD):**
+
+Past sub-milestones have all required ≥ 1 relaxation; documenting the predictions for 2.5:
+
+- **Most likely to relax — DoD #5 (rules_score > 0 fraction).** The 80% threshold assumes the subagent's pre-record judgment is sharp. Under GLM with no chain-rule scaffolding to lean on, expect 50-70% on first iteration; expect to either (a) tighten the subagent's pre-record judgment prompt, or (b) relax to ≥ 50%.
+- **Plausibly relax — DoD #3 (≥ 5 rows).** Depends on what's actually live at the seeded boards on the test day. If a target board has 0 postings matching the brief, the count drops. Relax to ≥ 1 row if needed; the architecture-validity assertion (DoD #2, #4, #6) is more load-bearing.
+- **Unlikely to relax — DoD #2 (subagent dispatched + fetch_source + record_job_lead called).** This is the architectural-wiring assertion; if it fails, something is structurally wrong, not empirically variable.
+- **Watch carefully — Risk B (fabrication).** If iteration #1 shows recorded leads with `source_job_id` values that don't appear in any `fetch_source` response from the run, that's a hard fail — the subagent must call `fetch_source` first. Add a separate spy assertion if needed.
+
+**Lesson to encode at green:** what does the writer-pattern subagent need that the consumer-pattern subagents (2.2/2.3/2.4) didn't? Specifically: does the orchestrator's brief-passing pattern translate? Does the Pattern B "deliverable IS the chat reply" framing work when the deliverable is durable state (rows landed in a table) rather than human-readable text? The post-mortem section of this sub-milestone should answer those, the same way 2.4's lesson encoded "subagents are fresh sessions."
+
+**Empirical iteration log (Phase 2.5 v1.0 — design + code landed; e2e flaky, follow-ups required):**
+
+Phase 2.5 v1.0 landed full design + implementation across 12 e2e iterations on 2026-05-27. The architecture is **proven** — every wiring assertion (subagent dispatch, fetch_source called, query_job_leads called, Pattern B reply surfaced) passes consistently across multiple runs. What does NOT consistently pass: the `record_job_lead ≥ 1 row landed` assertion. The DoD is intentionally checked in — the iteration arc revealed three real issues that are each non-trivial to fix:
+
+- **Iterations #1-5 (GLM): orchestrator emits `<Agent .../>` XML text** instead of calling Agent via structured tool_use. GLM-4.7-Flash repeatedly produced text like `<Agent subagent_type="scrape-jobs" prompt="..." />` as raw output, which the SDK ignores (no actual delegation happens). Persona warnings ("Agent is a real SDK tool, not an XML element" + anti-pattern list of `<Agent>` / fenced `Agent({...})` / etc.) didn't move GLM. Three-tool-call architecture change (Agent → query_job_leads → message) didn't move GLM. **Documented escalation: --llm-provider=claude works.** This is the same escalation ladder applied in §24.1 / §24.3 — GLM hits its capability ceiling for new tool shapes; Claude routes around it.
+- **Iteration #6 (Claude): em-dash in User-Agent header.** Fetch failed with `Cannot convert argument to a ByteString because the character at index 63 has a value of 8212`. The User-Agent string in `src/scrape-jobs/sources.ts` contained `—` (U+2014, em dash); HTTP headers require Latin-1. **Fix: replaced em dash with hyphen.** Added a comment in the file to prevent regression.
+- **Iteration #7-8 (Claude): fetch_source response size blew past the SDK's inline-result cap.** Returning 200+ postings × ~15KB HTML each = 4.5MB; SDK redirected to a file the subagent had no tool to read. **Three-step fix:** (a) `DESCRIPTION_HTML_CAP = 0` (strip HTML entirely from adapter output), (b) `DESCRIPTION_TEXT_CAP = 800` (truncate plain-text descriptions), (c) lower default `limit` from 200 → 60. (d) Drop `raw_payload` from the subagent return path. Per-board distribution (`perBoardCap = ceil(limit / target_count)`) so the result spans multiple companies rather than exhausting on the first board. Brought responses to ~30-60KB — usually inside the SDK cap, but **occasionally still triggers truncation** (open issue #2 below).
+
+**Open issues left as follow-ups (NOT blocking Phase 2.5 commit; require fresh-session investigation):**
+
+1. **`MCP error -32603: attempt to write a readonly database`** — appears intermittently on `fetch_source` and/or `query_job_leads` tool calls. Surfaces in ~50% of runs (8/12 affected). Initial hypothesis: tools with `annotations.readOnlyHint: true` correlate with the error. Runs 10-11 (after removing the hint) appeared to fix it; run 12 reproduced it anyway, **disproving the hint correlation**. Pattern observed: error tends to appear after a large fetch_source response, but `record_progress` calls between fetch_source and query_job_leads succeed — ruling out "outbound.db globally broken." Likely root cause: bun:sqlite handle reuse, volume-mount permission flakiness, OR SDK tool-result cache writing to a readonly filesystem under `/home/node/.claude/projects/<id>/tool-results/`. **Investigation path:** check container's `/home/node/.claude` mount permissions; add try/catch around `sendAction`'s `writeMessageOut` to capture stack trace at the failing call site; check if bun:sqlite has known intermittent-readonly bugs at v1.2.x. Until resolved, the e2e is non-deterministic on this assertion.
+2. **fetch_source response size still occasionally caps out.** Despite truncation + per-board distribution, ~65KB responses still trigger the SDK's "result too large → save to file" path at the subagent level. The SDK's inline cap for tool results returned to subagents appears tighter (~50-60KB) than for orchestrator tools (~100KB+). **Architectural fix path:** redesign so `fetch_source` returns minimal per-posting summaries (title, source, source_job_id, company, ~100-char snippet) — the subagent's judgment doesn't need full descriptions to decide "engineering or not." Then `record_job_lead` accepts only `(source, source_job_id)` and the host-side action re-fetches + populates the full payload server-side from a 1h cache. Removes the subagent-as-payload-carrier role entirely. ~2-3 hours of refactor work.
+3. **Pre-record judgment vs. live ATS data mismatch.** Test Candidate profile has narrow `target_roles: ["Staff Backend Engineer", "Platform Engineer"]` + `skills: ["Go", "Rust", "PostgreSQL"]`. Live ATS boards (Greenhouse/Lever) return postings ordered by `updated_at DESC`, so the freshest 3-7 postings per board often skew toward what's hiring fast (sales/marketing/business ops). With `perBoardCap = 3-7`, the subagent often sees *only* off-target roles and (correctly per its prompt) drops everything. This is a real-world signal that the test setup needs to either: (a) broaden the test candidate profile to a more inclusive target_roles list, (b) mock `fetch_source` with deterministic fixture postings for the e2e, or (c) add a host-side title-keyword pre-filter inside `fetch_source` to bias toward engineering-shaped roles before applying the per-board cap. Architecturally the strict pre-record judgment is a *feature*, not a bug — lead pool quality compounds — but for e2e determinism, one of the three remediations is needed.
+4. **Three Greenhouse seed tokens dead.** `linear`, `replicate`, `notion` returned 404 against `boards-api.greenhouse.io/v1/boards/{token}/jobs`. Those companies have moved to other ATSes (likely Ashby for Replicate; custom for Linear/Notion). **Removed from `groups/career-pilot/data/ats-targets.json`** during this iteration. Re-add with correct `source` field once the actual ATS is verified. The `discover_ats_board` MCP tool exists for this exact use case — a follow-up could automate seed-list maintenance.
+
+**The Phase 2.5 v1.0 commit ships:** spec deltas (§3 schema, §6.2 tool catalog, this §24.5), persona updates (subagent table, chain-rule note, 3-tool-call worked example, Pattern B writer variant clarification, MCP tool table), subagent body (`scrape-jobs.md`), VERIFICATION.md, DB migration (`110-job-leads.ts`), 5 MCP tools (host + container), source adapters (Greenhouse + Lever), seed targets list (~27 entries), content-fingerprint + rules-score pure modules, e2e flow stub.
+
+**Architecture is proven and merged-ready; the three open issues land as follow-up commits.** A fresh-context session investigating #1 + #3 should be able to land the e2e green in 1-2 sessions of focused work.
 
 ---
 

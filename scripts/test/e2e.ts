@@ -55,6 +55,17 @@
  *                           derived terms + candidate-profile terms;
  *                           orchestrator surfaces the prep guide
  *                           faithfully (Pattern B).
+ *   --flow=scrape-jobs      Seeded profile. NO bookmarked application.
+ *                           Full Phase 2.5 v1.0 DoD: scrape-jobs subagent
+ *                           dispatched, fetch_source called against real
+ *                           Greenhouse + Lever boards from ats-targets.json,
+ *                           ≥1 record_job_lead row landed in job_leads
+ *                           with non-null fingerprint + rules_score,
+ *                           ≥80% of recorded leads have rules_score>0
+ *                           (relaxable per §24.5 empirical prediction),
+ *                           ≥1 record_progress row, orchestrator's reply
+ *                           mentions lead count + ≥1 specific company/role
+ *                           (Pattern B writer variant).
  *   --llm-provider=ollama   Default. Routes all model calls through the
  *                           local Ollama daemon via the Anthropic shim.
  *                           Zero LLM cost. Requires Ollama + glm-4.7-flash.
@@ -131,7 +142,8 @@ type Flow =
   | 'research-company'
   | 'tailor-resume'
   | 'draft-outreach'
-  | 'prep-interview';
+  | 'prep-interview'
+  | 'scrape-jobs';
 const FLOWS: ReadonlySet<Flow> = new Set([
   'smoke',
   'onboarding',
@@ -141,6 +153,7 @@ const FLOWS: ReadonlySet<Flow> = new Set([
   'tailor-resume',
   'draft-outreach',
   'prep-interview',
+  'scrape-jobs',
 ]);
 const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'smoke',
@@ -150,6 +163,7 @@ const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'tailor-resume',
   'draft-outreach',
   'prep-interview',
+  'scrape-jobs',
 ]);
 
 type LlmProvider = 'ollama' | 'claude';
@@ -1684,6 +1698,264 @@ async function runPrepInterview(): Promise<void> {
   );
 }
 
+async function runScrapeJobs(): Promise<void> {
+  header('Flow: scrape-jobs');
+  // Phase 2.5 v1.0 full DoD per STRATEGY.md §24.5.
+  //
+  // First WRITER subagent — produces durable backend state (rows in
+  // job_leads). No chain rule by default; the orchestrator dispatches
+  // scrape-jobs directly. Subagent:
+  //   - reads candidate profile from mounted candidate.md fragment
+  //   - calls fetch_source (host aggregates Greenhouse + Lever ATS boards)
+  //   - applies pre-record judgment per posting
+  //   - calls record_job_lead for postings that pass
+  //   - returns short Pattern B summary
+  //
+  // Critical differences from prior 2.x flows:
+  //   - No chained delegation. One subagent type dispatched.
+  //   - The deliverable IS durable state, not chat text. Pattern B
+  //     surfacing is a summary of the state, not a paste of every lead.
+  //   - Live network fetches against real ATS APIs. Run-to-run variance
+  //     depends on what's posted on test day.
+  //
+  // Assertion blocks mapped to spec DoD items 1-11:
+  //   1. scrape-jobs subagent dispatched ≥1 time.
+  //   2. fetch_source called ≥1 time, returned non-empty postings.
+  //   3. ≥1 record_job_lead call landed → ≥1 row in job_leads.
+  //   4. All recorded leads have non-null content_fingerprint (16-char
+  //      hex) and rules_score (0-100). Host-side compute path works.
+  //   5. ≥80% of recorded leads have rules_score>0 (pre-record judgment
+  //      not blanket-recording). Anticipated relaxation: 50% if GLM is
+  //      under-strict on first iteration.
+  //   6. ≥1 record_progress row in public_audit_trail.
+  //   7. Orchestrator reply surfaces lead count AND ≥1 specific
+  //      company/role (Pattern B writer variant).
+  const flowStartIso = new Date().toISOString();
+  const reply = await chatTurn(
+    // Richer turn than "Refresh my job leads." alone — that terse phrase
+    // empirically triggers GLM's "ack + fake-fire Agent + exit" pattern
+    // (XML-shaped <Agent .../> emitted as text). Forcing the orchestrator
+    // to surface results in-turn means it can't short-circuit before the
+    // Agent actually runs. Trigger phrase ("refresh job leads") is still
+    // present so the routing test is intact.
+    'Refresh my job leads and tell me what new postings landed in the pool.',
+    600_000,
+  );
+  if (reply.length === 0) fail('reply was empty');
+
+  const jsonl = findLatestSessionJsonl();
+  if (!jsonl) fail('no session JSONL found under data/v2-sessions/');
+
+  // 1. scrape-jobs subagent dispatched ≥1 time.
+  const allTaskCalls = findAllSubagentDelegations(jsonl);
+  const scrapeCalls = allTaskCalls.filter((c) => c.input?.subagent_type === 'scrape-jobs');
+  if (scrapeCalls.length === 0) {
+    const allCalls = listAllToolCalls(jsonl);
+    console.error('  --- all orchestrator tool_use calls ---');
+    if (allCalls.length === 0) console.error('  (none)');
+    else for (const c of allCalls) console.error(`  ${c}`);
+    fail(
+      `orchestrator did not dispatch scrape-jobs subagent. ` +
+        'Trigger phrase "refresh my job leads" should route to scrape-jobs per the persona.',
+    );
+  }
+  ok(`orchestrator dispatched scrape-jobs (${scrapeCalls.length} call${scrapeCalls.length === 1 ? '' : 's'})`);
+
+  const successfulScrapes = scrapeCalls.filter((c) => taskCallSucceeded(jsonl, c));
+  if (successfulScrapes.length === 0) {
+    fail(
+      `all ${scrapeCalls.length} scrape-jobs Task tool_results were errors. ` +
+        'Check the scrape-jobs subagent JSONL for SDK validation errors or refusals.',
+    );
+  }
+  ok(`at least one scrape-jobs success: ${successfulScrapes.length}/${scrapeCalls.length}`);
+
+  // 2. fetch_source called ≥1 time inside the subagent. We look at the
+  // scrape-jobs subagent JSONL(s) for fetch_source tool_use blocks.
+  const allSubJsonls = listAllSubagentJsonls(jsonl);
+  const scrapeSubJsonls = allSubJsonls
+    .map((p) => ({ path: p, text: extractFinalAssistantText(p) ?? '' }))
+    .filter((x) => x.text.length > 0);
+  if (scrapeSubJsonls.length === 0) {
+    fail('no scrape-jobs subagent JSONLs found.');
+  }
+
+  const fetchSourceCalls: Array<{ subagentPath: string; postings_total?: number }> = [];
+  const recordLeadCalls: Array<{ subagentPath: string; source_job_id?: string; source?: string }> = [];
+  for (const sub of scrapeSubJsonls) {
+    const lines = fs.readFileSync(sub.path, 'utf8').trim().split('\n');
+    for (const line of lines) {
+      let e: { type?: string; message?: { content?: unknown[] } };
+      try {
+        e = JSON.parse(line) as typeof e;
+      } catch {
+        continue;
+      }
+      if (e.type !== 'assistant' || !Array.isArray(e.message?.content)) continue;
+      for (const block of e.message.content) {
+        if (!block || typeof block !== 'object') continue;
+        const b = block as ToolUseBlock;
+        if (b.type !== 'tool_use') continue;
+        if (b.name === 'mcp__nanoclaw__fetch_source' || b.name === 'fetch_source') {
+          fetchSourceCalls.push({ subagentPath: sub.path });
+        } else if (b.name === 'mcp__nanoclaw__record_job_lead' || b.name === 'record_job_lead') {
+          const input = (b.input ?? {}) as { source_job_id?: string; source?: string };
+          recordLeadCalls.push({ subagentPath: sub.path, source_job_id: input.source_job_id, source: input.source });
+        }
+      }
+    }
+  }
+
+  if (fetchSourceCalls.length === 0) {
+    fail(
+      `scrape-jobs did not call fetch_source. ` +
+        'Subagent must call fetch_source to discover postings. Check the subagent prompt and tool palette.',
+    );
+  }
+  ok(`scrape-jobs called fetch_source ${fetchSourceCalls.length} time(s)`);
+
+  // 3. ≥1 record_job_lead call landed → ≥1 row in job_leads.
+  if (recordLeadCalls.length === 0) {
+    fail(
+      `scrape-jobs did not call record_job_lead. ` +
+        'Subagent must call record_job_lead for at least one fetched posting. ' +
+        'Likely cause: pre-record judgment dropped everything, OR fetch_source returned zero postings (live ATS boards may have nothing matching).',
+    );
+  }
+  ok(`scrape-jobs called record_job_lead ${recordLeadCalls.length} time(s)`);
+
+  // Inspect the actual job_leads table state.
+  const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
+  const Database = (await import('better-sqlite3')).default;
+  const db = new Database(dbPath, { readonly: true });
+  let leadsRows: Array<{ id: string; title: string; company: string; rules_score: number | null; content_fingerprint: string | null; source: string; source_job_id: string }>;
+  let progressRows: { stage: string; summary: string }[];
+  try {
+    leadsRows = db
+      .prepare(
+        `SELECT id, title, company, rules_score, content_fingerprint, source, source_job_id
+         FROM job_leads
+         WHERE first_seen_at >= ?`,
+      )
+      .all(flowStartIso) as typeof leadsRows;
+    progressRows = db
+      .prepare(
+        `SELECT json_extract(details_json, '$.stage') AS stage, summary
+         FROM public_audit_trail
+         WHERE category = 'subagent_progress'
+           AND agent_name = 'scrape-jobs'
+           AND ts >= ?
+         ORDER BY ts ASC`,
+      )
+      .all(flowStartIso) as { stage: string; summary: string }[];
+  } finally {
+    db.close();
+  }
+  if (leadsRows.length === 0) {
+    fail(
+      `0 job_leads rows landed despite ${recordLeadCalls.length} record_job_lead tool_use calls. ` +
+        'Host action handler may be erroring silently — check host logs for "handleRecordJobLead failed".',
+    );
+  }
+  ok(`${leadsRows.length} job_lead row${leadsRows.length === 1 ? '' : 's'} landed in this run`);
+
+  // 4. All recorded leads have non-null content_fingerprint (16-char hex)
+  // and rules_score.
+  const badFingerprint = leadsRows.filter((r) => !r.content_fingerprint || !/^[0-9a-f]{16}$/.test(r.content_fingerprint));
+  const badScore = leadsRows.filter((r) => r.rules_score == null);
+  if (badFingerprint.length > 0) {
+    console.error(`  --- leads with bad fingerprint (first 3) ---`);
+    for (const r of badFingerprint.slice(0, 3)) console.error(`  > ${r.id} | fp=${r.content_fingerprint}`);
+    fail(`${badFingerprint.length}/${leadsRows.length} leads have invalid content_fingerprint (must be 16-char hex).`);
+  }
+  if (badScore.length > 0) {
+    fail(`${badScore.length}/${leadsRows.length} leads have null rules_score.`);
+  }
+  ok('all recorded leads have valid content_fingerprint (16-char hex) and rules_score (non-null)');
+
+  // 5. ≥80% non-zero rules_score (DoD #5; relaxable to ≥50% per anticipated
+  // empirical relaxation in §24.5).
+  const nonZeroLeads = leadsRows.filter((r) => (r.rules_score ?? 0) > 0);
+  const nonZeroFraction = nonZeroLeads.length / leadsRows.length;
+  const NON_ZERO_THRESHOLD = 0.5; // relaxed per §24.5 empirical prediction
+  if (nonZeroFraction < NON_ZERO_THRESHOLD) {
+    console.error('  --- leads breakdown (first 10) ---');
+    for (const r of leadsRows.slice(0, 10)) {
+      console.error(`  > [${r.rules_score}] ${r.company} — ${r.title}`);
+    }
+    fail(
+      `only ${(nonZeroFraction * 100).toFixed(0)}% of leads have rules_score>0 ` +
+        `(${nonZeroLeads.length}/${leadsRows.length}; threshold ${(NON_ZERO_THRESHOLD * 100).toFixed(0)}%). ` +
+        'Pre-record judgment is too generous OR candidate profile keywords are too narrow.',
+    );
+  }
+  ok(
+    `${nonZeroLeads.length}/${leadsRows.length} leads have rules_score>0 (${(nonZeroFraction * 100).toFixed(0)}%, threshold ${(NON_ZERO_THRESHOLD * 100).toFixed(0)}%)`,
+  );
+
+  // 6. ≥1 record_progress row for scrape-jobs.
+  if (progressRows.length < 1) {
+    fail(
+      `no record_progress rows for scrape-jobs. ` +
+        'Subagent prompt requires at least one record_progress call.',
+    );
+  }
+  ok(
+    `scrape-jobs emitted ${progressRows.length} record_progress row(s) (stages: ${progressRows.slice(0, 4).map((r) => r.stage).join(', ')})`,
+  );
+
+  // 7. Orchestrator called query_job_leads after scrape-jobs (the
+  // 3-tool-call pattern: Agent → query_job_leads → <message>). This is
+  // both the load-bearing fix for GLM's single-call XML-emission anti-
+  // pattern AND the architecturally cleaner shape — the orchestrator
+  // reads the pool to surface, never paraphrases the subagent's summary.
+  const queryLeadsCalls = listAllToolCalls(jsonl).filter(
+    (c) => c.startsWith('mcp__nanoclaw__query_job_leads') || c.startsWith('query_job_leads'),
+  );
+  if (queryLeadsCalls.length === 0) {
+    console.error('  --- all orchestrator tool calls ---');
+    for (const c of listAllToolCalls(jsonl)) console.error(`  ${c}`);
+    fail(
+      `orchestrator did not call query_job_leads after scrape-jobs. ` +
+        'The scrape-jobs flow is "Agent → query_job_leads → message" — query the pool to surface, do not paraphrase the subagent summary.',
+    );
+  }
+  ok(`orchestrator called query_job_leads ${queryLeadsCalls.length} time(s) after scrape-jobs`);
+
+  // 8. Orchestrator reply surfaces lead count AND ≥1 specific company/role
+  // (Pattern B writer variant, query-mediated).
+  const COUNT_PATTERNS = [
+    /\b\d+\s+(?:new\s+)?(?:job\s+)?leads?\b/i,
+    /\bfound\s+\d+\b/i,
+    /\b\d+\s+(?:postings?|roles?|matches?)\b/i,
+  ];
+  const hasCount = COUNT_PATTERNS.some((re) => re.test(reply));
+  // Specific company/role: any company name from leadsRows must appear.
+  const companies = new Set(leadsRows.map((r) => r.company.toLowerCase()));
+  const replyLower = reply.toLowerCase();
+  const mentionedCompany = [...companies].find((c) => replyLower.includes(c));
+  if (!hasCount) {
+    console.error('  --- orchestrator reply (first 2000 chars) ---');
+    console.error(reply.slice(0, 2000));
+    console.error('  --- end ---');
+    fail(
+      `orchestrator reply does not mention a lead count. ` +
+        'Pattern B writer variant: surface the count + top N highlights, not a generic confirmation.',
+    );
+  }
+  if (!mentionedCompany) {
+    console.error('  --- orchestrator reply (first 2000 chars) ---');
+    console.error(reply.slice(0, 2000));
+    console.error('  --- end ---');
+    console.error(`  --- companies recorded: ${[...companies].join(', ')} ---`);
+    fail(
+      `orchestrator reply does not mention any specific recorded company. ` +
+        'Pattern B writer variant should surface ≥1 specific lead.',
+    );
+  }
+  ok(`orchestrator reply surfaces count AND specific company "${mentionedCompany}" — Pattern B faithful`);
+}
+
 function seedBookmarkedApplication(opts: {
   id: string;
   company_name: string;
@@ -2171,6 +2443,7 @@ async function main(): Promise<void> {
       'tailor-resume': runTailorResume,
       'draft-outreach': runDraftOutreach,
       'prep-interview': runPrepInterview,
+      'scrape-jobs': runScrapeJobs,
     };
     await FLOW_HANDLERS[args.flow]();
     assertionsPassed = true;

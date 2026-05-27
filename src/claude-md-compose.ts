@@ -208,7 +208,7 @@ export function composeSubagentDefinitions(group: AgentGroup): void {
 
   if (fs.existsSync(sharedSrcDir)) {
     for (const entry of fs.readdirSync(sharedSrcDir)) {
-      if (!entry.endsWith('.md')) continue;
+      if (!isRenderableSubagentSource(entry)) continue;
       const srcPath = path.join(sharedSrcDir, entry);
       if (!fs.statSync(srcPath).isFile()) continue;
       sources.set(entry, { srcPath, srcDir: sharedSrcDir });
@@ -217,7 +217,7 @@ export function composeSubagentDefinitions(group: AgentGroup): void {
 
   if (fs.existsSync(perGroupSrcDir)) {
     for (const entry of fs.readdirSync(perGroupSrcDir)) {
-      if (!entry.endsWith('.md')) continue;
+      if (!isRenderableSubagentSource(entry)) continue;
       const srcPath = path.join(perGroupSrcDir, entry);
       if (!fs.statSync(srcPath).isFile()) continue;
       sources.set(entry, { srcPath, srcDir: perGroupSrcDir });
@@ -243,6 +243,18 @@ export function composeSubagentDefinitions(group: AgentGroup): void {
     if (!fs.statSync(existingPath).isFile()) continue;
     fs.unlinkSync(existingPath);
   }
+}
+
+/**
+ * Whether a filename in agents-src should be rendered as a runtime
+ * subagent definition. Excludes developer-facing sibling files that share
+ * the directory (e.g., `<name>.VERIFICATION.md` — per the CLAUDE.md
+ * runtime-artifact rule, DoD lives next to the source it verifies).
+ */
+function isRenderableSubagentSource(filename: string): boolean {
+  if (!filename.endsWith('.md')) return false;
+  if (filename.endsWith('.VERIFICATION.md')) return false;
+  return true;
 }
 
 const SUBAGENT_INCLUDE_PATTERN = /^[ \t]*<!--\s*@include\s+(\S+)\s*-->[ \t]*$/gm;

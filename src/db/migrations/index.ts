@@ -25,6 +25,7 @@ import { migration106 } from './106-system-modes.js';
 import { migration107 } from './107-simulator-runs.js';
 import { migration108 } from './108-gmail-account-outreach-prefs.js';
 import { migration109 } from './109-disallowed-tools.js';
+import { migration110 } from './110-job-leads.js';
 
 export interface Migration {
   version: number;
@@ -57,6 +58,7 @@ const migrations: Migration[] = [
   migration107,
   migration108,
   migration109,
+  migration110,
 ];
 
 export function runMigrations(db: Database.Database): void {

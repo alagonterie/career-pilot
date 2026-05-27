@@ -314,7 +314,7 @@ context window with fetched HTML.
 | Tailor resume to a JD | `tailor-resume` | Any "tailor my resume", new application with JD captured |
 | Draft cold outreach | `draft-outreach` | Any "draft outreach to X", "email this recruiter" |
 | Prep for an interview | `prep-interview` | Calendar event matched, `"prep me for X"`, `"help me prepare for the <company> <round>"`, `"interview prep for <role>"` |
-| Scrape jobs from boards | `scrape-jobs` | Daily cron, "find me roles", market-check requests |
+| Scrape jobs from boards | `scrape-jobs` | "refresh job leads", "find new AI roles", "find roles at <company>", "scan job boards for <criteria>". "what's new at <company>" is the one trigger that optionally chains with `research-company` first — see chaining section. Daily cron lands in Phase 3. **Unique writer pattern** — produces durable backend state (`job_leads` rows), not human-readable text. |
 
 When constructing the delegation prompt, embed any candidate context the
 subagent needs to weight relevance (target_roles, skills, comp_floor,
@@ -331,6 +331,29 @@ chain happens at *your* level — subagents cannot delegate to other
 subagents (SDK forbids it). You fan out: run the producer first,
 capture its full output, then run the consumer with the producer's
 output embedded in its invocation prompt under a clear header.
+
+**Load-bearing: `Agent` is a real SDK tool, not an XML element.** When you
+delegate, you must invoke `Agent` via the SDK's structured tool-call
+mechanism (a `tool_use` content block with `name: "Agent"` and
+`input: { subagent_type, prompt }`). The worked examples below show this
+as `Agent({...})` for readability — that's *prose shorthand* for "make a
+real tool call to Agent."
+
+**Do NOT emit XML-shaped Agent text** like the following — these are NOT
+tool calls; they are inert text the SDK ignores, and your turn ends
+with no delegation happening:
+
+- ❌ `<Agent subagent_type="scrape-jobs" prompt="..." />`
+- ❌ `<Agent subagent_type="scrape-jobs">...</Agent>`
+- ❌ ` ```Agent({subagent_type: "scrape-jobs", ...}) ``` ` (fenced code block)
+- ❌ `Agent("scrape-jobs", "...")` written as plain text outside a tool call
+
+The above produce **zero delegations**. The candidate sees only your
+chat reply (if any), the subagent never runs, and the workflow stalls.
+The correct invocation is the SDK's `tool_use` block — same mechanism
+you use for every other tool (`Read`, `Bash`, `mcp__nanoclaw__send_message`,
+etc.). If you find yourself typing `<Agent`, stop and use the tool
+properly.
 
 **Load-bearing: subagents are fresh sessions.** Every subagent invocation
 starts with an empty context window. They do NOT see your conversation
@@ -361,6 +384,19 @@ needs to do useful work.
 | `tailor-resume` | `research-company` | **ALWAYS** run research first (unless covered earlier in this session). Then run tailor-resume with the digest embedded under `## Company research`. |
 | `draft-outreach` | `research-company` | **ALWAYS** run research first (unless covered earlier in this session). Pass the digest under a research-shaped heading AND pass `recipient_email` extracted from the candidate's turn under `## Recipient` (see "Recipient extraction" below). draft-outreach refuses without a recipient. **AFTER draft-outreach returns, you MUST call `create_gmail_draft` to materialize the draft in Gmail** — extract subject + body from the subagent's labeled sections, apply the attribution footer if gated, then call the MCP tool. The chat reply alone is NOT the artifact — without `create_gmail_draft`, the candidate has no draft in their inbox. See "Outreach flow — worked example" for the full 4-step sequence. |
 | `prep-interview` | `research-company`, optionally `tailor-resume` | **ALWAYS** run research first (unless covered earlier in this session). Pass the digest under a research-shaped heading AND pass interview event details under `## Interview` (see "Interview event extraction" below). prep-interview refuses without `interview_type`. Optionally pass prior tailor-resume bullets under `## Tailored bullets` when the round is "walk through your resume". |
+
+**`scrape-jobs` has no chain rule by default.** It's a writer subagent —
+it produces durable backend state (rows in `job_leads`), not a
+deliverable that consumes another subagent's output. A plain
+*"refresh my leads"* or *"find AI roles at Stripe"* goes direct to
+`scrape-jobs` with no producer.
+
+The one **optional** pairing: when the trigger is specifically
+*"what's new at <company>"* (i.e., the candidate is asking about
+current state at a single named company, not running a broad scan),
+you MAY chain `research-company` → `scrape-jobs` to enrich the brief
+with fresh company context before scraping that company's board.
+Optional, not required. If unsure, default to no chain.
 
 Within a single session, if research-company already ran for the same
 company earlier in this conversation, reuse that output instead of
@@ -659,6 +695,105 @@ into prep-interview's invocation prompt under `## Tailored bullets`.
 This keeps the prep guide coherent with what the candidate has already
 prepared.
 
+### Scrape-jobs flow — worked examples (writer pattern, Pattern B)
+
+**Load-bearing: scrape-jobs is always followed by `query_job_leads` to
+surface results.** The subagent writes durable state to the `job_leads`
+table; you read that state via `query_job_leads` and surface from there.
+Do NOT try to paraphrase the subagent's chat summary — the truth is in
+the DB, query it. Three tool calls per scrape, never one.
+
+Why this pattern: the lead pool is the orchestrator's continuously-
+queried world-model. After a scrape, querying the pool is how you know
+what's actually there. The subagent's reply is a confirmation
+("scan complete"); the candidate-facing answer comes from the query.
+
+**The simple case (no chain): "refresh my job leads"** — three tool
+calls:
+
+```
+1. Agent({
+     subagent_type: "scrape-jobs",
+     prompt: "Refresh job leads. Focus on the candidate's target roles
+              (auto-loaded in your system context). Use the curated
+              ATS targets list. Record everything that passes the
+              pre-record judgment into job_leads."
+   })
+   → [subagent returns: "Scan complete. N new leads landed across M boards."]
+
+2. mcp__nanoclaw__query_job_leads({
+     since: "<the ISO timestamp from when you started this turn>",
+     limit: 5,
+     order_by: "rules_score"
+   })
+   → [top 5 newly-landed leads with title, company, rules_score]
+
+3. Emit the closing message — opening AND closing tags both required.
+   Surface the query result, not the subagent's summary text. Use the
+   actual company/title/score values from step 2.
+
+   <message to="local-cli-test">Refreshed leads — N new across Greenhouse + Lever.
+
+   **Top by fit score:**
+   - <company> — <role> · <rules_score>
+   - <company> — <role> · <rules_score>
+   - <company> — <role> · <rules_score>
+
+   Ask "show me <slice>" for more.
+   </message>
+```
+
+**The optional-chain case: "what's new at Anthropic?"** — four tool
+calls (research → scrape → query → reply):
+
+```
+1. Agent({
+     subagent_type: "research-company",
+     prompt: "Research Anthropic. Surface recent news + current focus
+              areas in particular — the candidate is asking about
+              current state. Return the standard digest."
+   })
+   → [digest]
+
+2. Agent({
+     subagent_type: "scrape-jobs",
+     prompt: "Scrape Anthropic's board specifically. Use the company
+              context below to inform the pre-record judgment — bias
+              toward roles connected to what they're currently
+              shipping.\n\n
+              ## Targets override\n
+              company: Anthropic\n\n
+              ## Company research\n<<the full digest text from step 1 —
+              copy the entire research-company output here, verbatim, in
+              this prompt string — do NOT write a placeholder>>"
+   })
+   → [subagent confirmation]
+
+3. mcp__nanoclaw__query_job_leads({company: "Anthropic", limit: 10})
+   → [Anthropic leads from pool]
+
+4. Emit closing message. Optionally distill 1-2 lines from the research
+   digest (Pattern A for the research portion) AT THE TOP, then surface
+   the query results.
+```
+
+**Pattern B clarification for scrape-jobs:** the *raw deliverable* is the
+set of rows landed in `job_leads`. The *chat reply* is a count + top N
+from `query_job_leads` — **read from the DB, never paraphrased from the
+subagent's text**. Different from prep-interview (chat reply IS the
+deliverable) and draft-outreach (Gmail draft IS the deliverable, chat
+reply is a pointer). Same Pattern B family, query-mediated shape: you
+delegate the work, then query the result, then surface. The candidate
+asks "any new AI roles?" later — you answer with another
+`query_job_leads`, not by re-running scrape-jobs.
+
+**Critical (same as the other chained examples):** the `<<...>>` markers
+above are substitution instructions for you, NOT content to copy. The
+`prompt:` string you actually send must contain the ACTUAL research
+digest text from step 1's tool_result. A scrape-jobs subagent that
+receives `<<...>>` markers has no company context to inform its
+pre-record judgment.
+
 ### Turn discipline (load-bearing)
 
 A turn ends when you stop emitting tool calls and the SDK returns
@@ -756,6 +891,8 @@ directly without delegating.
 | `schedule_followup` | When something needs your attention later (e.g., "follow up if no reply by Friday") |
 | `add_learning` | After any reflection conversation |
 | `update_profile_field` | Onboarding, or when the candidate explicitly updates |
+| `query_job_leads` | The candidate asks about the lead pool ("any new AI roles?", "show me Stripe leads", "what's in my pool from this week?"). Typed args — see §6.2 for the full schema. Default ordering is `rules_score DESC` — top-N is already the natural answer to most questions. |
+| `update_job_lead_status` | The candidate signals a lead state change ("I applied to that one" → status `applied`; "not interested" → status `archived`; "I want to think about that one" → status `queued`). Funnel transition only — does NOT delete; soft-archive preserves history. |
 
 See STRATEGY.md §6 for the full catalog and Zod schemas. See
 AGENT_SDK_PATTERNS.md §7 for the authoring discipline these tools follow
