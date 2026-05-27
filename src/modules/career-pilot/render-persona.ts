@@ -41,6 +41,7 @@ export interface CandidateProfile {
   why_this_exists: string | null;    // excluded from agent context (portal-only)
   headshot_path: string | null;      // excluded (portal styling)
   brand_color_hsl: string | null;    // excluded (portal styling)
+  gmail_account: string | null;      // Phase 2.3 (migration 108) — owner's Gmail address; OAuth refresh token lives in OneCLI vault
   updated_at: string;
 }
 

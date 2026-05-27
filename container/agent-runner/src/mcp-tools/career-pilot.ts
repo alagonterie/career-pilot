@@ -57,6 +57,7 @@ const PROFILE_FIELDS = [
   'why_this_exists',
   'headshot_path',
   'brand_color_hsl',
+  'gmail_account',
 ] as const;
 
 export const updateProfileField: McpToolDefinition = {
