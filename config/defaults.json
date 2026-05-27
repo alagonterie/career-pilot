@@ -30,7 +30,12 @@
     "briefing_schedule": {
       "morning": "08:00",
       "evening": "18:00"
-    }
+    },
+    "daily_briefing_enabled": true,
+    "daily_briefing_time": "0 8 * * *",
+    "daily_briefing_min_llm_score": 40,
+    "daily_briefing_top_n": 5,
+    "daily_briefing_max_cost_usd": 0.15
   },
   "system_modes": {
     "live_mode": false,
