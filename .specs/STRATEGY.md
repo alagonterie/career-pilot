@@ -2086,13 +2086,22 @@ We build only what NanoClaw doesn't already provide: the bootstrap that ensures 
      8. Emit `<message to="owner">` with top-N (default 5) leads (title, company, llm_score, 1-line LLM-derived hook).
    - **Important:** the persona must explicitly recognize the `[scheduled trigger: ...]` sentinel as a wakeup synthetic, NOT a real user message. The reply must NOT acknowledge the trigger string itself.
 
-3. **Host-side `rank_leads` MCP tool.**
-   - In-process tool registered on the orchestrator's MCP server (NOT a subagent — overkill for a scoring pass).
-   - Input: `{ lead_ids: number[], brief: string }`.
-   - Reads lead rows, calls Haiku via Portkey with a structured ranking prompt, returns `{ leads: [{id, llm_score: 0..100, rank: 1..N}, ...] }`.
-   - Side-effect: writes `llm_score` back to `job_leads` table (per-lead audit trail).
-   - Cost model: at 20 leads × ~500 tokens per lead summary + ~1KB brief, ~$0.05 per briefing (Haiku pricing as of 2026-05).
+3. **Container-side `rank_leads` MCP tool.**
+   - In-process tool on the orchestrator's MCP server (NOT a subagent — overkill for a scoring pass).
+   - Input: `{ lead_ids: string[], brief: string }`.
+   - Tool body runs three steps:
+     1. `sendAction('career_pilot.get_lead_summaries_for_ranking')` — host reads lead rows from `data/v2.db`, returns `JobLeadForRanking[]`
+     2. `rankLeads(summaries, brief)` — container-side helper builds a JSON-output prompt, fetches `${ANTHROPIC_BASE_URL}/v1/messages` (Haiku 4.5), parses the response into `[{id, llm_score: 0..100, rank: 1..N}, ...]`
+     3. `sendAction('career_pilot.write_llm_scores')` — host UPDATES `job_leads.llm_score` + `llm_scored_at` + `llm_scored_brief_hash` transactionally for the audit trail
+   - Returns `{ leads, total, brief_hash }` to the orchestrator.
+   - Cost model: at 20 leads × ~500 tokens per lead summary + ~1KB brief, ~$0.05 per briefing (Haiku 4.5 pricing as of 2026-05).
    - Defer `llm_notes` (per-lead rationale string) to v1.1. Score alone is enough for ranking.
+
+   **Architectural finding during Phase 3.1 e2e (revised 2026-05-27):** the original spec put `rank_leads` host-side, mirroring how `record_job_lead` etc. live host-side. That broke at e2e time — host had no PORTKEY_API_KEY and no plumbing to route through OneCLI; my host-side `fetch` errored with `NO_AUTH`. The user surfaced the right question: is host-side LLM auth missing infra, or is this fighting the architecture?
+
+   Verified: every other LLM call in the codebase happens container-side (`container/agent-runner/src/providers/claude.ts` + SDK calls). The host was never wired to make outbound LLM calls — OneCLI's gateway is intentionally only injected into container env (HTTPS_PROXY + cert mount) via `applyContainerConfig`. Routing my host-side `rank_leads` through OneCLI would have required adding `undici` + `ProxyAgent` + `onecli run` wrapper — fighting the architecture for a one-off.
+
+   Moved `rank_leads` container-side instead: the MCP tool body fetches `api.anthropic.com` (or the override at `ANTHROPIC_BASE_URL` for the Ollama shim test mode) using the same HTTPS_PROXY path the SDK uses. OneCLI's `x-api-key` injection works transparently — no new host infrastructure, no credentials in `process.env`. The host's role shrinks to two pure DB actions (read summaries / write scores). See [[feedback-nanoclaw-infra-first]] — same lesson family.
 
 4. **Preferences additions** (rows seeded into `preferences` table via `config/defaults.json` — no migration needed; the `preferences` key-value table exists since Phase 1):
    - `daily_briefing_time` = `"0 8 * * *"` (cron expression, default 8am TZ-local)

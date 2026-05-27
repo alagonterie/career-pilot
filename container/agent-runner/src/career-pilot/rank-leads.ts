@@ -1,17 +1,21 @@
 /**
- * LLM rank-at-draw-time for the daily-briefing flow (Phase 3.1).
+ * LLM rank-at-draw-time for the daily-briefing flow (Phase 3.1 §24.6
+ * component 3 — container-side variant).
  *
- * Pure prompt + response parsing + brief-hash helpers, plus a thin
- * `fetch`-based Haiku caller that goes through Portkey by default and
- * falls back to direct Anthropic when `PORTKEY_BYPASS=true` is set.
+ * Architectural finding during Phase 3.1 e2e: NanoClaw routes all LLM
+ * calls container-side through the OneCLI gateway (HTTPS_PROXY +
+ * cert injection). Host-side LLM auth was never built and shouldn't be —
+ * adding it would fight the architecture. So rank_leads lives container-
+ * side too: the MCP tool body does the Haiku call directly, leaning on
+ * the same OneCLI-gated outbound path that the orchestrator's own SDK
+ * calls use.
  *
- * Called from `handleRankLeads` in `job-lead-actions.ts` — the host-side
- * delivery action that the container's `rank_leads` MCP tool invokes via
- * the system-action contract.
+ * The host-side action handlers split into:
+ *   - get_lead_summaries_for_ranking (read leads by ids)
+ *   - write_llm_scores (UPDATE job_leads after the Haiku call returns)
  *
- * Cost model: ~$0.05 per 20-lead briefing at Haiku 4.5 pricing as of
- * 2026-05 (a few thousand input tokens + ~200 output tokens for the score
- * list). See STRATEGY.md §24.6 for the spec.
+ * Pure helpers (`buildRankingPrompt`, `parseRankingResponse`,
+ * `computeBriefHash`) are exported for unit testing.
  */
 
 export interface JobLeadForRanking {
@@ -32,12 +36,11 @@ export interface RankedLead {
 }
 
 export class RankLeadsError extends Error {
-  constructor(
-    public code: string,
-    message: string,
-  ) {
+  code: string;
+  constructor(code: string, message: string) {
     super(message);
     this.name = 'RankLeadsError';
+    this.code = code;
   }
 }
 
@@ -75,7 +78,6 @@ export function buildRankingPrompt(leads: JobLeadForRanking[], brief: string): s
 }
 
 export function parseRankingResponse(text: string, requestedIds: string[]): RankedLead[] {
-  // Strip markdown fences if Haiku returns ```json ... ``` despite instructions.
   const cleaned = text
     .trim()
     .replace(/^```(?:json)?\s*\n?/i, '')
@@ -119,7 +121,6 @@ export function parseRankingResponse(text: string, requestedIds: string[]): Rank
  */
 export function computeBriefHash(brief: string): string {
   const normalized = brief.replace(/\s+/g, ' ').trim();
-  // 64-bit FNV-like rolling hash. Sufficient for change detection.
   let h = 0xcbf29ce484222325n;
   const PRIME = 0x100000001b3n;
   const MASK = 0xffffffffffffffffn;
@@ -130,63 +131,36 @@ export function computeBriefHash(brief: string): string {
   return h.toString(16).padStart(16, '0');
 }
 
-interface HaikuRequestBody {
-  model: string;
-  max_tokens: number;
-  system: string;
-  messages: Array<{ role: 'user'; content: string }>;
-}
-
 interface HaikuResponse {
   content?: Array<{ type: string; text?: string }>;
 }
 
+/**
+ * One-shot Haiku call. Routes through OneCLI's HTTPS_PROXY (set in the
+ * container env by `applyContainerConfig`), which intercepts outbound to
+ * api.anthropic.com and injects the registered Anthropic credential.
+ *
+ * `x-api-key: placeholder` is a stand-in — OneCLI overwrites it with the
+ * real key on the wire. ANTHROPIC_BASE_URL is honored if set (e.g.,
+ * Ollama test mode points it at the local Ollama Anthropic shim).
+ */
 async function callHaiku(systemPrompt: string, userPrompt: string): Promise<string> {
-  const portkeyKey = process.env.PORTKEY_API_KEY;
-  const portkeyProvider = process.env.PORTKEY_AI_PROVIDER || 'anthropic-default';
-  const bypass = process.env.PORTKEY_BYPASS === 'true';
+  const baseUrl = process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com';
   const model = process.env.HAIKU_MODEL || 'claude-haiku-4-5-20251001';
 
-  const body: HaikuRequestBody = {
-    model,
-    max_tokens: 2048,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }],
-  };
-
-  let url: string;
-  let headers: Record<string, string>;
-  if (bypass) {
-    const anthropicKey = process.env.ANTHROPIC_API_KEY;
-    if (!anthropicKey) {
-      throw new RankLeadsError('NO_AUTH', 'PORTKEY_BYPASS=true but ANTHROPIC_API_KEY unset');
-    }
-    url = 'https://api.anthropic.com/v1/messages';
-    headers = {
-      'Content-Type': 'application/json',
-      'x-api-key': anthropicKey,
-      'anthropic-version': '2023-06-01',
-    };
-  } else {
-    if (!portkeyKey) {
-      throw new RankLeadsError(
-        'NO_AUTH',
-        'PORTKEY_API_KEY unset — set PORTKEY_BYPASS=true to use ANTHROPIC_API_KEY directly',
-      );
-    }
-    url = 'https://api.portkey.ai/v1/messages';
-    headers = {
-      'Content-Type': 'application/json',
-      'x-portkey-api-key': portkeyKey,
-      'x-portkey-provider': portkeyProvider,
-      'anthropic-version': '2023-06-01',
-    };
-  }
-
-  const res = await fetch(url, {
+  const res = await fetch(`${baseUrl}/v1/messages`, {
     method: 'POST',
-    headers,
-    body: JSON.stringify(body),
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY || 'placeholder',
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 2048,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
+    }),
   });
 
   if (!res.ok) {
