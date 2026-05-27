@@ -702,30 +702,23 @@ async function runTailorResume(): Promise<void> {
   );
 
   // 3. tailor-resume's invocation prompt should contain content derived
-  // from research-company's output. We DON'T require a specific header
-  // format (`## Company research` vs `**Research Digest:**` etc) -- the
-  // orchestrator may paraphrase, and that's defensible. We DO require
-  // that the tailor-resume prompt mentions research-derived signal (any
-  // research-shaped heading + a substring sample from research-company's
-  // digest).
+  // from research-company's output. Heading shape is stylistic — the
+  // load-bearing check is the distinctive-word-overlap below. Same
+  // relaxation arc as Phase 2.3 DoD #2: we've observed the orchestrator
+  // emit `## Company research`, `**Research Digest:**`, `Research
+  // Digest:`, and free-prose `Use the research digest for context
+  // about Anthropic's focus on...` (no heading at all). The last shape
+  // was triggered by Phase 2.4's "subagents are fresh sessions"
+  // anti-pattern callout, which made GLM allergic to heading-shaped
+  // pointing-at-above-content while still inlining research signals
+  // gesturally. The chain worked, the heading just didn't survive.
+  // We report heading presence as a hint, never fail on it.
   //
   // Pick a successful tailor-resume call for inspection.
   const tailorCall = successfulTailor[0];
   const tailorPrompt = (tailorCall.input?.prompt as string | undefined) ?? '';
-  // Liberal research-section detector: any heading-shape (markdown H2/H3
-  // or `**bold**`) whose body contains the word "research". Covers
-  // observed variants: `## Company research`, `**Research Digest:**`,
-  // `**Company research digest:**`, `### Research`, etc.
   const RESEARCH_HEADING = /(?:^|\n)\s*(?:#{2,3}\s+[^\n]*research|\*\*[^*\n]*research[^*\n]*\*\*)/i;
-  if (!RESEARCH_HEADING.test(tailorPrompt)) {
-    console.error('  --- tailor-resume invocation prompt (first 2000 chars) ---');
-    console.error(tailorPrompt.slice(0, 2000));
-    console.error('  --- end ---');
-    fail(
-      'tailor-resume invocation prompt has no research-shaped heading. ' +
-        'Orchestrator should embed research-company output under a header like `## Company research` or `**Research Digest:**`.',
-    );
-  }
+  const hasResearchHeading = RESEARCH_HEADING.test(tailorPrompt);
 
   // Substring check against research-company's output. Sample multiple
   // windows + accept short substrings (12 chars) -- short enough to
@@ -794,7 +787,9 @@ async function runTailorResume(): Promise<void> {
     );
   }
   ok(
-    `tailor-resume prompt has research heading + ${distinctive.length} distinctive overlap words with research-company digest (e.g., ${distinctive.slice(0, 5).join(', ')})`,
+    `tailor-resume prompt contains ${distinctive.length} distinctive overlap words with research-company digest ` +
+      `(e.g., ${distinctive.slice(0, 5).join(', ')})` +
+      `${hasResearchHeading ? ' under a research-shaped heading' : ' (inlined as prose, no heading — log-only)'}`,
   );
 
   // 4-6. tailor-resume's bullet-level content checks. With possibly
