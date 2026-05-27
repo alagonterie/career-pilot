@@ -18,6 +18,14 @@ export interface RunnerConfig {
   mcpServers: Record<string, { command: string; args: string[]; env: Record<string, string> }>;
   model?: string;
   effort?: string;
+  /**
+   * Extra tools to remove from the agent's SDK context (concatenated with
+   * the static SDK_DISALLOWED_TOOLS in providers/claude.ts). Per-group
+   * isolation — e.g., the career-pilot-sandbox group lists
+   * `mcp__nanoclaw__create_gmail_draft` so sandbox visitors can't see it.
+   * See host-side `migration 109` + STRATEGY.md §24.3 task #86.
+   */
+  disallowedTools?: string[];
 }
 
 const DEFAULT_MAX_MESSAGES = 10;
@@ -47,6 +55,9 @@ export function loadConfig(): RunnerConfig {
     mcpServers: (raw.mcpServers as RunnerConfig['mcpServers']) || {},
     model: (raw.model as string) || undefined,
     effort: (raw.effort as string) || undefined,
+    disallowedTools: Array.isArray(raw.disallowedTools)
+      ? (raw.disallowedTools as unknown[]).filter((x): x is string => typeof x === 'string')
+      : undefined,
   };
 
   return _config;

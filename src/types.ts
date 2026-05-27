@@ -25,6 +25,7 @@ export interface ContainerConfigRow {
   packages_npm: string; // JSON: string[]
   additional_mounts: string; // JSON: AdditionalMountConfig[]
   cli_scope: string; // 'disabled' | 'group' | 'global'
+  disallowed_tools: string; // JSON: string[] (tool names in `mcp__<server>__<name>` form or SDK built-in names)
   updated_at: string;
 }
 
