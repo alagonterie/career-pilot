@@ -1998,142 +1998,166 @@ Phase 2.5 v1.0 landed full design + implementation across 12 e2e iterations on 2
 
 **Update 2026-05-27 (post-resolution):** Phase 2.5 e2e is **green** on `--llm-provider=claude --flow=scrape-jobs` (8 leads landed, 50% non-zero rules_score, Pattern B reply faithful). Issue #1 disproven as infrastructure rot (was orchestrator hallucination downstream of issue #2) and resolved with the spec correction in `bc384f4`. Issue #2 (payload truncation) fixed via the fetch_source contract redesign in `2e55e68`. Issue #3 (sales-skew test determinism) partially addressed in the same commit via option (a) — broadened Test Candidate to a senior generalist engineer profile + lifted `fetch_source` default limit to 150 (perBoardCap 12). Production strict pre-record judgment unchanged. The GLM `<Agent>` XML emission follow-up (parser-side recovery) and option (b) mock fixtures for hard test determinism remain available but neither is required for Phase 2.5 closeout.
 
-#### 24.6 Sub-milestone 3.1 — Heartbeat foundation (cron primitive + daily-briefing)
+#### 24.6 Sub-milestone 3.1 — Heartbeat foundation (daily-briefing on `schedule_task`)
 
-**Why this sub-milestone first:** Phase 3 is where the orchestrator stops being a request-response chatbot and starts being autonomous. Cron is the foundational primitive — every subsequent autonomous behavior (close-detection sweep §24.7, killer-match push §24.8, scheduled outreach follow-up) depends on it. Daily-briefing is bundled with cron because cron alone is unverifiable in isolation: you can't tell if the scheduler is working without a real consumer firing at the scheduled time. Pairing them lets a single DoD anchor both the primitive and its first user.
+**Why this sub-milestone first:** Phase 3 is where the orchestrator stops being a request-response chatbot and starts being autonomous. The scheduling primitive is foundational — every subsequent autonomous behavior (close-detection sweep §24.7, killer-match push §24.8, scheduled outreach follow-up) depends on it. Daily-briefing is the first real consumer: an LLM-ranked top-N read of the lead pool, surfaced once a day. Bundling with the scheduling integration lets a single DoD anchor both "we're using NanoClaw's scheduling correctly" and "the orchestrator can act on a wakeup."
+
+**What NanoClaw provides here (use, don't rebuild — per [[feedback-nanoclaw-infra-first]]):**
+
+| Concern | NanoClaw module | Notes |
+|---|---|---|
+| Scheduling primitive | `container/agent-runner/src/mcp-tools/scheduling.ts` (`schedule_task`, `list_tasks`, `update_task`, `cancel_task`, `pause_task`, `resume_task`) | Agent-driven — the orchestrator schedules its own wakeups. |
+| Task storage | `messages_in` rows with `kind='task'` | No new migration. |
+| Tick loop | `src/host-sweep.ts` (60s interval) + `src/modules/scheduling/recurrence.ts` (cron-parser, TZ-aware via `TIMEZONE` config) | Survives host restart; recurrence clones forward on completion. |
+| Pre-wake gate (skip agent on no-news days) | `script` field on `schedule_task` payload — bash script returns `{wakeAgent: true/false}` | Solves what was risk E in the original §24.6 draft. |
+| Synthetic turn delivery | Container poll-loop already dispatches due `messages_in` rows to the orchestrator | The task's `prompt` field is the wakeup input. |
+
+We build only what NanoClaw doesn't already provide: the bootstrap that ensures the daily-briefing task exists, the persona handler for the trigger turn, the `rank_leads` MCP tool for at-draw-time scoring, and the preferences seeds.
 
 **Architectural shape:**
 
 ```
-                                 host
+   [container spawn]
+         │
+         ▼
    ┌──────────────────────────────────────────────────┐
-   │ cron-scheduler.ts (Node, single setTimeout loop) │
-   │   reads cron_schedules table on boot             │
-   │   tick: poll for `next_fire_at <= now()`         │
-   │   on fire: send system-action to inbound.db      │
-   │     kind = "cron-trigger"                        │
-   │     payload = { schedule_id, kind, fired_at }    │
-   │   update last_fired_at + next_fire_at            │
+   │ host: container-runner.ts                        │
+   │   - renders candidate.md (Phase 1)               │
+   │   - NEW: ensureDailyBriefingTask()               │
+   │       reads inbound.db for taskId='daily-       │
+   │       briefing'; if missing, inserts a row with  │
+   │       recurrence='0 8 * * *' (TZ from config),   │
+   │       optional pre-wake script. Idempotent.      │
    └──────────────────────────────────────────────────┘
-                            │
-                            │ (system-action via inbound.db)
-                            ▼
+
+   [each morning at 8am, host-sweep ticks]
+         │
+         ▼
    ┌──────────────────────────────────────────────────┐
-   │ container poll-loop (Bun)                        │
-   │   sees cron-trigger system-action                │
-   │   synthesizes orchestrator turn:                 │
-   │     "[scheduled trigger: daily-briefing]"        │
-   │   (no real user message; orchestrator sees this  │
-   │    as a wakeup input)                            │
+   │ host-sweep + recurrence.ts (NanoClaw existing)   │
+   │   - finds messages_in row, kind=task, due        │
+   │   - if script present: runs it; bails if         │
+   │     wakeAgent=false                              │
+   │   - marks row 'pending' for container intake     │
    └──────────────────────────────────────────────────┘
-                            │
-                            ▼
+         │
+         ▼
    ┌──────────────────────────────────────────────────┐
-   │ orchestrator (Claude Agent SDK)                  │
-   │   persona has cron-trigger handling section      │
-   │   workflow for daily-briefing:                   │
-   │     1. preflight: quiet hours? frequency cap?    │
-   │     2. query_job_leads(limit 20, by rules_score) │
-   │     3. rank_leads(ids, current_brief)            │
-   │     4. if no leads above threshold: silent skip  │
-   │     5. emit <message to="owner">…</message>      │
+   │ container poll-loop (NanoClaw existing)          │
+   │   - sees pending task                            │
+   │   - delivers prompt to orchestrator as synthetic │
+   │     user turn: "[scheduled trigger:              │
+   │     daily-briefing]"                             │
    └──────────────────────────────────────────────────┘
+         │
+         ▼
+   ┌──────────────────────────────────────────────────┐
+   │ orchestrator (persona has daily-briefing handler)│
+   │   1. preflight: quiet hours? frequency cap?      │
+   │   2. query_job_leads(limit 20, by rules_score)   │
+   │   3. rank_leads(ids, brief)   ← NEW MCP tool     │
+   │   4. filter by llm_score threshold               │
+   │   5. silent skip if empty, else emit             │
+   │      <message to="owner">…</message>             │
+   └──────────────────────────────────────────────────┘
+         │
+         ▼
+   [host-sweep + recurrence.ts clones the task forward to tomorrow 8am]
 ```
 
 **Components to build:**
 
-1. **DB migration 111 — `cron_schedules` table.**
-   ```
-   id              INTEGER PRIMARY KEY
-   group_id        TEXT NOT NULL   -- which agent group owns this schedule
-   kind            TEXT NOT NULL   -- "daily-briefing" (v1) | future kinds
-   schedule_local_time TEXT NOT NULL  -- "08:00" — TZ-local wall time
-   schedule_tz     TEXT NOT NULL   -- IANA tz, e.g. "America/New_York"
-   enabled         INTEGER NOT NULL DEFAULT 1
-   last_fired_at   TEXT            -- ISO8601 UTC; null = never fired
-   next_fire_at    TEXT NOT NULL   -- ISO8601 UTC; computed at insert + after each fire
-   created_at      TEXT NOT NULL
-   updated_at      TEXT NOT NULL
-   ```
-   Single-shot daily firing only in v1. Crontab-syntax expressions deferred to V2 — see V2_IDEAS.md.
+1. **Host bootstrap: `ensureDailyBriefingTask()`** in `src/container-runner.ts` (or a new sibling like `src/career-pilot/daily-briefing-bootstrap.ts` called from container-runner).
+   - On each container spawn for the `career-pilot` group: read inbound.db for `messages_in WHERE kind='task' AND content LIKE '%daily-briefing%'` (or via a stable `taskId='daily-briefing'`).
+   - If missing AND `preferences.daily_briefing_enabled=true`: insert a `kind='task'` row via the existing `insertTask` helper in `src/modules/scheduling/db.ts`, with `recurrence='0 8 * * *'` (interpreted against the `TIMEZONE` config), `prompt='[scheduled trigger: daily-briefing]'`, and optionally a pre-wake script (component 5).
+   - Idempotent: re-running on next spawn is a no-op.
+   - Only runs for the owner `career-pilot` group; sandbox group never schedules briefings.
 
-2. **`src/scheduling/cron-scheduler.ts`** (new module, host-side, Node).
-   - On host startup: read `cron_schedules WHERE enabled=1`, compute `next_fire_at` for any that lack one, store back.
-   - setTimeout loop with 60s tick: query for `enabled=1 AND next_fire_at <= NOW()`, fire each, update.
-   - Fire = `writeSystemAction({to_container_session: <group's session id>, kind: 'cron-trigger', payload: {schedule_id, schedule_kind, fired_at}})`.
-   - If no active session for the group: spawn an ephemeral one for the briefing, tear down after the orchestrator's turn completes.
-   - Survives host restart: state lives in DB, not process memory.
-
-3. **Container poll-loop intake (`container/agent-runner/src/career-pilot/cron-trigger.ts`).**
-   - Existing poll-loop (introduced in Phase 1) already handles system-actions. Add a new handler for `kind === 'cron-trigger'`.
-   - Handler: synthesize a wakeup turn — `User: [scheduled trigger: <schedule_kind>]` — and pass to the orchestrator as if it were a user message.
-   - The orchestrator's persona has explicit instructions for these synthetic turns (see component #5).
-
-4. **Host-side `rank_leads` MCP tool.**
-   - In-process tool registered on the orchestrator's MCP server (NOT a subagent — overkill for a scoring pass).
-   - Input: `{ lead_ids: number[], brief: string }`.
-   - Reads lead rows, calls Haiku with a structured ranking prompt, returns `{ leads: [{id, llm_score: 0..100, rank: 1..N}, ...] }`.
-   - Side-effect: writes `llm_score` back to `job_leads` table (per-lead audit trail).
-   - Cost model: at 20 leads × ~500 tokens per lead summary + ~1KB brief, ~$0.05 per briefing (Haiku pricing as of 2026-05).
-   - Defer `llm_notes` (per-lead rationale string) to v1.1. Score alone is enough for ranking.
-
-5. **Persona — daily-briefing handler section.**
-   - Add to `groups/career-pilot/.claude-host-fragments/persona.md` under a new section "Scheduled wakeups (cron-trigger turns)".
+2. **Persona — daily-briefing handler section.**
+   - Add to `groups/career-pilot/.claude-host-fragments/persona.md` under a new section "Scheduled wakeups".
    - Workflow for `[scheduled trigger: daily-briefing]`:
-     1. Read `preferences.quiet_hours_start`, `quiet_hours_end`, current local time. If inside quiet hours → silent return (no message emitted).
+     1. Read `preferences.quiet_hours_start`, `quiet_hours_end`, current local time. If inside quiet hours → silent return (no message emitted; the turn ends with no `<message>` block, which the host's lenient-parse log will flag as expected for scheduled silent-skips — log the audit line).
      2. Read today's count of proactive messages sent. If ≥ `preferences.telegram_proactive_frequency_cap_per_day` → silent return.
      3. Call `query_job_leads({limit: 20, order_by: 'rules_score', closed_at_is_null: true})`.
      4. Build brief from `candidate_profile` (target_roles, skills, comp_floor, location_pref).
      5. Call `rank_leads({lead_ids: [...], brief})`.
      6. Filter: drop leads with `llm_score < preferences.daily_briefing_min_llm_score` (default 40).
      7. If filtered list is empty → silent return ("no news → no briefing" rule from persona §Proactivity).
-     8. Emit `<message to="owner">` with top 3-5 leads (title, company, llm_score, 1-line LLM-derived hook).
+     8. Emit `<message to="owner">` with top-N (default 5) leads (title, company, llm_score, 1-line LLM-derived hook).
+   - **Important:** the persona must explicitly recognize the `[scheduled trigger: ...]` sentinel as a wakeup synthetic, NOT a real user message. The reply must NOT acknowledge the trigger string itself.
 
-6. **Preferences additions** (rows seeded into `preferences` table via `config/defaults.json` — no migration needed; the `preferences` key-value table exists since Phase 1):
-   - `daily_briefing_morning_time` = `"08:00"`
+3. **Host-side `rank_leads` MCP tool.**
+   - In-process tool registered on the orchestrator's MCP server (NOT a subagent — overkill for a scoring pass).
+   - Input: `{ lead_ids: number[], brief: string }`.
+   - Reads lead rows, calls Haiku via Portkey with a structured ranking prompt, returns `{ leads: [{id, llm_score: 0..100, rank: 1..N}, ...] }`.
+   - Side-effect: writes `llm_score` back to `job_leads` table (per-lead audit trail).
+   - Cost model: at 20 leads × ~500 tokens per lead summary + ~1KB brief, ~$0.05 per briefing (Haiku pricing as of 2026-05).
+   - Defer `llm_notes` (per-lead rationale string) to v1.1. Score alone is enough for ranking.
+
+4. **Preferences additions** (rows seeded into `preferences` table via `config/defaults.json` — no migration needed; the `preferences` key-value table exists since Phase 1):
+   - `daily_briefing_time` = `"0 8 * * *"` (cron expression, default 8am TZ-local)
    - `daily_briefing_enabled` = `true`
    - `daily_briefing_min_llm_score` = `40`
    - `daily_briefing_top_n` = `5`
+   - `daily_briefing_max_cost_usd` = `0.15` (per-briefing rank cost cap)
 
-7. **E2E flow** (`scripts/test/e2e.ts --flow=daily-briefing`):
+5. **(Optional) Pre-wake script gate** on the daily-briefing task. Per NanoClaw's `script` pattern, the task can carry a bash check that runs BEFORE the agent wakes. If the lead pool is empty above the floor, return `{wakeAgent: false}` and the host skips the container spawn entirely.
+   ```bash
+   node --input-type=module -e "
+     const Database = (await import('better-sqlite3')).default;
+     const db = new Database(process.env.NCL_INBOUND_DB || 'data/v2.db', { readonly: true });
+     const row = db.prepare(
+       'SELECT COUNT(*) AS n FROM job_leads ' +
+       'WHERE rules_score >= 30 AND closed_at IS NULL'
+     ).get();
+     console.log(JSON.stringify({ wakeAgent: row.n > 0, data: { leadCount: row.n } }));
+   "
+   ```
+   Decision: ship the script gate in 3.1 — small, deterministic, removes "risk E" entirely. The script runs in NanoClaw's task-fire context (verify host-side or container-side at implementation time; the bash example above assumes host-side filesystem access to `data/v2.db`).
+
+6. **E2E flow** (`scripts/test/e2e.ts --flow=daily-briefing`):
    - Seed: scrape-jobs has already run (reuse Phase 2.5 e2e seed) so `job_leads` has ≥ 5 rows.
-   - Insert a `cron_schedules` row with `next_fire_at` ~10 seconds in the future, `kind='daily-briefing'`.
-   - Spawn the container; wait for cron-trigger fire.
-   - Assert: poll-loop logs show `cron-trigger received`; orchestrator emitted a `<message to="owner">` block; the message contains top-N lead titles; `job_leads` table has `llm_score` populated for the ranked subset.
+   - Spawn the container. Assert: `ensureDailyBriefingTask()` ran; `messages_in` has a row with `kind='task'` and `recurrence='0 8 * * *'`.
+   - Manually trigger by direct DB write: set the task's `processAfter` to now-1s.
+   - Wait for the next host-sweep tick (≤60s) and the recurrence handler.
+   - Assert: container received the task; orchestrator emitted a `<message to="owner">` block; the message contains top-N lead titles; `job_leads` has `llm_score` populated for the ranked subset.
+   - Test the silent-skip paths separately (override preferences to force each skip condition).
 
 **Definition of done:**
 
-1. Migration 111 lands; `cron_schedules` table exists, queryable.
-2. `cron-scheduler.ts` starts on host boot, logs `loaded N schedules`, ticks every 60s.
-3. On scheduled fire, host writes a `cron-trigger` system-action; container poll-loop receives it and dispatches the synthetic turn.
-4. `rank_leads` tool callable from the orchestrator; returns valid scores; writes `llm_score` to `job_leads`.
-5. Persona's daily-briefing handler section: orchestrator emits a faithful Pattern B reply OR silently skips per the preflight rules.
-6. `pnpm test:e2e --flow=daily-briefing --llm-provider=claude` green: the briefing message lands, top-N leads cited, llm_score populated in DB.
-7. Quiet-hours skip path verified: temporarily set quiet hours to "include now", trigger fires, no message emitted, audit log shows the skip reason.
-8. Frequency-cap skip path verified: same shape, cap forced low.
-9. No-news skip path verified: same shape, threshold forced high enough that no leads pass.
-10. Cron survives host restart: kill the host process mid-cycle, restart, verify the schedule re-loads and the next fire happens at the right time.
+1. `ensureDailyBriefingTask()` runs on container spawn; idempotent; inserts a `kind='task'` row with the correct recurrence when missing; respects `preferences.daily_briefing_enabled`.
+2. `rank_leads` tool callable from the orchestrator; returns valid scores; writes `llm_score` to `job_leads`.
+3. Persona's daily-briefing handler section: orchestrator emits a faithful Pattern B reply OR silently skips per the preflight rules; never acknowledges the trigger sentinel as user text.
+4. `pnpm test:e2e --flow=daily-briefing --llm-provider=claude` green: the briefing message lands, top-N leads cited, `llm_score` populated in DB.
+5. Quiet-hours skip path verified: temporarily set quiet hours to "include now", trigger fires, no message emitted, audit log shows the skip reason.
+6. Frequency-cap skip path verified: same shape, cap forced low.
+7. No-news skip path verified: same shape, threshold forced high enough that no leads pass.
+8. Recurrence verified: after the first fire completes, `messages_in` has a fresh `pending` row with `processAfter` ~24h ahead.
+9. Pre-wake script gate verified: with an empty `job_leads` table, the script returns `wakeAgent: false` and no container spawn occurs for that fire (audit log shows skipped wake).
+10. Host restart survival: kill the host process, restart, verify the daily-briefing task is still in inbound.db and fires on schedule.
 
 **Out of scope (deferred sub-milestones):**
 
-- **§24.7 Sub-milestone 3.2 — Killer-match push** (rules_score ≥ 90 + recent + Tier-A source). Uses the orchestrator-notify primitive established here; lands as its own drill-in.
-- **§24.8 Sub-milestone 3.3 — Close-detection sweep** (advance `last_seen_at`, mark stale rows `closed_at`). Uses the cron primitive here; separate sub-milestone for scope clarity.
+- **§24.7 Sub-milestone 3.2 — Killer-match push** (rules_score ≥ 90 + recent + Tier-A source). Uses the same `schedule_task` primitive (probably a high-frequency-with-script-gate schedule); lands as its own drill-in.
+- **§24.8 Sub-milestone 3.3 — Close-detection sweep** (advance `last_seen_at`, mark stale rows `closed_at`). Another `schedule_task` consumer (lower frequency, no agent wake — does a sweep via script).
 - **§24.9 Sub-milestone 3.4 — Lead-to-application promotion** (orchestrator UX: "I'm applying to that one" → `update_application` + `update_job_lead_status('applied')` paired). Pure orchestrator/persona work; no infra delta.
 - **Telegram-driven Gmail OAuth onboarding wizard** — separately scoped follow-up. Not Phase 3 critical-path.
 - **LLM-notes column on `job_leads`** — score-only in v1; notes are a nice-to-have for v1.1.
-- **Crontab-syntax schedule expressions** — daily-time-only in v1. See V2_IDEAS.md.
-- **Evening-briefing schedule** — schema supports multiple schedules per group but v1 ships morning-only. Evening briefing is a follow-up if the morning briefing's signal-to-noise warrants it.
+- **Evening-briefing schedule** — NanoClaw supports multiple tasks; v1 ships morning-only. Evening briefing is a follow-up if morning signal-to-noise warrants it.
+- **Candidate-driven schedule changes** ("move my briefing to 7am") — would extend the persona handler to call `update_task`. Defer until candidate actually asks.
 
 **Risk register:**
 
 | Risk | Likelihood | Mitigation |
 |---|---|---|
-| **A. Cron drifts past the scheduled time on a slow host** (60s tick + late fire = up to ~1min lag) | Low impact. | Acceptable for daily-briefing granularity. Mitigation if it bites later: shorter tick interval, configurable per-schedule. |
-| **B. Multiple host processes both fire the same schedule** (e.g., dev + prod accidentally running against same DB) | Low likelihood (separate DBs in practice). | Add a `SELECT … FOR UPDATE`-style lock on the schedule row before fire. Defer until B actually happens. |
-| **C. `rank_leads` cost spirals** if a poorly-tuned ranker prompt over-uses tokens | Medium. | Cost cap on the per-briefing rank call: ≤ $0.15. Configurable via `preferences.daily_briefing_max_cost_usd`. Tool returns error if exceeded; orchestrator falls back to rules_score-ordered top-N. |
-| **D. Quiet-hours preflight misfires across DST boundaries** (orchestrator reading a stale TZ offset) | Low. | Use the IANA tz stored on the schedule row, not a cached offset. Compute against `Intl.DateTimeFormat` at fire time. |
-| **E. Container spawn cost on idle days** (if no live session, host spawns ephemeral container just to silent-skip) | Medium impact (~$0.01 per cold spawn + a few seconds startup). | Defer: send a "would-have-fired" log to the audit trail when no live session, *don't* spawn for a probable silent-skip. Trade-off: orchestrator can't decide whether to skip without context. Phase 3.1 ships the spawn-always path; if costs accumulate, add a host-side preflight peek at the candidate profile + lead pool to short-circuit before spawn. |
-| **F. The synthetic "[scheduled trigger: …]" turn confuses the orchestrator into thinking it's a user message** | Medium. Worth being explicit. | Persona's cron-trigger handler section names the convention. The synthetic turn is wrapped in a clear sentinel that the persona's instructions recognize. Worth a manual review of the orchestrator's reply text post-DoD to confirm it doesn't acknowledge the trigger string itself. |
+| **A. ~~Cron drifts past schedule on slow host~~** | Resolved | NanoClaw's host-sweep + cron-parser already handle this; 60s tick is acceptable for daily granularity. |
+| **B. ~~Double-fire across host processes~~** | Resolved | NanoClaw's single-writer-per-inbound.db invariant + task-completion semantics already prevent this. |
+| **C. `rank_leads` cost spirals** if a poorly-tuned ranker prompt over-uses tokens | Medium | Cost cap via `preferences.daily_briefing_max_cost_usd` (default $0.15). Tool returns error if exceeded; orchestrator falls back to `rules_score`-ordered top-N. |
+| **D. ~~Quiet-hours preflight misfires across DST~~** | Resolved at the persona-handler level | Persona uses `Intl.DateTimeFormat` at handler time with the candidate's TZ from preferences — no cached offset. NanoClaw's cron-parser separately handles task-fire timing in TZ. |
+| **E. ~~Container spawn cost on idle days~~** | Resolved by component 5 | Pre-wake script returns `wakeAgent: false` when lead pool is empty above floor; host skips the spawn entirely. |
+| **F. The synthetic "[scheduled trigger: …]" turn confuses the orchestrator into thinking it's a user message** | Medium. Worth being explicit. | Persona section names the convention. The synthetic turn uses a sentinel that the persona's instructions explicitly recognize. Manual review of the orchestrator's reply text post-DoD to confirm it doesn't acknowledge the trigger string itself. |
+| **G. (NEW) `ensureDailyBriefingTask()` runs on every spawn and slowly accretes garbage** if idempotency check breaks | Low | DoD #1 covers it. Add a host-side guard log on the second-or-later insert call so a regression surfaces fast. |
+| **H. (NEW) Pre-wake script reads from `data/v2.db` but the path is wrong on a non-default host setup** | Medium | Script reads `process.env.NCL_INBOUND_DB` first, falls back to `data/v2.db`. Document the env var in `.env.example`. |
 
 ---
 
