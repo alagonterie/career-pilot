@@ -1367,16 +1367,17 @@ Everything that NanoClaw v2 ships: `bin/`, `scripts/` (NanoClaw's own), `setup/`
 | **0. Foundation** | 1 | Fork NanoClaw, get vanilla NanoClaw running locally with Telegram | I can `/start` the bot, it responds. Container spawns, session DBs created. |
 | **1. Career-pilot agent group** | 2 | `groups/career-pilot/`, migrations 100-107, first MCP tools | Agent has a persona; I can say "add an application for X" and it writes to the DB and confirms. |
 | **2. Subagents + skills** | 3 | 5 subagent definitions, skill instructions, remaining MCP tools | I can paste a JD and ask "tailor my resume" — agent invokes research-company + tailor-resume, returns tailored bullets. |
-| **3. Sanitization + public_audit_trail** | 4 | `src/modules/portal/sanitizer.ts`, post-write hooks, sanitized mirror to `public_audit_trail` | Every funnel_event has a matching sanitized row in public_audit_trail. Spot check: real company name nowhere in public table. |
-| **4. Portal backend** | 5 | Express API, SSE infra, system modes, portal channel adapter, sandbox agent group | I can `curl /api/funnel` and get real (sanitized) data. SSE stream emits events. `POST /api/simulator` spawns a sandbox container. |
-| **5. Frontend bootstrap** | 6 | **TanStack Start docs deep-read** + scaffold + landing + /work | Hero renders. Live ticker connects to SSE. /work renders with placeholders. |
-| **6. Frontend depth** | 7 | /live, /funnel, /architecture pages | All three pages render real data. Filter chips work. Funnel race animates. |
-| **7. Simulator end-to-end** | 8 | /simulator interactive sandbox | A visitor can type a company + JD, hit Run, see real streaming output side-by-side. Sandbox session tears down cleanly. |
-| **8. Polish + deploy** | 9 | Cloudflare deploy pipeline, /about content, /contact form, content placeholders | `hire.example.com` resolves to the deployed Worker. /contact submission lands in Telegram. /about reads honestly. |
-| **9. Shadow run** | 10 | Deploy with `LIVE_MODE=false`; system runs in shadow for 1-2 weeks | I'm comfortable flipping `LIVE_MODE=true`. All proactive behaviors observed without external side effects. |
-| **10. Go live** | 11 | `LIVE_MODE=true`; real outreach starts | First real recruiter contact submitted via /contact form. First real outreach approved + sent. Portal shares to LinkedIn / wherever. |
+| **3. Heartbeat — daily briefing + cron** | 4 | Host-side cron primitive + orchestrator-notify intake + daily-briefing flow + LLM rank-at-draw-time. See §24.6 for the sub-milestone drill-in. | At the scheduled morning time, the orchestrator wakes, queries `job_leads`, LLM-ranks the top-N against the candidate brief, and emits a Telegram briefing — OR skips cleanly per quiet-hours / frequency-cap / no-news rules. Cron schedules survive host restart. |
+| **4. Sanitization + public_audit_trail** | 5 | `src/modules/portal/sanitizer.ts`, post-write hooks, sanitized mirror to `public_audit_trail` | Every funnel_event has a matching sanitized row in public_audit_trail. Spot check: real company name nowhere in public table. |
+| **5. Portal backend** | 6 | Express API, SSE infra, system modes, portal channel adapter, sandbox agent group | I can `curl /api/funnel` and get real (sanitized) data. SSE stream emits events. `POST /api/simulator` spawns a sandbox container. |
+| **6. Frontend bootstrap** | 7 | **TanStack Start docs deep-read** + scaffold + landing + /work | Hero renders. Live ticker connects to SSE. /work renders with placeholders. |
+| **7. Frontend depth** | 8 | /live, /funnel, /architecture pages | All three pages render real data. Filter chips work. Funnel race animates. |
+| **8. Simulator end-to-end** | 9 | /simulator interactive sandbox | A visitor can type a company + JD, hit Run, see real streaming output side-by-side. Sandbox session tears down cleanly. |
+| **9. Polish + deploy** | 10 | Cloudflare deploy pipeline, /about content, /contact form, content placeholders | `hire.example.com` resolves to the deployed Worker. /contact submission lands in Telegram. /about reads honestly. |
+| **10. Shadow run** | 11 | Deploy with `LIVE_MODE=false`; system runs in shadow for 1-2 weeks | I'm comfortable flipping `LIVE_MODE=true`. All proactive behaviors observed without external side effects. |
+| **11. Go live** | 12 | `LIVE_MODE=true`; real outreach starts | First real recruiter contact submitted via /contact form. First real outreach approved + sent. Portal shares to LinkedIn / wherever. |
 
-Each phase ends with a commit-and-pause for review. Phases 0-3 are mostly invisible (backend plumbing); phases 4-7 are where the portal starts coming alive. Phase 9 is the soft-launch buffer your "I want to test in production before it can affect my life" instinct demands.
+Each phase ends with a commit-and-pause for review. Phases 0-4 are mostly invisible (backend plumbing + sanitization); phases 5-8 are where the portal starts coming alive. Phase 10 is the soft-launch buffer your "I want to test in production before it can affect my life" instinct demands.
 
 **Out of scope for v1 (move to a `v2-ideas.md`):**
 - Multi-user / SaaS-ification
@@ -1996,6 +1997,143 @@ Phase 2.5 v1.0 landed full design + implementation across 12 e2e iterations on 2
 **Architecture is proven and merged-ready; the three open issues land as follow-up commits.** A fresh-context session investigating #1 + #3 should be able to land the e2e green in 1-2 sessions of focused work.
 
 **Update 2026-05-27 (post-resolution):** Phase 2.5 e2e is **green** on `--llm-provider=claude --flow=scrape-jobs` (8 leads landed, 50% non-zero rules_score, Pattern B reply faithful). Issue #1 disproven as infrastructure rot (was orchestrator hallucination downstream of issue #2) and resolved with the spec correction in `bc384f4`. Issue #2 (payload truncation) fixed via the fetch_source contract redesign in `2e55e68`. Issue #3 (sales-skew test determinism) partially addressed in the same commit via option (a) — broadened Test Candidate to a senior generalist engineer profile + lifted `fetch_source` default limit to 150 (perBoardCap 12). Production strict pre-record judgment unchanged. The GLM `<Agent>` XML emission follow-up (parser-side recovery) and option (b) mock fixtures for hard test determinism remain available but neither is required for Phase 2.5 closeout.
+
+#### 24.6 Sub-milestone 3.1 — Heartbeat foundation (cron primitive + daily-briefing)
+
+**Why this sub-milestone first:** Phase 3 is where the orchestrator stops being a request-response chatbot and starts being autonomous. Cron is the foundational primitive — every subsequent autonomous behavior (close-detection sweep §24.7, killer-match push §24.8, scheduled outreach follow-up) depends on it. Daily-briefing is bundled with cron because cron alone is unverifiable in isolation: you can't tell if the scheduler is working without a real consumer firing at the scheduled time. Pairing them lets a single DoD anchor both the primitive and its first user.
+
+**Architectural shape:**
+
+```
+                                 host
+   ┌──────────────────────────────────────────────────┐
+   │ cron-scheduler.ts (Node, single setTimeout loop) │
+   │   reads cron_schedules table on boot             │
+   │   tick: poll for `next_fire_at <= now()`         │
+   │   on fire: send system-action to inbound.db      │
+   │     kind = "cron-trigger"                        │
+   │     payload = { schedule_id, kind, fired_at }    │
+   │   update last_fired_at + next_fire_at            │
+   └──────────────────────────────────────────────────┘
+                            │
+                            │ (system-action via inbound.db)
+                            ▼
+   ┌──────────────────────────────────────────────────┐
+   │ container poll-loop (Bun)                        │
+   │   sees cron-trigger system-action                │
+   │   synthesizes orchestrator turn:                 │
+   │     "[scheduled trigger: daily-briefing]"        │
+   │   (no real user message; orchestrator sees this  │
+   │    as a wakeup input)                            │
+   └──────────────────────────────────────────────────┘
+                            │
+                            ▼
+   ┌──────────────────────────────────────────────────┐
+   │ orchestrator (Claude Agent SDK)                  │
+   │   persona has cron-trigger handling section      │
+   │   workflow for daily-briefing:                   │
+   │     1. preflight: quiet hours? frequency cap?    │
+   │     2. query_job_leads(limit 20, by rules_score) │
+   │     3. rank_leads(ids, current_brief)            │
+   │     4. if no leads above threshold: silent skip  │
+   │     5. emit <message to="owner">…</message>      │
+   └──────────────────────────────────────────────────┘
+```
+
+**Components to build:**
+
+1. **DB migration 111 — `cron_schedules` table.**
+   ```
+   id              INTEGER PRIMARY KEY
+   group_id        TEXT NOT NULL   -- which agent group owns this schedule
+   kind            TEXT NOT NULL   -- "daily-briefing" (v1) | future kinds
+   schedule_local_time TEXT NOT NULL  -- "08:00" — TZ-local wall time
+   schedule_tz     TEXT NOT NULL   -- IANA tz, e.g. "America/New_York"
+   enabled         INTEGER NOT NULL DEFAULT 1
+   last_fired_at   TEXT            -- ISO8601 UTC; null = never fired
+   next_fire_at    TEXT NOT NULL   -- ISO8601 UTC; computed at insert + after each fire
+   created_at      TEXT NOT NULL
+   updated_at      TEXT NOT NULL
+   ```
+   Single-shot daily firing only in v1. Crontab-syntax expressions deferred to V2 — see V2_IDEAS.md.
+
+2. **`src/scheduling/cron-scheduler.ts`** (new module, host-side, Node).
+   - On host startup: read `cron_schedules WHERE enabled=1`, compute `next_fire_at` for any that lack one, store back.
+   - setTimeout loop with 60s tick: query for `enabled=1 AND next_fire_at <= NOW()`, fire each, update.
+   - Fire = `writeSystemAction({to_container_session: <group's session id>, kind: 'cron-trigger', payload: {schedule_id, schedule_kind, fired_at}})`.
+   - If no active session for the group: spawn an ephemeral one for the briefing, tear down after the orchestrator's turn completes.
+   - Survives host restart: state lives in DB, not process memory.
+
+3. **Container poll-loop intake (`container/agent-runner/src/career-pilot/cron-trigger.ts`).**
+   - Existing poll-loop (introduced in Phase 1) already handles system-actions. Add a new handler for `kind === 'cron-trigger'`.
+   - Handler: synthesize a wakeup turn — `User: [scheduled trigger: <schedule_kind>]` — and pass to the orchestrator as if it were a user message.
+   - The orchestrator's persona has explicit instructions for these synthetic turns (see component #5).
+
+4. **Host-side `rank_leads` MCP tool.**
+   - In-process tool registered on the orchestrator's MCP server (NOT a subagent — overkill for a scoring pass).
+   - Input: `{ lead_ids: number[], brief: string }`.
+   - Reads lead rows, calls Haiku with a structured ranking prompt, returns `{ leads: [{id, llm_score: 0..100, rank: 1..N}, ...] }`.
+   - Side-effect: writes `llm_score` back to `job_leads` table (per-lead audit trail).
+   - Cost model: at 20 leads × ~500 tokens per lead summary + ~1KB brief, ~$0.05 per briefing (Haiku pricing as of 2026-05).
+   - Defer `llm_notes` (per-lead rationale string) to v1.1. Score alone is enough for ranking.
+
+5. **Persona — daily-briefing handler section.**
+   - Add to `groups/career-pilot/.claude-host-fragments/persona.md` under a new section "Scheduled wakeups (cron-trigger turns)".
+   - Workflow for `[scheduled trigger: daily-briefing]`:
+     1. Read `preferences.quiet_hours_start`, `quiet_hours_end`, current local time. If inside quiet hours → silent return (no message emitted).
+     2. Read today's count of proactive messages sent. If ≥ `preferences.telegram_proactive_frequency_cap_per_day` → silent return.
+     3. Call `query_job_leads({limit: 20, order_by: 'rules_score', closed_at_is_null: true})`.
+     4. Build brief from `candidate_profile` (target_roles, skills, comp_floor, location_pref).
+     5. Call `rank_leads({lead_ids: [...], brief})`.
+     6. Filter: drop leads with `llm_score < preferences.daily_briefing_min_llm_score` (default 40).
+     7. If filtered list is empty → silent return ("no news → no briefing" rule from persona §Proactivity).
+     8. Emit `<message to="owner">` with top 3-5 leads (title, company, llm_score, 1-line LLM-derived hook).
+
+6. **Preferences additions** (rows seeded into `preferences` table via `config/defaults.json` — no migration needed; the `preferences` key-value table exists since Phase 1):
+   - `daily_briefing_morning_time` = `"08:00"`
+   - `daily_briefing_enabled` = `true`
+   - `daily_briefing_min_llm_score` = `40`
+   - `daily_briefing_top_n` = `5`
+
+7. **E2E flow** (`scripts/test/e2e.ts --flow=daily-briefing`):
+   - Seed: scrape-jobs has already run (reuse Phase 2.5 e2e seed) so `job_leads` has ≥ 5 rows.
+   - Insert a `cron_schedules` row with `next_fire_at` ~10 seconds in the future, `kind='daily-briefing'`.
+   - Spawn the container; wait for cron-trigger fire.
+   - Assert: poll-loop logs show `cron-trigger received`; orchestrator emitted a `<message to="owner">` block; the message contains top-N lead titles; `job_leads` table has `llm_score` populated for the ranked subset.
+
+**Definition of done:**
+
+1. Migration 111 lands; `cron_schedules` table exists, queryable.
+2. `cron-scheduler.ts` starts on host boot, logs `loaded N schedules`, ticks every 60s.
+3. On scheduled fire, host writes a `cron-trigger` system-action; container poll-loop receives it and dispatches the synthetic turn.
+4. `rank_leads` tool callable from the orchestrator; returns valid scores; writes `llm_score` to `job_leads`.
+5. Persona's daily-briefing handler section: orchestrator emits a faithful Pattern B reply OR silently skips per the preflight rules.
+6. `pnpm test:e2e --flow=daily-briefing --llm-provider=claude` green: the briefing message lands, top-N leads cited, llm_score populated in DB.
+7. Quiet-hours skip path verified: temporarily set quiet hours to "include now", trigger fires, no message emitted, audit log shows the skip reason.
+8. Frequency-cap skip path verified: same shape, cap forced low.
+9. No-news skip path verified: same shape, threshold forced high enough that no leads pass.
+10. Cron survives host restart: kill the host process mid-cycle, restart, verify the schedule re-loads and the next fire happens at the right time.
+
+**Out of scope (deferred sub-milestones):**
+
+- **§24.7 Sub-milestone 3.2 — Killer-match push** (rules_score ≥ 90 + recent + Tier-A source). Uses the orchestrator-notify primitive established here; lands as its own drill-in.
+- **§24.8 Sub-milestone 3.3 — Close-detection sweep** (advance `last_seen_at`, mark stale rows `closed_at`). Uses the cron primitive here; separate sub-milestone for scope clarity.
+- **§24.9 Sub-milestone 3.4 — Lead-to-application promotion** (orchestrator UX: "I'm applying to that one" → `update_application` + `update_job_lead_status('applied')` paired). Pure orchestrator/persona work; no infra delta.
+- **Telegram-driven Gmail OAuth onboarding wizard** — separately scoped follow-up. Not Phase 3 critical-path.
+- **LLM-notes column on `job_leads`** — score-only in v1; notes are a nice-to-have for v1.1.
+- **Crontab-syntax schedule expressions** — daily-time-only in v1. See V2_IDEAS.md.
+- **Evening-briefing schedule** — schema supports multiple schedules per group but v1 ships morning-only. Evening briefing is a follow-up if the morning briefing's signal-to-noise warrants it.
+
+**Risk register:**
+
+| Risk | Likelihood | Mitigation |
+|---|---|---|
+| **A. Cron drifts past the scheduled time on a slow host** (60s tick + late fire = up to ~1min lag) | Low impact. | Acceptable for daily-briefing granularity. Mitigation if it bites later: shorter tick interval, configurable per-schedule. |
+| **B. Multiple host processes both fire the same schedule** (e.g., dev + prod accidentally running against same DB) | Low likelihood (separate DBs in practice). | Add a `SELECT … FOR UPDATE`-style lock on the schedule row before fire. Defer until B actually happens. |
+| **C. `rank_leads` cost spirals** if a poorly-tuned ranker prompt over-uses tokens | Medium. | Cost cap on the per-briefing rank call: ≤ $0.15. Configurable via `preferences.daily_briefing_max_cost_usd`. Tool returns error if exceeded; orchestrator falls back to rules_score-ordered top-N. |
+| **D. Quiet-hours preflight misfires across DST boundaries** (orchestrator reading a stale TZ offset) | Low. | Use the IANA tz stored on the schedule row, not a cached offset. Compute against `Intl.DateTimeFormat` at fire time. |
+| **E. Container spawn cost on idle days** (if no live session, host spawns ephemeral container just to silent-skip) | Medium impact (~$0.01 per cold spawn + a few seconds startup). | Defer: send a "would-have-fired" log to the audit trail when no live session, *don't* spawn for a probable silent-skip. Trade-off: orchestrator can't decide whether to skip without context. Phase 3.1 ships the spawn-always path; if costs accumulate, add a host-side preflight peek at the candidate profile + lead pool to short-circuit before spawn. |
+| **F. The synthetic "[scheduled trigger: …]" turn confuses the orchestrator into thinking it's a user message** | Medium. Worth being explicit. | Persona's cron-trigger handler section names the convention. The synthetic turn is wrapped in a clear sentinel that the persona's instructions recognize. Worth a manual review of the orchestrator's reply text post-DoD to confirm it doesn't acknowledge the trigger string itself. |
 
 ---
 
