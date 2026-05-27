@@ -38,6 +38,23 @@
  *                           tailor-resume output has ≥3 bullets touching
  *                           both candidate-profile terms and JD-specific
  *                           terms; orchestrator surfaces bullets in reply.
+ *   --flow=draft-outreach   Seeded profile + BOOKMARKED Anthropic row.
+ *                           Full Phase 2.3 DoD: chained Task calls
+ *                           (research-company → draft-outreach), Gmail
+ *                           draft materialized via create_gmail_draft
+ *                           (stub mode); body honesty-grounded; record_
+ *                           progress rows emitted; reply surfaces
+ *                           draft_id pointer.
+ *   --flow=prep-interview   Seeded profile + BOOKMARKED Anthropic row.
+ *                           Full Phase 2.4 DoD: chained Task calls
+ *                           (research-company → prep-interview);
+ *                           prep-interview invocation prompt contains
+ *                           ## Interview block with interview_type;
+ *                           output produces ≥2 of 4 mandatory content
+ *                           categories; output references research-
+ *                           derived terms + candidate-profile terms;
+ *                           orchestrator surfaces the prep guide
+ *                           faithfully (Pattern B).
  *   --llm-provider=ollama   Default. Routes all model calls through the
  *                           local Ollama daemon via the Anthropic shim.
  *                           Zero LLM cost. Requires Ollama + glm-4.7-flash.
@@ -113,7 +130,8 @@ type Flow =
   | 'research-company-discovery'
   | 'research-company'
   | 'tailor-resume'
-  | 'draft-outreach';
+  | 'draft-outreach'
+  | 'prep-interview';
 const FLOWS: ReadonlySet<Flow> = new Set([
   'smoke',
   'onboarding',
@@ -122,6 +140,7 @@ const FLOWS: ReadonlySet<Flow> = new Set([
   'research-company',
   'tailor-resume',
   'draft-outreach',
+  'prep-interview',
 ]);
 const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'smoke',
@@ -130,6 +149,7 @@ const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'research-company',
   'tailor-resume',
   'draft-outreach',
+  'prep-interview',
 ]);
 
 type LlmProvider = 'ollama' | 'claude';
@@ -1287,6 +1307,357 @@ async function runDraftOutreach(): Promise<void> {
   );
 }
 
+async function runPrepInterview(): Promise<void> {
+  header('Flow: prep-interview');
+  // Phase 2.4 full DoD per STRATEGY.md §24.4.
+  //
+  // Third chained-subagent flow. The orchestrator must:
+  //   - extract interview event details (interview_type, role,
+  //     scheduled_at) from the candidate's turn
+  //   - invoke research-company first (about Anthropic)
+  //   - invoke prep-interview next, passing research digest +
+  //     ## Interview block carrying interview_type + role
+  //   - surface the prep guide faithfully (Pattern B, NOT the
+  //     outreach exception — the chat reply IS the artifact, there
+  //     is no external materialization step)
+  //
+  // 10+ in-test assertion blocks mapped to spec DoD items 1-9:
+  //   1. Both subagent types dispatched (research-company first),
+  //      ≥1 success per type.
+  //   2. prep-interview's invocation prompt has a research-shaped
+  //      heading AND an ## Interview section carrying interview_type.
+  //   3. Best prep-interview attempt produces at least 2 of the 4
+  //      mandatory content categories (recent signal / question
+  //      themes / pitch framing / questions to ask) — relaxed from
+  //      "all 4 required" per the §24.4 anticipated empirical
+  //      relaxation note.
+  //   4. Output references ≥3 distinctive research-derived words.
+  //   5. Output references ≥1 candidate-profile term (Go/Rust/
+  //      PostgreSQL/Kubernetes).
+  //   6. Output mentions the specific interview type (substring
+  //      match on technical screen / technical_screen, case-insens).
+  //   7. Output word count between 100 and 800.
+  //   8. ≥2 record_progress rows in public_audit_trail for
+  //      prep-interview keyed to this run.
+  //   9. Orchestrator's user-facing reply surfaces the prep guide
+  //      faithfully (≥200 chars OR contains ≥3 deliverable keywords).
+  seedBookmarkedApplication({
+    id: 'app-e2e-anthropic-4',
+    company_name: 'Anthropic',
+    role_title: 'Staff Backend Engineer',
+    obfuscated_label: 'ai-a',
+  });
+  const flowStartIso = new Date().toISOString();
+  const reply = await chatTurn(
+    [
+      'Prep me for a technical screen at Anthropic for the Staff Backend Engineer role.',
+      'Interview is next Tuesday.',
+    ].join('\n'),
+    // 15-min ceiling, same as draft-outreach. Chained research-company
+    // + prep-interview + final reply has the same surface as the 2.3
+    // chain minus the create_gmail_draft call.
+    900_000,
+  );
+  if (reply.length === 0) fail('reply was empty');
+
+  const jsonl = findLatestSessionJsonl();
+  if (!jsonl) fail('no session JSONL found under data/v2-sessions/');
+
+  // 1. Both Task subagent_types dispatched (research-company first), ≥1
+  // success per type. Same retry-tolerant pattern as 2.2/2.3.
+  const allTaskCalls = findAllSubagentDelegations(jsonl);
+  const researchCalls = allTaskCalls.filter((c) => c.input?.subagent_type === 'research-company');
+  const prepCalls = allTaskCalls.filter((c) => c.input?.subagent_type === 'prep-interview');
+  if (researchCalls.length === 0 || prepCalls.length === 0) {
+    const allCalls = listAllToolCalls(jsonl);
+    console.error('  --- all orchestrator tool_use calls ---');
+    if (allCalls.length === 0) console.error('  (none)');
+    else for (const c of allCalls) console.error(`  ${c}`);
+    fail(
+      `orchestrator did not chain delegate — found ${researchCalls.length} research-company calls + ` +
+        `${prepCalls.length} prep-interview calls. Persona chain rule may need tightening.`,
+    );
+  }
+  const firstResearchIdx = allTaskCalls.indexOf(researchCalls[0]);
+  const firstPrepIdx = allTaskCalls.indexOf(prepCalls[0]);
+  if (firstResearchIdx >= firstPrepIdx) {
+    fail(
+      `Task ordering wrong: first research-company at index ${firstResearchIdx}, first prep-interview at ${firstPrepIdx}. ` +
+        'Chain rule says research first.',
+    );
+  }
+  ok(
+    `orchestrator chained Tasks (${researchCalls.length} research-company + ${prepCalls.length} prep-interview; research first)`,
+  );
+
+  const successfulResearch = researchCalls.filter((c) => taskCallSucceeded(jsonl, c));
+  const successfulPrep = prepCalls.filter((c) => taskCallSucceeded(jsonl, c));
+  if (successfulResearch.length === 0) {
+    fail(
+      `all ${researchCalls.length} research-company Task tool_results were errors. ` +
+        'Check `name: research-company` in agent .md and SDK validation errors in subagent JSONLs.',
+    );
+  }
+  if (successfulPrep.length === 0) {
+    fail(
+      `all ${prepCalls.length} prep-interview Task tool_results were errors. ` +
+        'Most likely: subagent refused due to missing ## Interview block, or produced XML-shaped fake tool calls. ' +
+        'Check the prep-interview subagent JSONL.',
+    );
+  }
+  ok(
+    `at least one success per subagent type: ${successfulResearch.length}/${researchCalls.length} research-company, ${successfulPrep.length}/${prepCalls.length} prep-interview`,
+  );
+
+  // 2. prep-interview's invocation prompt has a research-shaped heading
+  // AND an ## Interview block carrying interview_type.
+  const prepCall = successfulPrep[0];
+  const prepPrompt = (prepCall.input?.prompt as string | undefined) ?? '';
+  // Heading shape is stylistic — same relaxation as 2.3 DoD #2; log
+  // presence/absence, do not fail on it. The load-bearing content
+  // check is the research-word-overlap below.
+  const RESEARCH_HEADING =
+    /(?:^|\n)\s*(?:#{2,3}\s+[^\n]*research|\*\*[^*\n]*research[^*\n]*\*\*|[^\n:]*\bresearch\b[^\n:]*:)/i;
+  const hasResearchHeading = RESEARCH_HEADING.test(prepPrompt);
+  // Interview-block detection: liberal — any heading containing
+  // "interview" (## Interview, ### Interview, **Interview:**) OR
+  // an interview_type marker inline (the GLM orchestrator paraphrases).
+  const INTERVIEW_HEADING = /(?:^|\n)\s*(?:#{2,3}\s+[^\n]*interview|\*\*[^*\n]*interview[^*\n]*\*\*)/i;
+  const hasInterviewHeading = INTERVIEW_HEADING.test(prepPrompt);
+  // The interview_type must propagate. Accept several variants:
+  // technical_screen | technical screen | tech screen | Technical Screen.
+  const TYPE_PATTERNS = [/technical[_\s-]?screen/i, /tech\s+screen/i];
+  const hasInterviewType = TYPE_PATTERNS.some((re) => re.test(prepPrompt));
+  if (!hasInterviewType) {
+    console.error('  --- prep-interview invocation prompt (first 2000 chars) ---');
+    console.error(prepPrompt.slice(0, 2000));
+    console.error('  --- end ---');
+    fail(
+      `prep-interview invocation prompt does not contain interview_type. ` +
+        'Orchestrator must extract interview_type from the candidate turn and pass it under ## Interview.',
+    );
+  }
+  ok(
+    `prep-interview prompt contains interview_type${hasInterviewHeading ? ' (under interview heading)' : ' (inline)'}` +
+      `${hasResearchHeading ? ' and a research-shaped heading' : ' and research content is inlined (no heading)'}`,
+  );
+
+  // 3. Best prep-interview attempt content. Pick the subagent JSONL
+  // whose final assistant text best matches the four content categories.
+  // Same multi-research-JSONL filter pattern as draft-outreach.
+  const RESEARCH_PROMPT_SHAPE = /(?:^|\n)\s*Research\s+\S/i;
+  const allSubJsonls = listAllSubagentJsonls(jsonl);
+  const researchSubJsonls = allSubJsonls.filter((p) => {
+    const prompt = getSubagentInvocationPrompt(p);
+    return prompt != null && RESEARCH_PROMPT_SHAPE.test(prompt);
+  });
+  const researchSubJsonl = researchSubJsonls[0] ?? null;
+  const researchSubJsonlSet = new Set(researchSubJsonls);
+  const prepSubJsonls = allSubJsonls
+    .filter((p) => !researchSubJsonlSet.has(p))
+    .map((p) => ({ path: p, text: extractFinalAssistantText(p) ?? '' }))
+    .filter((x) => x.text.length > 0);
+  if (prepSubJsonls.length === 0) {
+    fail('no prep-interview subagent JSONLs found (after excluding research-company).');
+  }
+  // The four mandatory content categories. The spec deliberately does
+  // not prescribe exact H2 names, so we detect each via a substring
+  // match on distinctive content words. Need at least 2 of 4 present
+  // (relaxed from "all 4" per the §24.4 anticipated relaxation note —
+  // GLM empirically merges or drops sections).
+  const SECTION_PATTERNS: Array<{ name: string; re: RegExp }> = [
+    { name: 'recent-signal', re: /\b(?:recent|signal|news|launch|funding|blog)\b/i },
+    { name: 'question-themes', re: /\b(?:theme|likely\s+question|will\s+ask|may\s+ask|probably\s+ask|expect\s+question)/i },
+    { name: 'pitch-framing', re: /\b(?:pitch|lean\s+into|framing|highlight|spine|lead\s+with)\b/i },
+    { name: 'questions-to-ask', re: /\b(?:questions?\s+to\s+ask|ask\s+(?:the\s+)?interviewer|ask\s+them)\b/i },
+  ];
+  const scoredPreps = prepSubJsonls
+    .map((x) => {
+      const matched = SECTION_PATTERNS.filter((s) => s.re.test(x.text)).map((s) => s.name);
+      return { ...x, matched, sectionCount: matched.length };
+    })
+    .sort((a, b) => b.sectionCount - a.sectionCount);
+  const bestPrep = scoredPreps[0];
+  if (bestPrep.sectionCount < 2) {
+    console.error('  --- best prep-interview final output (first 3000 chars) ---');
+    console.error(bestPrep.text.slice(0, 3000));
+    console.error('  --- end ---');
+    fail(
+      `best prep-interview attempt only matched ${bestPrep.sectionCount}/4 content categories ` +
+        `(matched: ${bestPrep.matched.join(', ') || 'none'}). Need at least 2 of 4.`,
+    );
+  }
+  ok(
+    `prep-interview produced ${bestPrep.sectionCount}/4 mandatory content categories: ${bestPrep.matched.join(', ')}`,
+  );
+
+  // 4. Output references ≥3 distinctive research-derived 6+-char words.
+  const researchOutput = researchSubJsonl ? extractFinalAssistantText(researchSubJsonl) : null;
+  if (!researchOutput) fail('research-company subagent has no final assistant text');
+  const researchWords = new Set(
+    (researchOutput.match(/\b[A-Za-z][A-Za-z0-9_+./-]{5,}\b/g) || []).map((w) => w.toLowerCase()),
+  );
+  const prepWordsLower = new Set(
+    (bestPrep.text.match(/\b[A-Za-z][A-Za-z0-9_+./-]{5,}\b/g) || []).map((w) => w.toLowerCase()),
+  );
+  const COMMON = new Set([
+    'anthropic',
+    'staff',
+    'backend',
+    'engineer',
+    'inference',
+    'distributed',
+    'observability',
+    'postgresql',
+    'systems',
+    'production',
+    'should',
+    'their',
+    'company',
+    'research',
+    'candidate',
+    'master',
+    'resume',
+    'engineering',
+    'platform',
+    'context',
+    'target',
+    'roles',
+    'skills',
+    'experience',
+    'requirements',
+    'highlights',
+    'summary',
+    'before',
+    'because',
+    'including',
+    'specific',
+    'interview',
+    'technical',
+    'screen',
+    'question',
+    'questions',
+    'theme',
+    'themes',
+    'recent',
+    'signal',
+    'framing',
+    'pitch',
+    'tuesday',
+    'scheduled',
+    'role',
+  ]);
+  const researchOverlap = [...researchWords]
+    .filter((w) => prepWordsLower.has(w))
+    .filter((w) => !COMMON.has(w));
+  if (researchOverlap.length < 3) {
+    console.error('  --- prep-interview output (first 3000 chars) ---');
+    console.error(bestPrep.text.slice(0, 3000));
+    console.error('  --- end ---');
+    console.error(`  --- research overlap (need >=3 distinctive): ${JSON.stringify(researchOverlap)} ---`);
+    fail(
+      `prep-interview output has only ${researchOverlap.length} distinctive research-derived words. ` +
+        'Output should reference signal from the research digest.',
+    );
+  }
+  ok(`prep-interview output references ${researchOverlap.length} distinctive research-derived terms`);
+
+  // 5. Output references ≥1 candidate-profile term.
+  const CANDIDATE_TERMS = /\b(Go|Golang|Rust|PostgreSQL|Postgres|Kubernetes)\b/i;
+  if (!CANDIDATE_TERMS.test(bestPrep.text)) {
+    console.error('  --- prep-interview output (first 3000 chars) ---');
+    console.error(bestPrep.text.slice(0, 3000));
+    console.error('  --- end ---');
+    fail('prep-interview output references no candidate-profile term (Go|Rust|PostgreSQL|Kubernetes). Output must rest on candidate facts.');
+  }
+  ok('prep-interview output references at least 1 candidate-profile term');
+
+  // 6. Output mentions the specific interview type.
+  const mentionsInterviewType = TYPE_PATTERNS.some((re) => re.test(bestPrep.text));
+  if (!mentionsInterviewType) {
+    console.error('  --- prep-interview output (first 3000 chars) ---');
+    console.error(bestPrep.text.slice(0, 3000));
+    console.error('  --- end ---');
+    fail('prep-interview output does not mention "technical screen". Output must acknowledge the specific round.');
+  }
+  ok('prep-interview output mentions the interview type');
+
+  // 7. Output word count between 100 and 800.
+  const prepWords = bestPrep.text
+    .replace(/\[(?:research-derived|inferred|adapted|new)\]/gi, '')
+    .replace(/[*_`#]/g, '')
+    .split(/\s+/)
+    .filter((w) => w.length > 0);
+  if (prepWords.length < 100) {
+    fail(`prep-interview output is ${prepWords.length} words (<100 — too thin). Subagent likely truncated or refused.`);
+  }
+  if (prepWords.length > 800) {
+    console.error('  --- prep-interview output (first 3000 chars) ---');
+    console.error(bestPrep.text.slice(0, 3000));
+    console.error('  --- end ---');
+    fail(`prep-interview output is ${prepWords.length} words (>800 — bloated). Hard cap exceeded.`);
+  }
+  ok(`prep-interview output word count valid (${prepWords.length} words, 100-800 range)`);
+
+  // 8. record_progress rows for prep-interview.
+  const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
+  const Database = (await import('better-sqlite3')).default;
+  const db = new Database(dbPath, { readonly: true });
+  let progressRows: { stage: string; summary: string }[];
+  try {
+    progressRows = db
+      .prepare(
+        `SELECT json_extract(details_json, '$.stage') AS stage, summary
+         FROM public_audit_trail
+         WHERE category = 'subagent_progress'
+           AND agent_name = 'prep-interview'
+           AND ts >= ?
+         ORDER BY ts ASC`,
+      )
+      .all(flowStartIso) as { stage: string; summary: string }[];
+  } finally {
+    db.close();
+  }
+  if (progressRows.length < 2) {
+    console.error('  --- prep-interview progress rows (since flow start) ---');
+    for (const r of progressRows) console.error(`  > stage=${r.stage} | ${r.summary}`);
+    fail(
+      `only ${progressRows.length} record_progress rows for prep-interview (need >=2). ` +
+        'Subagent prompt should call record_progress at 2-4 meaningful inflection points.',
+    );
+  }
+  ok(
+    `prep-interview emitted ${progressRows.length} record_progress rows (stages: ${progressRows.slice(0, 4).map((r) => r.stage).join(', ')})`,
+  );
+
+  // 9. Orchestrator's reply surfaces the prep guide faithfully (Pattern B).
+  // ≥200 chars (not a 2-sentence summary) OR contains ≥3 deliverable keywords.
+  const DELIVERABLE_KEYWORDS = [
+    /\bquestion\b/i,
+    /\btheme\b/i,
+    /\bframing\b/i,
+    /\brecent\b/i,
+    /\bask\b/i,
+    /\bsignal\b/i,
+    /\bpitch\b/i,
+  ];
+  const keywordHits = DELIVERABLE_KEYWORDS.filter((re) => re.test(reply)).length;
+  const isFaithful = reply.length >= 200 || keywordHits >= 3;
+  if (!isFaithful) {
+    console.error('  --- orchestrator reply (first 2000 chars) ---');
+    console.error(reply.slice(0, 2000));
+    console.error('  --- end ---');
+    fail(
+      `orchestrator reply does not appear to surface the prep guide ` +
+        `(${reply.length} chars, ${keywordHits} deliverable-keyword hits). ` +
+        'Pattern B: surface the deliverable faithfully, do not summarize into 2 sentences.',
+    );
+  }
+  ok(
+    `orchestrator reply surfaces prep guide (${reply.length} chars, ${keywordHits} deliverable-keyword hits) — Pattern B faithful`,
+  );
+}
+
 function seedBookmarkedApplication(opts: {
   id: string;
   company_name: string;
@@ -1773,6 +2144,7 @@ async function main(): Promise<void> {
       'research-company': runResearchCompany,
       'tailor-resume': runTailorResume,
       'draft-outreach': runDraftOutreach,
+      'prep-interview': runPrepInterview,
     };
     await FLOW_HANDLERS[args.flow]();
     assertionsPassed = true;
