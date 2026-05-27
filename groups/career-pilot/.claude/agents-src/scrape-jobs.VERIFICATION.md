@@ -36,11 +36,13 @@ following checks, in increasing rigor:
 
 `pnpm test:e2e --flow=scrape-jobs --llm-provider=claude` exercises the
 full path: orchestrator dispatches scrape-jobs → subagent calls
-`fetch_source` → host fetches Greenhouse/Lever boards → returns
-normalized postings → subagent calls `record_job_lead` → host computes
-`content_fingerprint` + `rules_score` → row lands in `job_leads` →
-orchestrator calls `query_job_leads` to surface results in Pattern B
-chat reply.
+`fetch_source` → host fetches Greenhouse/Lever boards, stashes full
+`JobLeadPayload`s in the 1h in-process payload-cache, returns
+lightweight `PostingSummary[]` → subagent judges title + snippet,
+calls `record_job_lead({source, source_job_id})` for keepers → host
+re-hydrates the full payload from cache, computes `content_fingerprint`
++ `rules_score`, UPSERTs into `job_leads` → orchestrator calls
+`query_job_leads` to surface results in Pattern B chat reply.
 
 **`--llm-provider=ollama` is currently broken for this flow.** GLM-4.7-
 Flash emits `<Agent .../>` XML text instead of calling the Agent tool;
@@ -48,29 +50,33 @@ no dispatch happens. Documented escalation in STRATEGY.md §24.5
 empirical iteration log. Long-term fix: parser-side `<Agent>` XML
 recovery similar to Phase 2.3 task #87's lenient `<message>` parser.
 
-**v1.0 e2e status (post-investigation, 2026-05-27): architecturally
-green; `record_job_lead ≥ 1 row` assertion blocked on issue #2
-(payload truncation), which is the next fix.** All wiring assertions
-(dispatch, fetch_source called, query_job_leads called, Pattern B
-reply) pass consistently. The `record_job_lead ≥ 1 row` assertion
-fails because the SDK's subagent-side inline tool-result cap spills
-fetch_source results to file and the subagent has no `Read` tool —
-issue #2 in STRATEGY.md §24.5. The "intermittent readonly DB error"
-(issue #1) was disproven via stack-trace instrumentation — it was
-orchestrator hallucination, not real infrastructure rot.
+**v1.0 e2e status (2026-05-27): green on `--llm-provider=claude`.**
+All assertions pass — subagent dispatch, fetch_source called,
+record_job_lead called (≥1 row landed), content_fingerprint + rules_score
+populated, query_job_leads called, Pattern B reply faithful. The
+issues that previously blocked this assertion are resolved (STRATEGY.md
+§24.5): #1 was orchestrator hallucination disproven via instrumentation
+(commit `bc384f4`); #2 was the payload-truncation fix (commit `2e55e68`,
+the fetch_source contract redesign); #3 was sales-skew determinism
+partially addressed in the same commit via broadened Test Candidate +
+deeper per-board scan.
 
 Critical subset to check first if the run fails:
 
 - Subagent dispatched at least once (architectural wiring works).
-- `fetch_source` returned a non-empty postings array (the seed targets
-  are live and reachable).
+- `fetch_source` returned a non-empty `summaries` array (the seed
+  targets are live and reachable).
 - If the orchestrator's reply narrates a "readonly database" or
   similar SQLite error: that's hallucination, not a real error
   (see STRATEGY.md §24.5 issue #1). The real cause is downstream —
   check the next bullet.
-- At least one `record_job_lead` call landed. If zero: either the
-  subagent couldn't read fetch_source's spilled-to-file results
-  (issue #2) or pre-record judgment dropped everything (issue #3).
+- At least one `record_job_lead` call landed. If zero: most likely
+  pre-record judgment dropped everything because the live freshest-N
+  per board skewed sales/GTM that day (residual of issue #3). Issue
+  #2 (payload truncation) shouldn't recur — fetch_source now returns
+  summaries, not full payloads — but if you see a `NOT_IN_CACHE` error
+  on `record_job_lead`, that's the subagent passing a tuple that
+  wasn't in cache (fabrication or TTL expiry past 1h).
 - Recorded leads all have non-null `content_fingerprint` (16-char hex)
   and `rules_score` (0-100). Null in either column = host compute path
   is broken.
