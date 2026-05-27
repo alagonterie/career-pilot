@@ -35,6 +35,7 @@ import type { Session } from '../../types.js';
 
 import { computeFingerprint } from './lead-fingerprint.js';
 import { computeRulesScore, profileFromRow } from './lead-rules-score.js';
+import { computeBriefHash, rankLeads, RankLeadsError, type JobLeadForRanking } from './rank-leads.js';
 
 // ── Response writer (mirrors actions.ts) ──────────────────────────────────
 
@@ -387,6 +388,113 @@ export async function handleUpdateJobLeadStatus(
     writeResponse(inDb, requestId, {
       ok: false,
       error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
+// ── rank_leads ─────────────────────────────────────────────────────────────
+
+const RANK_LEADS_MAX = 50;
+
+export async function handleRankLeads(
+  content: Record<string, unknown>,
+  _session: Session,
+  inDb: Database.Database,
+): Promise<void> {
+  const requestId = reqId(content);
+  const p = payload(content);
+  const lead_ids = p.lead_ids;
+  const brief = p.brief;
+
+  if (!Array.isArray(lead_ids) || lead_ids.length === 0) {
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'BAD_ARGS', message: 'lead_ids must be a non-empty array' },
+    });
+    return;
+  }
+  if (lead_ids.length > RANK_LEADS_MAX) {
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'BAD_ARGS', message: `lead_ids capped at ${RANK_LEADS_MAX} per call` },
+    });
+    return;
+  }
+  if (typeof brief !== 'string' || brief.trim().length < 20) {
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'BAD_ARGS', message: 'brief is required (min 20 chars)' },
+    });
+    return;
+  }
+  const idsAreStrings = lead_ids.every((x) => typeof x === 'string' && x.length > 0);
+  if (!idsAreStrings) {
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'BAD_ARGS', message: 'every lead_ids entry must be a non-empty string' },
+    });
+    return;
+  }
+  const ids = lead_ids as string[];
+
+  try {
+    const db = getDb();
+
+    const placeholders = ids.map((_, i) => `@id_${i}`).join(', ');
+    const params: Record<string, unknown> = {};
+    ids.forEach((id, i) => {
+      params[`id_${i}`] = id;
+    });
+    const rows = db
+      .prepare(
+        `SELECT id, source, title, company, location_raw, workplace_type, description_text, rules_score
+         FROM job_leads
+         WHERE id IN (${placeholders}) AND closed_at IS NULL`,
+      )
+      .all(params) as JobLeadForRanking[];
+
+    if (rows.length === 0) {
+      writeResponse(inDb, requestId, {
+        ok: false,
+        error: { code: 'NOT_FOUND', message: 'no live job_leads matched the provided ids' },
+      });
+      return;
+    }
+
+    const briefHash = computeBriefHash(brief);
+    const scored = await rankLeads(rows, brief);
+
+    const now = new Date().toISOString();
+    const updateStmt = db.prepare(
+      `UPDATE job_leads
+       SET llm_score = @score,
+           llm_scored_at = @now,
+           llm_scored_brief_hash = @hash
+       WHERE id = @id`,
+    );
+    db.transaction(() => {
+      for (const item of scored) {
+        updateStmt.run({ id: item.id, score: item.llm_score, now, hash: briefHash });
+      }
+    })();
+
+    log.info('job_leads ranked', {
+      requested: ids.length,
+      resolved: rows.length,
+      scored: scored.length,
+      brief_hash: briefHash,
+    });
+
+    writeResponse(inDb, requestId, {
+      ok: true,
+      data: { leads: scored, total: scored.length, brief_hash: briefHash },
+    });
+  } catch (err) {
+    log.error('handleRankLeads failed', { err });
+    const code = err instanceof RankLeadsError ? err.code : 'INTERNAL';
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code, message: err instanceof Error ? err.message : String(err) },
     });
   }
 }

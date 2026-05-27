@@ -22,6 +22,7 @@ import {
   handleDiscoverAtsBoard,
   handleFetchSource,
   handleQueryJobLeads,
+  handleRankLeads,
   handleRecordJobLead,
   handleUpdateJobLeadStatus,
 } from './job-lead-actions.js';
@@ -38,3 +39,4 @@ registerDeliveryAction('career_pilot.query_job_leads', handleQueryJobLeads);
 registerDeliveryAction('career_pilot.update_job_lead_status', handleUpdateJobLeadStatus);
 registerDeliveryAction('career_pilot.discover_ats_board', handleDiscoverAtsBoard);
 registerDeliveryAction('career_pilot.fetch_source', handleFetchSource);
+registerDeliveryAction('career_pilot.rank_leads', handleRankLeads);

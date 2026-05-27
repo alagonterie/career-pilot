@@ -1,0 +1,220 @@
+/**
+ * LLM rank-at-draw-time for the daily-briefing flow (Phase 3.1).
+ *
+ * Pure prompt + response parsing + brief-hash helpers, plus a thin
+ * `fetch`-based Haiku caller that goes through Portkey by default and
+ * falls back to direct Anthropic when `PORTKEY_BYPASS=true` is set.
+ *
+ * Called from `handleRankLeads` in `job-lead-actions.ts` — the host-side
+ * delivery action that the container's `rank_leads` MCP tool invokes via
+ * the system-action contract.
+ *
+ * Cost model: ~$0.05 per 20-lead briefing at Haiku 4.5 pricing as of
+ * 2026-05 (a few thousand input tokens + ~200 output tokens for the score
+ * list). See STRATEGY.md §24.6 for the spec.
+ */
+
+export interface JobLeadForRanking {
+  id: string;
+  source: string;
+  title: string;
+  company: string;
+  location_raw?: string | null;
+  workplace_type?: string | null;
+  description_text?: string | null;
+  rules_score?: number | null;
+}
+
+export interface RankedLead {
+  id: string;
+  llm_score: number;
+  rank: number;
+}
+
+export class RankLeadsError extends Error {
+  constructor(
+    public code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'RankLeadsError';
+  }
+}
+
+const SNIPPET_CHARS = 280;
+const SYSTEM_PROMPT =
+  "You score job postings against a candidate brief and return JSON only. " +
+  "Be calibrated: 90+ for excellent matches, 70-89 strong, 40-69 moderate, " +
+  "20-39 weak, <20 poor fit. Don't anchor on any single dimension — balance " +
+  "role-type fit, technical skills, comp signal, and location.";
+
+export function buildRankingPrompt(leads: JobLeadForRanking[], brief: string): string {
+  const lines: string[] = [];
+  lines.push(
+    "Score each posting below 0-100 against the candidate's brief. Higher = better fit.",
+  );
+  lines.push('');
+  lines.push('# Candidate brief');
+  lines.push('');
+  lines.push(brief.trim());
+  lines.push('');
+  lines.push(`# Postings (${leads.length})`);
+  lines.push('');
+  for (const lead of leads) {
+    const desc = (lead.description_text ?? '').replace(/\s+/g, ' ').trim();
+    const snippet = desc.length > SNIPPET_CHARS ? desc.slice(0, SNIPPET_CHARS - 1) + '…' : desc;
+    const locParts = [lead.location_raw, lead.workplace_type].filter((s): s is string => !!s);
+    const loc = locParts.length > 0 ? ' | ' + locParts.join(' · ') : '';
+    lines.push(`- id=${lead.id} | ${lead.title} @ ${lead.company}${loc}`);
+    if (snippet) lines.push(`  ${snippet}`);
+  }
+  lines.push('');
+  lines.push('Return JSON only, no commentary or markdown fences:');
+  lines.push('{"leads":[{"id":"<id>","llm_score":<0-100>},...]}');
+  return lines.join('\n');
+}
+
+export function parseRankingResponse(text: string, requestedIds: string[]): RankedLead[] {
+  // Strip markdown fences if Haiku returns ```json ... ``` despite instructions.
+  const cleaned = text
+    .trim()
+    .replace(/^```(?:json)?\s*\n?/i, '')
+    .replace(/\n?```\s*$/, '')
+    .trim();
+
+  let parsed: { leads?: Array<{ id?: unknown; llm_score?: unknown }> };
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    throw new RankLeadsError('PARSE_ERROR', 'response was not valid JSON');
+  }
+  if (!parsed || !Array.isArray(parsed.leads)) {
+    throw new RankLeadsError('PARSE_ERROR', 'response missing `leads` array');
+  }
+
+  const requestedSet = new Set(requestedIds);
+  const seen = new Set<string>();
+  const valid: Array<{ id: string; llm_score: number }> = [];
+  for (const item of parsed.leads) {
+    if (typeof item.id !== 'string' || !requestedSet.has(item.id)) continue;
+    if (typeof item.llm_score !== 'number' || !Number.isFinite(item.llm_score)) continue;
+    if (item.llm_score < 0 || item.llm_score > 100) continue;
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    valid.push({ id: item.id, llm_score: Math.round(item.llm_score) });
+  }
+
+  if (valid.length === 0) {
+    throw new RankLeadsError('NO_VALID_SCORES', 'no usable lead scores in response');
+  }
+
+  valid.sort((a, b) => b.llm_score - a.llm_score);
+  return valid.map((v, i) => ({ id: v.id, llm_score: v.llm_score, rank: i + 1 }));
+}
+
+/**
+ * Stable 16-char hex digest of the brief, used as the cache key on
+ * `job_leads.llm_scored_brief_hash`. Whitespace-normalized so cosmetic
+ * edits don't trigger a re-score. Not a cryptographic hash.
+ */
+export function computeBriefHash(brief: string): string {
+  const normalized = brief.replace(/\s+/g, ' ').trim();
+  // 64-bit FNV-like rolling hash. Sufficient for change detection.
+  let h = 0xcbf29ce484222325n;
+  const PRIME = 0x100000001b3n;
+  const MASK = 0xffffffffffffffffn;
+  for (let i = 0; i < normalized.length; i++) {
+    h = (h ^ BigInt(normalized.charCodeAt(i))) & MASK;
+    h = (h * PRIME) & MASK;
+  }
+  return h.toString(16).padStart(16, '0');
+}
+
+interface HaikuRequestBody {
+  model: string;
+  max_tokens: number;
+  system: string;
+  messages: Array<{ role: 'user'; content: string }>;
+}
+
+interface HaikuResponse {
+  content?: Array<{ type: string; text?: string }>;
+}
+
+async function callHaiku(systemPrompt: string, userPrompt: string): Promise<string> {
+  const portkeyKey = process.env.PORTKEY_API_KEY;
+  const portkeyProvider = process.env.PORTKEY_AI_PROVIDER || 'anthropic-default';
+  const bypass = process.env.PORTKEY_BYPASS === 'true';
+  const model = process.env.HAIKU_MODEL || 'claude-haiku-4-5-20251001';
+
+  const body: HaikuRequestBody = {
+    model,
+    max_tokens: 2048,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userPrompt }],
+  };
+
+  let url: string;
+  let headers: Record<string, string>;
+  if (bypass) {
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicKey) {
+      throw new RankLeadsError('NO_AUTH', 'PORTKEY_BYPASS=true but ANTHROPIC_API_KEY unset');
+    }
+    url = 'https://api.anthropic.com/v1/messages';
+    headers = {
+      'Content-Type': 'application/json',
+      'x-api-key': anthropicKey,
+      'anthropic-version': '2023-06-01',
+    };
+  } else {
+    if (!portkeyKey) {
+      throw new RankLeadsError(
+        'NO_AUTH',
+        'PORTKEY_API_KEY unset — set PORTKEY_BYPASS=true to use ANTHROPIC_API_KEY directly',
+      );
+    }
+    url = 'https://api.portkey.ai/v1/messages';
+    headers = {
+      'Content-Type': 'application/json',
+      'x-portkey-api-key': portkeyKey,
+      'x-portkey-provider': portkeyProvider,
+      'anthropic-version': '2023-06-01',
+    };
+  }
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new RankLeadsError(
+      'HAIKU_HTTP_ERROR',
+      `Haiku call failed: ${res.status} ${res.statusText}${errText ? ' — ' + errText.slice(0, 200) : ''}`,
+    );
+  }
+
+  const data = (await res.json()) as HaikuResponse;
+  const block = data.content?.find((c) => c.type === 'text');
+  if (!block?.text) throw new RankLeadsError('HAIKU_EMPTY', 'Haiku returned empty content');
+  return block.text;
+}
+
+export async function rankLeads(
+  leads: JobLeadForRanking[],
+  brief: string,
+): Promise<RankedLead[]> {
+  if (leads.length === 0) {
+    throw new RankLeadsError('BAD_ARGS', 'leads is empty');
+  }
+  if (!brief.trim()) {
+    throw new RankLeadsError('BAD_ARGS', 'brief is empty');
+  }
+  const userPrompt = buildRankingPrompt(leads, brief);
+  const text = await callHaiku(SYSTEM_PROMPT, userPrompt);
+  const requestedIds = leads.map((l) => l.id);
+  return parseRankingResponse(text, requestedIds);
+}
