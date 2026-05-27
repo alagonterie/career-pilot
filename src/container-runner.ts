@@ -23,7 +23,7 @@ import { materializeContainerJson } from './container-config.js';
 import { getContainerConfig } from './db/container-configs.js';
 import { updateContainerConfigScalars, updateContainerConfigJson } from './db/container-configs.js';
 import { CONTAINER_RUNTIME_BIN, hostGatewayArgs, readonlyMountArgs, stopContainer } from './container-runtime.js';
-import { composeGroupClaudeMd } from './claude-md-compose.js';
+import { composeGroupClaudeMd, composeSubagentDefinitions } from './claude-md-compose.js';
 import { getAgentGroup } from './db/agent-groups.js';
 import { getDb, hasTable } from './db/connection.js';
 import { initGroupFilesystem } from './group-init.js';
@@ -269,6 +269,11 @@ function buildMounts(
   // Compose CLAUDE.md fresh every spawn from the shared base, enabled skill
   // fragments, and MCP server instructions. See `claude-md-compose.ts`.
   composeGroupClaudeMd(agentGroup);
+
+  // Render subagent definitions from `agents-src/` into `agents/`, inlining
+  // shared preamble via `<!-- @include ... -->` directives. See
+  // `claude-md-compose.ts` and `.specs/STRATEGY.md §24.3` item 2.
+  composeSubagentDefinitions(agentGroup);
 
   const mounts: VolumeMount[] = [];
   const sessDir = sessionDir(agentGroup.id, session.id);

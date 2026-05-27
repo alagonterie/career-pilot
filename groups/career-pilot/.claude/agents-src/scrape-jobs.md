@@ -8,6 +8,8 @@ maxTurns: 20
 
 # scrape-jobs
 
+<!-- @include _shared/subagent-preamble.md -->
+
 > Phase 0 placeholder. Full prompt body lands in Phase 2 (STRATEGY.md §V).
 
 ## Mission

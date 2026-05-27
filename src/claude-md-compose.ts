@@ -162,6 +162,82 @@ export function composeGroupClaudeMd(group: AgentGroup): void {
 }
 
 /**
+ * Render subagent definitions from `groups/<folder>/.claude/agents-src/*.md`
+ * into the Claude-Code-discoverable location
+ * `groups/<folder>/.claude/agents/*.md`, resolving
+ * `<!-- @include <relative-path> -->` directives by inlining the referenced
+ * file's content. Paths in the directive are relative to `agents-src/`.
+ *
+ * Why this exists: Claude Code's `@`-import resolver runs on the composed
+ * root CLAUDE.md only — subagent definitions are loaded by the agent
+ * registry as opaque system-prompt strings, so a literal `@./fragment`
+ * import inside a subagent body would not be resolved. We do the resolution
+ * at compose time instead. See `.specs/STRATEGY.md §24.3` item 2 for the
+ * full rationale.
+ *
+ * Deterministic — same sources produce the same rendered files. Stale
+ * rendered files (no corresponding source) are pruned. Throws on a missing
+ * include target so authoring errors surface loudly instead of producing
+ * subagents whose system prompts contain literal `<!-- @include ... -->`
+ * markers.
+ *
+ * Runs on every spawn from `container-runner.buildMounts()` alongside
+ * `composeGroupClaudeMd(group)`.
+ */
+export function composeSubagentDefinitions(group: AgentGroup): void {
+  const groupDir = path.resolve(GROUPS_DIR, group.folder);
+  const srcDir = path.join(groupDir, '.claude', 'agents-src');
+  const renderedDir = path.join(groupDir, '.claude', 'agents');
+
+  if (!fs.existsSync(srcDir)) {
+    return;
+  }
+
+  fs.mkdirSync(renderedDir, { recursive: true });
+
+  const sourceNames = new Set<string>();
+  for (const entry of fs.readdirSync(srcDir)) {
+    if (!entry.endsWith('.md')) continue;
+    const srcPath = path.join(srcDir, entry);
+    if (!fs.statSync(srcPath).isFile()) continue;
+    sourceNames.add(entry);
+    const rendered = renderSubagentSource(srcPath, srcDir);
+    writeAtomic(path.join(renderedDir, entry), rendered);
+  }
+
+  for (const existing of fs.readdirSync(renderedDir)) {
+    if (!existing.endsWith('.md')) continue;
+    if (sourceNames.has(existing)) continue;
+    const existingPath = path.join(renderedDir, existing);
+    if (!fs.statSync(existingPath).isFile()) continue;
+    fs.unlinkSync(existingPath);
+  }
+}
+
+const SUBAGENT_INCLUDE_PATTERN = /^[ \t]*<!--\s*@include\s+(\S+)\s*-->[ \t]*$/gm;
+
+function renderSubagentSource(srcPath: string, srcDir: string): string {
+  const body = fs.readFileSync(srcPath, 'utf8');
+  return body.replace(SUBAGENT_INCLUDE_PATTERN, (_match, relativePath: string) => {
+    const includePath = path.resolve(srcDir, relativePath);
+    const includeRel = path.relative(srcDir, includePath);
+    if (includeRel.startsWith('..') || path.isAbsolute(includeRel)) {
+      throw new Error(
+        `Subagent source ${path.relative(process.cwd(), srcPath)} includes path ` +
+          `outside agents-src/: ${relativePath}`,
+      );
+    }
+    if (!fs.existsSync(includePath)) {
+      throw new Error(
+        `Subagent source ${path.relative(process.cwd(), srcPath)} includes missing file: ` +
+          `${relativePath} (resolved to ${path.relative(process.cwd(), includePath)})`,
+      );
+    }
+    return fs.readFileSync(includePath, 'utf8').trimEnd();
+  });
+}
+
+/**
  * One-time cutover from the `groups/global/CLAUDE.md` + `.claude-global.md`
  * pattern. Idempotent — safe to run on every host startup.
  *

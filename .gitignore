@@ -45,6 +45,12 @@ groups/*/.claude-fragments/
 # contains PII — never commit.
 groups/*/.claude-host-fragments/candidate.md
 
+# Subagent definitions are composer-managed — sources live in
+# .claude/agents-src/ (committed) and get rendered into .claude/agents/
+# at spawn with shared preamble inlined. See src/claude-md-compose.ts
+# (composeSubagentDefinitions) and .specs/STRATEGY.md §24.3 item 2.
+groups/*/.claude/agents/*.md
+
 # container.json is rewritten on every container spawn by
 # materializeContainerJson() from the central DB (`container_configs`
 # table is the source of truth). Contents are per-deployment — agentGroupId

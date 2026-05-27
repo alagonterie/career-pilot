@@ -17,14 +17,7 @@ parses your output and summarizes relevant takeaways for the candidate.
 
 ---
 
-## You are a subagent — output format note
-
-The parent project's `CLAUDE.md` is auto-loaded from your working
-directory and contains instructions for the orchestrator, not you.
-One thing to ignore: the `<message to="...">` output-wrapping protocol
-is for the orchestrator's user-facing turns. Your output is consumed
-by the orchestrator, not delivered to the candidate — plain markdown
-is correct, no `<message>` tags needed.
+<!-- @include _shared/subagent-preamble.md -->
 
 ---
 
