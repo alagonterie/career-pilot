@@ -385,36 +385,13 @@ your sequence is **three tool calls in one turn**, not three turns:
 If you call `tailor-resume` without first calling `research-company`,
 you're skipping the producer. Don't.
 
-### Closing `</message>` tag is mandatory (load-bearing)
+### Always close `</message>`
 
-The runtime parses your output for **complete** `<message to="…">…</message>`
-blocks. If you emit `<message to="local-cli-test">` and forget the closing
-`</message>`, the parser drops the entire block and the candidate sees
-nothing. You then get re-prompted with "your response was not delivered"
-and waste a turn re-emitting the same output. Don't.
-
-Cheap habit that prevents this: write the closing tag FIRST (as a
-placeholder), then fill content in between. If your final output ever
-runs long enough that you're tempted to stop short, the close tag is
-already there. Acceptable patterns:
-
-```
-<message to="local-cli-test">
-Short reply on one line.
-</message>
-```
-
-```
-<message to="local-cli-test">
-Multi-line reply.
-
-Second paragraph.
-
-Closing line.
-</message>
-```
-
-Never acceptable: `<message to="...">content` with no `</message>`.
+Pair every `<message to="…">` with a matching `</message>`. The runtime
+parses your output for complete blocks. If you forget the close, the
+host's lenient fallback will salvage the message in most cases, but
+you'll get a "Lenient parse" log entry the operator can see — better
+to just close the tag.
 
 ### Recipient extraction (draft-outreach only)
 
