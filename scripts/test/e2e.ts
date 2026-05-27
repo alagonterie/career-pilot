@@ -112,7 +112,8 @@ type Flow =
   | 'add-application'
   | 'research-company-discovery'
   | 'research-company'
-  | 'tailor-resume';
+  | 'tailor-resume'
+  | 'draft-outreach';
 const FLOWS: ReadonlySet<Flow> = new Set([
   'smoke',
   'onboarding',
@@ -120,6 +121,7 @@ const FLOWS: ReadonlySet<Flow> = new Set([
   'research-company-discovery',
   'research-company',
   'tailor-resume',
+  'draft-outreach',
 ]);
 const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'smoke',
@@ -127,6 +129,7 @@ const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'research-company-discovery',
   'research-company',
   'tailor-resume',
+  'draft-outreach',
 ]);
 
 type LlmProvider = 'ollama' | 'claude';
@@ -252,10 +255,14 @@ async function startHost(llmProvider: LlmProvider): Promise<HostHandle> {
   header(`Spawning host (pnpm dev, ${modeEnvVar}=1)`);
 
   const [hostCmd, hostArgs] = runTsx(path.join(REPO_ROOT, 'src', 'index.ts'));
+  // GMAIL_STUB=1 is set unconditionally for e2e — only the draft-outreach
+  // flow calls create_gmail_draft, and stub mode is the right answer for
+  // all e2e runs until real Gmail OAuth onboarding lands (Phase 3+). Other
+  // flows do not exercise this code path; the env var is inert for them.
   const handle: HostHandle = {
     proc: spawn(hostCmd, hostArgs, {
       cwd: REPO_ROOT,
-      env: { ...process.env, [modeEnvVar]: '1' },
+      env: { ...process.env, [modeEnvVar]: '1', GMAIL_STUB: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],
     }),
     stdout: '',
@@ -830,6 +837,421 @@ async function runTailorResume(): Promise<void> {
   ok(`orchestrator reply surfaces ${replyBullets.length} bullet-shaped lines (deliverable visible to candidate)`);
 }
 
+async function runDraftOutreach(): Promise<void> {
+  header('Flow: draft-outreach');
+  // Phase 2.3 full DoD per STRATEGY.md §24.3.
+  //
+  // Second chained-subagent flow. The orchestrator must:
+  //   - extract the recipient email from the candidate's turn
+  //     (jane.doe@anthropic.com)
+  //   - invoke research-company first (because the candidate's request is
+  //     about a specific company)
+  //   - invoke draft-outreach next, passing research digest + JD +
+  //     ## Recipient block with the email
+  //   - call create_gmail_draft (stub mode) with the extracted
+  //     subject/body/recipient
+  //   - surface a summary to the candidate (NOT the full body — Pattern B
+  //     exception for outreach; the canonical artifact lives in Gmail)
+  //
+  // Cost note (with --llm-provider=claude): ~$0.75 per run (Sonnet for
+  // orchestrator+drafter reasoning + Haiku for WebFetch/WebSearch internal
+  // summarization + a few cents of metered web-search). With the default
+  // --llm-provider=ollama, cost is $0.
+  //
+  // Assertions (6 in-test blocks, mapped to spec DoD items 1-6):
+  //   1. Both subagent types dispatched (research-company first), ≥1
+  //      success per type.
+  //   2. draft-outreach's invocation prompt has a research-shaped heading
+  //      AND a ## Recipient (or similar) section carrying the email.
+  //   3. Best draft-outreach attempt has all three labeled sections
+  //      (## Subject + ## Body + ## Recipient justification); subject
+  //      ≤60 chars, not a placeholder; body ≤200 words; body lacks
+  //      regex-matched boilerplate.
+  //   4. Body references ≥2 distinctive research-derived words AND ≥1
+  //      candidate-profile term.
+  //   5. create_gmail_draft tool_use observed with to=email, non-empty
+  //      subject/body, returned draft_id matching /^stub-draft-/.
+  //   6. ≥2 record_progress rows in public_audit_trail keyed to the
+  //      draft-outreach subagent run. (Bonus: assert orchestrator's
+  //      user-facing reply mentions draft_id + "Open Gmail" and does NOT
+  //      contain the full body.)
+  const RECIPIENT_EMAIL = 'jane.doe@anthropic.com';
+  seedBookmarkedApplication({
+    id: 'app-e2e-anthropic-3',
+    company_name: 'Anthropic',
+    role_title: 'Staff Backend Engineer',
+    obfuscated_label: 'ai-a',
+  });
+  // Capture the cutoff timestamp so we can scope record_progress
+  // assertions to rows created during THIS test run, not leftovers from
+  // earlier runs that the --reset path missed.
+  const flowStartIso = new Date().toISOString();
+  const reply = await chatTurn(
+    [
+      `Draft a cold outreach to ${RECIPIENT_EMAIL} for the Staff Backend Engineer Inference role.`,
+      "Here's the JD:",
+      '',
+      '---',
+      '**Staff Backend Engineer, Inference @ Anthropic**',
+      '',
+      "We're hiring a senior engineer to build distributed Rust systems",
+      "powering our inference workloads at scale. You'll work on",
+      'observability tooling, throughput optimization, and PostgreSQL-backed',
+      'data flows. Required: production experience with distributed systems,',
+      'strong systems-level debugging skills.',
+      '---',
+    ].join('\n'),
+    600_000,
+  );
+  if (reply.length === 0) fail('reply was empty');
+
+  const jsonl = findLatestSessionJsonl();
+  if (!jsonl) fail('no session JSONL found under data/v2-sessions/');
+
+  // 1. Both Task subagent_types dispatched (research-company first), ≥1
+  // success per type. Retry-tolerant — mirror tailor-resume's pattern.
+  const allTaskCalls = findAllSubagentDelegations(jsonl);
+  const researchCalls = allTaskCalls.filter((c) => c.input?.subagent_type === 'research-company');
+  const draftCalls = allTaskCalls.filter((c) => c.input?.subagent_type === 'draft-outreach');
+  if (researchCalls.length === 0 || draftCalls.length === 0) {
+    const allCalls = listAllToolCalls(jsonl);
+    console.error('  --- all orchestrator tool_use calls ---');
+    if (allCalls.length === 0) console.error('  (none)');
+    else for (const c of allCalls) console.error(`  ${c}`);
+    fail(
+      `orchestrator did not chain delegate — found ${researchCalls.length} research-company calls + ` +
+        `${draftCalls.length} draft-outreach calls. Persona chain rule may need tightening.`,
+    );
+  }
+  const firstResearchIdx = allTaskCalls.indexOf(researchCalls[0]);
+  const firstDraftIdx = allTaskCalls.indexOf(draftCalls[0]);
+  if (firstResearchIdx >= firstDraftIdx) {
+    fail(
+      `Task ordering wrong: first research-company at index ${firstResearchIdx}, first draft-outreach at ${firstDraftIdx}. ` +
+        'Chain rule says research first.',
+    );
+  }
+  ok(
+    `orchestrator chained Tasks (${researchCalls.length} research-company + ${draftCalls.length} draft-outreach; research first)`,
+  );
+
+  const successfulResearch = researchCalls.filter((c) => taskCallSucceeded(jsonl, c));
+  const successfulDraft = draftCalls.filter((c) => taskCallSucceeded(jsonl, c));
+  if (successfulResearch.length === 0) {
+    fail(
+      `all ${researchCalls.length} research-company Task tool_results were errors. ` +
+        'Check `name: research-company` in agent .md and SDK validation errors in subagent JSONLs.',
+    );
+  }
+  if (successfulDraft.length === 0) {
+    fail(
+      `all ${draftCalls.length} draft-outreach Task tool_results were errors. ` +
+        'Most likely: subagent refused due to missing ## Recipient, or produced XML-shaped fake tool calls. ' +
+        'Check the draft-outreach subagent JSONL.',
+    );
+  }
+  ok(
+    `at least one success per subagent type: ${successfulResearch.length}/${researchCalls.length} research-company, ${successfulDraft.length}/${draftCalls.length} draft-outreach`,
+  );
+
+  // 2. draft-outreach's invocation prompt has a research-shaped heading
+  // AND a ## Recipient block (or similar) carrying the email.
+  const draftCall = successfulDraft[0];
+  const draftPrompt = (draftCall.input?.prompt as string | undefined) ?? '';
+  const RESEARCH_HEADING = /(?:^|\n)\s*(?:#{2,3}\s+[^\n]*research|\*\*[^*\n]*research[^*\n]*\*\*)/i;
+  if (!RESEARCH_HEADING.test(draftPrompt)) {
+    console.error('  --- draft-outreach invocation prompt (first 2000 chars) ---');
+    console.error(draftPrompt.slice(0, 2000));
+    console.error('  --- end ---');
+    fail('draft-outreach invocation prompt has no research-shaped heading.');
+  }
+  // Recipient detection: liberal — any heading containing "recipient"
+  // (## Recipient, ### Recipient, **Recipient:**) OR the email itself
+  // appearing in the invocation prompt. The orchestrator may paraphrase
+  // the heading, but the email must be present verbatim.
+  const RECIPIENT_HEADING = /(?:^|\n)\s*(?:#{2,3}\s+[^\n]*recipient|\*\*[^*\n]*recipient[^*\n]*\*\*)/i;
+  const hasRecipientHeading = RECIPIENT_HEADING.test(draftPrompt);
+  const hasEmailInPrompt = draftPrompt.includes(RECIPIENT_EMAIL);
+  if (!hasEmailInPrompt) {
+    console.error('  --- draft-outreach invocation prompt (first 2000 chars) ---');
+    console.error(draftPrompt.slice(0, 2000));
+    console.error('  --- end ---');
+    fail(
+      `draft-outreach invocation prompt does not contain recipient email ${RECIPIENT_EMAIL}. ` +
+        'Orchestrator must extract the email from the candidate turn and pass it to the drafter.',
+    );
+  }
+  ok(
+    `draft-outreach prompt has research heading + recipient email${hasRecipientHeading ? ' under a recipient-shaped heading' : ' (inline; heading not strictly required)'}`,
+  );
+
+  // 3+4. Best draft-outreach attempt parsing — pick the subagent JSONL
+  // whose final assistant text has all three labeled sections. Body
+  // word count + boilerplate + content checks.
+  const SUBJECT_HEADING = /(?:^|\n)\s*#{2,3}\s+Subject\b/i;
+  const BODY_HEADING = /(?:^|\n)\s*#{2,3}\s+Body\b/i;
+  const RECIPIENT_JUSTIFICATION_HEADING = /(?:^|\n)\s*#{2,3}\s+Recipient justification\b/i;
+  // Filter out research-company JSONL by matching against a research-shaped
+  // invocation prompt (mirror tailor-resume's exclusion technique).
+  const researchSubJsonl = findSubagentJsonlByPrompt(jsonl, /(?:^|\n)Research\s+\S/i);
+  const draftSubJsonls = listAllSubagentJsonls(jsonl)
+    .filter((p) => p !== researchSubJsonl)
+    .map((p) => ({ path: p, text: extractFinalAssistantText(p) ?? '' }))
+    .filter((x) => x.text.length > 0);
+  if (draftSubJsonls.length === 0) {
+    fail('no draft-outreach subagent JSONLs found (after excluding research-company).');
+  }
+  // "Best" = the one with all three required sections present.
+  const scoredDrafts = draftSubJsonls
+    .map((x) => ({
+      ...x,
+      hasSubject: SUBJECT_HEADING.test(x.text),
+      hasBody: BODY_HEADING.test(x.text),
+      hasRecipient: RECIPIENT_JUSTIFICATION_HEADING.test(x.text),
+    }))
+    .map((x) => ({ ...x, sectionCount: Number(x.hasSubject) + Number(x.hasBody) + Number(x.hasRecipient) }))
+    .sort((a, b) => b.sectionCount - a.sectionCount);
+  const bestDraft = scoredDrafts[0];
+  if (bestDraft.sectionCount < 3) {
+    console.error('  --- best draft-outreach final output (first 2000 chars) ---');
+    console.error(bestDraft.text.slice(0, 2000));
+    console.error('  --- end ---');
+    fail(
+      `best draft-outreach attempt has ${bestDraft.sectionCount}/3 required labeled sections ` +
+        `(subject=${bestDraft.hasSubject}, body=${bestDraft.hasBody}, recipient-justification=${bestDraft.hasRecipient}). ` +
+        'Subagent must produce ## Subject, ## Body, ## Recipient justification.',
+    );
+  }
+  ok(`draft-outreach produced all 3 labeled sections (best of ${scoredDrafts.length} attempts)`);
+
+  // Extract subject + body content from the best draft for fine-grained
+  // checks. Section extraction: find the heading, take everything until
+  // the next ## heading or EOF.
+  function extractSection(text: string, headingRe: RegExp): string {
+    const match = headingRe.exec(text);
+    if (!match) return '';
+    const start = match.index + match[0].length;
+    const rest = text.slice(start);
+    const nextHeading = /(?:^|\n)\s*#{2,3}\s+\w/i.exec(rest);
+    return (nextHeading ? rest.slice(0, nextHeading.index) : rest).trim();
+  }
+  const draftSubjectRaw = extractSection(bestDraft.text, SUBJECT_HEADING);
+  const draftBodyRaw = extractSection(bestDraft.text, BODY_HEADING);
+  const subjectLine = draftSubjectRaw.split('\n')[0]?.trim() ?? '';
+  if (!subjectLine) fail('draft-outreach ## Subject section is empty');
+  if (subjectLine.length > 60) {
+    fail(`subject line is ${subjectLine.length} chars (>60). Subject: "${subjectLine}"`);
+  }
+  const FORBIDDEN_SUBJECTS = /^\s*(?:hello|quick question|introduction|interest in your company)\.?\s*$/i;
+  if (FORBIDDEN_SUBJECTS.test(subjectLine)) {
+    fail(`subject is a forbidden placeholder phrase: "${subjectLine}"`);
+  }
+  ok(`subject line valid (${subjectLine.length} chars): "${subjectLine.slice(0, 50)}${subjectLine.length > 50 ? '...' : ''}"`);
+
+  // Body word count. Strip markdown ([adapted]/[new] tags, asterisks,
+  // backticks) before counting so the cap reflects "what the recipient
+  // sees", not "what the drafter wrote with audit tags".
+  const bodyForCount = draftBodyRaw
+    .replace(/\[(?:adapted|new)\]/gi, '')
+    .replace(/[*_`]/g, '');
+  const bodyWords = bodyForCount.split(/\s+/).filter((w) => w.length > 0);
+  if (bodyWords.length > 200) {
+    console.error('  --- draft body (first 2000 chars) ---');
+    console.error(draftBodyRaw.slice(0, 2000));
+    console.error('  --- end ---');
+    fail(`body is ${bodyWords.length} words (>200). Hard cap exceeded.`);
+  }
+  // Boilerplate check. Case-insensitive.
+  const BOILERPLATE_PATTERNS = [
+    /hope this (email )?finds you well/i,
+    /reaching out because/i,
+    /i came across your company/i,
+    /hope all is well/i,
+  ];
+  const foundBoilerplate = BOILERPLATE_PATTERNS.filter((re) => re.test(draftBodyRaw));
+  if (foundBoilerplate.length > 0) {
+    console.error('  --- draft body (first 2000 chars) ---');
+    console.error(draftBodyRaw.slice(0, 2000));
+    console.error('  --- end ---');
+    fail(`body contains forbidden boilerplate: ${foundBoilerplate.map((re) => re.source).join(', ')}`);
+  }
+  ok(`body within word cap (${bodyWords.length}/200) and free of forbidden boilerplate`);
+
+  // 4. Body references ≥2 distinctive research-derived words AND ≥1
+  // candidate-profile term.
+  const researchOutput = researchSubJsonl ? extractFinalAssistantText(researchSubJsonl) : null;
+  if (!researchOutput) fail('research-company subagent has no final assistant text');
+  const researchWords = new Set(
+    (researchOutput.match(/\b[A-Za-z][A-Za-z0-9_+./-]{5,}\b/g) || []).map((w) => w.toLowerCase()),
+  );
+  const bodyWordsLower = new Set(
+    (draftBodyRaw.match(/\b[A-Za-z][A-Za-z0-9_+./-]{5,}\b/g) || []).map((w) => w.toLowerCase()),
+  );
+  const COMMON = new Set([
+    'anthropic',
+    'staff',
+    'backend',
+    'engineer',
+    'inference',
+    'distributed',
+    'observability',
+    'postgresql',
+    'systems',
+    'production',
+    'should',
+    'their',
+    'company',
+    'research',
+    'candidate',
+    'master',
+    'resume',
+    'engineering',
+    'platform',
+    'context',
+    'target',
+    'roles',
+    'skills',
+    'experience',
+    'requirements',
+    'highlights',
+    'summary',
+    'before',
+    'because',
+    'including',
+    'specific',
+    'subject',
+    'recipient',
+    'justification',
+  ]);
+  const researchOverlap = [...researchWords]
+    .filter((w) => bodyWordsLower.has(w))
+    .filter((w) => !COMMON.has(w));
+  if (researchOverlap.length < 2) {
+    console.error('  --- draft body (first 2000 chars) ---');
+    console.error(draftBodyRaw.slice(0, 2000));
+    console.error('  --- end ---');
+    console.error(`  --- research overlap (need >=2 distinctive): ${JSON.stringify(researchOverlap)} ---`);
+    fail(
+      `body has only ${researchOverlap.length} distinctive research-derived words. ` +
+        'Body should reference signal from the research digest.',
+    );
+  }
+  const CANDIDATE_TERMS = /\b(Go|Golang|Rust|PostgreSQL|Postgres|Kubernetes)\b/i;
+  if (!CANDIDATE_TERMS.test(draftBodyRaw)) {
+    console.error('  --- draft body (first 2000 chars) ---');
+    console.error(draftBodyRaw.slice(0, 2000));
+    console.error('  --- end ---');
+    fail('body references no candidate-profile term (Go|Rust|PostgreSQL|Kubernetes). Body must rest on candidate facts.');
+  }
+  ok(`body references ${researchOverlap.length} research-derived terms + at least 1 candidate-profile term`);
+
+  // 5. create_gmail_draft tool_use observed with the right recipient,
+  // returned a stub draft_id.
+  const gmailDraftCalls = listAllToolCallBlocks(jsonl).filter(
+    (b) => b.name === 'mcp__nanoclaw__create_gmail_draft',
+  );
+  if (gmailDraftCalls.length === 0) {
+    const allCalls = listAllToolCalls(jsonl);
+    console.error('  --- all orchestrator tool_use calls ---');
+    for (const c of allCalls) console.error(`  ${c}`);
+    fail(
+      'orchestrator never called mcp__nanoclaw__create_gmail_draft. ' +
+        'After draft-outreach returns, the orchestrator must materialize the draft.',
+    );
+  }
+  const gmailCall = gmailDraftCalls[0];
+  const gmailTo = gmailCall.input?.to as string | undefined;
+  const gmailSubject = gmailCall.input?.subject as string | undefined;
+  const gmailBody = gmailCall.input?.body as string | undefined;
+  if (gmailTo !== RECIPIENT_EMAIL) {
+    fail(`create_gmail_draft "to" mismatch: got "${gmailTo}", expected "${RECIPIENT_EMAIL}"`);
+  }
+  if (!gmailSubject || gmailSubject.length === 0) {
+    fail('create_gmail_draft called with empty subject');
+  }
+  if (!gmailBody || gmailBody.length === 0) {
+    fail('create_gmail_draft called with empty body');
+  }
+  // Result inspection: look for the tool_result corresponding to this
+  // tool_use, parse the draft_id from the JSON-shaped data.
+  const gmailResult = findToolResultForCall(jsonl, gmailCall);
+  if (!gmailResult) fail('no tool_result found for create_gmail_draft call');
+  const draftIdMatch = /stub-draft-[a-z0-9-]+/i.exec(gmailResult);
+  if (!draftIdMatch) {
+    console.error('  --- create_gmail_draft tool_result (first 1000 chars) ---');
+    console.error(gmailResult.slice(0, 1000));
+    console.error('  --- end ---');
+    fail('create_gmail_draft did not return a stub-draft-* id. Check GMAIL_STUB=1 is set in the host env.');
+  }
+  const draftId = draftIdMatch[0];
+  ok(`create_gmail_draft called with to=${gmailTo}, subject set, body ${gmailBody.length} chars, draft_id=${draftId}`);
+
+  // 6. record_progress rows for draft-outreach. Query public_audit_trail
+  // for rows with agent_name='draft-outreach' and category='subagent_progress'
+  // created after flowStartIso.
+  const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
+  const Database = (await import('better-sqlite3')).default;
+  const db = new Database(dbPath, { readonly: true });
+  let progressRows: { stage: string; summary: string }[];
+  try {
+    progressRows = db
+      .prepare(
+        `SELECT json_extract(details_json, '$.stage') AS stage, summary
+         FROM public_audit_trail
+         WHERE category = 'subagent_progress'
+           AND agent_name = 'draft-outreach'
+           AND ts >= ?
+         ORDER BY ts ASC`,
+      )
+      .all(flowStartIso) as { stage: string; summary: string }[];
+  } finally {
+    db.close();
+  }
+  if (progressRows.length < 2) {
+    console.error('  --- draft-outreach progress rows (since flow start) ---');
+    for (const r of progressRows) console.error(`  > stage=${r.stage} | ${r.summary}`);
+    fail(
+      `only ${progressRows.length} record_progress rows for draft-outreach (need >=2). ` +
+        'Subagent prompt should call record_progress at 2-4 meaningful inflection points.',
+    );
+  }
+  ok(
+    `draft-outreach emitted ${progressRows.length} record_progress rows (stages: ${progressRows.slice(0, 4).map((r) => r.stage).join(', ')})`,
+  );
+
+  // Bonus: orchestrator's user-facing reply mentions draft_id +
+  // "Open Gmail" (or similar) and does NOT contain the full body verbatim.
+  // The body is the canonical artifact in Gmail; chat reply is a pointer.
+  const mentionsDraftIdOrGmail =
+    reply.includes(draftId) ||
+    /\bgmail\b/i.test(reply) ||
+    /\bdraft\s+(?:saved|created|id)/i.test(reply);
+  if (!mentionsDraftIdOrGmail) {
+    console.error('  --- orchestrator reply (first 2000 chars) ---');
+    console.error(reply.slice(0, 2000));
+    console.error('  --- end ---');
+    fail('orchestrator reply should mention the draft_id or "Open Gmail" or "draft saved"');
+  }
+  // Forbid full-body echo: the body content (≥80 chars verbatim) appearing
+  // in the reply means the orchestrator pasted the email body into chat,
+  // violating Pattern B exception for outreach. We use a 100-char window
+  // from the middle of the body to avoid false positives on common
+  // openers/closers.
+  if (gmailBody.length >= 200) {
+    const bodyMidWindow = gmailBody.slice(80, 180);
+    if (reply.includes(bodyMidWindow)) {
+      console.error('  --- orchestrator reply (first 2000 chars) ---');
+      console.error(reply.slice(0, 2000));
+      console.error('  --- end ---');
+      fail(
+        'orchestrator reply contains a 100-char window from the email body. ' +
+          "Pattern B exception for outreach: don't paste the body — the candidate reads it in Gmail.",
+      );
+    }
+  }
+  ok('orchestrator reply surfaces draft_id/Gmail pointer without echoing the full body');
+}
+
 function seedBookmarkedApplication(opts: {
   id: string;
   company_name: string;
@@ -1009,6 +1431,7 @@ function findLatestSessionJsonl(): string | null {
 
 interface ToolUseBlock {
   type: 'tool_use';
+  id?: string;
   name: string;
   input: Record<string, unknown>;
 }
@@ -1039,6 +1462,59 @@ function findTaskDelegation(jsonlPath: string, subagentType: string): ToolUseBlo
       ) {
         return b;
       }
+    }
+  }
+  return null;
+}
+
+// Like findAllSubagentDelegations but returns ALL tool_use blocks
+// regardless of name. Used by Phase 2.3 to find create_gmail_draft and
+// any other non-subagent MCP tool call by name.
+function listAllToolCallBlocks(jsonlPath: string): ToolUseBlock[] {
+  const lines = fs.readFileSync(jsonlPath, 'utf8').trim().split('\n');
+  const found: ToolUseBlock[] = [];
+  for (const line of lines) {
+    let e: { type?: string; message?: { content?: unknown[] } };
+    try {
+      e = JSON.parse(line) as typeof e;
+    } catch {
+      continue;
+    }
+    if (e.type !== 'assistant' || !Array.isArray(e.message?.content)) continue;
+    for (const block of e.message.content) {
+      if (!block || typeof block !== 'object') continue;
+      const b = block as ToolUseBlock;
+      if (b.type === 'tool_use') found.push(b);
+    }
+  }
+  return found;
+}
+
+// Locate the user-message tool_result matching a given tool_use_id and
+// return its textual content (typically a JSON-stringified result for
+// MCP tools). Returns null if the result block isn't present (tool
+// errored out before responding) or if the JSONL is malformed.
+function findToolResultForCall(jsonlPath: string, call: ToolUseBlock): string | null {
+  const lines = fs.readFileSync(jsonlPath, 'utf8').trim().split('\n');
+  for (const line of lines) {
+    let e: { type?: string; message?: { content?: unknown[] } };
+    try {
+      e = JSON.parse(line) as typeof e;
+    } catch {
+      continue;
+    }
+    if (e.type !== 'user' || !Array.isArray(e.message?.content)) continue;
+    for (const block of e.message.content) {
+      if (!block || typeof block !== 'object') continue;
+      const b = block as { type?: string; tool_use_id?: string; content?: unknown };
+      if (b.type !== 'tool_result' || b.tool_use_id !== call.id) continue;
+      if (typeof b.content === 'string') return b.content;
+      if (Array.isArray(b.content)) {
+        return b.content
+          .map((c) => (c && typeof c === 'object' && 'text' in c ? String((c as { text: unknown }).text) : ''))
+          .join('\n');
+      }
+      return JSON.stringify(b.content);
     }
   }
   return null;
@@ -1261,6 +1737,7 @@ async function main(): Promise<void> {
       'research-company-discovery': runResearchCompanyDiscovery,
       'research-company': runResearchCompany,
       'tailor-resume': runTailorResume,
+      'draft-outreach': runDraftOutreach,
     };
     await FLOW_HANDLERS[args.flow]();
     assertionsPassed = true;
