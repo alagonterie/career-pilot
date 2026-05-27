@@ -26,6 +26,7 @@ groups/*
 !groups/career-pilot/
 !groups/career-pilot-sandbox/
 !groups/_shared-skills/
+!groups/_shared-subagents/
 # NanoClaw upstream default group skeletons — tracked in upstream, so we track them too
 !groups/global/
 !groups/main/
