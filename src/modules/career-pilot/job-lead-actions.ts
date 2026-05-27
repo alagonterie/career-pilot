@@ -35,7 +35,6 @@ import type { Session } from '../../types.js';
 
 import { computeFingerprint } from './lead-fingerprint.js';
 import { computeRulesScore, profileFromRow } from './lead-rules-score.js';
-import { computeBriefHash, rankLeads, RankLeadsError, type JobLeadForRanking } from './rank-leads.js';
 
 // ── Response writer (mirrors actions.ts) ──────────────────────────────────
 
@@ -392,11 +391,27 @@ export async function handleUpdateJobLeadStatus(
   }
 }
 
-// ── rank_leads ─────────────────────────────────────────────────────────────
+// ── get_lead_summaries_for_ranking ─────────────────────────────────────────
+//
+// Read-side half of the container-side rank_leads MCP tool. Container
+// fetches summaries via this action, calls Haiku locally through the
+// OneCLI-gated SDK path, then writes scores back via write_llm_scores.
+// See container/agent-runner/src/career-pilot/rank-leads.ts.
+
+interface LeadSummary {
+  id: string;
+  source: string;
+  title: string;
+  company: string;
+  location_raw: string | null;
+  workplace_type: string | null;
+  description_text: string | null;
+  rules_score: number | null;
+}
 
 const RANK_LEADS_MAX = 50;
 
-export async function handleRankLeads(
+export async function handleGetLeadSummariesForRanking(
   content: Record<string, unknown>,
   _session: Session,
   inDb: Database.Database,
@@ -404,7 +419,6 @@ export async function handleRankLeads(
   const requestId = reqId(content);
   const p = payload(content);
   const lead_ids = p.lead_ids;
-  const brief = p.brief;
 
   if (!Array.isArray(lead_ids) || lead_ids.length === 0) {
     writeResponse(inDb, requestId, {
@@ -420,13 +434,6 @@ export async function handleRankLeads(
     });
     return;
   }
-  if (typeof brief !== 'string' || brief.trim().length < 20) {
-    writeResponse(inDb, requestId, {
-      ok: false,
-      error: { code: 'BAD_ARGS', message: 'brief is required (min 20 chars)' },
-    });
-    return;
-  }
   const idsAreStrings = lead_ids.every((x) => typeof x === 'string' && x.length > 0);
   if (!idsAreStrings) {
     writeResponse(inDb, requestId, {
@@ -439,7 +446,6 @@ export async function handleRankLeads(
 
   try {
     const db = getDb();
-
     const placeholders = ids.map((_, i) => `@id_${i}`).join(', ');
     const params: Record<string, unknown> = {};
     ids.forEach((id, i) => {
@@ -451,19 +457,76 @@ export async function handleRankLeads(
          FROM job_leads
          WHERE id IN (${placeholders}) AND closed_at IS NULL`,
       )
-      .all(params) as JobLeadForRanking[];
+      .all(params) as LeadSummary[];
 
-    if (rows.length === 0) {
-      writeResponse(inDb, requestId, {
-        ok: false,
-        error: { code: 'NOT_FOUND', message: 'no live job_leads matched the provided ids' },
-      });
-      return;
-    }
+    writeResponse(inDb, requestId, {
+      ok: true,
+      data: { leads: rows },
+    });
+  } catch (err) {
+    log.error('handleGetLeadSummariesForRanking failed', { err });
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
 
-    const briefHash = computeBriefHash(brief);
-    const scored = await rankLeads(rows, brief);
+// ── write_llm_scores ───────────────────────────────────────────────────────
 
+interface ScoredLead {
+  id: string;
+  llm_score: number;
+}
+
+export async function handleWriteLlmScores(
+  content: Record<string, unknown>,
+  _session: Session,
+  inDb: Database.Database,
+): Promise<void> {
+  const requestId = reqId(content);
+  const p = payload(content);
+  const scored_leads = p.scored_leads;
+  const brief_hash = p.brief_hash;
+
+  if (!Array.isArray(scored_leads) || scored_leads.length === 0) {
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'BAD_ARGS', message: 'scored_leads must be a non-empty array' },
+    });
+    return;
+  }
+  if (typeof brief_hash !== 'string' || !/^[0-9a-f]{16}$/.test(brief_hash)) {
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'BAD_ARGS', message: 'brief_hash must be a 16-char hex string' },
+    });
+    return;
+  }
+  const valid = scored_leads.every(
+    (item: unknown): item is ScoredLead => {
+      if (!item || typeof item !== 'object') return false;
+      const s = item as Record<string, unknown>;
+      return (
+        typeof s.id === 'string' &&
+        s.id.length > 0 &&
+        typeof s.llm_score === 'number' &&
+        Number.isFinite(s.llm_score) &&
+        s.llm_score >= 0 &&
+        s.llm_score <= 100
+      );
+    },
+  );
+  if (!valid) {
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'BAD_ARGS', message: 'each scored_leads entry must be { id: string, llm_score: 0-100 }' },
+    });
+    return;
+  }
+
+  try {
+    const db = getDb();
     const now = new Date().toISOString();
     const updateStmt = db.prepare(
       `UPDATE job_leads
@@ -472,29 +535,26 @@ export async function handleRankLeads(
            llm_scored_brief_hash = @hash
        WHERE id = @id`,
     );
+    let updated = 0;
     db.transaction(() => {
-      for (const item of scored) {
-        updateStmt.run({ id: item.id, score: item.llm_score, now, hash: briefHash });
+      for (const item of scored_leads as ScoredLead[]) {
+        const res = updateStmt.run({
+          id: item.id,
+          score: Math.round(item.llm_score),
+          now,
+          hash: brief_hash,
+        });
+        updated += res.changes;
       }
     })();
 
-    log.info('job_leads ranked', {
-      requested: ids.length,
-      resolved: rows.length,
-      scored: scored.length,
-      brief_hash: briefHash,
-    });
-
-    writeResponse(inDb, requestId, {
-      ok: true,
-      data: { leads: scored, total: scored.length, brief_hash: briefHash },
-    });
+    log.info('llm scores written', { count: scored_leads.length, updated, brief_hash });
+    writeResponse(inDb, requestId, { ok: true, data: { updated } });
   } catch (err) {
-    log.error('handleRankLeads failed', { err });
-    const code = err instanceof RankLeadsError ? err.code : 'INTERNAL';
+    log.error('handleWriteLlmScores failed', { err });
     writeResponse(inDb, requestId, {
       ok: false,
-      error: { code, message: err instanceof Error ? err.message : String(err) },
+      error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },
     });
   }
 }

@@ -21,10 +21,11 @@ import {
 import {
   handleDiscoverAtsBoard,
   handleFetchSource,
+  handleGetLeadSummariesForRanking,
   handleQueryJobLeads,
-  handleRankLeads,
   handleRecordJobLead,
   handleUpdateJobLeadStatus,
+  handleWriteLlmScores,
 } from './job-lead-actions.js';
 
 registerDeliveryAction('career_pilot.update_profile_field', handleUpdateProfileField);
@@ -39,4 +40,5 @@ registerDeliveryAction('career_pilot.query_job_leads', handleQueryJobLeads);
 registerDeliveryAction('career_pilot.update_job_lead_status', handleUpdateJobLeadStatus);
 registerDeliveryAction('career_pilot.discover_ats_board', handleDiscoverAtsBoard);
 registerDeliveryAction('career_pilot.fetch_source', handleFetchSource);
-registerDeliveryAction('career_pilot.rank_leads', handleRankLeads);
+registerDeliveryAction('career_pilot.get_lead_summaries_for_ranking', handleGetLeadSummariesForRanking);
+registerDeliveryAction('career_pilot.write_llm_scores', handleWriteLlmScores);

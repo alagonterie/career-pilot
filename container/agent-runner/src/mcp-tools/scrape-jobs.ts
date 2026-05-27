@@ -20,6 +20,13 @@
  * registerTools() at module scope.
  */
 import { sendAction } from '../career-pilot/action.js';
+import {
+  rankLeads as runRankLeads,
+  computeBriefHash,
+  RankLeadsError,
+  type JobLeadForRanking,
+  type RankedLead,
+} from '../career-pilot/rank-leads.js';
 import { registerTools } from './server.js';
 import type { McpToolDefinition } from './types.js';
 
@@ -314,18 +321,55 @@ export const rankLeads: McpToolDefinition = {
     if (!brief || typeof brief !== 'string' || brief.trim().length < 20) {
       return err('brief is required (min 20 chars)');
     }
-    const res = await sendAction<{
-      leads: Array<{ id: string; llm_score: number; rank: number }>;
-      total: number;
-      brief_hash: string;
-    }>(
-      'career_pilot.rank_leads',
-      { lead_ids, brief },
-      90_000, // Haiku round-trip can take 5-30s for a 20-lead batch
+
+    // Step 1: fetch lead summaries from host. Container can't read the
+    // central DB directly — system-action round-trip per the standard
+    // career_pilot.* contract.
+    const summariesRes = await sendAction<{ leads: JobLeadForRanking[] }>(
+      'career_pilot.get_lead_summaries_for_ranking',
+      { lead_ids },
     );
-    if (!res.ok) return actionErr('rank_leads', res.error);
-    const { total } = res.data;
-    return ok(`Ranked ${total} lead${total === 1 ? '' : 's'}.`, res.data);
+    if (!summariesRes.ok) return actionErr('rank_leads', summariesRes.error);
+    const summaries = summariesRes.data.leads;
+    if (summaries.length === 0) {
+      return err('no live job_leads matched the provided ids');
+    }
+
+    // Step 2: call Haiku via OneCLI gateway. The container has
+    // HTTPS_PROXY + ANTHROPIC_BASE_URL injected by container-runner's
+    // OneCLI applyContainerConfig — outbound fetch to api.anthropic.com
+    // routes through the proxy and the Anthropic credential is injected
+    // on the wire. Same path the SDK uses for the orchestrator's own
+    // model calls.
+    let scored: RankedLead[];
+    try {
+      scored = await runRankLeads(summaries, brief);
+    } catch (e) {
+      const code = e instanceof RankLeadsError ? e.code : 'INTERNAL';
+      const msg = e instanceof Error ? e.message : String(e);
+      return actionErr('rank_leads', { code, message: msg });
+    }
+
+    // Step 3: persist scores back via host action so the per-lead audit
+    // trail (llm_score, llm_scored_at, llm_scored_brief_hash) lands in
+    // job_leads. Persona's silent-skip path doesn't reach here — by the
+    // time we have `scored`, we already have at least one valid score.
+    const briefHash = computeBriefHash(brief);
+    const writeRes = await sendAction<{ updated: number }>(
+      'career_pilot.write_llm_scores',
+      {
+        scored_leads: scored,
+        brief_hash: briefHash,
+      },
+    );
+    if (!writeRes.ok) return actionErr('rank_leads', writeRes.error);
+
+    const total = scored.length;
+    return ok(`Ranked ${total} lead${total === 1 ? '' : 's'}.`, {
+      leads: scored,
+      total,
+      brief_hash: briefHash,
+    });
   },
 };
 

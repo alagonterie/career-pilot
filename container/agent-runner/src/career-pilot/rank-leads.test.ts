@@ -1,11 +1,12 @@
 /**
- * Unit tests for the pure parts of rank-leads.ts.
+ * Unit tests for the pure parts of rank-leads.ts. Ported from the
+ * vitest suite that lived host-side before the §24.6 container
+ * relocation.
  *
- * Network call (callHaiku / rankLeads end-to-end) is exercised in the
- * Phase 3.1 e2e `--flow=daily-briefing` against the real Portkey gateway,
- * not here.
+ * Network call (callHaiku / rankLeads end-to-end) is exercised by the
+ * --flow=daily-briefing e2e against the real OneCLI-gated Haiku, not here.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 
 import {
   buildRankingPrompt,
@@ -37,14 +38,13 @@ describe('buildRankingPrompt', () => {
   });
 
   it('truncates descriptions past 280 chars', () => {
-    const longDesc = 'word '.repeat(200); // 1000+ chars
+    const longDesc = 'word '.repeat(200);
     const prompt = buildRankingPrompt(
       [{ ...sampleLead, description_text: longDesc }],
       'brief here',
     );
     const snippetLine = prompt.split('\n').find((l) => l.trimStart().startsWith('word '));
     expect(snippetLine).toBeDefined();
-    // 280-char cap + ellipsis; 2-space indent in front
     expect(snippetLine!.length).toBeLessThan(300);
     expect(snippetLine).toContain('…');
   });
@@ -54,7 +54,6 @@ describe('buildRankingPrompt', () => {
       [{ ...sampleLead, location_raw: null, workplace_type: null }],
       'brief',
     );
-    // No trailing " | " with empty location segment
     expect(prompt).not.toMatch(/Anthropic \|\s*$/m);
     expect(prompt).toContain('Anthropic');
   });
@@ -65,7 +64,6 @@ describe('buildRankingPrompt', () => {
       'brief',
     );
     expect(prompt).toContain('id=L1');
-    // No blank snippet line under the lead bullet
     const idx = prompt.indexOf('id=L1');
     const after = prompt.slice(idx).split('\n')[1] ?? '';
     expect(after.trim()).toBe('');
@@ -143,7 +141,7 @@ describe('parseRankingResponse', () => {
   it('throws PARSE_ERROR on invalid JSON', () => {
     try {
       parseRankingResponse('not json at all', ['L1']);
-      expect.fail('should have thrown');
+      throw new Error('expected RankLeadsError');
     } catch (e) {
       expect(e).toBeInstanceOf(RankLeadsError);
       expect((e as RankLeadsError).code).toBe('PARSE_ERROR');
@@ -153,7 +151,7 @@ describe('parseRankingResponse', () => {
   it('throws PARSE_ERROR when leads array is missing', () => {
     try {
       parseRankingResponse('{"results":[]}', ['L1']);
-      expect.fail('should have thrown');
+      throw new Error('expected RankLeadsError');
     } catch (e) {
       expect(e).toBeInstanceOf(RankLeadsError);
       expect((e as RankLeadsError).code).toBe('PARSE_ERROR');
@@ -163,7 +161,7 @@ describe('parseRankingResponse', () => {
   it('throws NO_VALID_SCORES when no entries pass validation', () => {
     try {
       parseRankingResponse('{"leads":[{"id":"GHOST","llm_score":50}]}', ['L1']);
-      expect.fail('should have thrown');
+      throw new Error('expected RankLeadsError');
     } catch (e) {
       expect(e).toBeInstanceOf(RankLeadsError);
       expect((e as RankLeadsError).code).toBe('NO_VALID_SCORES');
@@ -175,7 +173,6 @@ describe('parseRankingResponse', () => {
       '{"leads":[{"id":"L1","llm_score":50},{"id":"L2","llm_score":50},{"id":"L3","llm_score":80}]}';
     const out = parseRankingResponse(text, ['L1', 'L2', 'L3']);
     expect(out[0]).toEqual({ id: 'L3', llm_score: 80, rank: 1 });
-    // L1 and L2 both at 50 — Array.sort is stable in modern V8/Node
     expect(out[1].llm_score).toBe(50);
     expect(out[2].llm_score).toBe(50);
   });
