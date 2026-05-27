@@ -290,11 +290,11 @@ is exactly `[scheduled trigger: daily-briefing]`.
    substance.
 ```
 
-The score floor (40) and top-N (5) are baseline defaults; the
-host's pre-wake script gate handles the quiet-hours skip and the
-"is the pool worth briefing on" check BEFORE you're woken. If
-you've been woken, those checks already passed — proceed with the
-workflow.
+The score floor (40) and top-N (5) are baseline defaults. The
+no-news skip path (step 1 returns no rows, or step 4 filters to
+zero) IS the right behavior for a quiet day — emit only an
+`<internal>` note, no `<message>` block. That's how silent-skip
+is implemented in v1; no pre-wake gate yet.
 
 **Worked example reply (briefing):**
 

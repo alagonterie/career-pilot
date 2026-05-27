@@ -2101,19 +2101,20 @@ We build only what NanoClaw doesn't already provide: the bootstrap that ensures 
    - `daily_briefing_top_n` = `5`
    - `daily_briefing_max_cost_usd` = `0.15` (per-briefing rank cost cap)
 
-5. **(Optional) Pre-wake script gate** on the daily-briefing task. Per NanoClaw's `script` pattern, the task can carry a bash check that runs BEFORE the agent wakes. If the lead pool is empty above the floor, return `{wakeAgent: false}` and the host skips the container spawn entirely.
-   ```bash
-   node --input-type=module -e "
-     const Database = (await import('better-sqlite3')).default;
-     const db = new Database(process.env.NCL_INBOUND_DB || 'data/v2.db', { readonly: true });
-     const row = db.prepare(
-       'SELECT COUNT(*) AS n FROM job_leads ' +
-       'WHERE rules_score >= 30 AND closed_at IS NULL'
-     ).get();
-     console.log(JSON.stringify({ wakeAgent: row.n > 0, data: { leadCount: row.n } }));
-   "
-   ```
-   Decision: ship the script gate in 3.1 — small, deterministic, removes "risk E" entirely. The script runs in NanoClaw's task-fire context (verify host-side or container-side at implementation time; the bash example above assumes host-side filesystem access to `data/v2.db`).
+5. **~~Pre-wake script gate~~ — DEFERRED to a follow-up sub-milestone (2026-05-27).**
+
+   Original intent: attach a bash script to the daily-briefing task that runs BEFORE the agent wakes, returns `{wakeAgent: false}` when the lead pool is empty above the floor, avoiding an unnecessary agent run.
+
+   **Architectural finding during implementation:** task scripts run INSIDE the container (`container/agent-runner/src/scheduling/task-script.ts` invokes them via `execFile('bash', ...)` from the poll-loop), not on the host. The container has access only to `/workspace/inbound.db` + `/workspace/outbound.db` — NOT the central `data/v2.db` where `job_leads` lives. So the spec's example script (which queries `job_leads` directly) can't work as written without one of:
+     - cross-mount state synchronization (host writes a "pool worth briefing" projection into inbound.db at task-fire-time)
+     - or a system-action round-trip from the bash script (re-implementing the MCP `sendAction` round-trip in raw bash)
+     - or dropping the pool-emptiness check entirely (script only checks quiet hours via env vars)
+
+   **Cost recalibration:** the gate's original value prop was avoiding container spawn cost on no-news days. Reality — container spawn happens regardless (the script runs INSIDE it), so we only save the agent's silent-skip thinking pass (~$0.001/skip). At ~30 quiet-hours-skipped fires/year, that's ~$0.03/year saved. Not worth the cross-mount complexity for v1.
+
+   **The persona's silent-skip path** (§"Scheduled wakeups" in `persona.md`) already covers the functional cases — quiet-hours skip, no-news skip, frequency-cap skip — by emitting an `<internal>` audit note and no `<message>` block. End-to-end correctness is preserved without the script gate; only the tiny cost optimization is deferred.
+
+   Risk E is reclassified from "Resolved by component 5" to "Acceptable cost" — see risk register below.
 
 6. **E2E flow** (`scripts/test/e2e.ts --flow=daily-briefing`):
    - Seed: scrape-jobs has already run (reuse Phase 2.5 e2e seed) so `job_leads` has ≥ 5 rows.
@@ -2133,7 +2134,7 @@ We build only what NanoClaw doesn't already provide: the bootstrap that ensures 
 6. Frequency-cap skip path verified: same shape, cap forced low.
 7. No-news skip path verified: same shape, threshold forced high enough that no leads pass.
 8. Recurrence verified: after the first fire completes, `messages_in` has a fresh `pending` row with `processAfter` ~24h ahead.
-9. Pre-wake script gate verified: with an empty `job_leads` table, the script returns `wakeAgent: false` and no container spawn occurs for that fire (audit log shows skipped wake).
+9. ~~Pre-wake script gate verified~~ — DROPPED with component 5 deferral. Silent-skip behavior verified via DoD #5-7 (persona-handler-side) instead.
 10. Host restart survival: kill the host process, restart, verify the daily-briefing task is still in inbound.db and fires on schedule.
 
 **Out of scope (deferred sub-milestones):**
@@ -2145,6 +2146,7 @@ We build only what NanoClaw doesn't already provide: the bootstrap that ensures 
 - **LLM-notes column on `job_leads`** — score-only in v1; notes are a nice-to-have for v1.1.
 - **Evening-briefing schedule** — NanoClaw supports multiple tasks; v1 ships morning-only. Evening briefing is a follow-up if morning signal-to-noise warrants it.
 - **Candidate-driven schedule changes** ("move my briefing to 7am") — would extend the persona handler to call `update_task`. Defer until candidate actually asks.
+- **§24.6.1 Pre-wake script gate (follow-up)** — see component 5 above for the architectural finding (task scripts run container-side, not host-side) and the cost recalibration. Revisit when daily-briefing telemetry indicates the spawn rate on no-news days warrants the optimization. Will require a clean design for either cross-mount state synchronization or a system-action round-trip from bash.
 
 **Risk register:**
 
@@ -2154,10 +2156,10 @@ We build only what NanoClaw doesn't already provide: the bootstrap that ensures 
 | **B. ~~Double-fire across host processes~~** | Resolved | NanoClaw's single-writer-per-inbound.db invariant + task-completion semantics already prevent this. |
 | **C. `rank_leads` cost spirals** if a poorly-tuned ranker prompt over-uses tokens | Medium | Cost cap via `preferences.daily_briefing_max_cost_usd` (default $0.15). Tool returns error if exceeded; orchestrator falls back to `rules_score`-ordered top-N. |
 | **D. ~~Quiet-hours preflight misfires across DST~~** | Resolved at the persona-handler level | Persona uses `Intl.DateTimeFormat` at handler time with the candidate's TZ from preferences — no cached offset. NanoClaw's cron-parser separately handles task-fire timing in TZ. |
-| **E. ~~Container spawn cost on idle days~~** | Resolved by component 5 | Pre-wake script returns `wakeAgent: false` when lead pool is empty above floor; host skips the spawn entirely. |
+| **E. Container spawn + agent thinking pass cost on idle days** | Low impact, acceptable | Originally planned to mitigate via the pre-wake script gate (component 5), now deferred (see component 5 notes). Persona's silent-skip path runs ~1 cheap `query_job_leads` MCP call + an `<internal>` note. Per-skip cost ~$0.001 + the container spawn cost. At ~30 idle days/year, total ~$0.03 + spawn time — acceptable for v1. Revisit if telemetry shows the spawn rate is high enough to matter. |
 | **F. The synthetic "[scheduled trigger: …]" turn confuses the orchestrator into thinking it's a user message** | Medium. Worth being explicit. | Persona section names the convention. The synthetic turn uses a sentinel that the persona's instructions explicitly recognize. Manual review of the orchestrator's reply text post-DoD to confirm it doesn't acknowledge the trigger string itself. |
 | **G. (NEW) `ensureDailyBriefingTask()` runs on every spawn and slowly accretes garbage** if idempotency check breaks | Low | DoD #1 covers it. Add a host-side guard log on the second-or-later insert call so a regression surfaces fast. |
-| **H. (NEW) Pre-wake script reads from `data/v2.db` but the path is wrong on a non-default host setup** | Medium | Script reads `process.env.NCL_INBOUND_DB` first, falls back to `data/v2.db`. Document the env var in `.env.example`. |
+| **H. ~~Pre-wake script reads from `data/v2.db` but the path is wrong~~** | Resolved by component 5 deferral | The script gate is deferred (see component 5); when it returns, the design must account for the container-side execution context — see the cross-mount caveats listed there. |
 
 ---
 
