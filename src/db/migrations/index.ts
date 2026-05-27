@@ -23,6 +23,7 @@ import { migration104 } from './104-preferences.js';
 import { migration105 } from './105-candidate-profile.js';
 import { migration106 } from './106-system-modes.js';
 import { migration107 } from './107-simulator-runs.js';
+import { migration108 } from './108-gmail-account-outreach-prefs.js';
 
 export interface Migration {
   version: number;
@@ -53,6 +54,7 @@ const migrations: Migration[] = [
   migration105,
   migration106,
   migration107,
+  migration108,
 ];
 
 export function runMigrations(db: Database.Database): void {

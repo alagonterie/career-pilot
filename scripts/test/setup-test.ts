@@ -206,7 +206,7 @@ function seedCandidateProfile(): void {
   db.prepare(
     `INSERT INTO candidate_profile (
        id, full_name, display_name, bio, target_roles, location_pref, comp_floor,
-       master_resume, skills, github_url, linkedin_url, updated_at
+       master_resume, skills, github_url, linkedin_url, gmail_account, updated_at
      ) VALUES (
        1, 'Test Candidate', 'Test', 'Senior engineer for E2E test scenarios.',
        '["Staff Backend Engineer", "Platform Engineer"]',
@@ -215,6 +215,7 @@ function seedCandidateProfile(): void {
        '## Experience\n\n- Built things',
        '["Go", "Rust", "PostgreSQL"]',
        'https://github.com/test', 'https://linkedin.com/in/test',
+       'test-candidate@example.com',
        @now
      )`,
   ).run({ now });

@@ -20,6 +20,7 @@ function profile(overrides: Partial<CandidateProfile> = {}): CandidateProfile {
     why_this_exists: null,
     headshot_path: null,
     brand_color_hsl: null,
+    gmail_account: null,
     updated_at: '2026-05-26T00:00:00Z',
     ...overrides,
   };
