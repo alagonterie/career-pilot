@@ -273,4 +273,60 @@ export const discoverAtsBoard: McpToolDefinition = {
   },
 };
 
-registerTools([fetchSource, recordJobLead, queryJobLeads, updateJobLeadStatus, discoverAtsBoard]);
+// ── rank_leads ─────────────────────────────────────────────────────────────
+
+export const rankLeads: McpToolDefinition = {
+  tool: {
+    name: 'rank_leads',
+    description:
+      "LLM-rank a list of job_leads against the candidate's current brief. Returns `{ leads: [{ id, llm_score: 0-100, rank: 1..N }], total, brief_hash }` sorted by score DESC. Calls Haiku 4.5 via Portkey; ~$0.05 per 20-lead batch. Writes `llm_score` + `llm_scored_at` + `llm_scored_brief_hash` back to job_leads for audit + cache invalidation. Idempotent for the same (lead_id, brief) tuple — re-call to refresh scores against an updated brief. Use this in the daily-briefing flow after `query_job_leads` returns a candidate pool; sort and surface from this tool's output, not from rules_score alone. Max 50 leads per call.",
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        lead_ids: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 1,
+          maxItems: 50,
+          description:
+            'job_lead ids to score (from `query_job_leads`). Capped at 50 per call to keep Haiku cost predictable.',
+        },
+        brief: {
+          type: 'string',
+          minLength: 20,
+          description:
+            "Candidate brief — what's currently target-aligned. Build from `candidate_profile` (target_roles, skills, comp_floor, location_pref) and any current emphasis the candidate has signaled this session. 20-char minimum so the scorer has something to weigh.",
+        },
+      },
+      required: ['lead_ids', 'brief'],
+    },
+    annotations: { readOnlyHint: false },
+  },
+  async handler(args) {
+    const lead_ids = args.lead_ids as string[] | undefined;
+    const brief = args.brief as string | undefined;
+    if (!Array.isArray(lead_ids) || lead_ids.length === 0) {
+      return err('lead_ids is required and must be a non-empty array');
+    }
+    if (lead_ids.length > 50) {
+      return err('lead_ids capped at 50 per call');
+    }
+    if (!brief || typeof brief !== 'string' || brief.trim().length < 20) {
+      return err('brief is required (min 20 chars)');
+    }
+    const res = await sendAction<{
+      leads: Array<{ id: string; llm_score: number; rank: number }>;
+      total: number;
+      brief_hash: string;
+    }>(
+      'career_pilot.rank_leads',
+      { lead_ids, brief },
+      90_000, // Haiku round-trip can take 5-30s for a 20-lead batch
+    );
+    if (!res.ok) return actionErr('rank_leads', res.error);
+    const { total } = res.data;
+    return ok(`Ranked ${total} lead${total === 1 ? '' : 's'}.`, res.data);
+  },
+};
+
+registerTools([fetchSource, recordJobLead, queryJobLeads, updateJobLeadStatus, discoverAtsBoard, rankLeads]);
