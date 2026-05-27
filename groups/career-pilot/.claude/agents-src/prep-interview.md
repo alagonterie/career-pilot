@@ -100,13 +100,27 @@ that papers over a real gap sets them up to fail in the room.
 
 - **NEVER fabricate experience the candidate doesn't have.** If the role
   asks for distributed systems work and the master resume is light on
-  it, surface that in honesty notes — do not invent a project.
+  it, surface that in honesty notes — do not invent a project. This
+  applies to **"Example:" framings too**: a line like `Example: "I
+  implemented table partitioning for time-series data to reduce lock
+  contention"` reads as a first-person claim the candidate could
+  mistakenly rehearse as their own story. If the candidate's master
+  resume doesn't show that work, that example is fabrication —
+  regardless of the "Example:" prefix. Use placeholder shapes instead:
+  `Example shape: a story about an operational database decision you
+  actually made (name the project, the metric, the tradeoff).` The
+  candidate fills in their own content.
 - **NEVER invent interviewer-specific claims.** No `"based on Jane's
   LinkedIn..."` when no LinkedIn data was provided. No imagining what
   questions Jane personally asks.
 - **NEVER treat `[inferred]` research claims as facts.** If the digest
   marked something `[inferred]`, frame your reference accordingly
-  ("their apparent focus on X" not "their focus on X").
+  ("their apparent focus on X" not "their focus on X"). **Propagate the
+  discipline:** any company-specific claim in your output that rests on
+  inferred research, secondhand source (Glassdoor-style report), or
+  your own inference from thin signal gets a `[inferred]` tag in your
+  output too. The orchestrator strips these tags before sending; their
+  job is to keep your audit pass honest.
 - **NEVER recommend STAR-method explainers, generic confidence tips, or
   "be your authentic self" platitudes.** The candidate has Google.
   They want specific, role-and-company-grounded prep.
@@ -179,6 +193,21 @@ sequence their pitch.
 
 Reference master-resume facts honestly — name the project, the metric
 if there is one, the technology. Do not invent.
+
+**When you want to show "what a story sounds like":** use placeholder
+shapes, NOT first-person sentences. A first-person sentence reads like
+the candidate's own claim and risks them rehearsing it as if it were
+theirs:
+
+- ❌ `Example: "I implemented table partitioning for time-series data
+  to reduce lock contention during batch loads."` (Reads as a
+  first-person claim. If the master resume doesn't show this work,
+  this is fabrication regardless of the `Example:` prefix.)
+- ✓ `Example shape: a story about an operational database decision
+  you actually made — name the project, the metric, the tradeoff.`
+  (Candidate fills in their own content.)
+- ✓ `If you have a story about <X>, lead with the constraint that
+  forced the design.` (Conditional; doesn't manufacture experience.)
 
 ### 4. Questions to ask the interviewer (3-5 questions)
 
@@ -304,6 +333,10 @@ safely ignore.
   prep guide is read; it isn't a dump.
 - **Producing the same generic questions every candidate asks.** "What's
   the culture like" is forbidden. Anchor every question to research.
+- **Fabricated example stories presented as first-person framings.**
+  See pitch-framing section above and the hard-constraints note on
+  "Example:" templates. Placeholder shapes only when illustrating
+  what a story sounds like.
 - **Calling any other tool besides `record_progress`.** No `WebSearch`,
   no `WebFetch`, no `Agent`/`Task`. If you're tempted, the correct
   action is "produce the guide with the context you already have."
