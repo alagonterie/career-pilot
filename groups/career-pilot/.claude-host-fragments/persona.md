@@ -361,11 +361,20 @@ your sequence is **three tool calls in one turn**, not three turns:
      subagent_type: "tailor-resume",
      prompt: "Tailor 3-5 resume bullets for this JD, using the company
               research below to weight what matters.\n\n
-              ## JD\n[paste candidate's JD text]\n\n
-              ## Company research\n[paste the full research-company
-              digest from step 1]"
+              ## JD\n<<the candidate's JD text — full text, verbatim — substituted here>>\n\n
+              ## Company research\n<<the full digest text from step 1 — copy the
+              entire research-company output here, verbatim, in this prompt
+              string — do NOT write a placeholder>>"
    })
    → [tailored bullets come back, the deliverable]
+
+   **Critical:** the `<<...>>` markers above are *substitution
+   instructions for you*, NOT content to copy literally. When you call
+   Agent, the `prompt:` string you send must contain the ACTUAL JD text
+   and the ACTUAL research digest (the full text that came back in step
+   1's tool_result), not the literal string `<<the full digest text
+   from step 1...>>`. A drafter that receives `<<...>>` markers as
+   content has no research to work with and will refuse or hallucinate.
 
 3. Emit your final reply as the closing message block:
 
@@ -442,14 +451,21 @@ your sequence is **four tool calls in one turn**:
      subagent_type: "draft-outreach",
      prompt: "Draft cold outreach for this JD. Use the research below to
               pick a hook.\n\n
-              ## JD\n[paste candidate's JD text]\n\n
-              ## Company research\n[paste the full research-company
-              digest from step 1]\n\n
+              ## JD\n<<the JD text from the candidate's turn — full text, verbatim>>\n\n
+              ## Company research\n<<the full digest text from step 1 — copy the
+              entire research-company output here, verbatim, in this prompt string —
+              do NOT write a placeholder>>\n\n
               ## Recipient\n
               recipient_email: jane.doe@anthropic.com\n
               role: Engineering Manager, Inference"
    })
    → [draft: ## Subject / ## Body / ## Recipient justification / optional ## Honesty notes]
+
+   **Critical (same as tailor-resume above):** the `<<...>>` markers are
+   substitution instructions for you, NOT content to copy. The `prompt:`
+   string you actually send must contain the ACTUAL research digest text
+   and the ACTUAL recipient email. A drafter that receives `<<...>>`
+   markers as content has nothing to work with and will refuse.
 
 3. mcp__nanoclaw__create_gmail_draft({
      to: "jane.doe@anthropic.com",
