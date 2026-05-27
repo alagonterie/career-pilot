@@ -42,7 +42,7 @@ export const fetchSource: McpToolDefinition = {
   tool: {
     name: 'fetch_source',
     description:
-      'Fetch normalized job postings from public ATS APIs (Greenhouse + Lever in v1.0). Host-side action — reads the curated seed list at `groups/career-pilot/data/ats-targets.json`, filters by priority and/or company, fetches each matching board via its public API, normalizes the responses, and returns `{ postings, boards_scanned, postings_total }`. Aggregates across boards so you make 1-2 calls per scrape run rather than 30-50. Honors per-source crawl-delay + caches responses 1h with ETag conditional GET. Pass `priority` for a broad scan (default Tier-A targets), or `company` for a single-company scan. Read-only — does NOT write to job_leads (call record_job_lead per posting you decide to keep).',
+      "Fetch normalized job postings from public ATS APIs (Greenhouse + Lever in v1.0). Returns `{ summaries, boards_scanned, postings_total }` — each summary is a lightweight per-posting object with `{ source, source_job_id, title, company, location_raw?, workplace_type?, snippet }`, where snippet is a ~120-char excerpt of the description. The full payload is stashed host-side (1h TTL) keyed by (source, source_job_id); when you decide to keep a posting, call `record_job_lead({ source, source_job_id })` and the host looks up the full payload automatically. You do NOT pass full posting data through record_job_lead. Pass `priority` for a broad scan (default Tier-A targets), or `company` for a single-company scan. Read-only — does NOT write to job_leads.",
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -62,19 +62,12 @@ export const fetchSource: McpToolDefinition = {
         limit: {
           type: 'integer',
           minimum: 1,
-          maximum: 500,
-          description: 'Max postings to return across all boards (default 200, cap 500). Stops adding once cap reached.',
+          maximum: 300,
+          description: 'Max summaries to return across all boards (default 150, cap 300). Distributed across boards via perBoardCap = ceil(limit / target_count), floor 3. Default depth chosen so per-board cap (~12 per board at 12 priority-A boards) sees past the freshest-batch sales/GTM skew that Greenhouse returns on updated_at DESC ordering.',
         },
       },
     },
-    // Diagnostic: leaving readOnlyHint OFF for v1.0. Setting it true
-    // empirically correlates with "MCP error -32603: attempt to write
-    // a readonly database" errors on every fetch_source / query_job_leads
-    // call (runs 8-9, 2026-05-27); record_progress (which lacks the hint)
-    // never errored. Suspected SDK-side tool-result cache writes a
-    // SQLite file under a readonly mount when the hint is set. Revisit
-    // when isolating: parser-side <Agent> XML recovery for GLM follow-up.
-    annotations: { readOnlyHint: false },
+    annotations: { readOnlyHint: true },
   },
   async handler(args) {
     const priority = args.priority as string | undefined;
@@ -83,7 +76,7 @@ export const fetchSource: McpToolDefinition = {
       // Default broad scan: priority A
       args.priority = 'A';
     }
-    const res = await sendAction<{ postings: unknown[]; boards_scanned: number; postings_total: number; note?: string }>(
+    const res = await sendAction<{ summaries: unknown[]; boards_scanned: number; postings_total: number; note?: string }>(
       'career_pilot.fetch_source',
       {
         priority: args.priority ?? null,
@@ -93,9 +86,9 @@ export const fetchSource: McpToolDefinition = {
       },
     );
     if (!res.ok) return actionErr('fetch_source', res.error);
-    const { postings, boards_scanned, postings_total, note } = res.data;
+    const { summaries, boards_scanned, postings_total, note } = res.data;
     const noteSuffix = note ? ` (${note})` : '';
-    return ok(`fetch_source: ${postings_total} postings across ${boards_scanned} boards${noteSuffix}.`, { postings, boards_scanned, postings_total });
+    return ok(`fetch_source: ${postings_total} summaries across ${boards_scanned} boards${noteSuffix}.`, { summaries, boards_scanned, postings_total });
   },
 };
 
@@ -105,52 +98,30 @@ export const recordJobLead: McpToolDefinition = {
   tool: {
     name: 'record_job_lead',
     description:
-      "UPSERT a single job lead into the `job_leads` table. The host computes `content_fingerprint` (64-bit SimHash) and `rules_score` (0-100 deterministic score against the candidate profile) before insert — you don't compute these. Within-source dedup is automatic via UNIQUE (source, source_job_id) with ON CONFLICT DO UPDATE: re-recording the same posting advances last_seen_at + refreshes title/comp/description without disturbing id, status, or application_id. Returns `{ id, inserted_or_updated, rules_score, content_fingerprint }`. Pass payload fields essentially unchanged from what fetch_source returned — do NOT enrich, infer, or fabricate fields the source didn't provide.",
+      "UPSERT a single job lead into the `job_leads` table. Pass only `(source, source_job_id)` from a summary that `fetch_source` returned this session — the host looks up the full payload from its 1h cache and computes `content_fingerprint` (64-bit SimHash) + `rules_score` (0-100 deterministic score against the candidate profile) before insert. Within-source dedup is automatic via UNIQUE (source, source_job_id) with ON CONFLICT DO UPDATE. Returns `{ id, inserted_or_updated, rules_score, content_fingerprint }`. NEVER invent source_job_ids — if you pass one that wasn't returned by fetch_source in this session, the call fails with NOT_IN_CACHE.",
     inputSchema: {
       type: 'object' as const,
       properties: {
-        source: { type: 'string', enum: ['greenhouse', 'lever'], description: 'ATS source identifier — must match a value from fetch_source.' },
-        source_board_token: { type: 'string', description: 'The ATS-specific board token (Greenhouse board_token, Lever site).' },
-        source_job_id: { type: 'string', description: 'Source-assigned stable job id. Required — UNIQUE key with source.' },
-        source_url: { type: 'string', description: 'Canonical URL of the posting on the source.' },
-        apply_url: { type: 'string', description: 'Apply URL if separate from source_url.' },
-        title: { type: 'string', description: 'Role title.' },
-        company: { type: 'string', description: 'Company name. Must match the seed list entry that produced this posting.' },
-        company_domain: { type: 'string' },
-        location_raw: { type: 'string' },
-        is_remote: { type: 'boolean' },
-        workplace_type: { type: 'string', enum: ['remote', 'hybrid', 'onsite'] },
-        remote_region: { type: 'string', enum: ['US', 'EU', 'GLOBAL'] },
-        employment_type: { type: 'string', enum: ['full-time', 'contract', 'intern'] },
-        comp_min_usd: { type: 'integer' },
-        comp_max_usd: { type: 'integer' },
-        comp_currency: { type: 'string' },
-        comp_period: { type: 'string', enum: ['year', 'hour', 'month'] },
-        has_equity: { type: 'boolean' },
-        description_html: { type: 'string' },
-        description_text: { type: 'string' },
-        source_posted_at: { type: 'string', description: 'ISO 8601 timestamp of when the source published the posting.' },
-        raw_payload: { type: 'object', description: 'Source-specific extra fields. Stored as JSON for re-parsing.' },
+        source: { type: 'string', enum: ['greenhouse', 'lever'], description: 'ATS source identifier — must match a value returned by fetch_source.' },
+        source_job_id: { type: 'string', description: 'Source-assigned stable job id, taken verbatim from a fetch_source summary.' },
       },
-      required: ['source', 'source_job_id', 'source_url', 'title', 'company'],
+      required: ['source', 'source_job_id'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
   },
   async handler(args) {
     const source = args.source as string;
     const source_job_id = args.source_job_id as string;
-    const title = args.title as string;
-    const company = args.company as string;
-    if (!source || !source_job_id || !title || !company) {
-      return err('source, source_job_id, title, and company are required');
+    if (!source || !source_job_id) {
+      return err('source and source_job_id are required');
     }
     const res = await sendAction<{ id: string; inserted_or_updated: string; rules_score: number; content_fingerprint: string }>(
       'career_pilot.record_job_lead',
-      args,
+      { source, source_job_id },
     );
     if (!res.ok) return actionErr('record_job_lead', res.error);
     return ok(
-      `job_lead ${res.data.inserted_or_updated}: ${title} @ ${company} (id ${res.data.id}, score ${res.data.rules_score})`,
+      `job_lead ${res.data.inserted_or_updated}: ${source}::${source_job_id} (id ${res.data.id}, score ${res.data.rules_score})`,
       res.data,
     );
   },
@@ -200,8 +171,7 @@ export const queryJobLeads: McpToolDefinition = {
         },
       },
     },
-    // See fetch_source — readOnlyHint correlates with -32603 readonly DB errors.
-    annotations: { readOnlyHint: false },
+    annotations: { readOnlyHint: true },
   },
   async handler(args) {
     const res = await sendAction<{ leads: Array<Record<string, unknown>>; total: number }>(
@@ -285,8 +255,7 @@ export const discoverAtsBoard: McpToolDefinition = {
       },
       required: ['careers_url'],
     },
-    // See fetch_source — readOnlyHint correlates with -32603 readonly DB errors.
-    annotations: { readOnlyHint: false },
+    annotations: { readOnlyHint: true },
   },
   async handler(args) {
     const careers_url = args.careers_url as string;

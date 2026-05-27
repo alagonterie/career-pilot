@@ -95,11 +95,11 @@ These exist because lead-pool quality compounds — bad leads in the pool
 become bad applications downstream.
 
 - **NEVER fabricate postings.** Every `record_job_lead` call MUST cite a
-  `source_job_id` that appeared in a `fetch_source` response within this
-  same session. If you didn't see a posting come back from a tool call,
-  you have no business recording it. The e2e test asserts this: it spies
-  on `fetch_source` returns vs `record_job_lead` calls and fails if any
-  recorded lead's `source_job_id` wasn't in a fetched payload.
+  `(source, source_job_id)` pair that appeared in a `fetch_source`
+  summary within this same session. The host enforces this — it looks
+  up the full payload from its 1h cache; if your tuple isn't there
+  the call returns `NOT_IN_CACHE`. Don't invent source_job_ids and
+  don't paraphrase them; copy verbatim from the summary.
 
 - **NEVER record obvious off-target roles** even if the company is on the
   targets list. Anthropic posts sales engineering roles; the candidate
@@ -124,12 +124,11 @@ become bad applications downstream.
   zero-score recordings, your pre-record judgment was too generous — be
   stricter next run.
 
-- **NEVER enrich postings with information `fetch_source` didn't return.**
-  Don't infer comp from "based on the role" — if `fetch_source` returned
-  null comp fields, pass through null. Don't invent location strings.
-  Don't make up `apply_url`s. Pass each posting's normalized payload
-  through `record_job_lead` essentially unchanged from what `fetch_source`
-  gave you.
+- **NEVER enrich postings.** `record_job_lead` takes only
+  `(source, source_job_id)`. The host has the full payload cached and
+  uses it verbatim — there's no enrichment slot for you to fill. If
+  fetch_source returned no comp data for a posting, the row gets
+  recorded with null comp; you don't fill that gap.
 
 - **NEVER record the same posting twice in one run.** Within-source
   dedup is host-handled (UNIQUE on `(source, source_job_id)` with
@@ -199,22 +198,25 @@ A typical scrape-jobs run is 4-8 turn steps:
    - Targets override (multiple companies) → one `fetch_source` per
      company (rare in v1.0).
 
-   `fetch_source` returns `{ postings: JobLeadPayload[], boards_scanned,
-   postings_total }`. The postings array is already normalized — same
-   shape regardless of source (`{ source, source_job_id, source_url,
-   title, company, location_raw, is_remote, workplace_type, comp_min_usd,
-   comp_max_usd, description_text, source_posted_at, ... }`).
+   `fetch_source` returns `{ summaries: PostingSummary[], boards_scanned,
+   postings_total }`. Each summary is `{ source, source_job_id, title,
+   company, location_raw?, workplace_type?, snippet }`, where snippet
+   is a ~120-char excerpt of the description. The full payload (comp,
+   apply_url, full description, etc.) is stashed host-side and looked
+   up automatically by `record_job_lead`.
 
 3. **Emit progress.** `record_progress({stage: 'judging', detail:
-   '<X postings from N boards>'})`.
+   '<X summaries from N boards>'})`.
 
-4. **Judge per posting.** For each posting in the array:
+4. **Judge per summary.** For each summary in the array:
    - Apply the pre-record judgment (title fit, negative filter, brief
-     override) from "Hard constraints" above.
-   - If pass → call `record_job_lead(payload)` with the posting fields
-     essentially unchanged from what `fetch_source` returned. Host
-     computes `content_fingerprint` + `rules_score` server-side; you
-     don't.
+     override) from "Hard constraints" above. You judge from the title
+     + snippet — that's intentional, those are the inputs the candidate
+     would skim too.
+   - If pass → call `record_job_lead({ source, source_job_id })`,
+     copying the tuple verbatim from the summary. Host re-hydrates the
+     full payload from cache, computes `content_fingerprint` +
+     `rules_score`, and inserts.
    - If drop → don't call anything; mentally note the drop count for
      the summary.
 
@@ -230,7 +232,7 @@ A typical scrape-jobs run is 4-8 turn steps:
 
 ## Pre-record judgment — worked example
 
-**Posting from `fetch_source`:**
+**Summary from `fetch_source`:**
 
 ```json
 {
@@ -238,11 +240,9 @@ A typical scrape-jobs run is 4-8 turn steps:
   "source_job_id": "4567890",
   "title": "Staff Software Engineer, Inference Platform",
   "company": "Anthropic",
-  "description_text": "We're hiring a Staff Software Engineer to work on...",
   "location_raw": "San Francisco, CA",
-  "is_remote": false,
-  "comp_min_usd": 280000,
-  "comp_max_usd": 380000
+  "workplace_type": "onsite",
+  "snippet": "We're hiring a Staff Software Engineer to work on our inference platform — designing low-latency serving for Claude, ..."
 }
 ```
 
@@ -258,51 +258,81 @@ Brief: *"Refresh leads, focus on AI/ML."*
   Engineer` target. PASS.
 - "Inference Platform" anchors to AI/ML brief. PASS.
 - Location SF, not remote, not NYC hybrid — fails location_pref. **DROP
-  unless** the rules_score from comp + title fit is so high that the
-  candidate would consider relocating; for v1.0 just drop. Note: the
-  host's rules-score formula gives 0 location credit when neither remote
-  nor preferred-city matches; this lead would score ~30-50 total. The
-  pre-record judgment is allowed to drop borderline cases here.
+  unless** the title fit is so strong the candidate would consider
+  relocating; for v1.0 just drop. Note: the host's rules-score formula
+  gives 0 location credit when neither remote nor preferred-city
+  matches; this lead would score ~30-50 total. The pre-record judgment
+  is allowed to drop borderline cases here.
 
 Decision: **drop** this posting (location mismatch), even though it's
 title-relevant. Note in summary: "1 high-fit SF role dropped (candidate
 remote+NYC preference)."
 
-**Contrast with another posting:**
+**Contrast with another summary:**
 
 ```json
 {
+  "source": "greenhouse",
+  "source_job_id": "4567891",
   "title": "Customer Success Manager",
-  "company": "Anthropic"
+  "company": "Anthropic",
+  "snippet": "Lead customer success at Anthropic..."
 }
 ```
 
 Negative filter (Customer Success) → **drop** instantly, no further
 judgment needed.
 
+**Keeper example:**
+
+```json
+{
+  "source": "greenhouse",
+  "source_job_id": "4567892",
+  "title": "Senior Backend Engineer, Platform",
+  "company": "Stripe",
+  "location_raw": "Remote — US",
+  "workplace_type": "remote",
+  "snippet": "Build payments infrastructure at scale. Go, Rust, Postgres..."
+}
+```
+
+Title matches `Staff Backend Engineer` family + remote-US matches the
+candidate's remote pref. PASS — call
+`record_job_lead({ source: "greenhouse", source_job_id: "4567892" })`.
+Host re-hydrates from cache, computes fingerprint + score, inserts.
+
 ---
 
 ## Edge cases
 
-- **`fetch_source` returns empty `postings` array.** The boards were
+- **`fetch_source` returns empty `summaries` array.** The boards were
   reachable but had no new postings matching the priority filter. Skip
   to step 5 (final pass), emit progress, return summary noting "0 new
   postings".
 
 - **`fetch_source` returns an error** (e.g., `{ isError: true }` from a
-  network failure or upstream API error). Treat as 0 postings, note in
+  network failure or upstream API error). Treat as 0 summaries, note in
   the summary which source failed (`"Greenhouse boards unreachable —
   network error. Try again next scan."`), and return. Do NOT retry
   inline — host caches and the next scheduled scan recovers.
 
-- **All postings from a board are off-target.** Common — many boards are
+- **All summaries from a board are off-target.** Common — many boards are
   90%+ non-engineering roles. Drop everything, note in the summary if
   the company was specifically requested by the brief ("Stripe — scanned
   47 postings, all off-target").
 
-- **A posting has thin data** (e.g., null title or null description).
-  Skip it; don't record. Note in summary if more than a handful drop for
-  this reason — that's a signal `fetch_source` normalization needs work.
+- **A summary has thin data** (e.g., empty snippet, missing
+  location_raw). Title alone is usually enough to judge; rely on the
+  title + your brief. Don't reach for `record_job_lead` "just in case"
+  — that's the kind of low-quality recording that pollutes the pool.
+
+- **`record_job_lead` returns `NOT_IN_CACHE`.** You passed a
+  `(source, source_job_id)` tuple that wasn't in the cache. Either
+  (a) you mis-copied from a summary (typo in source_job_id), or
+  (b) you invented the tuple. Read your own tool_use input carefully
+  against the corresponding summary and retry once. If it fails again,
+  drop the lead and note it in your summary — never retry a third time.
 
 - **The targets override names a company NOT in the seed list.**
   `fetch_source` returns 0 postings (host filters to known boards).

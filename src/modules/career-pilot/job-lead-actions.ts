@@ -9,8 +9,12 @@
  *   - career_pilot.discover_ats_board    — regex-detect ATS provider+token
  *                                          from a careers page URL
  *   - career_pilot.fetch_source          — aggregate ATS list across
- *                                          seed-targets, returns normalized
- *                                          JobLeadPayload[]
+ *                                          seed-targets, returns lightweight
+ *                                          PostingSummary[] (subagent's
+ *                                          inline-cap budget) and stashes
+ *                                          full JobLeadPayloads in the
+ *                                          payload-cache for record_job_lead
+ *                                          to look up later
  *
  * Pattern matches the Phase 1 actions in `actions.ts` (response writer,
  * payload extraction, error frames). Kept separate from actions.ts so the
@@ -23,9 +27,10 @@ import type Database from 'better-sqlite3';
 import { getDb } from '../../db/connection.js';
 import { insertMessage } from '../../db/session-db.js';
 import { log } from '../../log.js';
+import * as payloadCache from '../../scrape-jobs/payload-cache.js';
 import { getAdapter } from '../../scrape-jobs/sources.js';
 import { filterTargets } from '../../scrape-jobs/targets.js';
-import type { JobLeadPayload, Source, SourcePriority, TargetEntry } from '../../scrape-jobs/types.js';
+import type { JobLeadPayload, PostingSummary, Source, SourcePriority, TargetEntry } from '../../scrape-jobs/types.js';
 import type { Session } from '../../types.js';
 
 import { computeFingerprint } from './lead-fingerprint.js';
@@ -64,6 +69,23 @@ function generateLeadId(): string {
   return `lead-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+const SNIPPET_CHARS = 120;
+
+function toSummary(p: JobLeadPayload): PostingSummary {
+  const desc = p.description_text ?? '';
+  const cleaned = desc.replace(/\s+/g, ' ').trim();
+  const snippet = cleaned.length > SNIPPET_CHARS ? cleaned.slice(0, SNIPPET_CHARS - 1) + '…' : cleaned;
+  return {
+    source: p.source,
+    source_job_id: p.source_job_id,
+    title: p.title,
+    company: p.company,
+    location_raw: p.location_raw ?? null,
+    workplace_type: p.workplace_type ?? null,
+    snippet,
+  };
+}
+
 // ── record_job_lead ────────────────────────────────────────────────────────
 
 const VALID_SOURCES = new Set<Source>(['greenhouse', 'lever']);
@@ -75,16 +97,34 @@ export async function handleRecordJobLead(
   inDb: Database.Database,
 ): Promise<void> {
   const requestId = reqId(content);
-  const p = payload(content) as Partial<JobLeadPayload>;
+  const p = payload(content);
 
-  if (!p.source || !VALID_SOURCES.has(p.source)) {
+  const source = p.source as Source | undefined;
+  const source_job_id = p.source_job_id as string | undefined;
+
+  if (!source || !VALID_SOURCES.has(source)) {
     writeResponse(inDb, requestId, { ok: false, error: { code: 'BAD_ARGS', message: `source must be one of: ${[...VALID_SOURCES].join(', ')}` } });
     return;
   }
-  if (!p.source_job_id || !p.source_url || !p.title || !p.company) {
+  if (!source_job_id) {
     writeResponse(inDb, requestId, {
       ok: false,
-      error: { code: 'BAD_ARGS', message: 'source_job_id, source_url, title, and company are all required' },
+      error: { code: 'BAD_ARGS', message: 'source_job_id is required' },
+    });
+    return;
+  }
+
+  // Look up the full payload from the fetch_source cache. If missing, the
+  // subagent recorded a posting that we never returned to it (fabrication)
+  // or the cache expired (rare — 1h TTL is much longer than a scrape run).
+  const fullPayload = payloadCache.get(source, source_job_id);
+  if (!fullPayload) {
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: {
+        code: 'NOT_IN_CACHE',
+        message: `no cached payload for ${source}::${source_job_id} — call fetch_source first, do not invent source_job_ids`,
+      },
     });
     return;
   }
@@ -96,8 +136,7 @@ export async function handleRecordJobLead(
     const profileRow = db.prepare('SELECT * FROM candidate_profile WHERE id = 1').get() as Record<string, unknown> | null;
     const profile = profileFromRow(profileRow);
 
-    // Compute fingerprint + rules_score.
-    const fullPayload = p as JobLeadPayload;
+    // Compute fingerprint + rules_score from the cached payload.
     const fingerprint = computeFingerprint(fullPayload);
     const { score, reasons } = computeRulesScore(fullPayload, profile);
 
@@ -145,44 +184,45 @@ export async function handleRecordJobLead(
         raw_payload         = excluded.raw_payload
     `);
 
+    const fp = fullPayload;
     const result = stmt.run({
       id: newId,
-      source: p.source,
-      source_board_token: p.source_board_token ?? null,
-      source_job_id: p.source_job_id,
-      source_url: p.source_url,
-      apply_url: p.apply_url ?? null,
+      source: fp.source,
+      source_board_token: fp.source_board_token ?? null,
+      source_job_id: fp.source_job_id,
+      source_url: fp.source_url,
+      apply_url: fp.apply_url ?? null,
       content_fingerprint: fingerprint,
-      title: p.title,
-      company: p.company,
-      company_domain: p.company_domain ?? null,
-      location_raw: p.location_raw ?? null,
-      is_remote: p.is_remote == null ? null : p.is_remote ? 1 : 0,
-      workplace_type: p.workplace_type ?? null,
-      remote_region: p.remote_region ?? null,
-      employment_type: p.employment_type ?? null,
-      comp_min_usd: p.comp_min_usd ?? null,
-      comp_max_usd: p.comp_max_usd ?? null,
-      comp_currency: p.comp_currency ?? 'USD',
-      comp_period: p.comp_period ?? null,
-      has_equity: p.has_equity == null ? null : p.has_equity ? 1 : 0,
-      description_html: p.description_html ?? null,
-      description_text: p.description_text ?? null,
-      source_posted_at: p.source_posted_at ?? null,
+      title: fp.title,
+      company: fp.company,
+      company_domain: fp.company_domain ?? null,
+      location_raw: fp.location_raw ?? null,
+      is_remote: fp.is_remote == null ? null : fp.is_remote ? 1 : 0,
+      workplace_type: fp.workplace_type ?? null,
+      remote_region: fp.remote_region ?? null,
+      employment_type: fp.employment_type ?? null,
+      comp_min_usd: fp.comp_min_usd ?? null,
+      comp_max_usd: fp.comp_max_usd ?? null,
+      comp_currency: fp.comp_currency ?? 'USD',
+      comp_period: fp.comp_period ?? null,
+      has_equity: fp.has_equity == null ? null : fp.has_equity ? 1 : 0,
+      description_html: fp.description_html ?? null,
+      description_text: fp.description_text ?? null,
+      source_posted_at: fp.source_posted_at ?? null,
       now,
       rules_score: score,
       rules_score_reasons: JSON.stringify(reasons),
-      raw_payload: p.raw_payload ? JSON.stringify(p.raw_payload) : null,
+      raw_payload: fp.raw_payload ? JSON.stringify(fp.raw_payload) : null,
     });
 
     // Look up the actual id (may be the existing one if upsert hit conflict).
     const row = db
       .prepare('SELECT id FROM job_leads WHERE source = ? AND source_job_id = ?')
-      .get(p.source, p.source_job_id) as { id: string } | undefined;
+      .get(fp.source, fp.source_job_id) as { id: string } | undefined;
     const finalId = row?.id ?? newId;
     const insertedOrUpdated = result.changes === 1 && finalId === newId ? 'inserted' : 'updated';
 
-    log.info('job_lead recorded', { id: finalId, source: p.source, source_job_id: p.source_job_id, rules_score: score, action: insertedOrUpdated });
+    log.info('job_lead recorded', { id: finalId, source: fp.source, source_job_id: fp.source_job_id, rules_score: score, action: insertedOrUpdated });
     writeResponse(inDb, requestId, {
       ok: true,
       data: { id: finalId, inserted_or_updated: insertedOrUpdated, rules_score: score, content_fingerprint: fingerprint },
@@ -429,16 +469,13 @@ export async function handleFetchSource(
   const company = p.company as string | undefined;
   const since = p.since as string | undefined; // unused in v1.0; filter applied client-side
   const limitRaw = p.limit as number | undefined;
-  // v1.0 default raised from 20 → 60 after run 11: with the per-board
-  // distribution (perBoardCap = ceil(limit / target_count), floor 3), 20
-  // total = ~3 per board. Greenhouse returns postings ordered by
-  // updated_at DESC, so the freshest 3 per board bias heavily toward
-  // whatever the company is currently hiring fast for (sales/GTM, often).
-  // 60 postings × ~1KB per posting (description text capped at 800) =
-  // ~60KB — well inside the inline-result cap. With ~12 priority-A boards,
-  // 60/12 = 5 per board, enough to surface engineering roles alongside the
-  // sales/marketing freshest-batch.
-  const limit = limitRaw && limitRaw > 0 && limitRaw <= 150 ? Math.floor(limitRaw) : 60;
+  // Returns summaries (~150-250 bytes each) instead of full payloads — so
+  // the inline-cap budget is now ~22-37KB at 150 summaries. Full payloads
+  // get stashed in the payload-cache for record_job_lead to look up.
+  // Default 150 / ~12 priority-A boards = ~12 per board, deep enough to
+  // see past the freshest-batch sales/GTM skew on Greenhouse's
+  // updated_at DESC ordering (STRATEGY.md §24.5 issue #3).
+  const limit = limitRaw && limitRaw > 0 && limitRaw <= 300 ? Math.floor(limitRaw) : 150;
 
   if (!priority && !company) {
     writeResponse(inDb, requestId, {
@@ -460,12 +497,12 @@ export async function handleFetchSource(
     if (targets.length === 0) {
       writeResponse(inDb, requestId, {
         ok: true,
-        data: { postings: [], boards_scanned: 0, postings_total: 0, note: company ? `no seed entry for company "${company}"` : `no seed entries with priority ${priority}` },
+        data: { summaries: [], boards_scanned: 0, postings_total: 0, note: company ? `no seed entry for company "${company}"` : `no seed entries with priority ${priority}` },
       });
       return;
     }
 
-    const allPostings: JobLeadPayload[] = [];
+    const allSummaries: PostingSummary[] = [];
     const sinceTs = since ? new Date(since).getTime() : null;
     // Distribute the total limit across boards so the result spans
     // multiple companies. Without this, the first board (e.g.,
@@ -477,7 +514,7 @@ export async function handleFetchSource(
     for (const target of targets) {
       const adapter = getAdapter(target.source);
       const postings = await adapter.list(target.token);
-      let recordedFromThisBoard = 0;
+      let acceptedFromThisBoard = 0;
       for (const posting of postings) {
         // Fill in the company name from the seed entry (adapters don't have it).
         posting.company = target.company;
@@ -486,23 +523,22 @@ export async function handleFetchSource(
           const postedTs = new Date(posting.source_posted_at).getTime();
           if (!Number.isNaN(postedTs) && postedTs < sinceTs) continue;
         }
-        // Drop raw_payload from the subagent return path — it's only
-        // useful for re-parsing in the DB layer, and including it adds
-        // payload bytes the subagent doesn't need. The subagent will
-        // pass back a payload via record_job_lead without raw_payload;
-        // we accept that loss for v1.0 (re-fetch + repopulate is cheap).
-        delete posting.raw_payload;
-        allPostings.push(posting);
-        recordedFromThisBoard += 1;
-        if (recordedFromThisBoard >= perBoardCap) break;
-        if (allPostings.length >= limit) break;
+        // Stash the full payload for record_job_lead to look up by
+        // (source, source_job_id), then return only a summary to the
+        // subagent. Keeps the inline-cap budget healthy regardless of
+        // description length.
+        payloadCache.set(posting.source, posting.source_job_id, posting);
+        allSummaries.push(toSummary(posting));
+        acceptedFromThisBoard += 1;
+        if (acceptedFromThisBoard >= perBoardCap) break;
+        if (allSummaries.length >= limit) break;
       }
-      if (allPostings.length >= limit) break;
+      if (allSummaries.length >= limit) break;
     }
 
     writeResponse(inDb, requestId, {
       ok: true,
-      data: { postings: allPostings, boards_scanned: targets.length, postings_total: allPostings.length },
+      data: { summaries: allSummaries, boards_scanned: targets.length, postings_total: allSummaries.length },
     });
   } catch (err) {
     log.error('handleFetchSource failed', { err });

@@ -28,24 +28,20 @@ const CRAWL_DELAY_MS_LEVER = 1_000; // honor robots.txt Crawl-delay: 1
 const CRAWL_DELAY_MS_GREENHOUSE = 0; // no crawl-delay declared
 
 /**
- * Description fields are aggressively truncated before the subagent
- * sees them. The full HTML can be 10-20KB per posting; with 200+
- * postings per Tier-A scan the unstripped payload hits multi-MB and
- * blows past the SDK's tool-result size cap, which redirects the
- * payload to a file the subagent has no tool to read.
+ * Description fields are truncated to bound the in-memory payload-cache
+ * footprint and the DB row size. The fingerprint + rules-score functions
+ * read up to 2000 chars, so capping at 2000 captures everything they
+ * actually consume without wasted bytes.
  *
- * 2000 chars matches what the fingerprint + rules-score functions
- * actually consume (`lead-fingerprint.ts` truncates at 4000 internally
- * but takes the leading content; `lead-rules-score.ts` uses first 2000
- * chars for keyword + negative-filter matching). Anything beyond 2000
- * chars is wasted bytes in the subagent's context.
+ * Before issue #2's fix, the subagent received full payloads inline,
+ * so this cap was set aggressively low (800 → 200KB total) to fit
+ * under the SDK's inline tool-result cap. Now fetch_source returns
+ * lightweight summaries instead (~150 bytes each); the full payload
+ * lives in the host-side payload-cache and never crosses the inline-cap
+ * boundary. So we can safely lift the cap back to what scoring uses.
  */
-// Dropped from 2000 → 800 after run 8 showed 130-260K chars per fetch_source
-// response still triggering the SDK's file-redirect path. With 20 postings
-// × ~1KB total per posting (most of which is the truncated description),
-// fetch_source now returns ~20-30KB — well inside the inline-result cap.
-const DESCRIPTION_TEXT_CAP = 800;
-const DESCRIPTION_HTML_CAP = 0; // strip entirely from adapter output; not needed for v1.0 judgment
+const DESCRIPTION_TEXT_CAP = 2000;
+const DESCRIPTION_HTML_CAP = 0; // strip entirely; we keep description_text only
 
 interface CacheEntry {
   postings: JobLeadPayload[];

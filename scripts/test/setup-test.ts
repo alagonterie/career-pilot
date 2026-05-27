@@ -203,17 +203,23 @@ function seedCandidateProfile(): void {
     return;
   }
 
+  // Seeded profile is intentionally a believable senior generalist
+  // engineer — broad enough that the scrape-jobs subagent finds at least
+  // one matching role across live Greenhouse + Lever boards on most days.
+  // Architecturally, the production strict pre-record judgment stays
+  // unchanged; widening the test profile is the e2e-determinism
+  // remediation called out in STRATEGY.md §24.5 issue #3 option (a).
   db.prepare(
     `INSERT INTO candidate_profile (
        id, full_name, display_name, bio, target_roles, location_pref, comp_floor,
        master_resume, skills, github_url, linkedin_url, gmail_account, updated_at
      ) VALUES (
        1, 'Test Candidate', 'Test', 'Senior engineer for E2E test scenarios.',
-       '["Staff Backend Engineer", "Platform Engineer"]',
-       '{"remote": true, "hybrid_cities": ["NYC"]}',
-       220000,
+       '["Staff Backend Engineer", "Senior Backend Engineer", "Platform Engineer", "Senior Software Engineer", "Software Engineer", "Staff Engineer", "Engineering Manager"]',
+       '{"remote": true, "hybrid_cities": ["NYC", "San Francisco", "New York"]}',
+       180000,
        '## Experience\n\n- Built things',
-       '["Go", "Rust", "PostgreSQL"]',
+       '["Go", "Rust", "Python", "TypeScript", "Java", "PostgreSQL", "Kubernetes", "Docker", "AWS", "Distributed Systems", "API"]',
        'https://github.com/test', 'https://linkedin.com/in/test',
        'test-candidate@example.com',
        @now
