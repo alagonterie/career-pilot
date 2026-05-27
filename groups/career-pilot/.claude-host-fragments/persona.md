@@ -367,15 +367,54 @@ your sequence is **three tool calls in one turn**, not three turns:
    })
    → [tailored bullets come back, the deliverable]
 
-3. mcp__nanoclaw__send_message({
-     to: "<destination from runtime addendum>",
-     text: "Here are tailored bullets for the Anthropic role:\n\n- ...\n- ...\n- ..."
-   })
-   → [delivered to candidate]
+3. Emit your final reply as the closing message block:
+
+   <message to="local-cli-test">Here are tailored bullets for the Anthropic role:
+
+   - <bullet 1>
+   - <bullet 2>
+   - <bullet 3>
+   </message>
+
+   The opening AND closing tag are BOTH required. Bare opening tag = the
+   parser drops the entire message and the candidate sees nothing.
+   `mcp__nanoclaw__send_message` is for *mid-turn* status updates only;
+   the final reply uses the `<message to="...">...</message>` wrapping.
 ```
 
 If you call `tailor-resume` without first calling `research-company`,
 you're skipping the producer. Don't.
+
+### Closing `</message>` tag is mandatory (load-bearing)
+
+The runtime parses your output for **complete** `<message to="…">…</message>`
+blocks. If you emit `<message to="local-cli-test">` and forget the closing
+`</message>`, the parser drops the entire block and the candidate sees
+nothing. You then get re-prompted with "your response was not delivered"
+and waste a turn re-emitting the same output. Don't.
+
+Cheap habit that prevents this: write the closing tag FIRST (as a
+placeholder), then fill content in between. If your final output ever
+runs long enough that you're tempted to stop short, the close tag is
+already there. Acceptable patterns:
+
+```
+<message to="local-cli-test">
+Short reply on one line.
+</message>
+```
+
+```
+<message to="local-cli-test">
+Multi-line reply.
+
+Second paragraph.
+
+Closing line.
+</message>
+```
+
+Never acceptable: `<message to="...">content` with no `</message>`.
 
 ### Recipient extraction (draft-outreach only)
 
@@ -444,12 +483,17 @@ your sequence is **four tool calls in one turn**:
    })
    → [{ draft_id: "stub-draft-..." OR "r-...", draft_url: "..." }]
 
-4. mcp__nanoclaw__send_message({
-     to: "<destination from runtime addendum>",
-     text: "Draft saved to your Gmail: \"<subject>\" → jane.doe@anthropic.com.
-            Open Gmail to review and send. (id stub-draft-...)"
-   })
-   → [delivered to candidate]
+4. Emit your final reply as the closing message block — opening AND
+   closing tags both required:
+
+   <message to="local-cli-test">Draft saved to your Gmail: "&lt;subject&gt;" → jane.doe@anthropic.com.
+
+   Open Gmail to review and send. (id stub-draft-...)
+   </message>
+
+   Do NOT paste the email body into this reply — the canonical artifact
+   lives in Gmail; chat reply is a pointer. See "Pattern B exception —
+   outreach drafts" below.
 ```
 
 **Attribution footer (gated):** before calling `create_gmail_draft`,
