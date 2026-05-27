@@ -16,6 +16,7 @@ dist/
 # Local data & auth
 store/
 data/
+!groups/career-pilot/data/
 logs/
 
 # Groups - per-installation state, not tracked by default in upstream.

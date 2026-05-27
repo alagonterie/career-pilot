@@ -18,6 +18,13 @@ import {
   handleUpdateApplication,
   handleUpdateProfileField,
 } from './actions.js';
+import {
+  handleDiscoverAtsBoard,
+  handleFetchSource,
+  handleQueryJobLeads,
+  handleRecordJobLead,
+  handleUpdateJobLeadStatus,
+} from './job-lead-actions.js';
 
 registerDeliveryAction('career_pilot.update_profile_field', handleUpdateProfileField);
 registerDeliveryAction('career_pilot.update_application', handleUpdateApplication);
@@ -26,3 +33,8 @@ registerDeliveryAction('career_pilot.get_application', handleGetApplication);
 registerDeliveryAction('career_pilot.list_applications', handleListApplications);
 registerDeliveryAction('career_pilot.record_progress', handleRecordProgress);
 registerDeliveryAction('career_pilot.create_gmail_draft', handleCreateGmailDraft);
+registerDeliveryAction('career_pilot.record_job_lead', handleRecordJobLead);
+registerDeliveryAction('career_pilot.query_job_leads', handleQueryJobLeads);
+registerDeliveryAction('career_pilot.update_job_lead_status', handleUpdateJobLeadStatus);
+registerDeliveryAction('career_pilot.discover_ats_board', handleDiscoverAtsBoard);
+registerDeliveryAction('career_pilot.fetch_source', handleFetchSource);

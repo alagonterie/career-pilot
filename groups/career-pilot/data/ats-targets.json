@@ -1,0 +1,31 @@
+[
+  { "company": "Anthropic", "source": "greenhouse", "token": "anthropic", "priority": "A", "notes": "AI lab — primary target" },
+  { "company": "Stripe", "source": "greenhouse", "token": "stripe", "priority": "A", "notes": "Top infra org, deep eng culture" },
+  { "company": "Cloudflare", "source": "greenhouse", "token": "cloudflare", "priority": "A", "notes": "Edge + platform infra" },
+  { "company": "Vercel", "source": "greenhouse", "token": "vercel", "priority": "A", "notes": "Platform infra, AI integrations" },
+  { "company": "Databricks", "source": "greenhouse", "token": "databricks", "priority": "A", "notes": "ML/data platform" },
+  { "company": "Figma", "source": "greenhouse", "token": "figma", "priority": "A", "notes": "Strong eng culture" },
+  { "company": "Discord", "source": "greenhouse", "token": "discord", "priority": "A", "notes": "Scale platform infra" },
+
+  { "company": "Airbnb", "source": "greenhouse", "token": "airbnb", "priority": "B", "notes": "Big tech but strong IC roles" },
+  { "company": "DoorDash", "source": "greenhouse", "token": "doordash", "priority": "B" },
+  { "company": "Roblox", "source": "greenhouse", "token": "roblox", "priority": "B", "notes": "Platform + ML" },
+  { "company": "Asana", "source": "greenhouse", "token": "asana", "priority": "B" },
+  { "company": "Reddit", "source": "greenhouse", "token": "reddit", "priority": "B", "notes": "Scale infra + ML platform" },
+  { "company": "Pinterest", "source": "greenhouse", "token": "pinterest", "priority": "B" },
+  { "company": "Snowflake", "source": "greenhouse", "token": "snowflake", "priority": "B", "notes": "Data infra" },
+  { "company": "HubSpot", "source": "greenhouse", "token": "hubspot", "priority": "B" },
+  { "company": "GitLab", "source": "greenhouse", "token": "gitlab", "priority": "B", "notes": "Remote-first" },
+  { "company": "Webflow", "source": "greenhouse", "token": "webflow", "priority": "B" },
+
+  { "company": "Mercury", "source": "lever", "token": "mercury", "priority": "A", "notes": "Banking infra" },
+  { "company": "Ramp", "source": "lever", "token": "ramp", "priority": "A", "notes": "Fintech infra" },
+  { "company": "Hopper", "source": "lever", "token": "hopper", "priority": "B" },
+  { "company": "DigitalOcean", "source": "lever", "token": "digitalocean", "priority": "B" },
+  { "company": "Khan Academy", "source": "lever", "token": "khanacademy", "priority": "C", "notes": "Mission-driven, lighter senior IC tier" },
+  { "company": "Spotify", "source": "lever", "token": "spotify", "priority": "B" },
+  { "company": "Plaid", "source": "lever", "token": "plaid", "priority": "B", "notes": "Fintech infra" },
+  { "company": "Brex", "source": "lever", "token": "brex", "priority": "B" },
+  { "company": "Faire", "source": "lever", "token": "faire", "priority": "B" },
+  { "company": "Patreon", "source": "lever", "token": "patreon", "priority": "C" }
+]
