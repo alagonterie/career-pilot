@@ -490,6 +490,16 @@ function handleEvent(event: ProviderEvent, _routing: RoutingContext): void {
  *
  * The agent must always wrap output in <message to="name">...</message>
  * blocks, even with a single destination. Bare text is scratchpad only.
+ *
+ * Lenient fallback: when NO complete blocks parse AND exactly ONE
+ * `<message to="X">` opener appears with no closing `</message>`, treat
+ * everything from the opener to EOF as the body. This salvages a common
+ * GLM-on-Ollama instruction-following failure (open tag without close,
+ * even after the unwrapped-warning system message asks for a re-send)
+ * without changing the contract for well-behaved agents. The lenient
+ * path is logged so we can see when it fires. Multiple unclosed opens
+ * = ambiguous, falls through to the unwrapped-warning path. See task
+ * #87 + STRATEGY.md §24.3 relaxation notes.
  */
 function dispatchResultText(text: string, routing: RoutingContext): { sent: number; hasUnwrapped: boolean } {
   const MESSAGE_RE = /<message\s+to="([^"]+)"\s*>([\s\S]*?)<\/message>/g;
@@ -497,7 +507,7 @@ function dispatchResultText(text: string, routing: RoutingContext): { sent: numb
   let match: RegExpExecArray | null;
   let sent = 0;
   let lastIndex = 0;
-  const scratchpadParts: string[] = [];
+  let scratchpadParts: string[] = [];
 
   while ((match = MESSAGE_RE.exec(text)) !== null) {
     if (match.index > lastIndex) {
@@ -518,6 +528,36 @@ function dispatchResultText(text: string, routing: RoutingContext): { sent: numb
   }
   if (lastIndex < text.length) {
     scratchpadParts.push(text.slice(lastIndex));
+  }
+
+  // Lenient fallback for dangling open tag — see function-level doc.
+  if (sent === 0) {
+    const OPEN_ONLY_RE = /<message\s+to="([^"]+)"\s*>/g;
+    const openMatches = [...text.matchAll(OPEN_ONLY_RE)];
+    if (openMatches.length === 1) {
+      const openMatch = openMatches[0];
+      const toName = openMatch[1];
+      const openIdx = openMatch.index!;
+      const openEnd = openIdx + openMatch[0].length;
+      const rawBody = text.slice(openEnd);
+      const body = stripInternalTags(rawBody).trim();
+      const dest = findByName(toName);
+      if (dest && body) {
+        log(
+          `Lenient parse: dangling <message to="${toName}"> with no close — ` +
+            `treating remaining ${body.length} chars as body`,
+        );
+        sendToDestination(dest, body, routing);
+        sent++;
+        // Reset scratchpad to just the text BEFORE the dangling open tag
+        // (any leading prose the agent emitted before its final message).
+        scratchpadParts = openIdx > 0 ? [text.slice(0, openIdx)] : [];
+      } else if (!dest) {
+        log(`Lenient parse: dangling <message to="${toName}"> but destination unknown, dropping`);
+      }
+    } else if (openMatches.length > 1) {
+      log(`Lenient parse skipped: ${openMatches.length} dangling open tags found (ambiguous)`);
+    }
   }
 
   const scratchpad = stripInternalTags(scratchpadParts.join(''));
