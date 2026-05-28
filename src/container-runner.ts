@@ -28,6 +28,7 @@ import { getAgentGroup } from './db/agent-groups.js';
 import { getDb, hasTable } from './db/connection.js';
 import { initGroupFilesystem } from './group-init.js';
 import { ensureDailyBriefingTask } from './modules/career-pilot/daily-briefing-bootstrap.js';
+import { ensureKillerMatchTask } from './modules/career-pilot/killer-match-bootstrap.js';
 import { renderPersonaForGroup } from './modules/career-pilot/render-persona.js';
 import { stopTypingRefresh } from './modules/typing/index.js';
 import { log } from './log.js';
@@ -267,22 +268,30 @@ function buildMounts(
   if (agentGroup.folder === 'career-pilot') {
     renderPersonaForGroup(agentGroup);
 
-    // Heartbeat bootstrap (Phase 3.1 §24.6 component 1): idempotently
-    // schedule the daily-briefing recurring task on each spawn. Uses
-    // NanoClaw's existing schedule_task/messages_in machinery — see
-    // `daily-briefing-bootstrap.ts` and the host-sweep recurrence loop
-    // at `src/host-sweep.ts`. Failures here are logged but do not block
-    // the spawn — the agent can still operate without an autonomous
-    // briefing, and the next spawn will retry.
+    // Heartbeat bootstraps (Phase 3.1 §24.6 + §24.7): idempotently
+    // schedule the recurring tasks on each spawn. Uses NanoClaw's
+    // existing schedule_task/messages_in machinery — see the
+    // `*-bootstrap.ts` siblings and the host-sweep recurrence loop at
+    // `src/host-sweep.ts`. Failures here are logged but do not block
+    // the spawn — the agent can still operate, and the next spawn
+    // will retry.
     try {
       const inDb = openInboundDb(agentGroup.id, session.id);
       try {
-        const res = ensureDailyBriefingTask(getDb(), inDb, agentGroup, session);
-        if (res.action === 'inserted') {
+        const briefingRes = ensureDailyBriefingTask(getDb(), inDb, agentGroup, session);
+        if (briefingRes.action === 'inserted') {
           log.info('Heartbeat bootstrap: daily-briefing task scheduled', {
             sessionId: session.id,
-            recurrence: res.recurrence,
-            nextFireAt: res.nextFireAt,
+            recurrence: briefingRes.recurrence,
+            nextFireAt: briefingRes.nextFireAt,
+          });
+        }
+        const killerRes = ensureKillerMatchTask(getDb(), inDb, agentGroup, session);
+        if (killerRes.action === 'inserted') {
+          log.info('Heartbeat bootstrap: killer-match task scheduled', {
+            sessionId: session.id,
+            recurrence: killerRes.recurrence,
+            nextFireAt: killerRes.nextFireAt,
           });
         }
       } finally {
