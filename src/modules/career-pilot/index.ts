@@ -28,6 +28,13 @@ import {
   handleUpdateJobLeadStatus,
   handleWriteLlmScores,
 } from './job-lead-actions.js';
+import {
+  handleCalendarQueryDelta,
+  handleGmailQueryDelta,
+  handlePersistFunnelState,
+  handleReadEmailEvents,
+  handleReadFunnelState,
+} from './funnel-actions.js';
 
 registerDeliveryAction('career_pilot.update_profile_field', handleUpdateProfileField);
 registerDeliveryAction('career_pilot.update_application', handleUpdateApplication);
@@ -44,3 +51,8 @@ registerDeliveryAction('career_pilot.fetch_source', handleFetchSource);
 registerDeliveryAction('career_pilot.get_lead_summaries_for_ranking', handleGetLeadSummariesForRanking);
 registerDeliveryAction('career_pilot.write_llm_scores', handleWriteLlmScores);
 registerDeliveryAction('career_pilot.claim_killer_matches', handleClaimKillerMatches);
+registerDeliveryAction('career_pilot.gmail_query_delta', handleGmailQueryDelta);
+registerDeliveryAction('career_pilot.calendar_query_delta', handleCalendarQueryDelta);
+registerDeliveryAction('career_pilot.persist_funnel_state', handlePersistFunnelState);
+registerDeliveryAction('career_pilot.read_funnel_state', handleReadFunnelState);
+registerDeliveryAction('career_pilot.read_email_events', handleReadEmailEvents);
