@@ -373,4 +373,46 @@ export const rankLeads: McpToolDefinition = {
   },
 };
 
-registerTools([fetchSource, recordJobLead, queryJobLeads, updateJobLeadStatus, discoverAtsBoard, rankLeads]);
+// ── query_killer_matches ──────────────────────────────────────────────────
+
+interface KillerMatchLead {
+  id: string;
+  title: string;
+  company: string;
+  source: string;
+  source_url: string;
+  apply_url: string | null;
+  rules_score: number;
+  source_posted_at: string;
+  first_seen_at: string;
+  rules_score_reasons: unknown;
+}
+
+export const queryKillerMatches: McpToolDefinition = {
+  tool: {
+    name: 'query_killer_matches',
+    description:
+      "Atomically claims and returns recent high-score job_leads that meet the killer-match criteria (rules_score above the configured floor, source_posted_at inside the recency window, source in the allow-list, not already pushed, not closed). Returns `{ leads, total }` — each lead carries `{ id, title, company, source, source_url, apply_url, rules_score, source_posted_at, first_seen_at, rules_score_reasons }`. Calling this tool COMMITS to pushing: the matched leads are marked killer_match_pushed_at = now() in the same transaction as the SELECT, so a second call returns an empty list. Use this exclusively in the killer-match scheduled handler — do NOT call it from a user-initiated turn (it'd silently burn lead IDs). Empty result means either no eligible leads or the source allow-list is empty.",
+    inputSchema: {
+      type: 'object' as const,
+      properties: {},
+    },
+    annotations: { readOnlyHint: false },
+  },
+  async handler() {
+    const res = await sendAction<{ leads: KillerMatchLead[]; total: number; reason?: string }>(
+      'career_pilot.claim_killer_matches',
+      {},
+    );
+    if (!res.ok) return actionErr('query_killer_matches', res.error);
+    const { leads, total, reason } = res.data;
+    const suffix = reason ? ` (${reason})` : '';
+    return ok(`query_killer_matches: ${total} lead${total === 1 ? '' : 's'} claimed${suffix}.`, {
+      leads,
+      total,
+      ...(reason ? { reason } : {}),
+    });
+  },
+};
+
+registerTools([fetchSource, recordJobLead, queryJobLeads, updateJobLeadStatus, discoverAtsBoard, rankLeads, queryKillerMatches]);
