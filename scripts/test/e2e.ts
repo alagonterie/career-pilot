@@ -167,7 +167,8 @@ type Flow =
   | 'daily-briefing'
   | 'killer-match'
   | 'funnel-curator-consumer'
-  | 'funnel-curator';
+  | 'funnel-curator'
+  | 'close-detection';
 const FLOWS: ReadonlySet<Flow> = new Set([
   'smoke',
   'onboarding',
@@ -182,6 +183,7 @@ const FLOWS: ReadonlySet<Flow> = new Set([
   'killer-match',
   'funnel-curator-consumer',
   'funnel-curator',
+  'close-detection',
 ]);
 const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'smoke',
@@ -196,6 +198,7 @@ const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'killer-match',
   'funnel-curator-consumer',
   'funnel-curator',
+  'close-detection',
 ]);
 
 type LlmProvider = 'ollama' | 'claude';
@@ -3049,6 +3052,214 @@ async function runFunnelCurator(): Promise<void> {
   ok('orchestrator reply does not echo the trigger sentinel');
 }
 
+// ── close-detection flow (§24.8) ──────────────────────────────────────────
+
+interface CloseDetectionSeed {
+  id: string;
+  expectClosed: boolean;
+  reason: 'stale' | 'fresh' | 'promoted' | 'already_closed';
+  lastSeenDaysAgo: number;
+  applicationId?: string;
+  closedAt?: string;
+}
+
+function seedFakeCloseDetectionLeads(): CloseDetectionSeed[] {
+  const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
+  const db = new Database(dbPath);
+  try {
+    const isoDaysAgo = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString();
+    const now = new Date().toISOString();
+    const seeds: CloseDetectionSeed[] = [
+      { id: 'cd-stale-1', expectClosed: true, reason: 'stale', lastSeenDaysAgo: 20 },
+      { id: 'cd-stale-2', expectClosed: true, reason: 'stale', lastSeenDaysAgo: 15 },
+      { id: 'cd-fresh-1', expectClosed: false, reason: 'fresh', lastSeenDaysAgo: 5 },
+      { id: 'cd-fresh-2', expectClosed: false, reason: 'fresh', lastSeenDaysAgo: 13 },
+      { id: 'cd-promoted', expectClosed: false, reason: 'promoted', lastSeenDaysAgo: 30, applicationId: 'app-cd-promoted' },
+      { id: 'cd-already-closed', expectClosed: false, reason: 'already_closed', lastSeenDaysAgo: 30, closedAt: isoDaysAgo(5) },
+    ];
+
+    for (const s of seeds) {
+      if (s.applicationId) {
+        db.prepare(
+          `INSERT OR IGNORE INTO applications (id, company_name, obfuscated_label, role_title, status, created_at)
+           VALUES (?, 'Promoted Co', 'cd-test', 'Senior Engineer', 'applied', ?)`,
+        ).run(s.applicationId, now);
+      }
+      const lastSeen = isoDaysAgo(s.lastSeenDaysAgo);
+      db.prepare(
+        `INSERT INTO job_leads (
+          id, source, source_job_id, source_url,
+          content_fingerprint, title, company,
+          first_seen_at, last_seen_at,
+          rules_score, rules_score_reasons,
+          status, status_changed_at,
+          application_id, closed_at
+        ) VALUES (
+          @id, 'greenhouse', @sjid, @url,
+          @fp, @title, @company,
+          @first_seen, @last_seen,
+          50, '{}',
+          'new', @first_seen,
+          @application_id, @closed_at
+        )`,
+      ).run({
+        id: s.id,
+        sjid: `sj-${s.id}`,
+        url: `https://example.com/${s.id}`,
+        fp: `fp-${s.id}`,
+        title: 'Engineer',
+        company: 'CloseDetectionCo',
+        first_seen: lastSeen,
+        last_seen: lastSeen,
+        application_id: s.applicationId ?? null,
+        closed_at: s.closedAt ?? null,
+      });
+    }
+
+    const closeable = seeds.filter((s) => s.expectClosed).length;
+    const skipped = seeds.length - closeable;
+    ok(`seeded ${seeds.length} close-detection leads (${closeable} stale-to-close, ${skipped} should-be-untouched)`);
+    return seeds;
+  } finally {
+    db.close();
+  }
+}
+
+async function runCloseDetection(): Promise<void> {
+  header('Flow: close-detection');
+  // Phase 3.3 §24.8 DoD #7.
+  //
+  // Validates the close-detection housekeeping sweep: host bootstrap
+  // creates the recurring task; persona handler responds to the synthetic
+  // trigger by calling close_stale_leads and emitting only an <internal>
+  // audit (no <message> block — housekeeping is silent).
+  //
+  // Like §24.9 real-mode, the orchestrator legitimately produces only
+  // <internal> here, so we accept chatTurn timeout as a valid silent
+  // completion as long as the DB state confirms the sweep ran.
+  const seeds = seedFakeCloseDetectionLeads();
+
+  let reply = '';
+  try {
+    reply = await chatTurn('[scheduled trigger: close-detection]', 120_000);
+  } catch (e) {
+    const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
+    const checkDb = new Database(dbPath, { readonly: true });
+    try {
+      const sweptCount = (
+        checkDb
+          .prepare("SELECT COUNT(*) AS n FROM job_leads WHERE closed_reason = 'stale'")
+          .get() as { n: number }
+      ).n;
+      if (sweptCount > 0) {
+        console.log(`  (chatTurn timed out, but sweep closed ${sweptCount} lead(s) — treating as silent completion)`);
+        reply = '<internal>(silent completion — sweep ran without emitting a user-facing message)</internal>';
+      } else {
+        throw e;
+      }
+    } finally {
+      checkDb.close();
+    }
+  }
+
+  // ── Assertion 1: bootstrap fired ──
+  const inboundPath = findCareerPilotInboundDb();
+  if (!inboundPath) fail('no career-pilot session inbound.db found under data/v2-sessions/');
+  const inDb = new Database(inboundPath, { readonly: true });
+  try {
+    const row = inDb
+      .prepare(
+        "SELECT id, kind, recurrence, content FROM messages_in WHERE series_id = 'close-detection' LIMIT 1",
+      )
+      .get() as
+      | { id: string; kind: string; recurrence: string; content: string }
+      | undefined;
+    if (!row) fail("bootstrap did not insert a close-detection task");
+    if (row.kind !== 'task') fail(`close-detection row has kind='${row.kind}', expected 'task'`);
+    ok(`bootstrap inserted task: recurrence='${row.recurrence}'`);
+  } finally {
+    inDb.close();
+  }
+
+  // ── Assertion 2: orchestrator called close_stale_leads ──
+  const jsonl = findLatestSessionJsonl();
+  if (!jsonl) fail('no session JSONL found under data/v2-sessions/');
+  const allCalls = listAllToolCalls(jsonl);
+  const sweepCalls = allCalls.filter(
+    (c) => c.startsWith('mcp__nanoclaw__close_stale_leads') || c.startsWith('close_stale_leads'),
+  );
+  if (sweepCalls.length === 0) {
+    console.error('  --- all orchestrator tool calls ---');
+    for (const c of allCalls) console.error(`  ${c}`);
+    fail('orchestrator did not call close_stale_leads');
+  }
+  ok(`orchestrator called close_stale_leads ${sweepCalls.length} time(s)`);
+
+  // ── Assertion 3: closed_at populated for stale leads only ──
+  const centralPath = path.join(REPO_ROOT, 'data', 'v2.db');
+  const centralDb = new Database(centralPath, { readonly: true });
+  let actualClosedIds: Set<string>;
+  try {
+    const closedRows = centralDb
+      .prepare(
+        "SELECT id, closed_reason FROM job_leads WHERE closed_reason = 'stale' AND id LIKE 'cd-%' ORDER BY id",
+      )
+      .all() as Array<{ id: string; closed_reason: string }>;
+    actualClosedIds = new Set(closedRows.map((r) => r.id));
+  } finally {
+    centralDb.close();
+  }
+  const expectedClosedIds = new Set(seeds.filter((s) => s.expectClosed).map((s) => s.id));
+  const missing = [...expectedClosedIds].filter((id) => !actualClosedIds.has(id));
+  const unexpected = [...actualClosedIds].filter((id) => !expectedClosedIds.has(id));
+  if (missing.length > 0 || unexpected.length > 0) {
+    fail(
+      `close-detection mismatch.\n` +
+        `  Missing (expected closed, but weren't): ${missing.join(', ') || 'none'}\n` +
+        `  Unexpected (closed but shouldn't have been): ${unexpected.join(', ') || 'none'}`,
+    );
+  }
+  ok(`closed_at populated with reason='stale' for ${actualClosedIds.size} stale lead(s)`);
+
+  // ── Assertion 4: promoted lead untouched ──
+  const promotedDb = new Database(centralPath, { readonly: true });
+  try {
+    const row = promotedDb
+      .prepare("SELECT closed_at FROM job_leads WHERE id = 'cd-promoted'")
+      .get() as { closed_at: string | null };
+    if (row.closed_at !== null) fail(`promoted lead was closed despite application_id set: closed_at=${row.closed_at}`);
+    ok('promoted lead (application_id set) was not touched');
+  } finally {
+    promotedDb.close();
+  }
+
+  // ── Assertion 5: already-closed lead's closed_reason was not overwritten ──
+  const alreadyDb = new Database(centralPath, { readonly: true });
+  try {
+    const row = alreadyDb
+      .prepare("SELECT closed_at, closed_reason FROM job_leads WHERE id = 'cd-already-closed'")
+      .get() as { closed_at: string; closed_reason: string | null };
+    if (row.closed_reason === 'stale') fail(`already-closed lead got closed_reason overwritten to 'stale'`);
+    ok('already-closed lead was not touched');
+  } finally {
+    alreadyDb.close();
+  }
+
+  // ── Assertion 6: orchestrator reply does NOT contain a <message> block ──
+  if (reply.includes('<message')) {
+    console.error('  --- orchestrator reply (first 500 chars) ---');
+    console.error(reply.slice(0, 500));
+    fail('orchestrator emitted a <message> block; housekeeping should be silent');
+  }
+  ok('orchestrator emitted no <message> block (housekeeping is silent)');
+
+  // ── Assertion 7: reply does NOT echo the trigger sentinel ──
+  if (reply.toLowerCase().includes('[scheduled trigger:')) {
+    fail('orchestrator reply echoes the trigger sentinel');
+  }
+  ok('orchestrator reply does not echo the trigger sentinel');
+}
+
 function seedBookmarkedApplication(opts: {
   id: string;
   company_name: string;
@@ -3554,6 +3765,7 @@ async function main(): Promise<void> {
       'killer-match': runKillerMatch,
       'funnel-curator-consumer': runFunnelCuratorConsumer,
       'funnel-curator': runFunnelCurator,
+      'close-detection': runCloseDetection,
     };
     await FLOW_HANDLERS[args.flow]();
     assertionsPassed = true;
