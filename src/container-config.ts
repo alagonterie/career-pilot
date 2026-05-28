@@ -130,6 +130,17 @@ export function materializeContainerJson(agentGroupId: string): ContainerConfig 
     applyClaudeTestOverrides(config);
   }
 
+  // Forward fixture-mode selectors to the container so funnel-curator's
+  // container-side MCP tools (queryGmailDelta / queryCalendarDelta) can
+  // branch to fixture mode without a separate config-passing channel.
+  // Real-API mode is what runs when these are unset.
+  if (group.folder === 'career-pilot' && process.env.GMAIL_FIXTURE) {
+    config.env = { ...(config.env ?? {}), GMAIL_FIXTURE: process.env.GMAIL_FIXTURE };
+  }
+  if (group.folder === 'career-pilot' && process.env.CALENDAR_FIXTURE) {
+    config.env = { ...(config.env ?? {}), CALENDAR_FIXTURE: process.env.CALENDAR_FIXTURE };
+  }
+
   const p = path.join(GROUPS_DIR, group.folder, 'container.json');
   const dir = path.dirname(p);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });

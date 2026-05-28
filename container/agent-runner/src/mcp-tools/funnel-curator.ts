@@ -36,12 +36,21 @@ function actionErr(action: string, error: { code: string; message: string }) {
 }
 
 // ── query_gmail_delta ──────────────────────────────────────────────────────
+//
+// Container-side. Two modes:
+//   - Fixture mode (GMAIL_FIXTURE env set in container): roundtrip to host
+//     for fixture loading. Used by integration + e2e tests.
+//   - Real mode (env unset): direct HTTPS call to gmail.googleapis.com.
+//     OneCLI's HTTPS_PROXY intercepts and injects the OAuth bearer (the
+//     §24.6 rank_leads pattern). NOT_IMPLEMENTED in this commit; lands in
+//     a follow-up that adds the historyId-driven delta-sync + lookback
+//     full-sync recovery.
 
 export const queryGmailDelta: McpToolDefinition = {
   tool: {
     name: 'query_gmail_delta',
     description:
-      "Fetch new Gmail messages since the last sync. Returns `{ messages, history_id, full_sync_performed, fixture_mode }` where messages is an array of `{ id, thread_id, labels, from_addr, to_addr, subject, received_at, body_text }`. In production: driven by the stored Gmail historyId — falls back to a lookback-window full sync if Google returned HTTP 404 (historyId expired). In test/e2e: when GMAIL_FIXTURE env is set on the host, returns the named fixture from tests/fixtures/gmail/. Read-only — does NOT write any state. Intended for the funnel-curator subagent only; do NOT call from orchestrator turns.",
+      "Fetch new Gmail messages since the last sync. Returns `{ messages, history_id, full_sync_performed, fixture_mode }` where messages is an array of `{ id, thread_id, labels, from_addr, to_addr, subject, received_at, body_text }`. In real mode: container-side direct HTTPS to gmail.googleapis.com through the OneCLI gateway (which injects the OAuth bearer transparently). In fixture mode (GMAIL_FIXTURE env set): the host serves the named fixture from tests/fixtures/gmail/. Read-only — does NOT write any state. Intended for the funnel-curator subagent only; do NOT call from orchestrator turns.",
     inputSchema: {
       type: 'object' as const,
       properties: {},
@@ -49,16 +58,27 @@ export const queryGmailDelta: McpToolDefinition = {
     annotations: { readOnlyHint: true },
   },
   async handler() {
-    const res = await sendAction<{
-      messages: unknown[];
-      history_id: string | null;
-      full_sync_performed: boolean;
-      fixture_mode: boolean;
-    }>('career_pilot.gmail_query_delta', {});
-    if (!res.ok) return actionErr('query_gmail_delta', res.error);
-    const { messages, full_sync_performed, fixture_mode } = res.data;
-    const tag = fixture_mode ? ' (fixture)' : full_sync_performed ? ' (full sync)' : '';
-    return ok(`query_gmail_delta: ${messages.length} message${messages.length === 1 ? '' : 's'}${tag}.`, res.data as unknown as Record<string, unknown>);
+    const fixtureName = process.env.GMAIL_FIXTURE;
+    if (fixtureName) {
+      const res = await sendAction<{ messages: unknown[]; fixture: string }>(
+        'career_pilot.load_gmail_fixture',
+        { name: fixtureName },
+      );
+      if (!res.ok) return actionErr('query_gmail_delta (fixture)', res.error);
+      const { messages } = res.data;
+      return ok(
+        `query_gmail_delta: ${messages.length} message${messages.length === 1 ? '' : 's'} (fixture: ${fixtureName}).`,
+        {
+          messages,
+          history_id: null,
+          full_sync_performed: true,
+          fixture_mode: true,
+        },
+      );
+    }
+    return err(
+      'Real Gmail delta-sync is not yet wired (next commit lands this). Set GMAIL_FIXTURE=<name> for fixture mode.',
+    );
   },
 };
 
@@ -68,7 +88,7 @@ export const queryCalendarDelta: McpToolDefinition = {
   tool: {
     name: 'query_calendar_delta',
     description:
-      "Fetch new Calendar events since the last sync. Returns `{ events, sync_tokens, full_sync_performed, fixture_mode }` where events is an array of `{ id, calendar_id, summary, start_at, end_at, organizer, attendees, meet_link }`. In production: driven by per-calendar syncTokens — falls back to lookback-window full re-sync if Google returned HTTP 410 (token expired). In test/e2e: when CALENDAR_FIXTURE env is set on the host, returns the named fixture from tests/fixtures/calendar/. Read-only — does NOT write any state. Intended for the funnel-curator subagent only.",
+      "Fetch new Calendar events since the last sync. Returns `{ events, sync_tokens, full_sync_performed, fixture_mode }` where events is an array of `{ id, calendar_id, summary, start_at, end_at, organizer, attendees, meet_link }`. In real mode: container-side direct HTTPS to www.googleapis.com/calendar/... through the OneCLI gateway. In fixture mode (CALENDAR_FIXTURE env set): the host serves the named fixture from tests/fixtures/calendar/. Read-only — does NOT write any state. Intended for the funnel-curator subagent only.",
     inputSchema: {
       type: 'object' as const,
       properties: {},
@@ -76,16 +96,27 @@ export const queryCalendarDelta: McpToolDefinition = {
     annotations: { readOnlyHint: true },
   },
   async handler() {
-    const res = await sendAction<{
-      events: unknown[];
-      sync_tokens: Record<string, string>;
-      full_sync_performed: boolean;
-      fixture_mode: boolean;
-    }>('career_pilot.calendar_query_delta', {});
-    if (!res.ok) return actionErr('query_calendar_delta', res.error);
-    const { events, full_sync_performed, fixture_mode } = res.data;
-    const tag = fixture_mode ? ' (fixture)' : full_sync_performed ? ' (full sync)' : '';
-    return ok(`query_calendar_delta: ${events.length} event${events.length === 1 ? '' : 's'}${tag}.`, res.data as unknown as Record<string, unknown>);
+    const fixtureName = process.env.CALENDAR_FIXTURE;
+    if (fixtureName) {
+      const res = await sendAction<{ events: unknown[]; fixture: string }>(
+        'career_pilot.load_calendar_fixture',
+        { name: fixtureName },
+      );
+      if (!res.ok) return actionErr('query_calendar_delta (fixture)', res.error);
+      const { events } = res.data;
+      return ok(
+        `query_calendar_delta: ${events.length} event${events.length === 1 ? '' : 's'} (fixture: ${fixtureName}).`,
+        {
+          events,
+          sync_tokens: {},
+          full_sync_performed: true,
+          fixture_mode: true,
+        },
+      );
+    }
+    return err(
+      'Real Calendar delta-sync is not yet wired (next commit lands this). Set CALENDAR_FIXTURE=<name> for fixture mode.',
+    );
   },
 };
 

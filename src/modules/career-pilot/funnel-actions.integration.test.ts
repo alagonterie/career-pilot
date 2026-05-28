@@ -21,7 +21,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import Database from 'better-sqlite3';
 
 import { createAgentGroup } from '../../db/agent-groups.js';
@@ -33,6 +33,8 @@ import type { Session } from '../../types.js';
 import {
   handleCalendarQueryDelta,
   handleGmailQueryDelta,
+  handleLoadCalendarFixture,
+  handleLoadGmailFixture,
   handlePersistFunnelState,
   handleReadEmailEvents,
   handleReadFunnelState,
@@ -127,45 +129,19 @@ function actionContent(action: string, payload: Record<string, unknown>) {
   };
 }
 
-// ── handleGmailQueryDelta ─────────────────────────────────────────────────
+// ── handleGmailQueryDelta (deprecated stub — see §24.9 amendment) ─────────
 
-describe('handleGmailQueryDelta', () => {
-  let savedGmailFixture: string | undefined;
-
-  beforeEach(() => {
-    savedGmailFixture = process.env.GMAIL_FIXTURE;
-  });
-
-  afterEach(() => {
-    if (savedGmailFixture === undefined) delete process.env.GMAIL_FIXTURE;
-    else process.env.GMAIL_FIXTURE = savedGmailFixture;
-  });
-
-  it('returns parsed messages from a fixture when GMAIL_FIXTURE is set', async () => {
-    process.env.GMAIL_FIXTURE = 'acme-applied-confirmation';
+describe('handleGmailQueryDelta (deprecated stub)', () => {
+  it('returns NOT_IMPLEMENTED (real-mode moved container-side)', async () => {
     const c = actionContent('career_pilot.gmail_query_delta', {});
     await handleGmailQueryDelta(c, OWNER_SESSION, inDb);
     const res = readResponse(c.requestId);
-    expect(res.frame.ok).toBe(true);
-    if (!res.frame.ok) throw new Error('unreachable');
-    const data = res.frame.data as { messages: Array<{ id: string }>; fixture_mode: boolean };
-    expect(data.fixture_mode).toBe(true);
-    expect(data.messages).toHaveLength(1);
-    expect(data.messages[0].id).toBe('msg-acme-confirm-001');
+    expect(res.frame.ok).toBe(false);
+    if (res.frame.ok) throw new Error('unreachable');
+    expect(res.frame.error.code).toBe('NOT_IMPLEMENTED');
   });
 
-  it('returns a multi-message JSONL fixture as an ordered list', async () => {
-    process.env.GMAIL_FIXTURE = 'acme-pipeline-multi';
-    const c = actionContent('career_pilot.gmail_query_delta', {});
-    await handleGmailQueryDelta(c, OWNER_SESSION, inDb);
-    const res = readResponse(c.requestId);
-    if (!res.frame.ok) throw new Error('unreachable');
-    const data = res.frame.data as { messages: Array<{ id: string }> };
-    expect(data.messages).toHaveLength(4);
-  });
-
-  it('refuses with FORBIDDEN for sandbox sessions', async () => {
-    process.env.GMAIL_FIXTURE = 'acme-applied-confirmation';
+  it('refuses with FORBIDDEN for sandbox sessions before stub message', async () => {
     const c = actionContent('career_pilot.gmail_query_delta', {});
     await handleGmailQueryDelta(c, SANDBOX_SESSION, inDb);
     const res = readResponse(c.requestId);
@@ -173,56 +149,19 @@ describe('handleGmailQueryDelta', () => {
     if (res.frame.ok) throw new Error('unreachable');
     expect(res.frame.error.code).toBe('FORBIDDEN');
   });
+});
 
-  it('returns NOT_IMPLEMENTED when GMAIL_FIXTURE is unset', async () => {
-    delete process.env.GMAIL_FIXTURE;
-    const c = actionContent('career_pilot.gmail_query_delta', {});
-    await handleGmailQueryDelta(c, OWNER_SESSION, inDb);
+describe('handleCalendarQueryDelta (deprecated stub)', () => {
+  it('returns NOT_IMPLEMENTED (real-mode moved container-side)', async () => {
+    const c = actionContent('career_pilot.calendar_query_delta', {});
+    await handleCalendarQueryDelta(c, OWNER_SESSION, inDb);
     const res = readResponse(c.requestId);
     expect(res.frame.ok).toBe(false);
     if (res.frame.ok) throw new Error('unreachable');
     expect(res.frame.error.code).toBe('NOT_IMPLEMENTED');
   });
 
-  it('surfaces a clear error when the named fixture does not exist', async () => {
-    process.env.GMAIL_FIXTURE = 'no-such-fixture';
-    const c = actionContent('career_pilot.gmail_query_delta', {});
-    await handleGmailQueryDelta(c, OWNER_SESSION, inDb);
-    const res = readResponse(c.requestId);
-    expect(res.frame.ok).toBe(false);
-    if (res.frame.ok) throw new Error('unreachable');
-    expect(res.frame.error.code).toBe('FIXTURE_NOT_FOUND');
-  });
-});
-
-// ── handleCalendarQueryDelta ──────────────────────────────────────────────
-
-describe('handleCalendarQueryDelta', () => {
-  let savedCalFixture: string | undefined;
-
-  beforeEach(() => {
-    savedCalFixture = process.env.CALENDAR_FIXTURE;
-  });
-
-  afterEach(() => {
-    if (savedCalFixture === undefined) delete process.env.CALENDAR_FIXTURE;
-    else process.env.CALENDAR_FIXTURE = savedCalFixture;
-  });
-
-  it('returns parsed events from a fixture when CALENDAR_FIXTURE is set', async () => {
-    process.env.CALENDAR_FIXTURE = 'acme-onsite-tomorrow';
-    const c = actionContent('career_pilot.calendar_query_delta', {});
-    await handleCalendarQueryDelta(c, OWNER_SESSION, inDb);
-    const res = readResponse(c.requestId);
-    if (!res.frame.ok) throw new Error('unreachable');
-    const data = res.frame.data as { events: Array<{ id: string; meet_link: string | null }> };
-    expect(data.events).toHaveLength(1);
-    expect(data.events[0].id).toBe('evt-acme-onsite');
-    expect(data.events[0].meet_link).toContain('meet.google.example');
-  });
-
   it('refuses with FORBIDDEN for sandbox sessions', async () => {
-    process.env.CALENDAR_FIXTURE = 'acme-onsite-tomorrow';
     const c = actionContent('career_pilot.calendar_query_delta', {});
     await handleCalendarQueryDelta(c, SANDBOX_SESSION, inDb);
     const res = readResponse(c.requestId);
@@ -230,15 +169,81 @@ describe('handleCalendarQueryDelta', () => {
     if (res.frame.ok) throw new Error('unreachable');
     expect(res.frame.error.code).toBe('FORBIDDEN');
   });
+});
 
-  it('returns NOT_IMPLEMENTED when CALENDAR_FIXTURE is unset', async () => {
-    delete process.env.CALENDAR_FIXTURE;
-    const c = actionContent('career_pilot.calendar_query_delta', {});
-    await handleCalendarQueryDelta(c, OWNER_SESSION, inDb);
+// ── handleLoadGmailFixture / handleLoadCalendarFixture ────────────────────
+
+describe('handleLoadGmailFixture', () => {
+  it('returns parsed messages for a single-message JSON fixture', async () => {
+    const c = actionContent('career_pilot.load_gmail_fixture', { name: 'acme-applied-confirmation' });
+    await handleLoadGmailFixture(c, OWNER_SESSION, inDb);
+    const res = readResponse(c.requestId);
+    expect(res.frame.ok).toBe(true);
+    if (!res.frame.ok) throw new Error('unreachable');
+    const data = res.frame.data as { messages: Array<{ id: string }>; fixture: string };
+    expect(data.fixture).toBe('acme-applied-confirmation');
+    expect(data.messages).toHaveLength(1);
+    expect(data.messages[0].id).toBe('msg-acme-confirm-001');
+  });
+
+  it('returns a multi-message JSONL fixture as an ordered list', async () => {
+    const c = actionContent('career_pilot.load_gmail_fixture', { name: 'acme-pipeline-multi' });
+    await handleLoadGmailFixture(c, OWNER_SESSION, inDb);
+    const res = readResponse(c.requestId);
+    if (!res.frame.ok) throw new Error('unreachable');
+    const data = res.frame.data as { messages: Array<{ id: string }> };
+    expect(data.messages).toHaveLength(4);
+  });
+
+  it('returns BAD_ARGS when name is missing', async () => {
+    const c = actionContent('career_pilot.load_gmail_fixture', {});
+    await handleLoadGmailFixture(c, OWNER_SESSION, inDb);
     const res = readResponse(c.requestId);
     expect(res.frame.ok).toBe(false);
     if (res.frame.ok) throw new Error('unreachable');
-    expect(res.frame.error.code).toBe('NOT_IMPLEMENTED');
+    expect(res.frame.error.code).toBe('BAD_ARGS');
+  });
+
+  it('returns FIXTURE_NOT_FOUND when the name does not exist', async () => {
+    const c = actionContent('career_pilot.load_gmail_fixture', { name: 'no-such-fixture' });
+    await handleLoadGmailFixture(c, OWNER_SESSION, inDb);
+    const res = readResponse(c.requestId);
+    expect(res.frame.ok).toBe(false);
+    if (res.frame.ok) throw new Error('unreachable');
+    expect(res.frame.error.code).toBe('FIXTURE_NOT_FOUND');
+  });
+
+  it('refuses with FORBIDDEN for sandbox sessions', async () => {
+    const c = actionContent('career_pilot.load_gmail_fixture', { name: 'acme-applied-confirmation' });
+    await handleLoadGmailFixture(c, SANDBOX_SESSION, inDb);
+    const res = readResponse(c.requestId);
+    expect(res.frame.ok).toBe(false);
+    if (res.frame.ok) throw new Error('unreachable');
+    expect(res.frame.error.code).toBe('FORBIDDEN');
+  });
+});
+
+describe('handleLoadCalendarFixture', () => {
+  it('returns parsed events for a calendar fixture', async () => {
+    const c = actionContent('career_pilot.load_calendar_fixture', { name: 'acme-onsite-tomorrow' });
+    await handleLoadCalendarFixture(c, OWNER_SESSION, inDb);
+    const res = readResponse(c.requestId);
+    expect(res.frame.ok).toBe(true);
+    if (!res.frame.ok) throw new Error('unreachable');
+    const data = res.frame.data as { events: Array<{ id: string; meet_link: string | null }>; fixture: string };
+    expect(data.fixture).toBe('acme-onsite-tomorrow');
+    expect(data.events).toHaveLength(1);
+    expect(data.events[0].id).toBe('evt-acme-onsite');
+    expect(data.events[0].meet_link).toContain('meet.google.example');
+  });
+
+  it('refuses with FORBIDDEN for sandbox sessions', async () => {
+    const c = actionContent('career_pilot.load_calendar_fixture', { name: 'acme-onsite-tomorrow' });
+    await handleLoadCalendarFixture(c, SANDBOX_SESSION, inDb);
+    const res = readResponse(c.requestId);
+    expect(res.frame.ok).toBe(false);
+    if (res.frame.ok) throw new Error('unreachable');
+    expect(res.frame.error.code).toBe('FORBIDDEN');
   });
 });
 
