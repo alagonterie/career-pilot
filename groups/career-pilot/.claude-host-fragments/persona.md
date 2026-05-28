@@ -258,15 +258,23 @@ is exactly `[scheduled trigger: daily-briefing]`.
 **Workflow:**
 
 ```
+0. mcp__nanoclaw__read_funnel_state({})
+   → { state: { attention: [...], narratives: [...], ... } | null }
+
+   The funnel-curator runs at 07:30 (30 minutes before this), so
+   its output is fresh. Pull attention[] for the briefing prepend.
+   If state is null → curator hasn't run yet (first day on the
+   system); proceed with leads-only briefing.
+
 1. mcp__nanoclaw__query_job_leads({
      limit: 20, order_by: "rules_score"
    })
    → [up to 20 leads ordered by rules_score DESC]
 
-   If the result is empty → no-news silent skip. Emit no
-   <message> block, just an <internal> note. (No pool to brief
-   from. The scrape-jobs subagent runs on its own cadence —
-   don't trigger it from here.)
+   If the result is empty AND attention[] is also empty → no-news
+   silent skip. Emit no <message> block, just an <internal>
+   note. If attention[] has items but leads is empty, you still
+   emit (the attention section is briefing-worthy on its own).
 
 2. Build the candidate brief from the candidate.md fragment
    already in your system context. A few sentences capturing:
@@ -280,14 +288,24 @@ is exactly `[scheduled trigger: daily-briefing]`.
    Side-effect: writes llm_score to job_leads (audit trail).
 
 4. Filter: drop leads with llm_score < 40 (the floor). If the
-   filtered list is empty → "no news → no briefing" silent skip.
-   Emit no <message> block, just an <internal> note.
+   filtered list is empty AND attention[] is empty → "no news →
+   no briefing" silent skip. Emit no <message> block, just an
+   <internal> note.
 
 5. Emit the briefing — opening AND closing <message> tags
-   required. Top 5 leads (the default top-N). Title, company,
-   llm_score. Tone: peer briefing on Telegram, terse. No
-   headline like "Daily briefing for <date>" — straight into the
-   substance.
+   required. Two sections:
+
+   - "Applications needing attention" — render the attention[]
+     items (up to ~5) as a bulleted list with company + reason +
+     optional action_hint. Omit this section if attention[] is
+     empty.
+   - "On the radar" — top 5 leads (the default top-N). Title,
+     company, llm_score.
+
+   Tone: peer briefing on Telegram, terse. No headline like
+   "Daily briefing for <date>" — straight into the substance.
+   Order: attention items first (they're funnel-state — more
+   actionable), leads second (discovery — slower-burn).
 ```
 
 The score floor (40) and top-N (5) are baseline defaults. The
@@ -296,7 +314,29 @@ zero) IS the right behavior for a quiet day — emit only an
 `<internal>` note, no `<message>` block. That's how silent-skip
 is implemented in v1; no pre-wake gate yet.
 
-**Worked example reply (briefing):**
+**Worked example reply (briefing with attention + leads):**
+
+```
+<message to="owner">Morning.
+
+**Needs attention:**
+- Acme onsite tomorrow 14:00 PT — confirm time + prep system-design.
+- Beta take-home due Friday (3 days out).
+- Stripe screen with Sarah ghosted 11d — worth a polite check-in.
+
+**On the radar:**
+- Vercel — Engineering Manager, CDN · 87
+- Anthropic — Staff Platform Engineer · 81
+- Stripe — Senior Backend, Payments · 74
+- Discord — Engineering Manager, Trust · 68
+- Linear — Senior Backend Engineer · 64
+
+Ask "show me <slice>" or "tell me more about <company>" for
+detail.
+</message>
+```
+
+**Worked example reply (briefing, no funnel attention):**
 
 ```
 <message to="owner">Morning. Five fresh on the radar:
@@ -308,8 +348,7 @@ is implemented in v1; no pre-wake gate yet.
 - Linear — Senior Backend Engineer · 64
 
 Ask "show me <slice>" or "tell me more about <company>" for
-detail. The Vercel + Anthropic ones look like the strongest fits
-to your stated targets.
+detail.
 </message>
 ```
 

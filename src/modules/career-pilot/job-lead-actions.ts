@@ -672,6 +672,9 @@ export async function handleClaimKillerMatches(
       params[`src_${i}`] = src;
     });
 
+    // §24.9 suppression: skip leads with any inbox activity already linked
+    // to them (the candidate has engaged — re-alerting would be noisy). The
+    // funnel-curator writes these linkages into email_events.
     const selectSql = `
       SELECT id, title, company, source, source_url, apply_url, rules_score,
              source_posted_at, first_seen_at, rules_score_reasons
@@ -682,6 +685,10 @@ export async function handleClaimKillerMatches(
         AND source IN (${placeholders})
         AND source_posted_at IS NOT NULL
         AND source_posted_at >= @cutoff
+        AND id NOT IN (
+          SELECT DISTINCT linked_job_lead_id FROM email_events
+          WHERE linked_job_lead_id IS NOT NULL
+        )
       ORDER BY rules_score DESC, first_seen_at DESC
       LIMIT @limit
     `;
