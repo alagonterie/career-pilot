@@ -31,6 +31,8 @@ import {
 import {
   handleCalendarQueryDelta,
   handleGmailQueryDelta,
+  handleLoadCalendarFixture,
+  handleLoadGmailFixture,
   handlePersistFunnelState,
   handleReadEmailEvents,
   handleReadFunnelState,
@@ -56,3 +58,5 @@ registerDeliveryAction('career_pilot.calendar_query_delta', handleCalendarQueryD
 registerDeliveryAction('career_pilot.persist_funnel_state', handlePersistFunnelState);
 registerDeliveryAction('career_pilot.read_funnel_state', handleReadFunnelState);
 registerDeliveryAction('career_pilot.read_email_events', handleReadEmailEvents);
+registerDeliveryAction('career_pilot.load_gmail_fixture', handleLoadGmailFixture);
+registerDeliveryAction('career_pilot.load_calendar_fixture', handleLoadCalendarFixture);

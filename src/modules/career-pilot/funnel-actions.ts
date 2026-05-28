@@ -43,8 +43,6 @@ import {
   type EmailClassification,
   type FunnelCuratorOutput,
   type NewEmailEvent,
-  type ParsedCalendarEvent,
-  type ParsedGmailMessage,
 } from './funnel-types.js';
 
 // ── Response writer (mirrors job-lead-actions.ts) ─────────────────────────
@@ -101,15 +99,14 @@ function generateRunId(): string {
   return `fcr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-// ── 1. handleGmailQueryDelta ──────────────────────────────────────────────
+// ── 1. handleGmailQueryDelta (deprecated stub — see §24.9 amendment) ───────
 
-interface GmailDeltaResponse {
-  messages: ParsedGmailMessage[];
-  history_id: string | null;
-  full_sync_performed: boolean;
-  fixture_mode: boolean;
-}
-
+// The original §24.9 drill-in framed this as a host-roundtrip wrapper around
+// Google Gmail REST. That framing is superseded; the real-API call happens
+// container-side via the OneCLI HTTPS_PROXY (the §24.6 rank_leads pattern).
+// Fixture-mode now flows through `handleLoadGmailFixture` instead. This
+// handler is kept as NOT_IMPLEMENTED for symmetry with `create_gmail_draft`'s
+// reserved real-mode path.
 export async function handleGmailQueryDelta(
   content: Record<string, unknown>,
   session: Session,
@@ -117,47 +114,17 @@ export async function handleGmailQueryDelta(
 ): Promise<void> {
   const requestId = reqId(content);
   if (rejectIfSandbox(inDb, requestId, session, 'gmail_query_delta')) return;
-
-  const fixtureName = process.env.GMAIL_FIXTURE;
-  if (fixtureName) {
-    try {
-      const messages = loadGmailFixture(fixtureName);
-      const data: GmailDeltaResponse = {
-        messages,
-        history_id: null,
-        full_sync_performed: true,
-        fixture_mode: true,
-      };
-      log.info('gmail_query_delta (fixture)', { fixture: fixtureName, count: messages.length });
-      writeResponse(inDb, requestId, { ok: true, data: data as unknown as Record<string, unknown> });
-    } catch (err) {
-      log.error('gmail_query_delta fixture load failed', { fixture: fixtureName, err });
-      writeResponse(inDb, requestId, {
-        ok: false,
-        error: { code: 'FIXTURE_NOT_FOUND', message: err instanceof Error ? err.message : String(err) },
-      });
-    }
-    return;
-  }
-
   writeResponse(inDb, requestId, {
     ok: false,
     error: {
       code: 'NOT_IMPLEMENTED',
       message:
-        'Real Gmail delta-sync is not yet wired (Phase 3.2 §24.9 follow-up). Set GMAIL_FIXTURE=<name> for fixture mode.',
+        'gmail_query_delta is now container-side (§24.9 amendment). This host action is a reserved stub.',
     },
   });
 }
 
-// ── 2. handleCalendarQueryDelta ───────────────────────────────────────────
-
-interface CalendarDeltaResponse {
-  events: ParsedCalendarEvent[];
-  sync_tokens: Record<string, string>;
-  full_sync_performed: boolean;
-  fixture_mode: boolean;
-}
+// ── 2. handleCalendarQueryDelta (deprecated stub — see §24.9 amendment) ────
 
 export async function handleCalendarQueryDelta(
   content: Record<string, unknown>,
@@ -166,37 +133,87 @@ export async function handleCalendarQueryDelta(
 ): Promise<void> {
   const requestId = reqId(content);
   if (rejectIfSandbox(inDb, requestId, session, 'calendar_query_delta')) return;
-
-  const fixtureName = process.env.CALENDAR_FIXTURE;
-  if (fixtureName) {
-    try {
-      const events = loadCalendarFixture(fixtureName);
-      const data: CalendarDeltaResponse = {
-        events,
-        sync_tokens: {},
-        full_sync_performed: true,
-        fixture_mode: true,
-      };
-      log.info('calendar_query_delta (fixture)', { fixture: fixtureName, count: events.length });
-      writeResponse(inDb, requestId, { ok: true, data: data as unknown as Record<string, unknown> });
-    } catch (err) {
-      log.error('calendar_query_delta fixture load failed', { fixture: fixtureName, err });
-      writeResponse(inDb, requestId, {
-        ok: false,
-        error: { code: 'FIXTURE_NOT_FOUND', message: err instanceof Error ? err.message : String(err) },
-      });
-    }
-    return;
-  }
-
   writeResponse(inDb, requestId, {
     ok: false,
     error: {
       code: 'NOT_IMPLEMENTED',
       message:
-        'Real Calendar delta-sync is not yet wired (Phase 3.2 §24.9 follow-up). Set CALENDAR_FIXTURE=<name> for fixture mode.',
+        'calendar_query_delta is now container-side (§24.9 amendment). This host action is a reserved stub.',
     },
   });
+}
+
+// ── 2a. handleLoadGmailFixture (host-side fixture loader) ──────────────────
+//
+// Called by the container-side `query_gmail_delta` MCP tool when its
+// `GMAIL_FIXTURE` env var is set. Loads from `tests/fixtures/gmail/<name>.json`
+// via the existing loader and returns parsed messages. Real-API mode does
+// not roundtrip through here.
+
+export async function handleLoadGmailFixture(
+  content: Record<string, unknown>,
+  session: Session,
+  inDb: Database.Database,
+): Promise<void> {
+  const requestId = reqId(content);
+  if (rejectIfSandbox(inDb, requestId, session, 'load_gmail_fixture')) return;
+  const p = payload(content);
+  const name = p.name as string | undefined;
+  if (!name || typeof name !== 'string') {
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'BAD_ARGS', message: 'name is required (fixture file basename, no extension)' },
+    });
+    return;
+  }
+  try {
+    const messages = loadGmailFixture(name);
+    log.info('load_gmail_fixture', { fixture: name, count: messages.length });
+    writeResponse(inDb, requestId, {
+      ok: true,
+      data: { messages, fixture: name } as unknown as Record<string, unknown>,
+    });
+  } catch (err) {
+    log.error('load_gmail_fixture failed', { fixture: name, err });
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'FIXTURE_NOT_FOUND', message: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
+// ── 2b. handleLoadCalendarFixture ──────────────────────────────────────────
+
+export async function handleLoadCalendarFixture(
+  content: Record<string, unknown>,
+  session: Session,
+  inDb: Database.Database,
+): Promise<void> {
+  const requestId = reqId(content);
+  if (rejectIfSandbox(inDb, requestId, session, 'load_calendar_fixture')) return;
+  const p = payload(content);
+  const name = p.name as string | undefined;
+  if (!name || typeof name !== 'string') {
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'BAD_ARGS', message: 'name is required (fixture file basename, no extension)' },
+    });
+    return;
+  }
+  try {
+    const events = loadCalendarFixture(name);
+    log.info('load_calendar_fixture', { fixture: name, count: events.length });
+    writeResponse(inDb, requestId, {
+      ok: true,
+      data: { events, fixture: name } as unknown as Record<string, unknown>,
+    });
+  } catch (err) {
+    log.error('load_calendar_fixture failed', { fixture: name, err });
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'FIXTURE_NOT_FOUND', message: err instanceof Error ? err.message : String(err) },
+    });
+  }
 }
 
 // ── 3. handlePersistFunnelState ───────────────────────────────────────────
