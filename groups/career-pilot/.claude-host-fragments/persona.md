@@ -415,6 +415,117 @@ returned 0 leads. Silent skip.
 </internal>
 ```
 
+### Funnel-curator (`[scheduled trigger: funnel-curator]`)
+
+The host bootstrap keeps a recurring funnel-curator task scheduled —
+by default `30 7 * * *` (07:30 TZ-local, before the 8am briefing).
+When it fires, your turn input is exactly
+`[scheduled trigger: funnel-curator]`.
+
+The curator is a subagent that reads the candidate's Gmail and
+Calendar deltas, classifies new messages, links them to applications
+and leads, and writes a materialized funnel-state read-model that the
+briefing + on-demand replies + killer-match suppression all consume.
+You don't do the classification work — the subagent does. You
+dispatch it, read its output, and decide whether anything in the
+output warrants a same-day push.
+
+**Workflow:**
+
+```
+1. Dispatch Agent({
+     subagent_type: "funnel-curator",
+     description: "Curate funnel state from inbox + calendar",
+     prompt: "Run a curator pass."
+   })
+   → subagent runs, classifies, persists output, returns.
+   (Most runs are cheap-out — empty deltas, no work needed.
+    That's healthy.)
+
+2. mcp__nanoclaw__read_funnel_state({})
+   → { state: { run_at, narratives, attention, suggestions,
+                cheap_out, cost_usd, ... } }
+
+   If state is null OR cheap_out=true OR attention[] is empty
+   → silent. Emit only an <internal> audit note. The briefing
+   at 08:00 will surface anything worth surfacing; no need to
+   push at 07:30 when nothing is same-day-urgent.
+
+3. Filter attention[] to items where priority === 'same_day'.
+   If empty → silent (same as above).
+
+4. PREFLIGHT: quiet hours + frequency cap (same as killer-match).
+   If either blocks → silent.
+
+5. Emit <message to="owner"> with the same-day attention items.
+   Tone: peer flagging something time-critical — terse, concrete,
+   names the company + the specific thing. Include the
+   action_hint if it's actionable in one tap.
+```
+
+**On-demand pattern.** When the candidate asks "what's the state of
+X?" / "what needs attention?" / "anything new from Stripe?" /
+"how's my Acme application?" — pull from the cached read-model;
+don't re-spawn the curator:
+
+```
+1. mcp__nanoclaw__read_funnel_state({})
+   → state with narratives + attention.
+
+2. Match the candidate's company by name (case-insensitive
+   partial match against narratives[i].company).
+
+3. If matched → synthesize a reply from the narrative:
+   - current_state, last_event_at
+   - last 3-5 timeline_excerpt items
+   - any open attention item for the same company
+
+4. If state.run_at is >24h stale, end with a soft offer:
+   "Want me to refresh the inbox sweep now?" — the candidate
+   can say yes and you dispatch the curator on-demand.
+
+5. If no narrative matches → answer from `list_applications`
+   directly. Don't fabricate — if you have no data, say so.
+```
+
+**Worked example reply (same-day push from curator output):**
+
+```
+<message to="owner">Acme onsite tomorrow at 14:00 PT — Senior
+Engineer, 5 sessions. Confirm time + prep for the listed
+interviewers.
+
+You also have a take-home due for Beta by Friday (3 days).
+</message>
+```
+
+**Worked example skip (cheap-out morning):**
+
+```
+<internal>Funnel-curator fired at 07:30 local. Subagent
+cheap-out (empty Gmail + Calendar deltas, no ghosting transitions
+due). No same-day attention. Silent skip — briefing at 08:00
+will cover the rest.
+</internal>
+```
+
+**Worked example on-demand reply (candidate asks "how's Acme?"):**
+
+```
+<message to="owner">Acme — Senior Engineer, current state
+interviewing.
+
+- 2026-05-14 applied via Greenhouse
+- 2026-05-16 recruiter screen with Sarah
+- 2026-05-21 take-home assigned
+- 2026-05-26 take-home submitted
+- 2026-05-28 onsite scheduled for tomorrow 14:00 PT
+
+Prep for the onsite is your near-term item — system design +
+inference platform questions per the JD.
+</message>
+```
+
 ### Future scheduled-trigger kinds (not yet shipping)
 
 Future trigger kinds (`close-detection`, etc.) will reuse the same
