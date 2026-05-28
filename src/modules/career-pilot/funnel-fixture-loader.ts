@@ -7,6 +7,10 @@
  * host actions `gmail_query_delta` and `calendar_query_delta` would
  * return from a real Google API call.
  *
+ * Lives under src/ (not scripts/) so it's typechecked by `tsc --noEmit`
+ * and importable by `funnel-actions.ts` via the `GMAIL_FIXTURE` /
+ * `CALENDAR_FIXTURE` env-var test seam.
+ *
  * Fixture format (Gmail):
  *   { "id", "threadId", "labels"[], "from", "to", "subject",
  *     "received": "<ISO string>" | { "relative": { hours?, days?, minutes? } },
@@ -24,11 +28,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import type {
-  ParsedCalendarAttendee,
-  ParsedCalendarEvent,
-  ParsedGmailMessage,
-} from '../../src/modules/career-pilot/funnel-types.js';
+import type { ParsedCalendarAttendee, ParsedCalendarEvent, ParsedGmailMessage } from './funnel-types.js';
 
 interface RelativeDate {
   relative: {
@@ -67,10 +67,7 @@ const FIXTURES_ROOT = path.resolve(process.cwd(), 'tests', 'fixtures');
 function resolveDate(input: FixtureDate, now: Date): string {
   if (typeof input === 'string') return input;
   const r = input.relative;
-  const ms =
-    (r.hours ?? 0) * 3_600_000 +
-    (r.days ?? 0) * 86_400_000 +
-    (r.minutes ?? 0) * 60_000;
+  const ms = (r.hours ?? 0) * 3_600_000 + (r.days ?? 0) * 86_400_000 + (r.minutes ?? 0) * 60_000;
   return new Date(now.getTime() + ms).toISOString();
 }
 
@@ -95,12 +92,7 @@ function resolveFixturePath(kind: 'gmail' | 'calendar', name: string): string {
   throw new Error(`fixture not found: ${kind}/${name} (looked for .json and .jsonl in ${dir})`);
 }
 
-const VALID_RESPONSE_STATUSES = new Set([
-  'accepted',
-  'declined',
-  'tentative',
-  'needsAction',
-]);
+const VALID_RESPONSE_STATUSES = new Set(['accepted', 'declined', 'tentative', 'needsAction']);
 
 export function loadGmailFixture(name: string, now: Date = new Date()): ParsedGmailMessage[] {
   const filePath = resolveFixturePath('gmail', name);
