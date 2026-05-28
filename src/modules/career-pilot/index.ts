@@ -30,6 +30,8 @@ import {
 } from './job-lead-actions.js';
 import {
   handleCalendarQueryDelta,
+  handleGetCalendarSyncState,
+  handleGetGmailSyncState,
   handleGmailQueryDelta,
   handleLoadCalendarFixture,
   handleLoadGmailFixture,
@@ -60,3 +62,5 @@ registerDeliveryAction('career_pilot.read_funnel_state', handleReadFunnelState);
 registerDeliveryAction('career_pilot.read_email_events', handleReadEmailEvents);
 registerDeliveryAction('career_pilot.load_gmail_fixture', handleLoadGmailFixture);
 registerDeliveryAction('career_pilot.load_calendar_fixture', handleLoadCalendarFixture);
+registerDeliveryAction('career_pilot.get_gmail_sync_state', handleGetGmailSyncState);
+registerDeliveryAction('career_pilot.get_calendar_sync_state', handleGetCalendarSyncState);
