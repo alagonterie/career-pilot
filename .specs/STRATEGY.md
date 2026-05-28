@@ -1407,7 +1407,7 @@ Everything that NanoClaw v2 ships: `bin/`, `scripts/` (NanoClaw's own), `setup/`
 | **1. Career-pilot agent group** | 2 | `groups/career-pilot/`, migrations 100-107, first MCP tools | Agent has a persona; I can say "add an application for X" and it writes to the DB and confirms. |
 | **2. Subagents + skills** | 3 | 5 subagent definitions, skill instructions, remaining MCP tools | I can paste a JD and ask "tailor my resume" — agent invokes research-company + tailor-resume, returns tailored bullets. |
 | **3. Heartbeat — daily briefing + cron** | 4 | Host-side cron primitive + orchestrator-notify intake + daily-briefing flow + LLM rank-at-draw-time. See §24.6 for the sub-milestone drill-in. | At the scheduled morning time, the orchestrator wakes, queries `job_leads`, LLM-ranks the top-N against the candidate brief, and emits a Telegram briefing — OR skips cleanly per quiet-hours / frequency-cap / no-news rules. Cron schedules survive host restart. |
-| **4. Sanitization + public_audit_trail** | 5 | `src/modules/portal/sanitizer.ts`, post-write hooks, sanitized mirror to `public_audit_trail` | Every funnel_event has a matching sanitized row in public_audit_trail. Spot check: real company name nowhere in public table. |
+| **4. Sanitization + public_audit_trail** | 5 | `src/modules/portal/sanitizer.ts`, post-write hooks, sanitized mirror to `public_audit_trail`. See §24.10 for the Sub-milestone 4.1 drill-in (Pass 1 regex + Pass 2 company replacement; Pass 3 LLM review deferred). | Every funnel_event has a matching sanitized row in public_audit_trail. Spot check: real company name nowhere in public table. |
 | **5. Portal backend** | 6 | Express API, SSE infra, system modes, portal channel adapter, sandbox agent group | I can `curl /api/funnel` and get real (sanitized) data. SSE stream emits events. `POST /api/simulator` spawns a sandbox container. |
 | **6. Frontend bootstrap** | 7 | **TanStack Start docs deep-read** + scaffold + landing + /work | Hero renders. Live ticker connects to SSE. /work renders with placeholders. |
 | **7. Frontend depth** | 8 | /live, /funnel, /architecture pages | All three pages render real data. Filter chips work. Funnel race animates. |
@@ -2776,6 +2776,175 @@ Dates in fixtures use `{ "relative": { "hours": -N } }` shape so the loader rend
 | **J. Curator spawn cost climbs over time** as inbox grows | Low | Cost scales with *new* messages per day (deltas), not total inbox size. `email_events` UPSERT keyed on `gmail_msg_id` means we never re-classify prior messages. Worst-case daily: ~50 new messages × Sonnet ≈ $0.20-0.50. Budget ~$15/mo. |
 | **K. Fixture drift from real Gmail shapes** | Low | Fixtures match `users.messages.get` response shape (`payload.headers[]`, `payload.parts[]`). Integration test (Layer 2) catches host-action parser mismatches without needing real Gmail. When wiring real Gmail, capture 3-5 real responses (PII-scrubbed) and add as additional fixtures. |
 | **L. Sandbox group accidentally gains Gmail visibility** | Very low | Three layers of defense: host-action sandbox rejection (DoD #3), composer-side `disallowedTools` for funnel-curator subagent in sandbox group, bootstrap-side group-name gate (DoD #2). Same shape as `create_gmail_draft`'s defense-in-depth. |
+
+#### 24.10 Sub-milestone 4.1 — Sanitization MVP (regex + company replacement + funnel_event mirror)
+
+**Why this sub-milestone first in Phase 4:** Phase 3 produced the funnel_events that should be projected to the public surface. The persona has internalized "Sanitization is the safety net, not your guardrail" — but the safety net is empty. `src/modules/portal/sanitizer.ts` and `src/modules/portal/public-audit.ts` are Phase 0 placeholders that throw. The public_audit_trail table is empty in every environment. This sub-milestone implements the *minimum* pipeline that satisfies the Phase 4 phase DoD — "Every funnel_event has a matching sanitized row in public_audit_trail. Spot check: real company name nowhere in public table" — without committing to Pass 3 (Haiku LLM review). The Pass 3 review is genuinely optional per §9 (gated on `text.length > MIN_LLM_PASS_THRESHOLD || opts?.application_id`); deferring it keeps the increment small, holds off on Portkey cost for the first Phase 4 commit, and avoids coupling the mirror's correctness to an async LLM call.
+
+Pass 1 (regex) + Pass 2 (company replacement) is the deterministic backbone — sufficient to satisfy the phase DoD on its own because the company-name pass uses the `applications` row directly (canonical `company_name` + `company_aliases` + `obfuscated_label`), not LLM judgment. Pass 3's value is catching *context-dependent* leaks the regex couldn't anticipate ("the person from the email" referring to a previously-named recruiter). That's a Sub-milestone 4.2 concern.
+
+**What NanoClaw provides here (use, don't rebuild — per [[feedback-nanoclaw-infra-first]]):**
+
+| Concern | NanoClaw module | Notes |
+|---|---|---|
+| Central DB schema | Migrations 100 (`applications` with `company_aliases` / `obfuscated_label` / `public_state`), 101 (`funnel_events`), 102 (`public_audit_trail`) | All three already landed in Phase 0. No new migration needed. |
+| Action handler attach point | `src/modules/career-pilot/actions.ts:handleRecordFunnelEvent` | Already does the private INSERT. We hook the mirror right after the commit, inside the same handler. Same pattern as the existing `record_funnel_event` writeResponse path — just a follow-on call. |
+| Better-sqlite3 prepared statements | `getDb()` from `src/modules/career-pilot/actions.ts` | Reused for both the application-lookup and the public_audit_trail INSERT. |
+| Logging | `log.error`/`log.warn` from `src/log.ts` | Mirror failures log but don't propagate — see Risk E. |
+
+**Architectural shape:**
+
+```
+   [container: record_funnel_event MCP tool]
+         │
+         ▼  sendAction → outbound.db → host poll
+   ┌──────────────────────────────────────────────────┐
+   │ host: handleRecordFunnelEvent (actions.ts)       │
+   │   1. INSERT INTO funnel_events (private)         │
+   │   2. writeResponse({ok:true, data:{event_id}})   │
+   │   3. NEW: mirrorFunnelEvent(db, event_id)        │
+   │      (try/catch — failure logs, does not         │
+   │       reverse the private INSERT)                │
+   └──────────────────────────────────────────────────┘
+         │
+         ▼
+   ┌──────────────────────────────────────────────────┐
+   │ host: public-audit.ts                            │
+   │   1. SELECT event + JOIN applications            │
+   │      (skip mirror if event has no application_id │
+   │       or application is missing)                 │
+   │   2. payload_text = JSON.stringify(event.payload)│
+   │      + event.kind + event.from_status/to_status  │
+   │   3. sanitized = sanitize(payload_text, {        │
+   │        application_id: event.application_id      │
+   │      })                                          │
+   │   4. INSERT INTO public_audit_trail (            │
+   │        id, ts, category, application_ref,       │
+   │        summary, details_json                     │
+   │      )                                           │
+   │      application_ref = obfuscated_label          │
+   │      (or real name if public_state='public')     │
+   └──────────────────────────────────────────────────┘
+         │
+         ▼
+   ┌──────────────────────────────────────────────────┐
+   │ host: sanitizer.ts                               │
+   │   Pass 1: regex (emails, phones, SSN-like,       │
+   │           monetary, URLs with PII query params)  │
+   │   Pass 2: company name + alias replacement       │
+   │           (loads applications WHERE              │
+   │            public_state != 'public')             │
+   │   Returns: sanitized string (no nulls in 4.1 —   │
+   │           Pass 3 nulling is 4.2 scope)           │
+   └──────────────────────────────────────────────────┘
+```
+
+**Components to build:**
+
+1. **`src/modules/portal/sanitizer.ts`** — replace the placeholder. Export `sanitize(raw: string, opts?: { application_id?: string, db?: Database.Database }): string` (synchronous, no nulls in this sub-milestone — drop the `Promise<string | null>` shape until Pass 3 lands).
+   - **Pass 1 patterns** (each with named-group helpers + dedicated unit tests):
+     - **Emails:** `\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b` → `[EMAIL_REDACTED]`
+     - **Phones:** NA-style `(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}` and a permissive intl-fallback (`+\d{1,3}[\s.-]?\d{7,}`) → `[PHONE_REDACTED]`. Negative cases tested: 4-digit years like "2026" and "2024-05" must NOT match.
+     - **SSN-like:** `\b\d{3}-\d{2}-\d{4}\b` → `[SSN_REDACTED]`
+     - **Monetary:** `\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?` and `\$\d+(?:\.\d+)?[kKmM]` → `[AMOUNT_REDACTED]`. Negative cases tested: bare "100k" (no `$`) and "$" alone do NOT trigger; role titles like "Senior Eng" stay intact.
+     - **URLs with PII query params:** strip `email=`, `recruiter_id=`, `applicant_id=` values inside `?...` query strings. Whole-URL redaction is deferred — bare domain URLs (`https://anthropic.com`) are handled by Pass 2 if relevant, kept otherwise.
+   - **Pass 2 company replacement:**
+     - Open a `db` connection if not supplied (default to `getDb()`).
+     - `SELECT id, company_name, company_aliases, obfuscated_label, public_state FROM applications WHERE public_state != 'public'`.
+     - For each row, build the alias set = `[company_name, ...JSON.parse(company_aliases ?? '[]')]`, dedupe, drop empty strings.
+     - For each alias, `text = text.replace(new RegExp('\\b' + escapeRegex(alias) + '\\b', 'gi'), '[REDACTED:' + obfuscated_label + ']')`.
+     - **Escape helper:** `escapeRegex(s)` for parens / dots / plus / etc. Test: "Microsoft (Bing)" must not blow up.
+     - Skip rows where `obfuscated_label` is null/empty (defensive — DB has NOT NULL but defensive helps if migration ordering changes).
+   - **Pass 3 hook:** export a no-op stub `function applyPass3(text: string, opts: ...): string { return text; }` so 4.2 lands as an internal swap, not a contract change.
+   - **No throws.** Every code path returns a string. Regex compilation errors (shouldn't happen with `escapeRegex`) caught and logged; original text returned in that path — fail-open is wrong for sanitization, so the public mirror's INSERT is wrapped (see component 2) to additionally check for unreplaced company names as a defense-in-depth audit.
+
+2. **`src/modules/portal/public-audit.ts`** — replace the placeholder. Export `mirrorFunnelEvent(db: Database.Database, eventId: string): void` (synchronous, void return; errors logged but never thrown).
+   - Load the event + its application via `SELECT fe.*, a.obfuscated_label, a.public_state FROM funnel_events fe LEFT JOIN applications a ON fe.application_id = a.id WHERE fe.id = ?`.
+   - If `application_id IS NULL` OR application row missing: skip the mirror (return). Funnel events without an application context have no canonical obfuscation target; either we'll add a "system" category in a later sub-milestone, or these stay private-only.
+   - Build `payload_text` = `${event.kind} ${event.from_status ?? ''}→${event.to_status ?? ''} ${event.payload}`. The kind + status arrows give downstream renderers a stable surface; the JSON payload is included for context-sensitivity.
+   - Call `sanitize(payload_text, { application_id })`.
+   - **Defense-in-depth audit:** before INSERT, scan the sanitized text for any application's `company_name`. If a match is found AND `public_state !== 'public'`, log a warning + skip the INSERT (the sanitizer missed something; better to drop the event than leak). This catches alias-gap bugs without coupling to Pass 3.
+   - INSERT into `public_audit_trail` with: `id = 'pat-' + ulid()`, `ts = new Date().toISOString()`, `category = 'funnel'`, `application_ref = public_state === 'public' ? company_name : obfuscated_label`, `summary = sanitized` (truncated to 500 chars — public_audit_trail is for surface display, not full payload archive), `details_json = JSON.stringify({ kind, from_status, to_status, sanitized })`.
+   - Categories beyond `'funnel'` (e.g., `'research'`, `'outreach'`) are 4.2+ scope — for 4.1, every mirrored row is `category='funnel'`.
+
+3. **Hook into `handleRecordFunnelEvent`** in `src/modules/career-pilot/actions.ts`.
+   - After the private INSERT commits AND after `writeResponse(...)` returns the ok-response to the container (so the agent's MCP call completes promptly — don't block the response on the mirror):
+     ```typescript
+     try {
+       mirrorFunnelEvent(db, eventId);
+     } catch (err) {
+       log.error('mirrorFunnelEvent failed', { eventId, err });
+       // private write is committed; public mirror is best-effort
+     }
+     ```
+   - Ordering matters: response goes back first (the orchestrator gets `{ok:true}` for the action), then the mirror runs. If the mirror throws, the agent doesn't see it — sanitization is operator-visible only.
+
+4. **Preferences seeded in `config/defaults.json`** (per the four-tier config model, §20):
+   - `sanitization_pass3_enabled` = `false` (off in 4.1; flipped on in 4.2 when Pass 3 lands)
+   - `sanitization_pass3_min_chars` = `1000` (the §9 threshold; only read when Pass 3 is enabled)
+   - `sanitization_public_summary_max_chars` = `500` (caps `summary` column length)
+   - `sanitization_audit_drop_on_unmatched_company` = `true` (the defense-in-depth in component 2 — operator toggle in case it's too aggressive)
+
+5. **Vitest unit tests on `sanitizer.ts`** (~12-15 tests):
+   - Emails: positive (`alice@example.com`, `recruiter+job@acme.co.uk`); negative (text containing `@` but not email-shaped like `@mention`).
+   - Phones: positive (`(555) 123-4567`, `+1-555-123-4567`, `555.123.4567`); negative (`2026-05-28`, `2024`, `room 123-A`).
+   - SSN: positive (`123-45-6789`); negative (`555-123-4567` should be a phone, not an SSN — assert it lands as PHONE_REDACTED).
+   - Monetary: positive (`$180,000`, `$220k`, `$2.5M`); negative (`100k` without `$`, `$` alone).
+   - URL query params: positive (`https://acme.com/jobs?recruiter_id=jdoe&utm=...` → recruiter_id stripped); negative (`https://acme.com/jobs/12345` unchanged).
+   - Pass 2: single-alias replacement; multi-alias (company_aliases JSON array); case-insensitive; word-boundary (`Anthropic` matches; `Anthropics` doesn't); special-chars (`Microsoft (Bing)`).
+   - Pass 2: skips `public_state='public'` rows.
+   - Pass 2: skips rows with empty/null `obfuscated_label` defensively.
+
+6. **Vitest integration tests on `public-audit.ts`** (~6 tests, in `src/modules/portal/public-audit.integration.test.ts`):
+   - Mirror happy-path: seed application + funnel_event referencing the company; assert public_audit_trail row exists with `application_ref = obfuscated_label` and `summary` contains `[REDACTED:fintech-a]`, NOT the real name.
+   - Mirror skips events with no `application_id`.
+   - Mirror skips events whose application is missing (LEFT JOIN returns null).
+   - Mirror writes real `company_name` when `public_state='public'`.
+   - Defense-in-depth: if sanitizer leaves a real name AND `public_state != 'public'`, the row is NOT inserted (drop-on-unmatched preference at default `true`).
+   - Defense-in-depth: same scenario with `sanitization_audit_drop_on_unmatched_company = false` → row IS inserted (operator override).
+
+7. **One end-to-end host integration spot check** added to the existing `actions.integration.test.ts` (or new `sanitization-end-to-end.integration.test.ts`):
+   - Seed an application: `company_name = 'Acme Corp'`, `company_aliases = '["AcmeCo"]'`, `obfuscated_label = 'fintech-a'`, `public_state = 'obfuscated'`.
+   - Call `handleRecordFunnelEvent` with a payload mentioning "Acme Corp" + a recruiter email.
+   - Assert: private funnel_events row contains the real name + email (truth preserved privately).
+   - Assert: public_audit_trail row has `[REDACTED:fintech-a]` and `[EMAIL_REDACTED]`.
+   - Assert: response to the container completed before the mirror ran (use a timer assertion or just verify response landed).
+
+**Definition of done:**
+
+1. `sanitizer.ts` exports `sanitize` returning a sanitized string (no nulls, no throws). Pass 1 + Pass 2 implemented per the patterns above. `applyPass3` no-op stub exported for 4.2's swap.
+2. `public-audit.ts` exports `mirrorFunnelEvent(db, eventId)` returning void; errors logged, never propagated.
+3. `handleRecordFunnelEvent` calls `mirrorFunnelEvent` in a try/catch *after* `writeResponse`. Mirror failure does NOT fail the action handler or roll back the private INSERT.
+4. 4 preference keys seeded in `config/defaults.json`.
+5. ≥12 vitest unit tests on sanitizer patterns + Pass 2 replacement (per component 5).
+6. ≥6 vitest integration tests on `mirrorFunnelEvent` (per component 6).
+7. ≥1 host integration spot check exercising the full `handleRecordFunnelEvent` → mirror path (per component 7).
+8. Existing 457 host tests stay green. Container typecheck stays clean.
+9. Manual spot check: open a fresh DB, seed two applications (one `obfuscated`, one `public`), trigger 5 funnel_events mentioning each company by name + a recruiter email, query `public_audit_trail`. Verify: obfuscated rows show `[REDACTED:<label>]`, public rows show the real name, emails redacted in both.
+
+**Out of scope (explicit — to keep the increment small):**
+
+- **Pass 3 (Haiku LLM review).** Sub-milestone 4.2. Will land as a swap of the `applyPass3` stub, plus the threshold gate, plus the `notifyOwnerOfSanitizationFlag` path, plus Pass-3 flagged rows showing in an owner-private inbox.
+- **`applications` UPDATE → retroactive re-sanitization** of past public_audit_trail rows. If `obfuscated_label` changes or `public_state` flips from `obfuscated` → `public`, existing rows are NOT rewritten. Sub-milestone 4.3.
+- **`public_funnel_view` materialized projection.** The `/api/funnel` endpoint will need this; Phase 5 (portal backend).
+- **Sandbox group sanitization.** The sandbox's public surface is different (per-session synthetic output, not real applications). Phase 5 / portal channel work.
+- **Agent traces SSE sanitization.** `/api/activity/stream` sanitizes on the fly when it queries `public_audit_trail`; if the source row is already sanitized (which 4.1 guarantees), the SSE layer just selects from `public_audit_trail` without re-sanitizing. No work needed in 4.1.
+- **Admin spot-check UI** (raw vs sanitized side-by-side panel). Phase 8 (`/admin`).
+- **Categorization beyond `'funnel'`.** Research-derived rows (`category='research'`), outreach rows (`category='outreach'`), system rows (`category='system'`) — 4.2 or later. 4.1 mirrors only funnel_events, all as `category='funnel'`.
+
+**Risk register:**
+
+| Risk | Likelihood | Mitigation |
+|---|---|---|
+| **A. Regex too aggressive** — real status info nuked (e.g., "Stripe scaled to 100M users" → "[AMOUNT_REDACTED]" if the regex matches "100M" without `$`) | Low | Each pattern has dedicated negative-case unit tests. Monetary requires `$` prefix. Phone has a negative case for year-like patterns. Re-tune if a real funnel_event payload trips it. |
+| **B. Regex too lax** — recruiter email leaks because pattern was incomplete | Medium | Per-pattern unit tests with diverse positives (international phone, plus-addressed emails, etc.). Defense-in-depth audit (component 2) catches alias gaps but NOT email gaps — those rely on regex correctness. Real-world calibration deferred to Sub-milestone 4.x when we have a corpus of real funnel_event payloads. |
+| **C. Company name has special regex chars** (`Microsoft (Bing)`, `AT&T`) → escape bug | Medium | `escapeRegex` helper + dedicated test for parens/ampersand/dot/plus. |
+| **D. Alias overlap** (`Meta` matches inside `Metallica` thanks to word boundary; but what if a candidate is interviewing at both Meta AND Metalogic?) | Medium | Word-boundary regex is the bare-minimum guard. If two companies' aliases collide, the LATER-evaluated rule wins by overwrite — order is unspecified. Document as known limitation; 4.2 Pass 3 can backstop. Catalog the collision in `feedback_sanitization_calibration.md` (future memory) when first observed. |
+| **E. Mirror failure rolls back private write** | Low | `mirrorFunnelEvent` is called AFTER `writeResponse` and wrapped in try/catch in the action handler. Private INSERT is already committed by then. Tested in component 7. |
+| **F. Defense-in-depth audit becomes a denial-of-service** if a legitimately-public-state-changed company's aliases haven't been refreshed | Low | The preference `sanitization_audit_drop_on_unmatched_company` lets the operator flip the audit off if it's over-zealous. Default is `true` (safer to drop than leak). When 4.3 retroactive resanitization lands, this risk diminishes further. |
+| **G. `public_audit_trail.summary` truncation cuts off mid-redaction marker** (e.g., the 500th character is inside `[REDACTED:...]`) | Low | Truncation is on the OUTER summary string AFTER all replacements; if the truncation point lands inside a marker, the marker is incomplete but no real name leaks (the marker comes from sanitizer, not real text). Acceptable. Add a marker-aware truncation only if it produces ugly UX. |
+| **H. Multi-application funnel_event** (a single payload references two companies) | Low | Pass 2 runs ALL applications' replacements over the full text, so both companies get redacted independently. Tested in component 5. |
+| **I. Test fixtures drift from real funnel_event shapes** | Low | The actions.integration test (component 7) exercises the full pipeline through `handleRecordFunnelEvent`, so the fixture shape is whatever that handler accepts. No separate fixture file. |
 
 ---
 
