@@ -164,7 +164,8 @@ type Flow =
   | 'draft-outreach'
   | 'prep-interview'
   | 'scrape-jobs'
-  | 'daily-briefing';
+  | 'daily-briefing'
+  | 'killer-match';
 const FLOWS: ReadonlySet<Flow> = new Set([
   'smoke',
   'onboarding',
@@ -176,6 +177,7 @@ const FLOWS: ReadonlySet<Flow> = new Set([
   'prep-interview',
   'scrape-jobs',
   'daily-briefing',
+  'killer-match',
 ]);
 const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'smoke',
@@ -187,6 +189,7 @@ const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'prep-interview',
   'scrape-jobs',
   'daily-briefing',
+  'killer-match',
 ]);
 
 type LlmProvider = 'ollama' | 'claude';
@@ -2272,6 +2275,246 @@ async function runDailyBriefing(): Promise<void> {
   }
 }
 
+// ── killer-match flow ──────────────────────────────────────────────────────
+
+interface KillerMatchSeed {
+  id: string;
+  company: string;
+  eligible: boolean;
+  // descriptor for assertions
+  reason: 'eligible' | 'low_score' | 'too_old' | 'wrong_source' | 'already_pushed' | 'null_posted_at';
+}
+
+function seedFakeKillerMatchLeads(): KillerMatchSeed[] {
+  // Mixed eligibility set. The "eligible" subset (2 rows) is what the
+  // claim transaction should pick; the others fail one of the criteria.
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const oneHourAgo = new Date(now.getTime() - 1 * 60 * 60 * 1000).toISOString();
+  const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString();
+  const tenHoursAgo = new Date(now.getTime() - 10 * 60 * 60 * 1000).toISOString();
+  const fiveHoursAgo = new Date(now.getTime() - 5 * 60 * 60 * 1000).toISOString();
+
+  interface Row {
+    id: string;
+    source: string;
+    source_job_id: string;
+    title: string;
+    company: string;
+    rules_score: number;
+    source_posted_at: string | null;
+    killer_match_pushed_at: string | null;
+    reason: KillerMatchSeed['reason'];
+    eligible: boolean;
+  }
+
+  const SEEDS: Row[] = [
+    // Eligible — should be claimed
+    { id: 'km-anthropic', source: 'greenhouse', source_job_id: 'km-gh-anthropic-1', title: 'Staff Platform Engineer', company: 'Anthropic', rules_score: 95, source_posted_at: oneHourAgo, killer_match_pushed_at: null, reason: 'eligible', eligible: true },
+    { id: 'km-stripe', source: 'lever', source_job_id: 'km-lv-stripe-1', title: 'Senior Backend Engineer', company: 'Stripe', rules_score: 92, source_posted_at: twoHoursAgo, killer_match_pushed_at: null, reason: 'eligible', eligible: true },
+    // Ineligible — should be ignored
+    { id: 'km-linear', source: 'greenhouse', source_job_id: 'km-gh-linear-1', title: 'Backend Engineer', company: 'Linear', rules_score: 80, source_posted_at: oneHourAgo, killer_match_pushed_at: null, reason: 'low_score', eligible: false },
+    { id: 'km-discord', source: 'greenhouse', source_job_id: 'km-gh-discord-1', title: 'Platform Engineer', company: 'Discord', rules_score: 96, source_posted_at: tenHoursAgo, killer_match_pushed_at: null, reason: 'too_old', eligible: false },
+    { id: 'km-cloudflare', source: 'greenhouse', source_job_id: 'km-gh-cloudflare-1', title: 'Distributed Systems Eng', company: 'Cloudflare', rules_score: 95, source_posted_at: oneHourAgo, killer_match_pushed_at: fiveHoursAgo, reason: 'already_pushed', eligible: false },
+    { id: 'km-vercel', source: 'greenhouse', source_job_id: 'km-gh-vercel-1', title: 'Edge Platform Engineer', company: 'Vercel', rules_score: 95, source_posted_at: null, killer_match_pushed_at: null, reason: 'null_posted_at', eligible: false },
+  ];
+
+  const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
+  const db = new Database(dbPath);
+  try {
+    const fakeFingerprint = (i: number): string => i.toString(16).padStart(16, '0');
+    const stmt = db.prepare(`
+      INSERT INTO job_leads (
+        id, source, source_board_token, source_job_id, source_url, apply_url,
+        content_fingerprint, title, company,
+        first_seen_at, last_seen_at,
+        rules_score, source_posted_at, killer_match_pushed_at,
+        status, status_changed_at
+      ) VALUES (
+        @id, @source, NULL, @source_job_id, @source_url, @apply_url,
+        @content_fingerprint, @title, @company,
+        @now, @now,
+        @rules_score, @source_posted_at, @killer_match_pushed_at,
+        'new', @now
+      )
+    `);
+    SEEDS.forEach((s, i) => {
+      stmt.run({
+        id: s.id,
+        source: s.source,
+        source_job_id: s.source_job_id,
+        source_url: `https://${s.company.toLowerCase()}.example/jobs/${s.source_job_id}`,
+        apply_url: `https://${s.company.toLowerCase()}.example/apply/${s.source_job_id}`,
+        content_fingerprint: fakeFingerprint(i + 1),
+        title: s.title,
+        company: s.company,
+        now: nowIso,
+        rules_score: s.rules_score,
+        source_posted_at: s.source_posted_at,
+        killer_match_pushed_at: s.killer_match_pushed_at,
+      });
+    });
+    ok(`seeded ${SEEDS.length} fake job_leads (2 eligible, 4 ineligible)`);
+  } finally {
+    db.close();
+  }
+  return SEEDS.map((s) => ({ id: s.id, company: s.company, eligible: s.eligible, reason: s.reason }));
+}
+
+async function runKillerMatch(): Promise<void> {
+  header('Flow: killer-match');
+  // Phase 3.1 §24.7 DoD.
+  //
+  // Validates the killer-match event-style alert: host bootstrap creates
+  // the recurring killer-match task; persona handler responds to the
+  // synthetic trigger by atomically claiming eligible leads and emitting
+  // a short urgent push.
+  //
+  // Trigger mechanism: we send `[scheduled trigger: killer-match]` as a
+  // chat message rather than waiting for a real cron fire (same pattern
+  // as daily-briefing). The persona handler is shape-agnostic about how
+  // the trigger arrived.
+  //
+  // No Haiku ranking in this flow — query_killer_matches returns leads
+  // already gated by rules_score; the orchestrator's own turn frames
+  // the message.
+  const seeds = seedFakeKillerMatchLeads();
+  const eligibleSeeds = seeds.filter((s) => s.eligible);
+  const ineligibleSeeds = seeds.filter((s) => !s.eligible);
+
+  const reply = await chatTurn('[scheduled trigger: killer-match]', 300_000);
+
+  // ── Assertion 1: bootstrap fired (messages_in has the task row) ──
+  const inboundPath = findCareerPilotInboundDb();
+  if (!inboundPath) fail('no career-pilot session inbound.db found under data/v2-sessions/');
+  const inDb = new Database(inboundPath, { readonly: true });
+  try {
+    const row = inDb
+      .prepare(
+        "SELECT id, kind, status, recurrence, content, series_id FROM messages_in WHERE series_id = 'killer-match' LIMIT 1",
+      )
+      .get() as
+      | { id: string; kind: string; status: string; recurrence: string; content: string; series_id: string }
+      | undefined;
+    if (!row) {
+      fail(
+        "bootstrap did not insert a killer-match task. " +
+          "Expected messages_in row with series_id='killer-match' kind='task'.",
+      );
+    }
+    if (row.kind !== 'task') fail(`killer-match row has kind='${row.kind}', expected 'task'`);
+    if (!row.recurrence) fail('killer-match row has null recurrence, expected a cron expression');
+    const content = JSON.parse(row.content) as { prompt: string };
+    if (!content.prompt?.includes('killer-match')) {
+      fail(`killer-match row content.prompt missing trigger sentinel: ${content.prompt}`);
+    }
+    ok(`bootstrap inserted task: series_id=killer-match recurrence='${row.recurrence}'`);
+  } finally {
+    inDb.close();
+  }
+
+  // ── Assertion 2: orchestrator called query_killer_matches ──
+  const jsonl = findLatestSessionJsonl();
+  if (!jsonl) fail('no session JSONL found under data/v2-sessions/');
+  const allCalls = listAllToolCalls(jsonl);
+  const claimCalls = allCalls.filter(
+    (c) => c.startsWith('mcp__nanoclaw__query_killer_matches') || c.startsWith('query_killer_matches'),
+  );
+  if (claimCalls.length === 0) {
+    console.error('  --- all orchestrator tool calls ---');
+    for (const c of allCalls) console.error(`  ${c}`);
+    fail(
+      'orchestrator did not call query_killer_matches. The killer-match handler ' +
+        'must call query_killer_matches after the preflight passes.',
+    );
+  }
+  ok(`orchestrator called query_killer_matches ${claimCalls.length} time(s)`);
+
+  // ── Assertion 3: killer_match_pushed_at populated ONLY for eligible leads ──
+  const centralPath = path.join(REPO_ROOT, 'data', 'v2.db');
+  const centralDb = new Database(centralPath, { readonly: true });
+  let pushedRows: Array<{ id: string; company: string; killer_match_pushed_at: string }>;
+  try {
+    pushedRows = centralDb
+      .prepare(
+        "SELECT id, company, killer_match_pushed_at FROM job_leads WHERE killer_match_pushed_at IS NOT NULL AND id LIKE 'km-%' ORDER BY id",
+      )
+      .all() as Array<{ id: string; company: string; killer_match_pushed_at: string }>;
+  } finally {
+    centralDb.close();
+  }
+  // Expected pushed: the 2 newly claimed eligible leads + the 1 pre-seeded "already_pushed" lead.
+  const expectedPushedIds = new Set([
+    ...eligibleSeeds.map((s) => s.id),
+    ...seeds.filter((s) => s.reason === 'already_pushed').map((s) => s.id),
+  ]);
+  const actualPushedIds = new Set(pushedRows.map((r) => r.id));
+  const missing = [...expectedPushedIds].filter((id) => !actualPushedIds.has(id));
+  const unexpected = [...actualPushedIds].filter((id) => !expectedPushedIds.has(id));
+  if (missing.length > 0 || unexpected.length > 0) {
+    fail(
+      `killer_match_pushed_at not as expected.\n` +
+        `  Missing claims (eligible but unclaimed): ${missing.join(', ') || 'none'}\n` +
+        `  Unexpected claims (ineligible but claimed): ${unexpected.join(', ') || 'none'}\n` +
+        `  Ineligible seeds that should stay unclaimed: ${ineligibleSeeds.filter((s) => s.reason !== 'already_pushed').map((s) => `${s.id} (${s.reason})`).join(', ')}`,
+    );
+  }
+  ok(
+    `killer_match_pushed_at populated for ${eligibleSeeds.length} newly claimed lead(s) + 1 pre-pushed; ${ineligibleSeeds.length - 1} ineligible stay unclaimed`,
+  );
+
+  // ── Assertion 4: reply does NOT echo the trigger sentinel ──
+  if (reply.toLowerCase().includes('[scheduled trigger:')) {
+    console.error('  --- orchestrator reply (first 1000 chars) ---');
+    console.error(reply.slice(0, 1000));
+    console.error('  --- end ---');
+    fail(
+      'orchestrator reply echoes the trigger sentinel string. ' +
+        'Persona "Scheduled wakeups" load-bearing rule: never acknowledge the sentinel in the chat reply.',
+    );
+  }
+  ok('orchestrator reply does not echo the trigger sentinel');
+
+  // ── Assertion 5: push OR silent-skip (both valid) ──
+  // If reply mentions one of the eligible companies, it's a faithful push.
+  // If reply is empty, it's a legitimate silent-skip (preflight rejected).
+  // If reply mentions an INELIGIBLE company, that's a fabrication and a hard fail.
+  const eligibleCompanies = new Set(eligibleSeeds.map((s) => s.company.toLowerCase()));
+  const ineligibleCompanies = new Set(ineligibleSeeds.map((s) => s.company.toLowerCase()));
+  const replyLower = reply.toLowerCase();
+  const mentionedEligible = [...eligibleCompanies].find((c) => replyLower.includes(c));
+  const mentionedIneligible = [...ineligibleCompanies].find((c) => replyLower.includes(c));
+  const silentSkip = reply.trim().length === 0;
+
+  if (mentionedIneligible) {
+    console.error('  --- orchestrator reply (first 1000 chars) ---');
+    console.error(reply.slice(0, 1000));
+    console.error('  --- end ---');
+    fail(
+      `reply mentions an INELIGIBLE company "${mentionedIneligible}" — that lead should have been ` +
+        `filtered out by claim_killer_matches before the orchestrator saw it. Possible fabrication.`,
+    );
+  }
+  if (mentionedEligible) {
+    ok(`push emitted — mentions eligible company "${mentionedEligible}" (Pattern B faithful)`);
+  } else if (silentSkip) {
+    ok('silent-skip — no <message> emitted (legitimate when preflight rejects)');
+  } else {
+    console.error('  --- orchestrator reply (first 1000 chars) ---');
+    console.error(reply.slice(0, 1000));
+    console.error(`  --- eligible: ${[...eligibleCompanies].join(', ')} ---`);
+    fail(
+      'reply is neither a faithful push (≥1 eligible company mentioned) ' +
+        'nor a silent-skip. Persona handler should do one or the other.',
+    );
+  }
+
+  // Re-trigger dedup is covered by the `claim_killer_matches` integration
+  // test ("second call returns empty (dedup via killer_match_pushed_at)").
+  // We skip a second e2e chatTurn here because a silent-skip on the second
+  // fire would block the harness waiting for a <message> that never comes.
+}
+
 function seedBookmarkedApplication(opts: {
   id: string;
   company_name: string;
@@ -2761,6 +3004,7 @@ async function main(): Promise<void> {
       'prep-interview': runPrepInterview,
       'scrape-jobs': runScrapeJobs,
       'daily-briefing': runDailyBriefing,
+      'killer-match': runKillerMatch,
     };
     await FLOW_HANDLERS[args.flow]();
     assertionsPassed = true;
