@@ -28,6 +28,7 @@ import { getAgentGroup } from './db/agent-groups.js';
 import { getDb, hasTable } from './db/connection.js';
 import { initGroupFilesystem } from './group-init.js';
 import { ensureDailyBriefingTask } from './modules/career-pilot/daily-briefing-bootstrap.js';
+import { ensureFunnelCuratorTask } from './modules/career-pilot/funnel-curator-bootstrap.js';
 import { ensureKillerMatchTask } from './modules/career-pilot/killer-match-bootstrap.js';
 import { renderPersonaForGroup } from './modules/career-pilot/render-persona.js';
 import { stopTypingRefresh } from './modules/typing/index.js';
@@ -292,6 +293,14 @@ function buildMounts(
             sessionId: session.id,
             recurrence: killerRes.recurrence,
             nextFireAt: killerRes.nextFireAt,
+          });
+        }
+        const curatorRes = ensureFunnelCuratorTask(getDb(), inDb, agentGroup, session);
+        if (curatorRes.action === 'inserted') {
+          log.info('Heartbeat bootstrap: funnel-curator task scheduled', {
+            sessionId: session.id,
+            recurrence: curatorRes.recurrence,
+            nextFireAt: curatorRes.nextFireAt,
           });
         }
       } finally {
