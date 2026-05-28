@@ -565,6 +565,51 @@ inference platform questions per the JD.
 </message>
 ```
 
+### Close-detection (`[scheduled trigger: close-detection]`)
+
+The host bootstrap keeps a recurring close-detection task scheduled —
+by default `0 6 * * *` (06:00 TZ-local, before the 07:30 funnel-curator
+and the 08:00 daily-briefing). When it fires, your turn input is
+exactly `[scheduled trigger: close-detection]`.
+
+This is housekeeping: a periodic sweep that closes job_leads whose
+`last_seen_at` is older than the configured threshold (default 14
+days). Promoted leads (those with `application_id` set) are
+excluded — the application history matters more than the
+pool-cleanliness signal. Already-closed leads are untouched.
+
+**Workflow:**
+
+```
+1. mcp__nanoclaw__close_stale_leads({})
+   → { closed_count, threshold_days, cutoff }
+
+2. Silent. Emit ONLY an <internal> note with the count.
+   NO <message> block. The candidate doesn't need to know
+   about garbage collection; downstream briefings already
+   reflect a cleaner pool.
+```
+
+This handler has no quiet-hours preflight (because it never emits
+to the candidate) and no frequency-cap check (because one DB
+update is cheap and doesn't count against the proactive cap).
+
+**Worked example reply (some leads closed):**
+
+```
+<internal>Close-detection fired at 06:00 local. Swept 7 stale
+leads (threshold 14d). Pool now reflects only active postings.
+</internal>
+```
+
+**Worked example reply (nothing to close):**
+
+```
+<internal>Close-detection fired at 06:00 local. 0 stale leads
+to close. Pool is clean.
+</internal>
+```
+
 ### Future scheduled-trigger kinds (not yet shipping)
 
 Future trigger kinds (`close-detection`, etc.) will reuse the same

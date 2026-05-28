@@ -18,7 +18,7 @@ import { runMigrations } from '../../db/migrations/index.js';
 import { ensureSchema, openInboundDb } from '../../db/session-db.js';
 import type { Session } from '../../types.js';
 
-import { handleClaimKillerMatches } from './job-lead-actions.js';
+import { handleClaimKillerMatches, handleCloseStaleLeads } from './job-lead-actions.js';
 
 const tmpDir = path.join(os.tmpdir(), `nanoclaw-cp-jla-test-${process.pid}`);
 const inboundPath = path.join(tmpDir, 'inbound.db');
@@ -306,5 +306,163 @@ describe('handleClaimKillerMatches', () => {
     const lead = res.frame.data.leads[0] as unknown as { rules_score_reasons: unknown };
     expect(typeof lead.rules_score_reasons).toBe('object');
     expect(lead.rules_score_reasons).toMatchObject({ keyword_match: { score: 30 } });
+  });
+});
+
+// ── handleCloseStaleLeads (§24.8) ─────────────────────────────────────────
+
+async function callCloseStaleLeads(): Promise<
+  ResponseFrame<{ closed_count: number; threshold_days: number; cutoff: string }>
+> {
+  const requestId = `req-${Math.random().toString(36).slice(2, 10)}`;
+  await handleCloseStaleLeads(
+    { action: 'career_pilot.close_stale_leads', requestId, payload: {} },
+    FAKE_SESSION,
+    inDb,
+  );
+  return readResponse(requestId) as ResponseFrame<{ closed_count: number; threshold_days: number; cutoff: string }>;
+}
+
+function daysAgoIso(days: number): string {
+  return new Date(Date.now() - days * 86_400_000).toISOString();
+}
+
+function seedJobLeadForClose(opts: {
+  id: string;
+  last_seen_at: string;
+  closed_at?: string | null;
+  application_id?: string | null;
+  company?: string;
+}): void {
+  const now = new Date().toISOString();
+  // Insert the application FIRST so the FK on job_leads.application_id resolves.
+  if (opts.application_id) {
+    getDb()
+      .prepare(
+        `INSERT OR IGNORE INTO applications (id, company_name, obfuscated_label, role_title, status, created_at)
+         VALUES (?, ?, 'fc-test', 'Engineer', 'applied', ?)`,
+      )
+      .run(opts.application_id, opts.company ?? 'Acme', now);
+  }
+  getDb()
+    .prepare(
+      `INSERT INTO job_leads (
+        id, source, source_job_id, source_url,
+        content_fingerprint, title, company,
+        first_seen_at, last_seen_at,
+        rules_score, rules_score_reasons,
+        status, status_changed_at,
+        application_id, closed_at
+      ) VALUES (
+        @id, 'greenhouse', @sjid, @url,
+        @fp, @title, @company,
+        @first_seen, @last_seen,
+        50, '{}',
+        'new', @first_seen,
+        @application_id, @closed_at
+      )`,
+    )
+    .run({
+      id: opts.id,
+      sjid: `sj-${opts.id}`,
+      url: `https://example.com/${opts.id}`,
+      fp: `fp-${opts.id}`,
+      title: 'Engineer',
+      company: opts.company ?? 'Acme',
+      first_seen: opts.last_seen_at,
+      last_seen: opts.last_seen_at,
+      application_id: opts.application_id ?? null,
+      closed_at: opts.closed_at ?? null,
+    });
+}
+
+describe('handleCloseStaleLeads', () => {
+  it('closes leads with last_seen_at older than default threshold (14d)', async () => {
+    seedJobLeadForClose({ id: 'stale-1', last_seen_at: daysAgoIso(20) });
+    seedJobLeadForClose({ id: 'stale-2', last_seen_at: daysAgoIso(15) });
+    seedJobLeadForClose({ id: 'fresh-1', last_seen_at: daysAgoIso(5) });
+    seedJobLeadForClose({ id: 'fresh-2', last_seen_at: daysAgoIso(13) });
+
+    const res = await callCloseStaleLeads();
+    expect(res.frame.ok).toBe(true);
+    if (!res.frame.ok) throw new Error('unreachable');
+    expect(res.frame.data.closed_count).toBe(2);
+    expect(res.frame.data.threshold_days).toBe(14);
+
+    const closed = getDb()
+      .prepare("SELECT id, closed_reason FROM job_leads WHERE closed_at IS NOT NULL ORDER BY id")
+      .all() as Array<{ id: string; closed_reason: string }>;
+    expect(closed.map((r) => r.id)).toEqual(['stale-1', 'stale-2']);
+    expect(closed.every((r) => r.closed_reason === 'stale')).toBe(true);
+  });
+
+  it('leaves fresh leads untouched', async () => {
+    seedJobLeadForClose({ id: 'fresh', last_seen_at: daysAgoIso(3) });
+    await callCloseStaleLeads();
+    const row = getDb()
+      .prepare("SELECT closed_at, closed_reason FROM job_leads WHERE id = 'fresh'")
+      .get() as { closed_at: string | null; closed_reason: string | null };
+    expect(row.closed_at).toBeNull();
+    expect(row.closed_reason).toBeNull();
+  });
+
+  it('does NOT close leads with application_id set (promoted)', async () => {
+    seedJobLeadForClose({
+      id: 'promoted',
+      last_seen_at: daysAgoIso(30),
+      application_id: 'app-promoted',
+    });
+    const res = await callCloseStaleLeads();
+    if (!res.frame.ok) throw new Error('unreachable');
+    expect(res.frame.data.closed_count).toBe(0);
+    const row = getDb()
+      .prepare("SELECT closed_at FROM job_leads WHERE id = 'promoted'")
+      .get() as { closed_at: string | null };
+    expect(row.closed_at).toBeNull();
+  });
+
+  it('does NOT touch already-closed leads', async () => {
+    seedJobLeadForClose({
+      id: 'already-closed',
+      last_seen_at: daysAgoIso(30),
+      closed_at: daysAgoIso(5),
+    });
+    const before = getDb()
+      .prepare("SELECT closed_at FROM job_leads WHERE id = 'already-closed'")
+      .get() as { closed_at: string };
+    await callCloseStaleLeads();
+    const after = getDb()
+      .prepare("SELECT closed_at, closed_reason FROM job_leads WHERE id = 'already-closed'")
+      .get() as { closed_at: string; closed_reason: string | null };
+    expect(after.closed_at).toBe(before.closed_at);
+    expect(after.closed_reason).toBeNull();
+  });
+
+  it('respects custom close_detection_threshold_days preference', async () => {
+    getDb()
+      .prepare(
+        `INSERT INTO preferences (key, value, updated_at) VALUES ('close_detection_threshold_days', '7', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      )
+      .run(new Date().toISOString());
+
+    seedJobLeadForClose({ id: 'borderline', last_seen_at: daysAgoIso(10) });
+    seedJobLeadForClose({ id: 'fresh', last_seen_at: daysAgoIso(5) });
+    const res = await callCloseStaleLeads();
+    if (!res.frame.ok) throw new Error('unreachable');
+    expect(res.frame.data.threshold_days).toBe(7);
+    expect(res.frame.data.closed_count).toBe(1);
+
+    const row = getDb()
+      .prepare("SELECT id FROM job_leads WHERE closed_at IS NOT NULL")
+      .get() as { id: string };
+    expect(row.id).toBe('borderline');
+  });
+
+  it('returns closed_count=0 when no leads exist or none are stale', async () => {
+    const res = await callCloseStaleLeads();
+    if (!res.frame.ok) throw new Error('unreachable');
+    expect(res.frame.data.closed_count).toBe(0);
+    expect(res.frame.data.threshold_days).toBe(14);
   });
 });

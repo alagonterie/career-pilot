@@ -1021,10 +1021,12 @@ Cross-cutting principle: **no first-time code paths run in production.** Prod is
 | Env | External-API state | Identity / vault | What runs here | What's forbidden |
 |---|---|---|---|---|
 | **fixture** | None — all external responses come from `tests/fixtures/<service>/` via per-action `*_FIXTURE` env vars (e.g. `GMAIL_FIXTURE`, `CALENDAR_FIXTURE`) | None | All vitest unit + integration tests. E2E layers 1-4 from §24.9. CI default. Cheap, deterministic, infinitely re-runnable. | Real HTTP egress of any kind. Live OAuth tokens. |
-| **dev** | Real APIs (Gmail, Calendar, Anthropic, Portkey, etc.) against a **disposable** identity | Dev OneCLI install, dev GCP project, dev Gmail account | Real-API plumbing iteration. Verifying response-shape assumptions match fixtures. Testing 401/404/410 recovery paths. OAuth scope churn. Simulating recruiter outreach via a secondary dev mailbox. | Anything that affects prod state. Sharing tokens with prod. |
-| **prod** | Real APIs against the **canonical** identity (the candidate's actual career inbox + accounts) | Prod OneCLI install on the GCE VM, prod GCP project, `<candidate>.career@gmail.com` | Live operation. Observation via §17 surfaces. Alerting via the Telegram alert channel (§17.3). Recovery via [RECOVERY.md](RECOVERY.md). | Iteration. Test runs. Schema-changing experiments. First-time execution of any code path. |
+| **dev** | Real APIs (Gmail, Calendar, Anthropic, Portkey, etc.) against a **disposable** identity | Dev OneCLI install, dev Gmail account (e.g. `<candidate>.career.dev@gmail.com`). GCP project shared with prod is fine at solo-dev scale — see GCP-project note below | Real-API plumbing iteration. Verifying response-shape assumptions match fixtures. Testing 401/404/410 recovery paths. OAuth scope churn. Simulating recruiter outreach via a Gmail `+`-alias of the dev account. | Anything that affects prod state. Sharing tokens with prod. |
+| **prod** | Real APIs against the **canonical** identity (the candidate's actual career inbox + accounts) | Prod OneCLI install on the GCE VM, prod Gmail account `<candidate>.career@gmail.com`, same GCP project as dev | Live operation. Observation via §17 surfaces. Alerting via the Telegram alert channel (§17.3). Recovery via [RECOVERY.md](RECOVERY.md). | Iteration. Test runs. Schema-changing experiments. First-time execution of any code path. |
 
-The three environments are **fully isolated** at the OneCLI vault layer — separate installs, separate API tokens, separate GCP projects (so quota usage doesn't bleed). The same codebase runs in all three; only env vars + vault selection differ.
+The three environments are **fully isolated** at the OneCLI vault layer — separate installs, separate API tokens, separate connected Gmail/Calendar accounts. The same codebase runs in all three; only env vars + vault selection differ.
+
+**GCP-project note (verified empirically 2026-05-28):** at solo-dev scale, a single GCP project hosting one OAuth client (with both `dev` and `prod` Gmail accounts added as test users on the consent screen) is the practical choice. Tokens are per-(client, user) pair, so dev and prod tokens never mix in OneCLI's vault. Shared quota pool is irrelevant — Gmail's free-tier cap is 80M units/day; the curator at peak burns ~4k. The "separate GCP projects" platonic ideal isn't worth the operational overhead unless we hit real quota pressure, audit-trail-isolation requirements, or scale-out to multi-user. Revisit if any of those become true.
 
 **The pattern for new external integrations:**
 
@@ -2367,6 +2369,145 @@ The only thing genuinely new here is one column on `job_leads` (for push dedup) 
 | **F. `ensureKillerMatchTask()` accretes garbage** (same as §24.6 risk G) | Low | DoD #2 covers it. The `series_id` lookup is the dedup key. Add a guard log on the second-or-later insert call (mirror what daily-briefing does). |
 | **G. Migration 120 breaks on existing DBs** if `killer_match_pushed_at` already exists | Very low | Single ALTER ADD COLUMN. SQLite's `ADD COLUMN IF NOT EXISTS` is not portable, but our migration runner uses version-number gates (`PRAGMA user_version`), so 120 only runs once per DB. |
 | **H. Empty source_allow_list silently disables alerts** | Low | DoD #2 + bootstrap log line: when `source_allow_list` is empty, log "killer-match enabled but source allow-list is empty — no alerts will fire". Surfaces a misconfiguration without throwing. |
+
+#### 24.8 Sub-milestone 3.3 — Close-detection sweep (close stale leads in the `job_leads` pool)
+
+**Why this sub-milestone next:** §24.5 built the `job_leads` pool; §24.6 / §24.7 / §24.9 surface from it. Without close-detection, the pool grows monotonically — postings that have been pulled from boards but were recently observed are still queried as "open" by daily-briefing, killer-match, and funnel-curator. This pollutes everything downstream: stale leads compete for top-N in briefings, killer-match could in principle re-alert on a row whose source posting died, and the funnel-curator's suppression check counts inactive leads. Close-detection is the routine garbage-collection that keeps the pool honest. Pure host-side, no LLM beyond the orchestrator's trivial dispatch turn.
+
+`record_job_lead` already advances `last_seen_at` on its `ON CONFLICT (source, source_job_id) DO UPDATE` path (verified in `src/modules/career-pilot/job-lead-actions.ts`), so the sweep's only job is the inverse: close leads whose `last_seen_at` is older than the configured threshold. The two halves of "advance vs close" naturally split between the scrape-jobs writer (advance) and this sub-milestone (close).
+
+**What NanoClaw provides here (use, don't rebuild — per [[feedback-nanoclaw-infra-first]]):**
+
+| Concern | NanoClaw module | Notes |
+|---|---|---|
+| Scheduling primitive | `container/agent-runner/src/mcp-tools/scheduling.ts` (`schedule_task`) | Reused from §24.6 / §24.7 / §24.9. Single daily fire at 06:00 (before the 07:30 funnel-curator and the 08:00 briefing so they see a clean pool). |
+| Synthetic-trigger delivery | Container poll-loop delivers `kind='task'` rows | Same path — only the `prompt` sentinel changes. |
+| System-action contract | `src/delivery.ts` + `registerDeliveryAction` | Reused for the one new host action. Sweep is DB-only; no external API egress, so no OneCLI gateway interaction. |
+| Existing `job_leads` columns | Migration 110 already has `closed_at`, `closed_reason`, `application_id`, `last_seen_at` | **No new migration.** Sub-milestone is purely additive on the existing schema. |
+
+The only thing genuinely new here is a single host action that issues one UPDATE, a thin container wrapper, a bootstrap, and a one-section persona handler. The smallest sub-milestone in Phase 3.
+
+**Note on the original "no agent wake" framing:** the deferred §24.6.1 pre-wake script gate would have let close-detection run host-side without spawning a container at the scheduled tick. That gate is still deferred (cross-mount complexity not worth the ~$0.03/yr savings). §24.8 instead spawns the container per existing pattern: ~$0.005 × 365 ≈ $2/yr at daily cadence. Acceptable.
+
+**Architectural shape:**
+
+```
+   [container spawn]
+         │
+         ▼
+   ┌──────────────────────────────────────────────────┐
+   │ host: container-runner.ts                        │
+   │   - daily-briefing bootstrap (§24.6)             │
+   │   - killer-match bootstrap (§24.7)               │
+   │   - funnel-curator bootstrap (§24.9)             │
+   │   - NEW: ensureCloseDetectionTask()              │
+   │       inserts kind='task' with stable            │
+   │       series_id='close-detection', recurrence    │
+   │       '0 6 * * *' (06:00 daily, TZ-local).       │
+   │       Idempotent. Owner only — never sandbox.    │
+   └──────────────────────────────────────────────────┘
+
+   [daily at 06:00, host-sweep ticks → container poll delivers
+    prompt "[scheduled trigger: close-detection]"]
+         │
+         ▼
+   ┌──────────────────────────────────────────────────┐
+   │ orchestrator (persona has close-detection        │
+   │  handler)                                        │
+   │   1. mcp__nanoclaw__close_stale_leads({})        │
+   │      → { closed_count, threshold_days }          │
+   │   2. silent — emit only <internal> audit         │
+   │      (housekeeping, not user-facing)             │
+   └──────────────────────────────────────────────────┘
+         │
+         ▼
+   ┌──────────────────────────────────────────────────┐
+   │ host action: career_pilot.close_stale_leads      │
+   │   UPDATE job_leads                               │
+   │     SET closed_at = now(),                       │
+   │         closed_reason = 'stale'                  │
+   │   WHERE closed_at IS NULL                        │
+   │     AND application_id IS NULL                   │
+   │     AND last_seen_at < @cutoff                   │
+   │   Returns: { closed_count, threshold_days,       │
+   │              cutoff }                            │
+   └──────────────────────────────────────────────────┘
+```
+
+**Components to build:**
+
+1. **Host bootstrap: `ensureCloseDetectionTask()`** in `src/modules/career-pilot/close-detection-bootstrap.ts` (sibling to the other three bootstraps).
+   - Mirrors `killer-match-bootstrap.ts` exactly — only differences are `SERIES_ID='close-detection'`, `TASK_PROMPT='[scheduled trigger: close-detection]'`, and `DEFAULT_CRON_EXPR='0 6 * * *'`.
+   - Reads `preferences.close_detection_enabled` (default `true`) and `preferences.close_detection_cron`.
+   - Idempotent. Owner-group only; sandbox never schedules.
+
+2. **Host action: `career_pilot.close_stale_leads`** in `src/modules/career-pilot/job-lead-actions.ts`.
+   - Zero-arg (configuration lives in preferences).
+   - Reads `preferences.close_detection_threshold_days` (default `14`).
+   - Single UPDATE wrapped in `db.transaction(...)`:
+     ```sql
+     UPDATE job_leads
+        SET closed_at = @now, closed_reason = 'stale'
+      WHERE closed_at IS NULL
+        AND application_id IS NULL
+        AND last_seen_at < @cutoff
+     ```
+   - Returns `{ closed_count, threshold_days, cutoff }`.
+   - Sandbox guard via the same folder check as `create_gmail_draft` / funnel actions.
+
+3. **Container-side MCP tool: `close_stale_leads`** in `container/agent-runner/src/mcp-tools/scrape-jobs.ts` (alongside the other job-lead tools — same module so they cohere).
+   - Zero-arg thin `sendAction` wrapper.
+   - `annotations: { readOnlyHint: false }` — this writes (closes).
+
+4. **Persona handler section.** Add to `groups/career-pilot/.claude-host-fragments/persona.md` under "Scheduled wakeups", as a sibling to the other three handlers.
+   - Workflow for `[scheduled trigger: close-detection]`:
+     1. Call `close_stale_leads()`. Receive `{closed_count, threshold_days, cutoff}`.
+     2. Emit ONLY `<internal>` with the count and threshold. **No `<message>` block.** Housekeeping is silent.
+   - Persona must recognize the sentinel and not narrate it to the user.
+   - No quiet-hours preflight (this never emits to the candidate, so quiet hours don't apply).
+   - No frequency cap (one DB update is cheap, doesn't count against proactive cap).
+
+5. **Preferences additions** (seeded in `config/defaults.json`):
+   - `close_detection_enabled` = `true`
+   - `close_detection_cron` = `"0 6 * * *"` (06:00 TZ-local)
+   - `close_detection_threshold_days` = `14`
+
+6. **E2E flow** (`scripts/test/e2e.ts --flow=close-detection`):
+   - Seed: ~5 leads with varied `last_seen_at` — some stale (>14d), some fresh (<14d), one with `application_id` set (promoted to application; should NOT be closed regardless of staleness), one already-closed (should NOT be touched).
+   - Trigger via direct DB write to `messages_in.processAfter` (same as §24.6/§24.7 pattern).
+   - Wait for the next host-sweep tick + recurrence handler.
+   - Assertions: bootstrap inserted task; orchestrator called `close_stale_leads`; the right leads got `closed_at` set with `closed_reason='stale'`; the promoted-to-application lead was untouched; the already-closed lead was untouched; the reply contains NO `<message>` block (silent). Real-mode pattern from §24.9 — accept chatTurn timeout as long as the DB state is correct.
+
+**Definition of done:**
+
+1. `close-detection-bootstrap.ts` lands; `ensureCloseDetectionTask()` idempotent; runs on owner-group spawn; respects `preferences.close_detection_enabled`.
+2. Host action `career_pilot.close_stale_leads` registered; reads threshold from preferences; sandbox-rejects.
+3. Container MCP tool `close_stale_leads` registered with the existing scrape-jobs tool set.
+4. Persona handler section dispatches the action and emits only `<internal>` — never a `<message>`.
+5. 3 preference keys seeded in `config/defaults.json`.
+6. Vitest unit tests on the bootstrap (~15 tests, mirror killer-match-bootstrap.test.ts) and integration tests on the host action (~6 tests covering: fresh untouched, stale closed, promoted untouched, already-closed untouched, custom threshold respected, sandbox rejection).
+7. `pnpm test:e2e --flow=close-detection --llm-provider=claude` green: stale closed with `closed_reason='stale'`, fresh untouched, promoted untouched, orchestrator silent.
+8. Host restart survival: kill host, restart, close-detection task still scheduled and fires on next cron tick.
+
+**Out of scope:**
+
+- **Per-source threshold customization.** Some sources keep postings live longer than others (Lever often weeks; Greenhouse sometimes days). Could refine to a per-source `close_detection_threshold_days_by_source` map. Not needed for v1; the global 14-day default is conservative.
+- **Re-opening closed leads** if scrape-jobs re-encounters them later. `record_job_lead`'s UPSERT only updates `last_seen_at`, not `closed_at`, so a re-encountered lead stays closed. If a closed lead reappears (e.g., re-posted by the company), the candidate sees nothing. Acceptable for v1; if it bites, add a re-open clause to the UPSERT.
+- **Distinguishing "closed by sweep" vs "closed by candidate"** in downstream consumers. v1: anyone reading `job_leads` filters on `closed_at IS NULL` regardless of reason. If downstream wants to surface auto-closed differently, it can filter by `closed_reason`.
+- **Funnel-curator integration.** Closed leads with `linked_job_lead_id` in `email_events` are still linked — the inbox-driven narrative would still reference them. Acceptable: the candidate's actual application history isn't affected, only the lead-pool view of "is this open in the world".
+
+**Risk register:**
+
+| Risk | Likelihood | Mitigation |
+|---|---|---|
+| **A. Threshold too aggressive** — fresh leads closed prematurely because scrape-jobs hasn't run for ~14 days | Low | 14d default is well above any realistic scrape interval (we expect daily-or-better). Preference allows tuning per ops. |
+| **B. Threshold too lax** — pool grows indefinitely with dead leads | Low | 14d is short enough for ATS posting lifecycle (most postings cycle in 30-60d). Tuned down if needed. |
+| **C. Promoted-to-application lead closed** → links to application broken | Low | DoD #2 + integration test #3 enforce `AND application_id IS NULL`. Application-tracking history is preserved. |
+| **D. Race with scrape-jobs UPSERT** — sweep closes a lead just before scrape would refresh it | Very low | Sweep runs once at 06:00; scrape-jobs runs ad-hoc by user trigger. If a lead's `last_seen_at` is at exactly the cutoff and scrape-jobs runs concurrently, scrape advances `last_seen_at`. Either order resolves correctly; SQLite's row-level serialization handles the interleave. |
+| **E. `ensureCloseDetectionTask()` accretes garbage** (same as §24.6 risk G) | Low | DoD #1 covers it. The `series_id` lookup is the dedup key. |
+| **F. Synthetic-trigger echo** (same as §24.6 risk F) | Medium | Persona section names the convention; DoD #4 explicitly forbids `<message>` blocks for this handler. |
+| **G. Sandbox group running sweeps** | Very low | Bootstrap is owner-group-only (DoD #1). Host action sandbox-guards (DoD #2). Defense-in-depth. |
+| **H. Container-spawn cost dominates** if daily fires are too frequent | Low | Cron `0 6 * * *` = 365 fires/year. At ~$0.005/fire (one cheap LLM turn for dispatch) = ~$2/yr. Acceptable. Revisit if telemetry shows higher cost. |
 
 #### 24.9 Sub-milestone 3.4 — Funnel curator (Gmail + Calendar)
 
