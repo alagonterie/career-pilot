@@ -415,4 +415,31 @@ export const queryKillerMatches: McpToolDefinition = {
   },
 };
 
-registerTools([fetchSource, recordJobLead, queryJobLeads, updateJobLeadStatus, discoverAtsBoard, rankLeads, queryKillerMatches]);
+// ── close_stale_leads (§24.8) ──────────────────────────────────────────────
+
+export const closeStaleLeads: McpToolDefinition = {
+  tool: {
+    name: 'close_stale_leads',
+    description:
+      "Periodic sweep: closes job_leads whose last_seen_at is older than the configured threshold (default 14 days). Returns `{ closed_count, threshold_days, cutoff }`. Promoted leads (those with application_id set) are excluded so application history is preserved. Already-closed leads are untouched. This is housekeeping — the persona should call it on the scheduled trigger and emit only an <internal> audit; no <message> block. Threshold + cadence are configurable via the `close_detection_*` preferences.",
+    inputSchema: {
+      type: 'object' as const,
+      properties: {},
+    },
+    annotations: { readOnlyHint: false },
+  },
+  async handler() {
+    const res = await sendAction<{ closed_count: number; threshold_days: number; cutoff: string }>(
+      'career_pilot.close_stale_leads',
+      {},
+    );
+    if (!res.ok) return actionErr('close_stale_leads', res.error);
+    const { closed_count, threshold_days, cutoff } = res.data;
+    return ok(
+      `close_stale_leads: ${closed_count} lead${closed_count === 1 ? '' : 's'} closed (threshold ${threshold_days}d, cutoff ${cutoff}).`,
+      res.data,
+    );
+  },
+};
+
+registerTools([fetchSource, recordJobLead, queryJobLeads, updateJobLeadStatus, discoverAtsBoard, rankLeads, queryKillerMatches, closeStaleLeads]);

@@ -738,6 +738,73 @@ export async function handleClaimKillerMatches(
   }
 }
 
+// ── close_stale_leads (§24.8) ─────────────────────────────────────────────
+//
+// Periodic sweep that closes leads whose source-posting hasn't been seen in
+// a configurable threshold (default 14 days). `record_job_lead`'s UPSERT
+// path advances `last_seen_at` on re-encounter, so a stale `last_seen_at`
+// directly implies the posting is no longer being returned by scrape-jobs.
+//
+// Promoted leads (those with `application_id` set) are excluded — the
+// application history is more important than the pool-cleanliness signal.
+
+const DEFAULT_CLOSE_DETECTION_THRESHOLD_DAYS = 14;
+
+function readCloseDetectionThresholdDays(db: Database.Database): number {
+  try {
+    const row = db
+      .prepare("SELECT value FROM preferences WHERE key = 'close_detection_threshold_days'")
+      .get() as { value: string } | undefined;
+    if (!row) return DEFAULT_CLOSE_DETECTION_THRESHOLD_DAYS;
+    const n = parseInt(row.value, 10);
+    return Number.isFinite(n) && n > 0 ? n : DEFAULT_CLOSE_DETECTION_THRESHOLD_DAYS;
+  } catch {
+    return DEFAULT_CLOSE_DETECTION_THRESHOLD_DAYS;
+  }
+}
+
+export async function handleCloseStaleLeads(
+  content: Record<string, unknown>,
+  _session: Session,
+  inDb: Database.Database,
+): Promise<void> {
+  const requestId = reqId(content);
+  try {
+    const db = getDb();
+    const thresholdDays = readCloseDetectionThresholdDays(db);
+    const now = new Date();
+    const cutoffMs = now.getTime() - thresholdDays * 86_400_000;
+    const cutoff = new Date(cutoffMs).toISOString();
+    const nowIso = now.toISOString();
+
+    const result = db
+      .prepare(
+        `UPDATE job_leads
+            SET closed_at = @now, closed_reason = 'stale'
+          WHERE closed_at IS NULL
+            AND application_id IS NULL
+            AND last_seen_at < @cutoff`,
+      )
+      .run({ now: nowIso, cutoff });
+
+    const closedCount = result.changes;
+    if (closedCount > 0) {
+      log.info('close-detection: leads closed', { closedCount, thresholdDays, cutoff });
+    }
+
+    writeResponse(inDb, requestId, {
+      ok: true,
+      data: { closed_count: closedCount, threshold_days: thresholdDays, cutoff },
+    });
+  } catch (err) {
+    log.error('handleCloseStaleLeads failed', { err });
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
 // ── discover_ats_board ─────────────────────────────────────────────────────
 
 const GREENHOUSE_URL_RE = /https?:\/\/(?:boards\.greenhouse\.io|boards-api\.greenhouse\.io)\/(?:embed\/job_board\?for=)?([\w-]+)/i;

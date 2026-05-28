@@ -52,7 +52,10 @@
     },
     "funnel_curator_max_narratives": 20,
     "funnel_curator_max_attention_items": 10,
-    "funnel_curator_skip_if_no_deltas": true
+    "funnel_curator_skip_if_no_deltas": true,
+    "close_detection_enabled": true,
+    "close_detection_cron": "0 6 * * *",
+    "close_detection_threshold_days": 14
   },
   "system_modes": {
     "live_mode": false,

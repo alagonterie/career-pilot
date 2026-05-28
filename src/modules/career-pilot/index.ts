@@ -20,6 +20,7 @@ import {
 } from './actions.js';
 import {
   handleClaimKillerMatches,
+  handleCloseStaleLeads,
   handleDiscoverAtsBoard,
   handleFetchSource,
   handleGetLeadSummariesForRanking,
@@ -55,6 +56,7 @@ registerDeliveryAction('career_pilot.fetch_source', handleFetchSource);
 registerDeliveryAction('career_pilot.get_lead_summaries_for_ranking', handleGetLeadSummariesForRanking);
 registerDeliveryAction('career_pilot.write_llm_scores', handleWriteLlmScores);
 registerDeliveryAction('career_pilot.claim_killer_matches', handleClaimKillerMatches);
+registerDeliveryAction('career_pilot.close_stale_leads', handleCloseStaleLeads);
 registerDeliveryAction('career_pilot.gmail_query_delta', handleGmailQueryDelta);
 registerDeliveryAction('career_pilot.calendar_query_delta', handleCalendarQueryDelta);
 registerDeliveryAction('career_pilot.persist_funnel_state', handlePersistFunnelState);

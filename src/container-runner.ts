@@ -27,6 +27,7 @@ import { composeGroupClaudeMd, composeSubagentDefinitions } from './claude-md-co
 import { getAgentGroup } from './db/agent-groups.js';
 import { getDb, hasTable } from './db/connection.js';
 import { initGroupFilesystem } from './group-init.js';
+import { ensureCloseDetectionTask } from './modules/career-pilot/close-detection-bootstrap.js';
 import { ensureDailyBriefingTask } from './modules/career-pilot/daily-briefing-bootstrap.js';
 import { ensureFunnelCuratorTask } from './modules/career-pilot/funnel-curator-bootstrap.js';
 import { ensureKillerMatchTask } from './modules/career-pilot/killer-match-bootstrap.js';
@@ -301,6 +302,14 @@ function buildMounts(
             sessionId: session.id,
             recurrence: curatorRes.recurrence,
             nextFireAt: curatorRes.nextFireAt,
+          });
+        }
+        const closeDetectionRes = ensureCloseDetectionTask(getDb(), inDb, agentGroup, session);
+        if (closeDetectionRes.action === 'inserted') {
+          log.info('Heartbeat bootstrap: close-detection task scheduled', {
+            sessionId: session.id,
+            recurrence: closeDetectionRes.recurrence,
+            nextFireAt: closeDetectionRes.nextFireAt,
           });
         }
       } finally {
