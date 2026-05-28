@@ -47,6 +47,33 @@ export type ActionResponse<T> =
  * `career_pilot.update_application`). The host's handler registry is keyed
  * on this exact string.
  */
+/**
+ * Detects the transient NanoClaw IPC quirk where the session's outbound.db
+ * SQLite handle transiently reports as readonly (typically during a session-
+ * DB initialization race window on Windows + Docker volume mounts). The
+ * NanoClaw poll-loop path has graceful handling for this; sendAction
+ * inherits the same flakiness and gets a single retry as a workaround.
+ *
+ * If the underlying race ever gets root-caused upstream, this can be
+ * removed. For now: keep silent, brief, observable in logs.
+ */
+function isReadonlyDbError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /readonly database/i.test(msg);
+}
+
+async function writeMessageOutWithRetry(args: Parameters<typeof writeMessageOut>[0]): Promise<void> {
+  try {
+    writeMessageOut(args);
+    return;
+  } catch (err) {
+    if (!isReadonlyDbError(err)) throw err;
+    log(`sendAction: readonly-DB on writeMessageOut; retrying once after 200ms`);
+    await sleep(200);
+    writeMessageOut(args); // let any second-attempt error propagate normally
+  }
+}
+
 export async function sendAction<T = unknown>(
   action: string,
   payload: Record<string, unknown>,
@@ -55,7 +82,7 @@ export async function sendAction<T = unknown>(
   const requestId = generateRequestId();
   const r = getSessionRouting();
 
-  writeMessageOut({
+  await writeMessageOutWithRetry({
     id: requestId,
     kind: 'system',
     platform_id: r.platform_id,

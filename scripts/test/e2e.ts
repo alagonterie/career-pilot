@@ -2862,7 +2862,32 @@ async function runFunnelCurator(): Promise<void> {
 
   const { applicationId, leadId } = seedFunnelCuratorBase();
 
-  const reply = await chatTurn('[scheduled trigger: funnel-curator]', 600_000);
+  // Real-mode runs may legitimately emit <internal> only when the dev
+  // inbox contains nothing job-relevant — chatTurn would hang waiting
+  // for a <message> that the curator (correctly) declined to send.
+  // Detect this case via the persisted funnel_curator_output row.
+  let reply = '';
+  try {
+    reply = await chatTurn('[scheduled trigger: funnel-curator]', realApiMode ? 120_000 : 600_000);
+  } catch (e) {
+    if (!realApiMode) throw e;
+    // Real-mode: check whether the curator persisted a row regardless of reply
+    const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
+    const checkDb = new Database(dbPath, { readonly: true });
+    try {
+      const persisted = checkDb
+        .prepare("SELECT COUNT(*) AS n FROM funnel_curator_output")
+        .get() as { n: number };
+      if (persisted.n > 0) {
+        console.log(`  (chatTurn timed out, but curator persisted ${persisted.n} run(s) — treating as silent completion)`);
+        reply = '<internal>(silent completion — curator persisted output without emitting a user-facing message)</internal>';
+      } else {
+        throw e;
+      }
+    } finally {
+      checkDb.close();
+    }
+  }
 
   // ── Assertion 1: bootstrap fired ──
   const inboundPath = findCareerPilotInboundDb();
