@@ -35,7 +35,13 @@
     "daily_briefing_time": "0 8 * * *",
     "daily_briefing_min_llm_score": 40,
     "daily_briefing_top_n": 5,
-    "daily_briefing_max_cost_usd": 0.15
+    "daily_briefing_max_cost_usd": 0.15,
+    "killer_match_enabled": true,
+    "killer_match_cron": "*/30 7-22 * * *",
+    "killer_match_min_rules_score": 90,
+    "killer_match_recency_window_hours": 6,
+    "killer_match_max_per_fire": 3,
+    "killer_match_source_allow_list": ["greenhouse", "lever"]
   },
   "system_modes": {
     "live_mode": false,
