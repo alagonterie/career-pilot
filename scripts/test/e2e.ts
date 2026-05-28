@@ -165,7 +165,8 @@ type Flow =
   | 'prep-interview'
   | 'scrape-jobs'
   | 'daily-briefing'
-  | 'killer-match';
+  | 'killer-match'
+  | 'funnel-curator-consumer';
 const FLOWS: ReadonlySet<Flow> = new Set([
   'smoke',
   'onboarding',
@@ -178,6 +179,7 @@ const FLOWS: ReadonlySet<Flow> = new Set([
   'scrape-jobs',
   'daily-briefing',
   'killer-match',
+  'funnel-curator-consumer',
 ]);
 const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'smoke',
@@ -190,6 +192,7 @@ const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'scrape-jobs',
   'daily-briefing',
   'killer-match',
+  'funnel-curator-consumer',
 ]);
 
 type LlmProvider = 'ollama' | 'claude';
@@ -2515,6 +2518,271 @@ async function runKillerMatch(): Promise<void> {
   // fire would block the harness waiting for a <message> that never comes.
 }
 
+// ── funnel-curator-consumer flow (§24.9) ──────────────────────────────────
+
+function seedFakeFunnelState(): { applicationId: string; runId: string } {
+  // Seeds a complete funnel-curator output as if the curator subagent had
+  // just run. The orchestrator's on-demand pattern reads this cached state
+  // when the candidate asks "what's the state of <company>?" — no curator
+  // re-spawn, no LLM expense for the consumer flow.
+  const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
+  const db = new Database(dbPath);
+  try {
+    const now = new Date().toISOString();
+    const isoMinusDays = (d: number) =>
+      new Date(Date.now() - d * 86_400_000).toISOString();
+
+    const applicationId = 'app-fc-acme';
+    const leadId = 'lead-fc-acme';
+    const runId = `fcr-seed-${Date.now().toString(36)}`;
+
+    db.prepare(
+      `INSERT INTO applications (id, company_name, obfuscated_label, role_title, status, applied_at, last_activity_at, created_at)
+       VALUES (?, 'Acme', 'fc-test-a', 'Senior Engineer', 'interviewing', ?, ?, ?)`,
+    ).run(applicationId, isoMinusDays(14), isoMinusDays(2), isoMinusDays(14));
+
+    db.prepare(
+      `INSERT INTO job_leads (
+        id, source, source_job_id, source_url,
+        content_fingerprint, title, company,
+        first_seen_at, last_seen_at,
+        rules_score, rules_score_reasons,
+        status, status_changed_at, application_id
+      ) VALUES (?, 'greenhouse', ?, ?, ?, ?, 'Acme', ?, ?, 88, '{}', 'applied', ?, ?)`,
+    ).run(
+      leadId,
+      'sj-fc-acme',
+      'https://acme.example/jobs/senior-engineer',
+      'fp-fc-acme',
+      'Senior Engineer',
+      isoMinusDays(14),
+      isoMinusDays(2),
+      isoMinusDays(14),
+      applicationId,
+    );
+
+    const insertEvent = db.prepare(
+      `INSERT INTO email_events (
+         gmail_msg_id, thread_id, classification, confidence,
+         linked_job_lead_id, linked_application_id,
+         from_addr, subject, received_at, evidence_excerpt,
+         classified_at, classified_by_run_id
+       ) VALUES (@id, @thread, @cls, @conf, @lead, @app, @from, @subj, @at, @excerpt, @now, @run)`,
+    );
+    const seedEvents: Array<{
+      id: string;
+      cls: string;
+      from: string;
+      subj: string;
+      at: string;
+      excerpt: string;
+    }> = [
+      {
+        id: 'msg-fc-acme-1',
+        cls: 'application_confirmation',
+        from: 'no-reply@greenhouse.example',
+        subj: 'Thanks for applying — Senior Engineer at Acme',
+        at: isoMinusDays(14),
+        excerpt: 'Thanks for applying. We will review your application.',
+      },
+      {
+        id: 'msg-fc-acme-2',
+        cls: 'screen_invite',
+        from: 'recruiting@acme.example',
+        subj: 'Re: Senior Engineer at Acme — recruiter screen?',
+        at: isoMinusDays(12),
+        excerpt: 'We would love to set up a 30-min recruiter screen.',
+      },
+      {
+        id: 'msg-fc-acme-3',
+        cls: 'take_home_delivery',
+        from: 'recruiting@acme.example',
+        subj: 'Re: Senior Engineer at Acme — take-home',
+        at: isoMinusDays(7),
+        excerpt: 'Take-home assignment, due Friday.',
+      },
+      {
+        id: 'msg-fc-acme-4',
+        cls: 'onsite_invite',
+        from: 'recruiting@acme.example',
+        subj: 'Re: Senior Engineer at Acme — onsite scheduling',
+        at: isoMinusDays(2),
+        excerpt: 'We would like to schedule the onsite (5 sessions).',
+      },
+    ];
+    for (const e of seedEvents) {
+      insertEvent.run({
+        id: e.id,
+        thread: 'thread-fc-acme',
+        cls: e.cls,
+        conf: 0.92,
+        lead: leadId,
+        app: applicationId,
+        from: e.from,
+        subj: e.subj,
+        at: e.at,
+        excerpt: e.excerpt,
+        now,
+        run: runId,
+      });
+    }
+
+    db.prepare(
+      `INSERT INTO funnel_curator_output (
+        id, run_at, gmail_history_id, calendar_sync_tokens,
+        narratives_json, attention_json, suggestions_json,
+        cheap_out, cost_usd
+      ) VALUES (@id, @at, 'hist-seed', '{}',
+                @narratives, @attention, @suggestions, 0, 0.25)`,
+    ).run({
+      id: runId,
+      at: now,
+      narratives: JSON.stringify([
+        {
+          company: 'Acme',
+          application_id: applicationId,
+          lead_id: leadId,
+          current_state: 'interviewing',
+          last_event_at: isoMinusDays(2),
+          timeline_excerpt: [
+            `${isoMinusDays(14).slice(0, 10)} applied via Greenhouse`,
+            `${isoMinusDays(12).slice(0, 10)} recruiter screen with the Acme team`,
+            `${isoMinusDays(7).slice(0, 10)} take-home assigned`,
+            `${isoMinusDays(2).slice(0, 10)} onsite scheduled (5 sessions)`,
+          ],
+        },
+      ]),
+      attention: JSON.stringify([
+        {
+          priority: 'action_owed',
+          reason: 'Acme onsite was scheduled 2 days ago — confirm time + prep.',
+          application_id: applicationId,
+          company: 'Acme',
+          action_hint: 'Confirm the onsite time + prep system-design.',
+        },
+      ]),
+      suggestions: JSON.stringify([]),
+    });
+
+    ok(
+      `seeded funnel-curator state: application=${applicationId}, lead=${leadId}, 4 email_events, run=${runId}`,
+    );
+    return { applicationId, runId };
+  } finally {
+    db.close();
+  }
+}
+
+async function runFunnelCuratorConsumer(): Promise<void> {
+  header('Flow: funnel-curator-consumer');
+  // Phase 3.2 §24.9 DoD #9.
+  //
+  // Validates the consumer side of the funnel-curator subsystem: the
+  // orchestrator's on-demand "what's the state of X?" pattern reads from
+  // the cached funnel_curator_output read-model rather than re-spawning
+  // the curator. We seed the cached state directly — no curator subagent
+  // dispatch, no LLM expense beyond the orchestrator's own answer turn.
+  //
+  // This is the cheap layer (Layer 3 from the spec): mechanics-of-
+  // orchestration, suitable for ollama. The full funnel-curator dispatch
+  // path (Layer 4 — fixture-driven curator + Claude) is a separate flow.
+  const { applicationId } = seedFakeFunnelState();
+
+  const reply = await chatTurn("What's the state of my Acme application?", 300_000);
+
+  // ── Assertion 1: funnel-curator bootstrap fired ──
+  const inboundPath = findCareerPilotInboundDb();
+  if (!inboundPath) fail('no career-pilot session inbound.db found under data/v2-sessions/');
+  const inDb = new Database(inboundPath, { readonly: true });
+  try {
+    const row = inDb
+      .prepare(
+        "SELECT id, kind, recurrence, content FROM messages_in WHERE series_id = 'funnel-curator' LIMIT 1",
+      )
+      .get() as
+      | { id: string; kind: string; recurrence: string; content: string }
+      | undefined;
+    if (!row) {
+      fail(
+        "bootstrap did not insert a funnel-curator task. " +
+          "Expected messages_in row with series_id='funnel-curator' kind='task'.",
+      );
+    }
+    if (row.kind !== 'task') fail(`funnel-curator row has kind='${row.kind}', expected 'task'`);
+    if (!row.recurrence) fail('funnel-curator row has null recurrence');
+    const content = JSON.parse(row.content) as { prompt: string };
+    if (!content.prompt?.includes('funnel-curator')) {
+      fail(`funnel-curator row content.prompt missing trigger sentinel: ${content.prompt}`);
+    }
+    ok(`bootstrap inserted task: series_id=funnel-curator recurrence='${row.recurrence}'`);
+  } finally {
+    inDb.close();
+  }
+
+  // ── Assertion 2: orchestrator called read_funnel_state ──
+  const jsonl = findLatestSessionJsonl();
+  if (!jsonl) fail('no session JSONL found under data/v2-sessions/');
+  const allCalls = listAllToolCalls(jsonl);
+  const readCalls = allCalls.filter(
+    (c) => c.startsWith('mcp__nanoclaw__read_funnel_state') || c.startsWith('read_funnel_state'),
+  );
+  if (readCalls.length === 0) {
+    console.error('  --- all orchestrator tool calls ---');
+    for (const c of allCalls) console.error(`  ${c}`);
+    fail(
+      'orchestrator did not call read_funnel_state. The on-demand "state of X?" ' +
+        'pattern must read from the cached read-model rather than the lead pool.',
+    );
+  }
+  ok(`orchestrator called read_funnel_state ${readCalls.length} time(s)`);
+
+  // ── Assertion 3: reply references the seeded narrative ──
+  const replyLower = reply.toLowerCase();
+  if (!replyLower.includes('acme')) {
+    console.error('  --- reply (first 500 chars) ---');
+    console.error(reply.slice(0, 500));
+    fail(
+      'reply does not mention "Acme". The orchestrator should synthesize from ' +
+        'the matched narrative, naming the company explicitly.',
+    );
+  }
+  ok('reply mentions Acme (company match)');
+
+  // The reply should cite at least one timeline event from the seeded
+  // narrative (applied / recruiter screen / take-home / onsite). We
+  // accept any one — the orchestrator chooses how much of the timeline
+  // to surface.
+  const timelineKeywords = ['applied', 'recruiter', 'screen', 'take-home', 'onsite', 'interview'];
+  const matched = timelineKeywords.filter((k) => replyLower.includes(k));
+  if (matched.length === 0) {
+    console.error('  --- reply (first 500 chars) ---');
+    console.error(reply.slice(0, 500));
+    fail(
+      `reply does not cite any timeline event from the seeded narrative. ` +
+        `Expected one of: ${timelineKeywords.join(', ')}.`,
+    );
+  }
+  ok(`reply cites timeline keyword(s): ${matched.join(', ')}`);
+
+  // ── Assertion 4: application id present in the narrative read ──
+  // (Sanity check on the seeded state, not the reply — we already verified
+  // read_funnel_state was called.)
+  const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
+  const centralDb = new Database(dbPath, { readonly: true });
+  try {
+    const outputRow = centralDb
+      .prepare("SELECT narratives_json FROM funnel_curator_output WHERE id LIKE 'fcr-seed-%' LIMIT 1")
+      .get() as { narratives_json: string } | undefined;
+    if (!outputRow) fail('seeded funnel_curator_output row not found post-run');
+    const narratives = JSON.parse(outputRow.narratives_json) as Array<{ application_id: string }>;
+    const matched = narratives.find((n) => n.application_id === applicationId);
+    if (!matched) fail(`narrative for ${applicationId} not in seeded output`);
+    ok(`seeded narrative for application ${applicationId} persists post-run`);
+  } finally {
+    centralDb.close();
+  }
+}
+
 function seedBookmarkedApplication(opts: {
   id: string;
   company_name: string;
@@ -3005,6 +3273,7 @@ async function main(): Promise<void> {
       'scrape-jobs': runScrapeJobs,
       'daily-briefing': runDailyBriefing,
       'killer-match': runKillerMatch,
+      'funnel-curator-consumer': runFunnelCuratorConsumer,
     };
     await FLOW_HANDLERS[args.flow]();
     assertionsPassed = true;
