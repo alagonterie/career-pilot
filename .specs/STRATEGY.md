@@ -1014,6 +1014,43 @@ Examples of what MUST be configurable (not hardcoded):
 
 See §20 for the full configuration model.
 
+#### 16.8 Test-environment matrix
+
+Cross-cutting principle: **no first-time code paths run in production.** Prod is for observation, alerting, and recovery — not iteration. Every behavior must execute first in a non-prod environment that can be observed, broken, and reset without consequence. The matrix below codifies that discipline; every new external integration MUST declare which environment(s) it runs in.
+
+| Env | External-API state | Identity / vault | What runs here | What's forbidden |
+|---|---|---|---|---|
+| **fixture** | None — all external responses come from `tests/fixtures/<service>/` via per-action `*_FIXTURE` env vars (e.g. `GMAIL_FIXTURE`, `CALENDAR_FIXTURE`) | None | All vitest unit + integration tests. E2E layers 1-4 from §24.9. CI default. Cheap, deterministic, infinitely re-runnable. | Real HTTP egress of any kind. Live OAuth tokens. |
+| **dev** | Real APIs (Gmail, Calendar, Anthropic, Portkey, etc.) against a **disposable** identity | Dev OneCLI install, dev GCP project, dev Gmail account | Real-API plumbing iteration. Verifying response-shape assumptions match fixtures. Testing 401/404/410 recovery paths. OAuth scope churn. Simulating recruiter outreach via a secondary dev mailbox. | Anything that affects prod state. Sharing tokens with prod. |
+| **prod** | Real APIs against the **canonical** identity (the candidate's actual career inbox + accounts) | Prod OneCLI install on the GCE VM, prod GCP project, `<candidate>.career@gmail.com` | Live operation. Observation via §17 surfaces. Alerting via the Telegram alert channel (§17.3). Recovery via [RECOVERY.md](RECOVERY.md). | Iteration. Test runs. Schema-changing experiments. First-time execution of any code path. |
+
+The three environments are **fully isolated** at the OneCLI vault layer — separate installs, separate API tokens, separate GCP projects (so quota usage doesn't bleed). The same codebase runs in all three; only env vars + vault selection differ.
+
+**The pattern for new external integrations:**
+
+Every external API integration follows the same recipe so promotion to prod is a vault-swap, not a code change:
+
+1. **Write the host action returning `NOT_IMPLEMENTED`.** Establishes the system-action contract + the boundary between container and external world.
+2. **Add a `*_FIXTURE` env seam.** When the env var is set, route to `tests/fixtures/<service>/` via a fixture loader (pattern: `src/modules/career-pilot/funnel-fixture-loader.ts`). Unit + integration + e2e tests all use this seam.
+3. **Wire the real API client** behind a runtime selection that reads from the OneCLI vault. The dev install has a dev token; the prod install has a prod token; the code path is identical.
+4. **Exercise the real path in dev first** until the response-shape assumptions are confirmed and recovery paths (token expiration, 4xx errors, rate limits) all behave as the fixture-mode tests anticipated.
+5. **Promote to prod** by deploying the same code with the prod OneCLI vault selected. No first-time-in-prod code paths.
+
+Steps 1-2 typically land together in the sub-milestone that introduces the integration. Step 3 lands when fixture-mode is no longer sufficient. Steps 4-5 land just before flipping `live_mode=true` (§11).
+
+**Discovering fixture drift:**
+
+The dev environment is also the seam for discovering when our fixture shapes diverge from reality. When a real API response carries fields we didn't anticipate, the host action's parser will fail or silently drop data. The disciplined response: PII-scrub the unexpected response, save it as a new fixture in `tests/fixtures/<service>/`, and write an integration test that exercises the new shape. Drift becomes a fixture-set addition, not a one-off bugfix.
+
+**Definition of done for this section** (applies retroactively to any external integration that lands after this section is written): the integration's sub-milestone DoD MUST name which test layer runs in which environment, and MUST NOT require a code path to first execute in prod. If a behavior can only be verified by hitting the prod identity, the spec is incomplete and the integration is blocked until a dev-environment surrogate exists.
+
+**Cross-references:**
+
+- The Gmail/Calendar OAuth setup procedure for dev + prod is in §22 (the procedure applies twice — once per environment).
+- The per-sub-milestone test layer plans (§24.6 / §24.7 / §24.9) all reference this matrix to declare which layer runs in which environment.
+- `pnpm reset:dev` (§16.5) operates on the dev environment; there is no `reset:prod` (intentional — prod resets go through the operator manual in [RECOVERY.md](RECOVERY.md)).
+- The "first-time code path" rule belongs in the §19 security & threat model as a defense-in-depth control; folding it in is a small follow-up.
+
 ### 17. Observability
 
 Two surfaces of observability: **public** (sanitized, recruiter-facing on the portal) and **owner-private** (full-fidelity, the candidate only).
