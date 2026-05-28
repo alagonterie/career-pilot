@@ -2148,7 +2148,7 @@ We build only what NanoClaw doesn't already provide: the bootstrap that ensures 
 
 **Out of scope (deferred sub-milestones):**
 
-- **§24.7 Sub-milestone 3.2 — Killer-match push** (rules_score ≥ 90 + recent + Tier-A source). Uses the same `schedule_task` primitive (probably a high-frequency-with-script-gate schedule); lands as its own drill-in.
+- **§24.7 Sub-milestone 3.2 — Killer-match push** (rules_score ≥ 90 + recent + Tier-A source). Uses the same `schedule_task` primitive — high-frequency poll (every 30min during waking hours) with transactional SELECT-for-claim dedup. Drilled in below.
 - **§24.8 Sub-milestone 3.3 — Close-detection sweep** (advance `last_seen_at`, mark stale rows `closed_at`). Another `schedule_task` consumer (lower frequency, no agent wake — does a sweep via script).
 - **§24.9 Sub-milestone 3.4 — Lead-to-application promotion** (orchestrator UX: "I'm applying to that one" → `update_application` + `update_job_lead_status('applied')` paired). Pure orchestrator/persona work; no infra delta.
 - **Telegram-driven Gmail OAuth onboarding wizard** — separately scoped follow-up. Not Phase 3 critical-path.
@@ -2169,6 +2169,167 @@ We build only what NanoClaw doesn't already provide: the bootstrap that ensures 
 | **F. The synthetic "[scheduled trigger: …]" turn confuses the orchestrator into thinking it's a user message** | Medium. Worth being explicit. | Persona section names the convention. The synthetic turn uses a sentinel that the persona's instructions explicitly recognize. Manual review of the orchestrator's reply text post-DoD to confirm it doesn't acknowledge the trigger string itself. |
 | **G. (NEW) `ensureDailyBriefingTask()` runs on every spawn and slowly accretes garbage** if idempotency check breaks | Low | DoD #1 covers it. Add a host-side guard log on the second-or-later insert call so a regression surfaces fast. |
 | **H. ~~Pre-wake script reads from `data/v2.db` but the path is wrong~~** | Resolved by component 5 deferral | The script gate is deferred (see component 5); when it returns, the design must account for the container-side execution context — see the cross-mount caveats listed there. |
+
+#### 24.7 Sub-milestone 3.2 — Killer-match push (event-style alert on rules_score ≥ 90 + recent + Tier-A)
+
+**Why this sub-milestone next:** §24.6 established the heartbeat foundation — a scheduled task that wakes the orchestrator and surfaces a daily summary. §24.7 is the first *event-style* alert: when a single posting lands with very high rules-score signal (and the posting is fresh from a high-signal source), the candidate gets pinged immediately, not at the next 8am tick. This is the speed-actually-matters case — the "founder posted this 20 minutes ago" scenario from `.specs/research/PHASE_2_5_JOB_BOARDS.md` §pool-first. Validates `schedule_task` under a second consumer with a different shape (high-frequency poll + claim, not low-frequency render). No new infra; reuses everything §24.6 built.
+
+**What NanoClaw provides here (use, don't rebuild — per [[feedback-nanoclaw-infra-first]]):**
+
+| Concern | NanoClaw module | Notes |
+|---|---|---|
+| Scheduling primitive | `container/agent-runner/src/mcp-tools/scheduling.ts` (`schedule_task`, etc.) | Reused from §24.6. |
+| Task storage | `messages_in` rows with `kind='task'` | No new migration on the task side. |
+| Tick loop | `src/host-sweep.ts` + `src/modules/scheduling/recurrence.ts` | Same path as daily-briefing. |
+| Synthetic turn delivery | Container poll-loop delivers due `messages_in` rows | Same path — only the `prompt` sentinel changes. |
+| System-action contract | `src/delivery.ts` + `registerDeliveryAction` | Reused for the two new host actions below. |
+
+The only thing genuinely new here is one column on `job_leads` (for push dedup) and one persona-handler section. Everything else is wiring.
+
+**Architectural shape:**
+
+```
+   [container spawn]
+         │
+         ▼
+   ┌──────────────────────────────────────────────────┐
+   │ host: container-runner.ts                        │
+   │   - daily-briefing bootstrap (§24.6)             │
+   │   - NEW: ensureKillerMatchTask()                 │
+   │       inserts kind=task row with stable          │
+   │       series_id='killer-match' and recurrence    │
+   │       '*/30 7-22 * * *' (every 30min during      │
+   │       waking hours). Idempotent.                 │
+   └──────────────────────────────────────────────────┘
+
+   [every 30min during waking hours, host-sweep ticks]
+         │
+         ▼
+   ┌──────────────────────────────────────────────────┐
+   │ host-sweep + recurrence.ts (NanoClaw existing)   │
+   │   - finds the killer-match task row, marks       │
+   │     'pending' for container intake               │
+   └──────────────────────────────────────────────────┘
+         │
+         ▼
+   ┌──────────────────────────────────────────────────┐
+   │ container poll-loop (NanoClaw existing)          │
+   │   - delivers prompt: "[scheduled trigger:        │
+   │     killer-match]"                               │
+   └──────────────────────────────────────────────────┘
+         │
+         ▼
+   ┌──────────────────────────────────────────────────┐
+   │ orchestrator (persona has killer-match handler)  │
+   │   1. preflight: quiet hours? frequency cap?      │
+   │   2. query_killer_matches()  ← NEW MCP tool      │
+   │      → host SELECT-FOR-CLAIM transactional       │
+   │        atomically marks pushed; returns 0-N      │
+   │        leads matching rules_score >= floor +     │
+   │        recent + Tier-A source                    │
+   │   3. if 0 leads → silent skip                    │
+   │   4. else emit <message to="owner"> with the     │
+   │      lead(s) — short, urgent tone, links to      │
+   │      apply_url. No LLM ranking pass (rules_score │
+   │      is the gate; speed > ranking nuance here)   │
+   └──────────────────────────────────────────────────┘
+         │
+         ▼
+   [host-sweep + recurrence.ts clones the task forward to the next tick]
+```
+
+**Components to build:**
+
+1. **DB migration: `120-job-leads-killer-match.ts`.**
+   - Single `ALTER TABLE job_leads ADD COLUMN killer_match_pushed_at TEXT`.
+   - Backfill: NULL (existing rows are not retroactively eligible — we don't want to spam the candidate about leads from a week ago that didn't get a §24.7 alert because §24.7 didn't exist yet).
+   - Add index: `CREATE INDEX idx_job_leads_killer_match_pending ON job_leads(rules_score DESC, first_seen_at DESC) WHERE killer_match_pushed_at IS NULL AND closed_at IS NULL`.
+   - This is the dedup mechanism. SELECT-FOR-CLAIM (component 3) UPDATEs `killer_match_pushed_at = now()` in the same transaction as the SELECT, so a lead is claimed at most once.
+
+2. **Host bootstrap: `ensureKillerMatchTask()`** in `src/modules/career-pilot/killer-match-bootstrap.ts` (sibling to `daily-briefing-bootstrap.ts`).
+   - On each container spawn for the `career-pilot` group: read inbound.db for `messages_in WHERE series_id='killer-match'`.
+   - If missing AND `preferences.killer_match_enabled=true`: direct INSERT (not via `insertTask` — same id/series_id pattern as daily-briefing) with `recurrence` from `preferences.killer_match_cron` (default `'*/30 7-22 * * *'`), `prompt='[scheduled trigger: killer-match]'`, no script (component 5 deferral applies — task scripts are container-side and can't read `data/v2.db`).
+   - Idempotent: re-running on next spawn is a no-op.
+   - Only runs for the owner `career-pilot` group; sandbox group never schedules killer-match alerts.
+
+3. **Container-side MCP tool: `query_killer_matches`.**
+   - In-process tool on the orchestrator's MCP server. No subagent.
+   - Input: `{}` (zero args; conditions live in preferences).
+   - Tool body: one `sendAction('career_pilot.claim_killer_matches', {})` call.
+   - Returns `{ leads: KillerMatchLead[], total: number }`. Each lead carries enough to write the push: `{ id, title, company, source, source_url, apply_url, rules_score, source_posted_at, first_seen_at, rules_score_reasons }`.
+   - No LLM call in this tool — cheap and synchronous. The orchestrator's own turn (which we already pay for) does the framing.
+
+4. **Host action: `career_pilot.claim_killer_matches`** in `src/modules/career-pilot/job-lead-actions.ts`.
+   - Transactional SELECT-then-UPDATE. Inside `db.transaction(...)`:
+     1. `SELECT id, title, company, source, source_url, apply_url, rules_score, source_posted_at, first_seen_at, rules_score_reasons FROM job_leads WHERE killer_match_pushed_at IS NULL AND closed_at IS NULL AND rules_score >= ? AND source IN (?, ?, ...) AND (source_posted_at IS NULL OR source_posted_at >= ?) ORDER BY rules_score DESC, first_seen_at DESC LIMIT ?` — bind params from preferences (floor, source allow-list, recency cutoff, max-per-fire).
+     2. `UPDATE job_leads SET killer_match_pushed_at = ? WHERE id IN (...)` — mark claimed in the same transaction.
+   - Returns the SELECTed rows. Claim is atomic: a second concurrent caller would see zero matching rows.
+   - Skip if the seed source list is empty (no eligible Tier-A sources configured) — return `{ leads: [], total: 0 }`.
+
+5. **Persona — killer-match handler section.**
+   - Add to `groups/career-pilot/.claude-host-fragments/persona.md` under "Scheduled wakeups", as a sibling section to "Daily-briefing".
+   - Workflow for `[scheduled trigger: killer-match]`:
+     1. Read quiet-hours preferences. If inside quiet hours → silent return (no message; audit `<internal>`).
+     2. Read today's count of proactive messages sent. If ≥ frequency cap → silent return.
+     3. Call `query_killer_matches()`. (Claims atomically — calling it commits to pushing.)
+     4. If empty → silent return.
+     5. Emit `<message to="owner">` with the lead(s). Short, urgent tone — this is *the* speed case, not a digest. Include title, company, score, source, apply link.
+   - The persona must explicitly recognize the `[scheduled trigger: killer-match]` sentinel as a wakeup synthetic, NOT a real user message. The reply must NOT acknowledge the trigger string itself.
+   - **Edge case to spell out in persona:** if `query_killer_matches()` returns leads but the persona then decides to skip (e.g., a quiet-hours race after the claim), those leads are already marked `killer_match_pushed_at` and will never re-surface via this path. Persona MUST do the preflight (steps 1-2) BEFORE step 3, not after. Documented in the handler section.
+
+6. **Preferences additions** (rows seeded into `preferences` table via `config/defaults.json`):
+   - `killer_match_enabled` = `true`
+   - `killer_match_cron` = `"*/30 7-22 * * *"` (every 30min during waking hours, TZ-local)
+   - `killer_match_min_rules_score` = `90`
+   - `killer_match_recency_window_hours` = `6`
+   - `killer_match_max_per_fire` = `3` (don't blast 10 alerts in one push; cap and let the rest catch the next 30min tick)
+   - `killer_match_source_allow_list` = `["greenhouse","lever"]` (current v1 source coverage; `ashby` + `hn` add when adapters land)
+
+7. **E2E flow** (`scripts/test/e2e.ts --flow=killer-match`):
+   - Seed: 5-10 fake `job_leads` with mixed `rules_score` values. At least 2 should satisfy the killer-match criteria (≥90, fresh, Tier-A); others should fail at least one criterion (low score, old, or non-Tier-A source).
+   - Spawn the container. Assert: `ensureKillerMatchTask()` ran; `messages_in` has a row with `kind='task'` and `series_id='killer-match'`.
+   - Manually trigger by direct DB write: set the task's `processAfter` to now-1s.
+   - Wait for the next host-sweep tick (≤60s) and the recurrence handler.
+   - Assert: container received the task; orchestrator called `query_killer_matches`; orchestrator emitted a `<message to="owner">` block; message references the high-score leads by company; non-eligible leads (low score / old / non-Tier-A) are NOT in the message.
+   - Assert: `job_leads.killer_match_pushed_at` is non-null for the claimed leads; still null for the ineligible ones.
+   - **Re-trigger immediately** by another `processAfter` poke. Assert: second fire finds 0 candidates (already claimed), silent skip, no second message.
+   - Persona-sentinel check: orchestrator reply does NOT contain the literal substring `[scheduled trigger: killer-match]`.
+   - Use `--llm-provider=ollama` by default (mechanical flow; see [[reference-claude-validation-cost]]). One `--llm-provider=claude` smoke at DoD time.
+
+**Definition of done:**
+
+1. Migration 120 lands; `killer_match_pushed_at` column + index present.
+2. `ensureKillerMatchTask()` runs on container spawn for the `career-pilot` group; idempotent; inserts a `kind='task'` row with `series_id='killer-match'` and the configured cron when missing; respects `preferences.killer_match_enabled`.
+3. `query_killer_matches` MCP tool callable from the orchestrator; returns the right shape; atomically claims (concurrent second call returns empty).
+4. Persona's killer-match handler section: orchestrator emits a Pattern B reply when candidates exist OR silently skips per preflight; never acknowledges the trigger sentinel as user text.
+5. `pnpm test:e2e --flow=killer-match --llm-provider=ollama` green: alert message lands, only eligible leads cited, `killer_match_pushed_at` populated for the claimed leads.
+6. Re-trigger test verified: second fire after a claim is a silent skip (no second alert about the same leads).
+7. Quiet-hours skip path verified: temporarily set quiet hours to "include now", trigger fires, no message emitted, no leads claimed (because preflight runs before claim), audit log shows the skip reason.
+8. Frequency-cap skip path verified: same shape, cap forced low.
+9. Empty-pool skip path verified: no eligible leads → silent skip; no `<message>` block; nothing claimed.
+10. Host restart survival: kill the host process, restart, verify the killer-match task is still in inbound.db and fires on its next cron tick.
+11. One `--llm-provider=claude` smoke run at DoD time confirms the orchestrator's message framing is sensible under the production model. (Mechanical correctness already covered by the Ollama runs.)
+
+**Out of scope (deferred sub-milestones or follow-ups):**
+
+- **Ashby + HN adapters** — currently `source_allow_list` only has `greenhouse` + `lever` because those are the only adapters we shipped in Phase 2.5. Adding Ashby + HN broadens the killer-match catch rate but is its own work; doesn't block §24.7. Add them to `preferences.killer_match_source_allow_list` when the adapters land.
+- **Killer-match overrides quiet hours** — could be a future `preferences.killer_match_ignore_quiet_hours` toggle for candidates who want the alert at 2am for a 9pm posting. v1 respects quiet hours; revisit if the candidate explicitly asks.
+- **Per-lead LLM ranking inside the push** — v1 surfaces the lead facts and lets the orchestrator's own turn frame them. No `rank_leads` call. If the push needs a "why this matters" line, the persona can derive it from `rules_score_reasons` cheaply.
+- **Adaptive cron frequency** — fall back to every-30min when the pool is "warm" (recent inserts), every-2h otherwise. Not necessary for v1; the 30min default is fine.
+- **Killer-match acknowledgement loop** — "I've seen that one, ignore" → mark `closed_at`. Pure persona work; lands naturally in §24.9 (lead-to-application promotion).
+
+**Risk register:**
+
+| Risk | Likelihood | Mitigation |
+|---|---|---|
+| **A. Double-push race** if two host processes both see the same row | Low | The SELECT-then-UPDATE is wrapped in a single `db.transaction(...)`; the second caller sees an empty SELECT after the first's UPDATE commits. NanoClaw's single-writer-per-DB invariant on the central `data/v2.db` separately enforces this at the process layer. |
+| **B. Stale-lead push** if rules_score was high a week ago but the posting is now stale | Low | `recency_window_hours` (default 6h) on `source_posted_at` filters at SELECT time. A lead older than 6h won't be pushed even if its score is 100. The `killer_match_pushed_at IS NULL` filter prevents re-push regardless. |
+| **C. Spawn cost dominates** if 30min ticks fire all day with zero candidates | Low | Cron is `7-22` not `*` — 32 ticks/day not 48. Persona silent-skip is cheap (one `query_killer_matches` call, no LLM ranking). Per-tick cost ~$0.001 (LLM turn for the skip decision) + container spawn time. ~$0.03/day worst case (~$11/yr). Acceptable. If telemetry shows it's higher, drop frequency to `*/60` or add an empty-pool memoization preference. |
+| **D. Quiet-hours race** where preflight passes but the message lands after quiet hours start | Low | Preflight reads current local time inline; window is "quiet hours started in the last few seconds" which is sub-second. Not worth mitigating beyond what we have. |
+| **E. Synthetic-trigger echo** (same as §24.6 risk F) | Medium | Persona section names the convention. Manual review of the orchestrator's reply text post-DoD to confirm it doesn't acknowledge the trigger string itself. Risk shared with daily-briefing; same mitigation. |
+| **F. `ensureKillerMatchTask()` accretes garbage** (same as §24.6 risk G) | Low | DoD #2 covers it. The `series_id` lookup is the dedup key. Add a guard log on the second-or-later insert call (mirror what daily-briefing does). |
+| **G. Migration 120 breaks on existing DBs** if `killer_match_pushed_at` already exists | Very low | Single ALTER ADD COLUMN. SQLite's `ADD COLUMN IF NOT EXISTS` is not portable, but our migration runner uses version-number gates (`PRAGMA user_version`), so 120 only runs once per DB. |
+| **H. Empty source_allow_list silently disables alerts** | Low | DoD #2 + bootstrap log line: when `source_allow_list` is empty, log "killer-match enabled but source allow-list is empty — no alerts will fire". Surfaces a misconfiguration without throwing. |
 
 ---
 
