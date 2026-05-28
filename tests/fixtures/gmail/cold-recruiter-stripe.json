@@ -1,0 +1,10 @@
+{
+  "id": "msg-stripe-cold-001",
+  "threadId": "thread-stripe-cold",
+  "labels": ["INBOX"],
+  "from": "mike.taylor@stripe.example",
+  "to": "candidate@example.com",
+  "subject": "Open to a chat about platform infra at Stripe?",
+  "received": { "relative": { "hours": -6 } },
+  "body": "Hi,\n\nI came across your profile and was really impressed by your work on distributed systems. We have a Staff Platform Infrastructure role opening up at Stripe that I think could be a great fit — owns the core service-to-service mesh, ~$multi-year roadmap, lots of autonomy.\n\nWould you be open to a quick 15-min intro call this week?\n\nBest,\nMike Taylor\nSr. Technical Recruiter, Stripe"
+}

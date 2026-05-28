@@ -1,0 +1,10 @@
+{
+  "id": "msg-noise-001",
+  "threadId": "thread-noise",
+  "labels": ["INBOX", "CATEGORY_PROMOTIONS"],
+  "from": "jobs-digest@greenhouse.example",
+  "to": "candidate@example.com",
+  "subject": "20 new roles matching your search this week",
+  "received": { "relative": { "hours": -12 } },
+  "body": "Your weekly digest of new roles:\n\n  - Senior Engineer at Acme\n  - Staff Engineer at Beta\n  - Lead Engineer at Gamma\n  - Principal SWE at Delta\n  - ...\n\nManage your alerts or unsubscribe at any time. This is an automated digest from your Greenhouse job alerts subscription."
+}

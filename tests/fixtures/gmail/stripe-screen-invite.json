@@ -1,0 +1,10 @@
+{
+  "id": "msg-stripe-screen-001",
+  "threadId": "thread-stripe-screen",
+  "labels": ["INBOX"],
+  "from": "sarah.chen@stripe.example",
+  "to": "candidate@example.com",
+  "subject": "Quick chat about Senior Backend Engineer at Stripe?",
+  "received": { "relative": { "hours": -4 } },
+  "body": "Hi,\n\nThanks for applying to the Senior Backend Engineer role at Stripe. I'd love to set up a 30-minute chat to learn more about your background and tell you about what we're building on the platform infrastructure team.\n\nDo any of these times work?\n  - Wed 2pm PT\n  - Thu 10am PT\n  - Fri 3pm PT\n\nIf none of those work, just send me a few windows that do and I'll find one.\n\nBest,\nSarah Chen\nTechnical Recruiter, Stripe"
+}
