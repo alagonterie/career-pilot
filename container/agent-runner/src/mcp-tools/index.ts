@@ -12,6 +12,7 @@ import './agents.js';
 import './self-mod.js';
 import './career-pilot.js';
 import './scrape-jobs.js';
+import './funnel-curator.js';
 import { startMcpServer } from './server.js';
 
 function log(msg: string): void {
