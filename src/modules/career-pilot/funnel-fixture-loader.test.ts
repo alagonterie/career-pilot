@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { loadCalendarFixture, loadGmailFixture } from './load-funnel-fixtures.js';
+import { loadCalendarFixture, loadGmailFixture } from './funnel-fixture-loader.js';
 
 const TEST_NOW = new Date('2026-05-28T12:00:00.000Z');
 
@@ -21,7 +21,6 @@ describe('loadGmailFixture', () => {
     expect(m.labels).toEqual(['INBOX', 'CATEGORY_UPDATES']);
     expect(m.from_addr).toBe('no-reply@greenhouse.example');
     expect(m.subject).toContain('Acme');
-    // relative: hours: -2 → 10:00 UTC the same day
     expect(m.received_at).toBe('2026-05-28T10:00:00.000Z');
     expect(m.body_text).toContain('Thanks for applying');
   });
@@ -35,14 +34,12 @@ describe('loadGmailFixture', () => {
       'msg-acme-pl-3',
       'msg-acme-pl-4',
     ]);
-    // all 4 share the same thread
     expect(new Set(msgs.map((m) => m.thread_id)).size).toBe(1);
   });
 
   it('resolves day-granularity relative dates correctly', () => {
     const msgs = loadGmailFixture('beta-applied-then-silent', TEST_NOW);
     expect(msgs).toHaveLength(2);
-    // -22 days from 2026-05-28T12:00:00Z → 2026-05-06T12:00:00Z
     expect(msgs[0].received_at).toBe('2026-05-06T12:00:00.000Z');
     expect(msgs[1].received_at).toBe('2026-05-07T12:00:00.000Z');
   });
@@ -65,7 +62,6 @@ describe('loadCalendarFixture', () => {
     expect(e.id).toBe('evt-acme-onsite');
     expect(e.calendar_id).toBe('primary');
     expect(e.summary).toContain('Acme onsite');
-    // +26h from 12:00 → 14:00 next day
     expect(e.start_at).toBe('2026-05-29T14:00:00.000Z');
     expect(e.end_at).toBe('2026-05-29T18:00:00.000Z');
     expect(e.organizer).toBe('recruiting@acme.example');
@@ -83,10 +79,8 @@ describe('date resolution corner cases', () => {
   it('uses the passed test-now consistently across all messages in a JSONL', () => {
     const msgs = loadGmailFixture('acme-pipeline-multi', TEST_NOW);
     const intervals = msgs.map((m) => new Date(m.received_at).getTime());
-    // Each message is at -14, -12, -7, -2 days respectively; deltas are
-    // consistent regardless of test-now value, so verify ordering + spacing.
-    expect(intervals[1] - intervals[0]).toBe(2 * 86_400_000); // -12 - -14 = +2d
-    expect(intervals[2] - intervals[1]).toBe(5 * 86_400_000); // -7 - -12 = +5d
-    expect(intervals[3] - intervals[2]).toBe(5 * 86_400_000); // -2 - -7 = +5d
+    expect(intervals[1] - intervals[0]).toBe(2 * 86_400_000);
+    expect(intervals[2] - intervals[1]).toBe(5 * 86_400_000);
+    expect(intervals[3] - intervals[2]).toBe(5 * 86_400_000);
   });
 });
