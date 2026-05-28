@@ -2848,11 +2848,16 @@ async function runFunnelCurator(): Promise<void> {
   //
   // Cost: ~$0.30/run (Sonnet on the fixture pipeline + a small classifier
   // pass + the orchestrator's own answer turn).
-  if (!process.env.GMAIL_FIXTURE) {
-    fail('funnel-curator flow requires --gmail-fixture=<name> (e.g. acme-pipeline-multi)');
-  }
-  if (!process.env.CALENDAR_FIXTURE) {
-    fail('funnel-curator flow requires --calendar-fixture=<name> (e.g. acme-onsite-tomorrow)');
+  const realApiMode = !process.env.GMAIL_FIXTURE && !process.env.CALENDAR_FIXTURE;
+  if (!realApiMode) {
+    if (!process.env.GMAIL_FIXTURE) {
+      fail('funnel-curator flow with --calendar-fixture set also requires --gmail-fixture (or omit both for real mode)');
+    }
+    if (!process.env.CALENDAR_FIXTURE) {
+      fail('funnel-curator flow with --gmail-fixture set also requires --calendar-fixture (or omit both for real mode)');
+    }
+  } else {
+    console.log('  (real-API mode: GMAIL_FIXTURE + CALENDAR_FIXTURE both unset — exercises live OneCLI-gated Google API calls)');
   }
 
   const { applicationId, leadId } = seedFunnelCuratorBase();
@@ -2932,60 +2937,79 @@ async function runFunnelCurator(): Promise<void> {
     }
     const narratives = JSON.parse(outputRow.narratives_json) as Array<{ company: string; application_id?: string | null }>;
     if (narratives.length === 0) fail('curator wrote empty narratives[]; expected at least one for Acme');
-    const acmeNarrative = narratives.find((n) => n.company?.toLowerCase().includes('acme'));
-    if (!acmeNarrative) {
-      console.error(`  --- narratives ---\n${JSON.stringify(narratives, null, 2)}`);
-      fail('curator did not produce a narrative for Acme despite fixture mentioning it');
-    }
-    if (acmeNarrative.application_id !== applicationId) {
-      // Soft check — curator might leave it null if it didn't match.
-      // We'd see this as a follow-up bug to fix in the matching logic.
-      console.error(
-        `  ⚠ Acme narrative.application_id='${acmeNarrative.application_id}' (expected '${applicationId}'). ` +
-          `Curator may not have matched ATS sender→company correctly.`,
-      );
-    } else {
-      ok(`Acme narrative correctly linked to application_id=${applicationId}`);
-    }
-    ok(`funnel_curator_output written: ${narratives.length} narrative(s)`);
+    if (realApiMode) {
+      // Loose assertions: a freshly-created dev inbox may have anywhere
+      // from 0 to a few welcome emails. We're verifying plumbing, not
+      // content. Just check the curator ran to completion with valid
+      // output shape.
+      ok(`funnel_curator_output written: ${narratives.length} narrative(s) [real-API mode]`);
 
-    // ── Assertion 5: email_events rows present ──
-    const eventRows = centralDb
-      .prepare("SELECT gmail_msg_id, classification FROM email_events ORDER BY gmail_msg_id")
-      .all() as Array<{ gmail_msg_id: string; classification: string }>;
-    if (eventRows.length === 0) {
-      fail('no email_events rows written; expected 4 from acme-pipeline-multi fixture');
-    }
-    if (eventRows.length < 4) {
-      console.error(`  ⚠ only ${eventRows.length} email_events rows; expected 4 from the fixture.`);
-      console.error(`  events: ${eventRows.map((r) => `${r.gmail_msg_id}=${r.classification}`).join(', ')}`);
-    }
-    ok(`email_events rows written: ${eventRows.length}`);
+      const eventRows = centralDb
+        .prepare("SELECT gmail_msg_id, classification FROM email_events ORDER BY gmail_msg_id")
+        .all() as Array<{ gmail_msg_id: string; classification: string }>;
+      ok(`email_events rows: ${eventRows.length} [real-API mode; no minimum expected]`);
 
-    // ── Assertion 6: at least one event linked to the seeded lead/app ──
-    const linkedCount = (
-      centralDb
-        .prepare(
-          "SELECT COUNT(*) AS n FROM email_events WHERE linked_job_lead_id = ? OR linked_application_id = ?",
-        )
-        .get(leadId, applicationId) as { n: number }
-    ).n;
-    if (linkedCount === 0) {
-      console.error(
-        `  ⚠ no email_events linked to the seeded application/lead. ` +
-          `Curator's matching strategy may be missing the ATS-sender → company link.`,
-      );
+      const syncRow = centralDb
+        .prepare("SELECT history_id FROM gmail_sync_state WHERE account_id = 'primary'")
+        .get() as { history_id: string } | undefined;
+      if (!syncRow?.history_id) {
+        console.error('  ⚠ gmail_sync_state has no history_id after real-API run — full-sync path may have skipped recording');
+      } else {
+        ok(`gmail_sync_state.history_id captured: ${syncRow.history_id}`);
+      }
     } else {
-      ok(`${linkedCount} email_event(s) linked to seeded application/lead`);
-    }
+      const acmeNarrative = narratives.find((n) => n.company?.toLowerCase().includes('acme'));
+      if (!acmeNarrative) {
+        console.error(`  --- narratives ---\n${JSON.stringify(narratives, null, 2)}`);
+        fail('curator did not produce a narrative for Acme despite fixture mentioning it');
+      }
+      if (acmeNarrative.application_id !== applicationId) {
+        // Soft check — curator might leave it null if it didn't match.
+        // We'd see this as a follow-up bug to fix in the matching logic.
+        console.error(
+          `  ⚠ Acme narrative.application_id='${acmeNarrative.application_id}' (expected '${applicationId}'). ` +
+            `Curator may not have matched ATS sender→company correctly.`,
+        );
+      } else {
+        ok(`Acme narrative correctly linked to application_id=${applicationId}`);
+      }
+      ok(`funnel_curator_output written: ${narratives.length} narrative(s)`);
 
-    // ── Assertion 7: attention list has the onsite item ──
-    const attention = JSON.parse(outputRow.attention_json) as Array<{ priority: string; reason: string; company?: string | null }>;
-    const onsiteItem = attention.find((a) => a.reason?.toLowerCase().includes('onsite') || a.priority === 'same_day');
-    if (!onsiteItem) {
-      console.error(`  ⚠ attention[] does not flag the onsite. items: ${JSON.stringify(attention, null, 2)}`);
-    } else {
-      ok(`attention[] flags the onsite (priority=${onsiteItem.priority})`);
+      const eventRows = centralDb
+        .prepare("SELECT gmail_msg_id, classification FROM email_events ORDER BY gmail_msg_id")
+        .all() as Array<{ gmail_msg_id: string; classification: string }>;
+      if (eventRows.length === 0) {
+        fail('no email_events rows written; expected 4 from acme-pipeline-multi fixture');
+      }
+      if (eventRows.length < 4) {
+        console.error(`  ⚠ only ${eventRows.length} email_events rows; expected 4 from the fixture.`);
+        console.error(`  events: ${eventRows.map((r) => `${r.gmail_msg_id}=${r.classification}`).join(', ')}`);
+      }
+      ok(`email_events rows written: ${eventRows.length}`);
+
+      const linkedCount = (
+        centralDb
+          .prepare(
+            "SELECT COUNT(*) AS n FROM email_events WHERE linked_job_lead_id = ? OR linked_application_id = ?",
+          )
+          .get(leadId, applicationId) as { n: number }
+      ).n;
+      if (linkedCount === 0) {
+        console.error(
+          `  ⚠ no email_events linked to the seeded application/lead. ` +
+            `Curator's matching strategy may be missing the ATS-sender → company link.`,
+        );
+      } else {
+        ok(`${linkedCount} email_event(s) linked to seeded application/lead`);
+      }
+
+      const attention = JSON.parse(outputRow.attention_json) as Array<{ priority: string; reason: string; company?: string | null }>;
+      const onsiteItem = attention.find((a) => a.reason?.toLowerCase().includes('onsite') || a.priority === 'same_day');
+      if (!onsiteItem) {
+        console.error(`  ⚠ attention[] does not flag the onsite. items: ${JSON.stringify(attention, null, 2)}`);
+      } else {
+        ok(`attention[] flags the onsite (priority=${onsiteItem.priority})`);
+      }
     }
   } finally {
     centralDb.close();

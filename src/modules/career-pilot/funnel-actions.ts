@@ -182,6 +182,75 @@ export async function handleLoadGmailFixture(
   }
 }
 
+// ── 2c. handleGetGmailSyncState ────────────────────────────────────────────
+//
+// Returns the stored Gmail historyId so the container-side query tool
+// knows where to start the delta-sync from. Returns `{ history_id: null }`
+// on first-ever run (no prior state).
+
+export async function handleGetGmailSyncState(
+  content: Record<string, unknown>,
+  session: Session,
+  inDb: Database.Database,
+): Promise<void> {
+  const requestId = reqId(content);
+  if (rejectIfSandbox(inDb, requestId, session, 'get_gmail_sync_state')) return;
+  try {
+    const db = getDb();
+    const row = db
+      .prepare("SELECT account_id, history_id, last_full_sync_at FROM gmail_sync_state WHERE account_id = 'primary'")
+      .get() as { account_id: string; history_id: string; last_full_sync_at: string } | undefined;
+    writeResponse(inDb, requestId, {
+      ok: true,
+      data: {
+        history_id: row?.history_id ?? null,
+        last_full_sync_at: row?.last_full_sync_at ?? null,
+      },
+    });
+  } catch (err) {
+    log.error('handleGetGmailSyncState failed', { err });
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
+// ── 2d. handleGetCalendarSyncState ─────────────────────────────────────────
+//
+// Returns the stored per-calendar syncTokens. Empty map on first-ever run.
+
+export async function handleGetCalendarSyncState(
+  content: Record<string, unknown>,
+  session: Session,
+  inDb: Database.Database,
+): Promise<void> {
+  const requestId = reqId(content);
+  if (rejectIfSandbox(inDb, requestId, session, 'get_calendar_sync_state')) return;
+  try {
+    const db = getDb();
+    const rows = db
+      .prepare("SELECT calendar_id, sync_token, last_full_sync_at FROM calendar_sync_state WHERE account_id = 'primary'")
+      .all() as Array<{ calendar_id: string; sync_token: string; last_full_sync_at: string }>;
+    const sync_tokens: Record<string, string> = {};
+    const last_full_sync_at: Record<string, string> = {};
+    for (const r of rows) {
+      sync_tokens[r.calendar_id] = r.sync_token;
+      last_full_sync_at[r.calendar_id] = r.last_full_sync_at;
+    }
+    writeResponse(inDb, requestId, {
+      ok: true,
+      data: { sync_tokens, last_full_sync_at },
+    });
+  } catch (err) {
+    log.error('handleGetCalendarSyncState failed', { err });
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
 // ── 2b. handleLoadCalendarFixture ──────────────────────────────────────────
 
 export async function handleLoadCalendarFixture(

@@ -32,6 +32,8 @@ import type { Session } from '../../types.js';
 
 import {
   handleCalendarQueryDelta,
+  handleGetCalendarSyncState,
+  handleGetGmailSyncState,
   handleGmailQueryDelta,
   handleLoadCalendarFixture,
   handleLoadGmailFixture,
@@ -216,6 +218,76 @@ describe('handleLoadGmailFixture', () => {
   it('refuses with FORBIDDEN for sandbox sessions', async () => {
     const c = actionContent('career_pilot.load_gmail_fixture', { name: 'acme-applied-confirmation' });
     await handleLoadGmailFixture(c, SANDBOX_SESSION, inDb);
+    const res = readResponse(c.requestId);
+    expect(res.frame.ok).toBe(false);
+    if (res.frame.ok) throw new Error('unreachable');
+    expect(res.frame.error.code).toBe('FORBIDDEN');
+  });
+});
+
+describe('handleGetGmailSyncState', () => {
+  it('returns history_id=null on first run (no state)', async () => {
+    const c = actionContent('career_pilot.get_gmail_sync_state', {});
+    await handleGetGmailSyncState(c, OWNER_SESSION, inDb);
+    const res = readResponse(c.requestId);
+    expect(res.frame.ok).toBe(true);
+    if (!res.frame.ok) throw new Error('unreachable');
+    const data = res.frame.data as { history_id: string | null };
+    expect(data.history_id).toBeNull();
+  });
+
+  it('returns the stored history_id after persist writes it', async () => {
+    await handlePersistFunnelState(
+      actionContent('career_pilot.persist_funnel_state', makeValidPayload({ gmail_history_id: 'h-12345' })),
+      OWNER_SESSION,
+      inDb,
+    );
+    const c = actionContent('career_pilot.get_gmail_sync_state', {});
+    await handleGetGmailSyncState(c, OWNER_SESSION, inDb);
+    const res = readResponse(c.requestId);
+    if (!res.frame.ok) throw new Error('unreachable');
+    const data = res.frame.data as { history_id: string };
+    expect(data.history_id).toBe('h-12345');
+  });
+
+  it('refuses with FORBIDDEN for sandbox sessions', async () => {
+    const c = actionContent('career_pilot.get_gmail_sync_state', {});
+    await handleGetGmailSyncState(c, SANDBOX_SESSION, inDb);
+    const res = readResponse(c.requestId);
+    expect(res.frame.ok).toBe(false);
+    if (res.frame.ok) throw new Error('unreachable');
+    expect(res.frame.error.code).toBe('FORBIDDEN');
+  });
+});
+
+describe('handleGetCalendarSyncState', () => {
+  it('returns empty sync_tokens on first run', async () => {
+    const c = actionContent('career_pilot.get_calendar_sync_state', {});
+    await handleGetCalendarSyncState(c, OWNER_SESSION, inDb);
+    const res = readResponse(c.requestId);
+    expect(res.frame.ok).toBe(true);
+    if (!res.frame.ok) throw new Error('unreachable');
+    const data = res.frame.data as { sync_tokens: Record<string, string> };
+    expect(data.sync_tokens).toEqual({});
+  });
+
+  it('returns the stored sync_tokens after persist writes them', async () => {
+    await handlePersistFunnelState(
+      actionContent('career_pilot.persist_funnel_state', makeValidPayload({ calendar_sync_tokens: { primary: 't-abc', work: 't-xyz' } })),
+      OWNER_SESSION,
+      inDb,
+    );
+    const c = actionContent('career_pilot.get_calendar_sync_state', {});
+    await handleGetCalendarSyncState(c, OWNER_SESSION, inDb);
+    const res = readResponse(c.requestId);
+    if (!res.frame.ok) throw new Error('unreachable');
+    const data = res.frame.data as { sync_tokens: Record<string, string> };
+    expect(data.sync_tokens).toEqual({ primary: 't-abc', work: 't-xyz' });
+  });
+
+  it('refuses with FORBIDDEN for sandbox sessions', async () => {
+    const c = actionContent('career_pilot.get_calendar_sync_state', {});
+    await handleGetCalendarSyncState(c, SANDBOX_SESSION, inDb);
     const res = readResponse(c.requestId);
     expect(res.frame.ok).toBe(false);
     if (res.frame.ok) throw new Error('unreachable');

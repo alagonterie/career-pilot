@@ -35,16 +35,259 @@ function actionErr(action: string, error: { code: string; message: string }) {
   return err(`${action} failed (${error.code}): ${error.message}`);
 }
 
+// ── Gmail / Calendar real-API helpers ──────────────────────────────────────
+//
+// All real-mode HTTPS calls route through the OneCLI gateway via the
+// HTTPS_PROXY env set in container-config.ts. OneCLI matches the
+// gmail.googleapis.com / www.googleapis.com host-patterns against the
+// connected OAuth apps and injects `Authorization: Bearer <token>` on
+// egress — the tool code never sees the raw token.
+//
+// `x-onecli-placeholder: 1` is a deliberate marker header. OneCLI's
+// proactive injection mode (default for OAuth apps) doesn't require any
+// stand-in header on the outbound request, but including a marker makes
+// the intercept easier to spot in `docker logs onecli` when debugging.
+
+const DEFAULT_LOOKBACK_DAYS = 30;
+
+interface GmailHistoryResponse {
+  historyId?: string;
+  history?: Array<{
+    id: string;
+    messages?: Array<{ id: string; threadId: string }>;
+    messagesAdded?: Array<{ message: { id: string; threadId: string } }>;
+  }>;
+}
+
+interface GmailMessagesListResponse {
+  messages?: Array<{ id: string; threadId: string }>;
+  nextPageToken?: string;
+  resultSizeEstimate?: number;
+}
+
+interface GmailProfileResponse {
+  emailAddress?: string;
+  historyId?: string;
+  messagesTotal?: number;
+}
+
+interface GmailMessageHeader {
+  name: string;
+  value: string;
+}
+
+interface GmailMessagePayload {
+  headers?: GmailMessageHeader[];
+  mimeType?: string;
+  body?: { size?: number; data?: string };
+  parts?: GmailMessagePayload[];
+}
+
+interface GmailMessageFull {
+  id: string;
+  threadId: string;
+  labelIds?: string[];
+  snippet?: string;
+  internalDate?: string;
+  payload?: GmailMessagePayload;
+}
+
+interface ParsedGmailMessage {
+  id: string;
+  thread_id: string;
+  labels: string[];
+  from_addr: string;
+  to_addr: string;
+  subject: string;
+  received_at: string;
+  body_text: string;
+}
+
+function gmailFetch<T>(path: string): Promise<T> {
+  return fetch(`https://gmail.googleapis.com${path}`, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json',
+      'x-onecli-placeholder': '1',
+    },
+  }).then(async (res) => {
+    if (res.status === 404) {
+      throw new GmailApiError(404, 'history_id expired (404)');
+    }
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new GmailApiError(res.status, `${res.status} ${res.statusText}${body ? ' — ' + body.slice(0, 200) : ''}`);
+    }
+    return (await res.json()) as T;
+  });
+}
+
+class GmailApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
+}
+
+function base64UrlDecode(s: string): string {
+  // Gmail returns base64url-encoded body content; convert to standard base64
+  // and decode. Bun/Node's Buffer handles base64 natively.
+  const std = s.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = std + '='.repeat((4 - (std.length % 4)) % 4);
+  try {
+    return Buffer.from(padded, 'base64').toString('utf8');
+  } catch {
+    return '';
+  }
+}
+
+function findTextPart(payload: GmailMessagePayload | undefined): string {
+  // Walk a Gmail payload tree looking for text/plain content. Falls back to
+  // text/html (stripped) only if no plain alternative exists.
+  if (!payload) return '';
+  if (payload.mimeType === 'text/plain' && payload.body?.data) {
+    return base64UrlDecode(payload.body.data);
+  }
+  if (Array.isArray(payload.parts)) {
+    // Prefer text/plain at any depth.
+    for (const part of payload.parts) {
+      const found = findTextPart(part);
+      if (found) return found;
+    }
+  }
+  // Last resort: text/html with naive tag strip.
+  if (payload.mimeType === 'text/html' && payload.body?.data) {
+    return base64UrlDecode(payload.body.data).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  return '';
+}
+
+function header(payload: GmailMessagePayload | undefined, name: string): string {
+  const h = payload?.headers?.find((x) => x.name.toLowerCase() === name.toLowerCase());
+  return h?.value ?? '';
+}
+
+function parseGmailMessage(msg: GmailMessageFull): ParsedGmailMessage {
+  const receivedAt = msg.internalDate
+    ? new Date(parseInt(msg.internalDate, 10)).toISOString()
+    : header(msg.payload, 'Date') || new Date().toISOString();
+  return {
+    id: msg.id,
+    thread_id: msg.threadId,
+    labels: msg.labelIds ?? [],
+    from_addr: header(msg.payload, 'From'),
+    to_addr: header(msg.payload, 'To'),
+    subject: header(msg.payload, 'Subject'),
+    received_at: receivedAt,
+    body_text: findTextPart(msg.payload),
+  };
+}
+
+function gmailDateFromLookback(days: number): string {
+  // Gmail query syntax: after:YYYY/MM/DD (local day boundary, not ISO).
+  const d = new Date(Date.now() - days * 86_400_000);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}/${m}/${day}`;
+}
+
+interface CalendarEventDateTime {
+  date?: string;
+  dateTime?: string;
+  timeZone?: string;
+}
+
+interface CalendarEventOrganizer {
+  email?: string;
+  displayName?: string;
+}
+
+interface CalendarEventAttendee {
+  email: string;
+  responseStatus?: string;
+  displayName?: string;
+}
+
+interface CalendarEvent {
+  id?: string;
+  summary?: string;
+  start?: CalendarEventDateTime;
+  end?: CalendarEventDateTime;
+  organizer?: CalendarEventOrganizer;
+  attendees?: CalendarEventAttendee[];
+  hangoutLink?: string;
+  conferenceData?: { entryPoints?: Array<{ entryPointType?: string; uri?: string }> };
+}
+
+interface CalendarEventsListResponse {
+  items?: CalendarEvent[];
+  nextPageToken?: string;
+  nextSyncToken?: string;
+}
+
+interface ParsedCalendarAttendee {
+  email: string;
+  response_status: 'accepted' | 'declined' | 'tentative' | 'needsAction';
+}
+
+interface ParsedCalendarEvent {
+  id: string;
+  calendar_id: string;
+  summary: string;
+  start_at: string;
+  end_at: string;
+  organizer: string | null;
+  attendees: ParsedCalendarAttendee[];
+  meet_link: string | null;
+}
+
+class CalendarApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
+}
+
+function dateTimeToIso(dt: CalendarEventDateTime | undefined): string {
+  if (!dt) return new Date().toISOString();
+  if (dt.dateTime) return new Date(dt.dateTime).toISOString();
+  if (dt.date) return new Date(dt.date + 'T00:00:00Z').toISOString();
+  return new Date().toISOString();
+}
+
+const VALID_RESPONSE_STATUSES = new Set(['accepted', 'declined', 'tentative', 'needsAction']);
+
+function parseCalendarEvent(e: CalendarEvent, calendarId: string): ParsedCalendarEvent {
+  const attendees: ParsedCalendarAttendee[] = (e.attendees ?? []).map((a) => ({
+    email: a.email,
+    response_status: VALID_RESPONSE_STATUSES.has(a.responseStatus ?? '')
+      ? (a.responseStatus as ParsedCalendarAttendee['response_status'])
+      : 'needsAction',
+  }));
+  // Google Meet link: hangoutLink directly OR conferenceData.entryPoints[].uri where entryPointType=='video'
+  let meetLink: string | null = e.hangoutLink ?? null;
+  if (!meetLink && e.conferenceData?.entryPoints) {
+    const video = e.conferenceData.entryPoints.find((ep) => ep.entryPointType === 'video');
+    if (video?.uri) meetLink = video.uri;
+  }
+  return {
+    id: e.id ?? '',
+    calendar_id: calendarId,
+    summary: e.summary ?? '',
+    start_at: dateTimeToIso(e.start),
+    end_at: dateTimeToIso(e.end),
+    organizer: e.organizer?.email ?? null,
+    attendees,
+    meet_link: meetLink,
+  };
+}
+
 // ── query_gmail_delta ──────────────────────────────────────────────────────
 //
 // Container-side. Two modes:
 //   - Fixture mode (GMAIL_FIXTURE env set in container): roundtrip to host
 //     for fixture loading. Used by integration + e2e tests.
-//   - Real mode (env unset): direct HTTPS call to gmail.googleapis.com.
-//     OneCLI's HTTPS_PROXY intercepts and injects the OAuth bearer (the
-//     §24.6 rank_leads pattern). NOT_IMPLEMENTED in this commit; lands in
-//     a follow-up that adds the historyId-driven delta-sync + lookback
-//     full-sync recovery.
+//   - Real mode (env unset): direct HTTPS calls to gmail.googleapis.com via
+//     OneCLI's HTTPS_PROXY (the §24.6 rank_leads pattern).
 
 export const queryGmailDelta: McpToolDefinition = {
   tool: {
@@ -76,9 +319,108 @@ export const queryGmailDelta: McpToolDefinition = {
         },
       );
     }
-    return err(
-      'Real Gmail delta-sync is not yet wired (next commit lands this). Set GMAIL_FIXTURE=<name> for fixture mode.',
-    );
+
+    // ── Real mode ───────────────────────────────────────────────────────
+    try {
+      const stateRes = await sendAction<{ history_id: string | null }>(
+        'career_pilot.get_gmail_sync_state',
+        {},
+      );
+      if (!stateRes.ok) return actionErr('query_gmail_delta (sync state)', stateRes.error);
+      const priorHistoryId = stateRes.data.history_id;
+
+      const lookbackDays = Number(process.env.FUNNEL_CURATOR_GMAIL_LOOKBACK_DAYS) || DEFAULT_LOOKBACK_DAYS;
+
+      let messageIds: string[] = [];
+      let newHistoryId: string | null = null;
+      let fullSyncPerformed = false;
+
+      if (priorHistoryId) {
+        try {
+          const data = await gmailFetch<GmailHistoryResponse>(
+            `/gmail/v1/users/me/history?startHistoryId=${encodeURIComponent(priorHistoryId)}&historyTypes=messageAdded`,
+          );
+          newHistoryId = data.historyId ?? priorHistoryId;
+          const seen = new Set<string>();
+          for (const h of data.history ?? []) {
+            for (const ma of h.messagesAdded ?? []) {
+              if (!seen.has(ma.message.id)) {
+                seen.add(ma.message.id);
+                messageIds.push(ma.message.id);
+              }
+            }
+            for (const m of h.messages ?? []) {
+              if (!seen.has(m.id)) {
+                seen.add(m.id);
+                messageIds.push(m.id);
+              }
+            }
+          }
+        } catch (e) {
+          if (e instanceof GmailApiError && e.status === 404) {
+            // historyId expired → fall through to full-sync path below
+            messageIds = [];
+            newHistoryId = null;
+          } else {
+            throw e;
+          }
+        }
+      }
+
+      if (!priorHistoryId || newHistoryId === null) {
+        // Full-sync via messages.list with date window. Cap at 200 to bound
+        // first-run cost; subsequent runs are delta-only.
+        fullSyncPerformed = true;
+        const after = gmailDateFromLookback(lookbackDays);
+        let pageToken: string | undefined;
+        const cap = 200;
+        const seen = new Set<string>();
+        do {
+          const qs = `q=${encodeURIComponent(`after:${after}`)}&maxResults=100${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
+          const data = await gmailFetch<GmailMessagesListResponse>(`/gmail/v1/users/me/messages?${qs}`);
+          for (const m of data.messages ?? []) {
+            if (!seen.has(m.id)) {
+              seen.add(m.id);
+              messageIds.push(m.id);
+              if (messageIds.length >= cap) break;
+            }
+          }
+          pageToken = data.nextPageToken;
+        } while (pageToken && messageIds.length < cap);
+
+        const profile = await gmailFetch<GmailProfileResponse>('/gmail/v1/users/me/profile');
+        newHistoryId = profile.historyId ?? null;
+      }
+
+      // Fetch full content for each new message ID. Sequential to keep the
+      // request budget predictable; 200-msg cap means at most ~30s worst
+      // case at typical Gmail latency. Could be parallelized later.
+      const messages: ParsedGmailMessage[] = [];
+      for (const id of messageIds) {
+        try {
+          const m = await gmailFetch<GmailMessageFull>(
+            `/gmail/v1/users/me/messages/${encodeURIComponent(id)}?format=FULL`,
+          );
+          messages.push(parseGmailMessage(m));
+        } catch {
+          // Skip messages we can't fetch (e.g., recently-deleted); don't
+          // fail the whole call. The next run will retry naturally.
+        }
+      }
+
+      return ok(
+        `query_gmail_delta: ${messages.length} message${messages.length === 1 ? '' : 's'}${fullSyncPerformed ? ' (full sync)' : ''}.`,
+        {
+          messages,
+          history_id: newHistoryId,
+          full_sync_performed: fullSyncPerformed,
+          fixture_mode: false,
+        },
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return err(`query_gmail_delta failed: ${msg}`);
+    }
   },
 };
 
@@ -114,9 +456,90 @@ export const queryCalendarDelta: McpToolDefinition = {
         },
       );
     }
-    return err(
-      'Real Calendar delta-sync is not yet wired (next commit lands this). Set CALENDAR_FIXTURE=<name> for fixture mode.',
-    );
+
+    // ── Real mode ───────────────────────────────────────────────────────
+    try {
+      const stateRes = await sendAction<{ sync_tokens: Record<string, string> }>(
+        'career_pilot.get_calendar_sync_state',
+        {},
+      );
+      if (!stateRes.ok) return actionErr('query_calendar_delta (sync state)', stateRes.error);
+      const priorSyncTokens = stateRes.data.sync_tokens ?? {};
+
+      const lookbackDays = Number(process.env.FUNNEL_CURATOR_GMAIL_LOOKBACK_DAYS) || DEFAULT_LOOKBACK_DAYS;
+
+      // v1: poll the 'primary' calendar only. Multi-calendar fits cleanly later.
+      const calendarId = 'primary';
+      const events: ParsedCalendarEvent[] = [];
+      const newSyncTokens: Record<string, string> = { ...priorSyncTokens };
+      let fullSyncPerformed = false;
+      const priorToken = priorSyncTokens[calendarId];
+
+      const doFetch = async (qs: string): Promise<CalendarEventsListResponse> => {
+        const res = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${qs}`,
+          { method: 'GET', headers: { Accept: 'application/json', 'x-onecli-placeholder': '1' } },
+        );
+        if (res.status === 410) {
+          throw new CalendarApiError(410, 'syncToken expired (410)');
+        }
+        if (!res.ok) {
+          const body = await res.text().catch(() => '');
+          throw new CalendarApiError(res.status, `${res.status} ${res.statusText}${body ? ' — ' + body.slice(0, 200) : ''}`);
+        }
+        return (await res.json()) as CalendarEventsListResponse;
+      };
+
+      let pageToken: string | undefined;
+      let useTokenMode = !!priorToken;
+      while (true) {
+        const qs = useTokenMode && priorToken && !pageToken
+          ? `syncToken=${encodeURIComponent(priorToken)}&singleEvents=true&maxResults=100`
+          : useTokenMode && pageToken
+            ? `syncToken=${encodeURIComponent(priorToken!)}&singleEvents=true&maxResults=100&pageToken=${encodeURIComponent(pageToken)}`
+            : pageToken
+              ? `timeMin=${encodeURIComponent(new Date(Date.now() - lookbackDays * 86_400_000).toISOString())}&singleEvents=true&maxResults=100&pageToken=${encodeURIComponent(pageToken)}`
+              : `timeMin=${encodeURIComponent(new Date(Date.now() - lookbackDays * 86_400_000).toISOString())}&singleEvents=true&maxResults=100`;
+
+        try {
+          const data = await doFetch(qs);
+          for (const e of data.items ?? []) {
+            events.push(parseCalendarEvent(e, calendarId));
+          }
+          if (data.nextSyncToken) newSyncTokens[calendarId] = data.nextSyncToken;
+          if (data.nextPageToken) {
+            pageToken = data.nextPageToken;
+          } else {
+            break;
+          }
+        } catch (e) {
+          if (e instanceof CalendarApiError && e.status === 410 && useTokenMode) {
+            // syncToken expired → restart from full-sync (timeMin)
+            fullSyncPerformed = true;
+            useTokenMode = false;
+            pageToken = undefined;
+            events.length = 0;
+            continue;
+          }
+          throw e;
+        }
+      }
+
+      if (!priorToken) fullSyncPerformed = true;
+
+      return ok(
+        `query_calendar_delta: ${events.length} event${events.length === 1 ? '' : 's'}${fullSyncPerformed ? ' (full sync)' : ''}.`,
+        {
+          events,
+          sync_tokens: newSyncTokens,
+          full_sync_performed: fullSyncPerformed,
+          fixture_mode: false,
+        },
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return err(`query_calendar_delta failed: ${msg}`);
+    }
   },
 };
 
