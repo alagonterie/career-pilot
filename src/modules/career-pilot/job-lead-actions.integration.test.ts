@@ -247,6 +247,35 @@ describe('handleClaimKillerMatches', () => {
     expect(stillUnclaimed.map((r) => r.id)).toEqual(['low-eligible']);
   });
 
+  it('suppresses leads with any prior email_events linkage (§24.9 funnel-curator integration)', async () => {
+    seedLead({ id: 'engaged', company: 'Acme', source: 'greenhouse', rules_score: 95, source_posted_at: freshTimestamp(1) });
+    seedLead({ id: 'fresh', company: 'Stripe', source: 'lever', rules_score: 92, source_posted_at: freshTimestamp(1) });
+
+    // Funnel-curator has linked an inbox event to the Acme lead — the
+    // candidate has already engaged with that thread, so killer-match
+    // should not re-push it even though it otherwise qualifies.
+    getDb()
+      .prepare(
+        `INSERT INTO email_events (
+           gmail_msg_id, thread_id, classification, confidence,
+           linked_job_lead_id, linked_application_id,
+           from_addr, subject, received_at, evidence_excerpt,
+           classified_at, classified_by_run_id
+         ) VALUES (
+           'msg-acme', 'thread-acme', 'application_confirmation', 0.95,
+           'engaged', NULL,
+           'noreply@greenhouse.example', 'Thanks for applying', @now, 'Thanks for applying.',
+           @now, 'fcr-test'
+         )`,
+      )
+      .run({ now: new Date().toISOString() });
+
+    const res = await callClaim();
+    if (!res.frame.ok) throw new Error('unreachable');
+    const ids = res.frame.data.leads.map((l) => l.id);
+    expect(ids).toEqual(['fresh']);
+  });
+
   it('returns leads with hydrated rules_score_reasons (JSON object)', async () => {
     getDb()
       .prepare(
