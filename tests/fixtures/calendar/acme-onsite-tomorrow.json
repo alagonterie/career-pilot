@@ -1,0 +1,14 @@
+{
+  "id": "evt-acme-onsite",
+  "calendarId": "primary",
+  "summary": "Acme onsite — Senior Engineer (5 sessions)",
+  "start": { "relative": { "hours": 26 } },
+  "end": { "relative": { "hours": 30 } },
+  "organizer": "recruiting@acme.example",
+  "attendees": [
+    { "email": "candidate@example.com", "responseStatus": "accepted" },
+    { "email": "interviewer1@acme.example", "responseStatus": "accepted" },
+    { "email": "interviewer2@acme.example", "responseStatus": "accepted" }
+  ],
+  "meetLink": "https://meet.google.example/acme-onsite-xyz"
+}

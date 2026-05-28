@@ -1,0 +1,10 @@
+{
+  "id": "msg-acme-confirm-001",
+  "threadId": "thread-acme-confirm",
+  "labels": ["INBOX", "CATEGORY_UPDATES"],
+  "from": "no-reply@greenhouse.example",
+  "to": "candidate@example.com",
+  "subject": "Thanks for your application — Staff Platform Engineer at Acme",
+  "received": { "relative": { "hours": -2 } },
+  "body": "Hi,\n\nThanks for applying to the Staff Platform Engineer role at Acme. We've received your application and our team will review it shortly. If your background is a fit, a recruiter will reach out within 7-10 days.\n\nBest,\nAcme Talent Team\n\nThis email was sent by Greenhouse on behalf of Acme. Reply directly with any questions."
+}
