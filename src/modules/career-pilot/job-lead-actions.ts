@@ -559,6 +559,178 @@ export async function handleWriteLlmScores(
   }
 }
 
+// ── claim_killer_matches ───────────────────────────────────────────────────
+//
+// SELECT-for-claim transaction backing the container-side `query_killer_matches`
+// MCP tool. Atomicity guarantee: the SELECT and the UPDATE marking
+// `killer_match_pushed_at` run inside a single `db.transaction(...)`, so a
+// second concurrent caller sees zero matching rows.
+
+interface KillerMatchLead {
+  id: string;
+  title: string;
+  company: string;
+  source: string;
+  source_url: string;
+  apply_url: string | null;
+  rules_score: number;
+  source_posted_at: string;
+  first_seen_at: string;
+  rules_score_reasons: unknown;
+}
+
+interface KillerMatchPreferences {
+  minRulesScore: number;
+  recencyWindowHours: number;
+  sourceAllowList: string[];
+  maxPerFire: number;
+}
+
+const DEFAULT_KILLER_MATCH_PREFS: KillerMatchPreferences = {
+  minRulesScore: 90,
+  recencyWindowHours: 6,
+  sourceAllowList: ['greenhouse', 'lever'],
+  maxPerFire: 3,
+};
+
+function readKillerMatchActionPrefs(db: Database.Database): KillerMatchPreferences {
+  try {
+    const rows = db
+      .prepare(
+        `SELECT key, value FROM preferences WHERE key IN (
+           'killer_match_min_rules_score',
+           'killer_match_recency_window_hours',
+           'killer_match_source_allow_list',
+           'killer_match_max_per_fire'
+         )`,
+      )
+      .all() as Array<{ key: string; value: string }>;
+    const lookup = new Map(rows.map((r) => [r.key, r.value]));
+
+    const parseInt = (key: string, fallback: number): number => {
+      const raw = lookup.get(key);
+      if (raw == null) return fallback;
+      const n = Number(raw);
+      return Number.isFinite(n) && n >= 0 ? Math.floor(n) : fallback;
+    };
+    const parseList = (key: string, fallback: string[]): string[] => {
+      const raw = lookup.get(key);
+      if (raw == null) return fallback;
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.every((x) => typeof x === 'string')) {
+          return parsed as string[];
+        }
+      } catch {
+        /* fall through to fallback */
+      }
+      return fallback;
+    };
+
+    return {
+      minRulesScore: parseInt('killer_match_min_rules_score', DEFAULT_KILLER_MATCH_PREFS.minRulesScore),
+      recencyWindowHours: parseInt('killer_match_recency_window_hours', DEFAULT_KILLER_MATCH_PREFS.recencyWindowHours),
+      sourceAllowList: parseList('killer_match_source_allow_list', DEFAULT_KILLER_MATCH_PREFS.sourceAllowList),
+      maxPerFire: parseInt('killer_match_max_per_fire', DEFAULT_KILLER_MATCH_PREFS.maxPerFire),
+    };
+  } catch {
+    return { ...DEFAULT_KILLER_MATCH_PREFS };
+  }
+}
+
+export async function handleClaimKillerMatches(
+  content: Record<string, unknown>,
+  _session: Session,
+  inDb: Database.Database,
+): Promise<void> {
+  const requestId = reqId(content);
+
+  try {
+    const db = getDb();
+    const prefs = readKillerMatchActionPrefs(db);
+
+    if (prefs.sourceAllowList.length === 0) {
+      log.warn('claim_killer_matches: source_allow_list is empty; no alerts will fire');
+      writeResponse(inDb, requestId, {
+        ok: true,
+        data: { leads: [], total: 0, reason: 'source_allow_list is empty' },
+      });
+      return;
+    }
+
+    const now = new Date();
+    const cutoff = new Date(now.getTime() - prefs.recencyWindowHours * 60 * 60 * 1000).toISOString();
+    const nowIso = now.toISOString();
+    const placeholders = prefs.sourceAllowList.map((_, i) => `@src_${i}`).join(', ');
+    const params: Record<string, unknown> = {
+      min_rules_score: prefs.minRulesScore,
+      cutoff,
+      now: nowIso,
+      limit: prefs.maxPerFire,
+    };
+    prefs.sourceAllowList.forEach((src, i) => {
+      params[`src_${i}`] = src;
+    });
+
+    const selectSql = `
+      SELECT id, title, company, source, source_url, apply_url, rules_score,
+             source_posted_at, first_seen_at, rules_score_reasons
+      FROM job_leads
+      WHERE killer_match_pushed_at IS NULL
+        AND closed_at IS NULL
+        AND rules_score >= @min_rules_score
+        AND source IN (${placeholders})
+        AND source_posted_at IS NOT NULL
+        AND source_posted_at >= @cutoff
+      ORDER BY rules_score DESC, first_seen_at DESC
+      LIMIT @limit
+    `;
+
+    const claimed: KillerMatchLead[] = [];
+    db.transaction(() => {
+      const rows = db.prepare(selectSql).all(params) as Array<KillerMatchLead & { rules_score_reasons: string | null }>;
+      if (rows.length === 0) return;
+      const ids = rows.map((r) => r.id);
+      const updatePlaceholders = ids.map((_, i) => `@id_${i}`).join(', ');
+      const updateParams: Record<string, unknown> = { now: nowIso };
+      ids.forEach((id, i) => {
+        updateParams[`id_${i}`] = id;
+      });
+      db.prepare(
+        `UPDATE job_leads SET killer_match_pushed_at = @now WHERE id IN (${updatePlaceholders})`,
+      ).run(updateParams);
+      for (const row of rows) {
+        if (typeof row.rules_score_reasons === 'string') {
+          try {
+            row.rules_score_reasons = JSON.parse(row.rules_score_reasons);
+          } catch {
+            /* leave as string */
+          }
+        }
+        claimed.push(row);
+      }
+    })();
+
+    if (claimed.length > 0) {
+      log.info('killer-match leads claimed', {
+        count: claimed.length,
+        ids: claimed.map((c) => c.id),
+      });
+    }
+
+    writeResponse(inDb, requestId, {
+      ok: true,
+      data: { leads: claimed, total: claimed.length },
+    });
+  } catch (err) {
+    log.error('handleClaimKillerMatches failed', { err });
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
 // ── discover_ats_board ─────────────────────────────────────────────────────
 
 const GREENHOUSE_URL_RE = /https?:\/\/(?:boards\.greenhouse\.io|boards-api\.greenhouse\.io)\/(?:embed\/job_board\?for=)?([\w-]+)/i;
