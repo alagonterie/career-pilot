@@ -41,7 +41,18 @@
     "killer_match_min_rules_score": 90,
     "killer_match_recency_window_hours": 6,
     "killer_match_max_per_fire": 3,
-    "killer_match_source_allow_list": ["greenhouse", "lever"]
+    "killer_match_source_allow_list": ["greenhouse", "lever"],
+    "funnel_curator_enabled": true,
+    "funnel_curator_cron": "30 7 * * *",
+    "funnel_curator_gmail_lookback_days": 30,
+    "funnel_curator_ghosting_thresholds_days": {
+      "applied": 21,
+      "screen": 10,
+      "onsite": 7
+    },
+    "funnel_curator_max_narratives": 20,
+    "funnel_curator_max_attention_items": 10,
+    "funnel_curator_skip_if_no_deltas": true
   },
   "system_modes": {
     "live_mode": false,
