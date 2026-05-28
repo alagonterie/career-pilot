@@ -166,7 +166,8 @@ type Flow =
   | 'scrape-jobs'
   | 'daily-briefing'
   | 'killer-match'
-  | 'funnel-curator-consumer';
+  | 'funnel-curator-consumer'
+  | 'funnel-curator';
 const FLOWS: ReadonlySet<Flow> = new Set([
   'smoke',
   'onboarding',
@@ -180,6 +181,7 @@ const FLOWS: ReadonlySet<Flow> = new Set([
   'daily-briefing',
   'killer-match',
   'funnel-curator-consumer',
+  'funnel-curator',
 ]);
 const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'smoke',
@@ -193,6 +195,7 @@ const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'daily-briefing',
   'killer-match',
   'funnel-curator-consumer',
+  'funnel-curator',
 ]);
 
 type LlmProvider = 'ollama' | 'claude';
@@ -203,11 +206,15 @@ interface Args {
   keepHost: boolean;
   noReset: boolean;
   llmProvider: LlmProvider;
+  gmailFixture: string | null;
+  calendarFixture: string | null;
 }
 
 function parseArgs(argv: string[]): Args {
   let flow: Flow = 'smoke';
   let llmProvider: LlmProvider = 'ollama';
+  let gmailFixture: string | null = null;
+  let calendarFixture: string | null = null;
   for (const a of argv) {
     if (a.startsWith('--flow=')) {
       const v = a.slice('--flow='.length) as Flow;
@@ -223,6 +230,10 @@ function parseArgs(argv: string[]): Args {
         process.exit(2);
       }
       llmProvider = v;
+    } else if (a.startsWith('--gmail-fixture=')) {
+      gmailFixture = a.slice('--gmail-fixture='.length);
+    } else if (a.startsWith('--calendar-fixture=')) {
+      calendarFixture = a.slice('--calendar-fixture='.length);
     }
   }
   return {
@@ -230,6 +241,8 @@ function parseArgs(argv: string[]): Args {
     llmProvider,
     keepHost: argv.includes('--keep-host'),
     noReset: argv.includes('--no-reset'),
+    gmailFixture,
+    calendarFixture,
   };
 }
 
@@ -2783,6 +2796,210 @@ async function runFunnelCuratorConsumer(): Promise<void> {
   }
 }
 
+// ── funnel-curator flow (§24.9 fixture-driven curator) ───────────────────
+
+function seedFunnelCuratorBase(): { applicationId: string; leadId: string } {
+  // Seeds an existing application + lead for "Acme" so the curator can link
+  // the fixture-driven inbox messages back to known DB rows. Without these,
+  // the curator would emit `suggestions[].action='create_lead'` — valid
+  // behavior but harder to assert on.
+  const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
+  const db = new Database(dbPath);
+  try {
+    const now = new Date().toISOString();
+    const applicationId = 'app-fc-acme';
+    const leadId = 'lead-fc-acme';
+
+    db.prepare(
+      `INSERT INTO applications (id, company_name, obfuscated_label, role_title, status, applied_at, last_activity_at, created_at)
+       VALUES (?, 'Acme', 'fc-test-a', 'Senior Engineer', 'applied', ?, ?, ?)`,
+    ).run(applicationId, now, now, now);
+
+    db.prepare(
+      `INSERT INTO job_leads (
+        id, source, source_job_id, source_url,
+        content_fingerprint, title, company,
+        first_seen_at, last_seen_at,
+        rules_score, rules_score_reasons,
+        status, status_changed_at, application_id
+      ) VALUES (?, 'greenhouse', ?, ?, ?, ?, 'Acme', ?, ?, 88, '{}', 'applied', ?, ?)`,
+    ).run(leadId, 'sj-fc-acme', 'https://acme.example/jobs/senior-engineer', 'fp-fc-acme', 'Senior Engineer', now, now, now, applicationId);
+
+    ok(`seeded curator-base: application=${applicationId}, lead=${leadId}`);
+    return { applicationId, leadId };
+  } finally {
+    db.close();
+  }
+}
+
+async function runFunnelCurator(): Promise<void> {
+  header('Flow: funnel-curator');
+  // Phase 3.2 §24.9 DoD #10.
+  //
+  // Validates the full funnel-curator dispatch path: scheduled trigger →
+  // subagent spawn → fixture-driven Gmail + Calendar reads → classify +
+  // link to seeded DB rows → persist_funnel_state writes email_events +
+  // funnel_curator_output.
+  //
+  // Requires GMAIL_FIXTURE and CALENDAR_FIXTURE env vars (set via the
+  // --gmail-fixture / --calendar-fixture CLI args). Requires Claude
+  // provider (Sonnet) — synthesis quality matters, this is the layer 4
+  // pattern from the spec.
+  //
+  // Cost: ~$0.30/run (Sonnet on the fixture pipeline + a small classifier
+  // pass + the orchestrator's own answer turn).
+  if (!process.env.GMAIL_FIXTURE) {
+    fail('funnel-curator flow requires --gmail-fixture=<name> (e.g. acme-pipeline-multi)');
+  }
+  if (!process.env.CALENDAR_FIXTURE) {
+    fail('funnel-curator flow requires --calendar-fixture=<name> (e.g. acme-onsite-tomorrow)');
+  }
+
+  const { applicationId, leadId } = seedFunnelCuratorBase();
+
+  const reply = await chatTurn('[scheduled trigger: funnel-curator]', 600_000);
+
+  // ── Assertion 1: bootstrap fired ──
+  const inboundPath = findCareerPilotInboundDb();
+  if (!inboundPath) fail('no career-pilot session inbound.db found under data/v2-sessions/');
+  const inDb = new Database(inboundPath, { readonly: true });
+  try {
+    const row = inDb
+      .prepare(
+        "SELECT id, kind, recurrence, content FROM messages_in WHERE series_id = 'funnel-curator' LIMIT 1",
+      )
+      .get() as
+      | { id: string; kind: string; recurrence: string; content: string }
+      | undefined;
+    if (!row) fail("bootstrap did not insert a funnel-curator task");
+    if (row.kind !== 'task') fail(`funnel-curator row has kind='${row.kind}', expected 'task'`);
+    ok(`bootstrap inserted task: recurrence='${row.recurrence}'`);
+  } finally {
+    inDb.close();
+  }
+
+  // ── Assertion 2: subagent dispatched ──
+  const jsonl = findLatestSessionJsonl();
+  if (!jsonl) fail('no session JSONL found under data/v2-sessions/');
+  const dispatch = findTaskDelegation(jsonl, 'funnel-curator');
+  if (!dispatch) {
+    fail(
+      'orchestrator did not dispatch the funnel-curator subagent via Agent/Task. ' +
+        'The scheduled-trigger handler must dispatch the subagent before reading state.',
+    );
+  }
+  ok('orchestrator dispatched funnel-curator subagent');
+
+  // ── Assertion 3: subagent called query_gmail_delta + persist_funnel_state ──
+  const subagentJsonl = findSubagentJsonl(jsonl);
+  if (!subagentJsonl) fail('no subagent JSONL found (Task block exists but no sidechain log written)');
+  const subagentCalls = listAllToolCalls(subagentJsonl);
+  const gmailCalls = subagentCalls.filter(
+    (c) => c.startsWith('mcp__nanoclaw__query_gmail_delta') || c.startsWith('query_gmail_delta'),
+  );
+  if (gmailCalls.length === 0) {
+    console.error('  --- subagent tool calls ---');
+    for (const c of subagentCalls) console.error(`  ${c}`);
+    fail('funnel-curator subagent did not call query_gmail_delta');
+  }
+  ok(`subagent called query_gmail_delta ${gmailCalls.length} time(s)`);
+
+  const persistCalls = subagentCalls.filter(
+    (c) => c.startsWith('mcp__nanoclaw__persist_funnel_state') || c.startsWith('persist_funnel_state'),
+  );
+  if (persistCalls.length === 0) {
+    console.error('  --- subagent tool calls ---');
+    for (const c of subagentCalls) console.error(`  ${c}`);
+    fail('funnel-curator subagent did not call persist_funnel_state');
+  }
+  if (persistCalls.length > 1) {
+    fail(`funnel-curator subagent called persist_funnel_state ${persistCalls.length} times; should be exactly once per run`);
+  }
+  ok('subagent called persist_funnel_state exactly once');
+
+  // ── Assertion 4: funnel_curator_output written ──
+  const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
+  const centralDb = new Database(dbPath, { readonly: true });
+  try {
+    const outputRow = centralDb
+      .prepare(
+        "SELECT id, narratives_json, attention_json, cheap_out FROM funnel_curator_output ORDER BY run_at DESC LIMIT 1",
+      )
+      .get() as { id: string; narratives_json: string; attention_json: string; cheap_out: number } | undefined;
+    if (!outputRow) fail('no funnel_curator_output row was written by the curator');
+    if (outputRow.cheap_out === 1) {
+      fail('curator emitted cheap_out=true despite non-empty Gmail + Calendar deltas');
+    }
+    const narratives = JSON.parse(outputRow.narratives_json) as Array<{ company: string; application_id?: string | null }>;
+    if (narratives.length === 0) fail('curator wrote empty narratives[]; expected at least one for Acme');
+    const acmeNarrative = narratives.find((n) => n.company?.toLowerCase().includes('acme'));
+    if (!acmeNarrative) {
+      console.error(`  --- narratives ---\n${JSON.stringify(narratives, null, 2)}`);
+      fail('curator did not produce a narrative for Acme despite fixture mentioning it');
+    }
+    if (acmeNarrative.application_id !== applicationId) {
+      // Soft check — curator might leave it null if it didn't match.
+      // We'd see this as a follow-up bug to fix in the matching logic.
+      console.error(
+        `  ⚠ Acme narrative.application_id='${acmeNarrative.application_id}' (expected '${applicationId}'). ` +
+          `Curator may not have matched ATS sender→company correctly.`,
+      );
+    } else {
+      ok(`Acme narrative correctly linked to application_id=${applicationId}`);
+    }
+    ok(`funnel_curator_output written: ${narratives.length} narrative(s)`);
+
+    // ── Assertion 5: email_events rows present ──
+    const eventRows = centralDb
+      .prepare("SELECT gmail_msg_id, classification FROM email_events ORDER BY gmail_msg_id")
+      .all() as Array<{ gmail_msg_id: string; classification: string }>;
+    if (eventRows.length === 0) {
+      fail('no email_events rows written; expected 4 from acme-pipeline-multi fixture');
+    }
+    if (eventRows.length < 4) {
+      console.error(`  ⚠ only ${eventRows.length} email_events rows; expected 4 from the fixture.`);
+      console.error(`  events: ${eventRows.map((r) => `${r.gmail_msg_id}=${r.classification}`).join(', ')}`);
+    }
+    ok(`email_events rows written: ${eventRows.length}`);
+
+    // ── Assertion 6: at least one event linked to the seeded lead/app ──
+    const linkedCount = (
+      centralDb
+        .prepare(
+          "SELECT COUNT(*) AS n FROM email_events WHERE linked_job_lead_id = ? OR linked_application_id = ?",
+        )
+        .get(leadId, applicationId) as { n: number }
+    ).n;
+    if (linkedCount === 0) {
+      console.error(
+        `  ⚠ no email_events linked to the seeded application/lead. ` +
+          `Curator's matching strategy may be missing the ATS-sender → company link.`,
+      );
+    } else {
+      ok(`${linkedCount} email_event(s) linked to seeded application/lead`);
+    }
+
+    // ── Assertion 7: attention list has the onsite item ──
+    const attention = JSON.parse(outputRow.attention_json) as Array<{ priority: string; reason: string; company?: string | null }>;
+    const onsiteItem = attention.find((a) => a.reason?.toLowerCase().includes('onsite') || a.priority === 'same_day');
+    if (!onsiteItem) {
+      console.error(`  ⚠ attention[] does not flag the onsite. items: ${JSON.stringify(attention, null, 2)}`);
+    } else {
+      ok(`attention[] flags the onsite (priority=${onsiteItem.priority})`);
+    }
+  } finally {
+    centralDb.close();
+  }
+
+  // ── Assertion 8: reply does not echo the trigger sentinel ──
+  if (reply.toLowerCase().includes('[scheduled trigger:')) {
+    console.error('  --- reply (first 500 chars) ---');
+    console.error(reply.slice(0, 500));
+    fail('orchestrator reply echoes the trigger sentinel');
+  }
+  ok('orchestrator reply does not echo the trigger sentinel');
+}
+
 function seedBookmarkedApplication(opts: {
   id: string;
   company_name: string;
@@ -3247,6 +3464,19 @@ async function main(): Promise<void> {
 
   preflight(args.llmProvider);
 
+  // Propagate fixture selections to the host process env BEFORE startHost
+  // spawns it (the host inherits process.env). The funnel-actions
+  // GMAIL_FIXTURE / CALENDAR_FIXTURE seam reads these to swap real Google
+  // API calls for fixture loads.
+  if (args.gmailFixture) {
+    process.env.GMAIL_FIXTURE = args.gmailFixture;
+    console.log(`  (GMAIL_FIXTURE=${args.gmailFixture})`);
+  }
+  if (args.calendarFixture) {
+    process.env.CALENDAR_FIXTURE = args.calendarFixture;
+    console.log(`  (CALENDAR_FIXTURE=${args.calendarFixture})`);
+  }
+
   if (!args.noReset) {
     // FLOWS_NEEDING_SEED skips onboarding mode by pre-populating
     // candidate_profile; everything else starts with a blank profile.
@@ -3274,6 +3504,7 @@ async function main(): Promise<void> {
       'daily-briefing': runDailyBriefing,
       'killer-match': runKillerMatch,
       'funnel-curator-consumer': runFunnelCuratorConsumer,
+      'funnel-curator': runFunnelCurator,
     };
     await FLOW_HANDLERS[args.flow]();
     assertionsPassed = true;
