@@ -2150,7 +2150,7 @@ We build only what NanoClaw doesn't already provide: the bootstrap that ensures 
 
 - **§24.7 Sub-milestone 3.2 — Killer-match push** (rules_score ≥ 90 + recent + Tier-A source). Uses the same `schedule_task` primitive — high-frequency poll (every 30min during waking hours) with transactional SELECT-for-claim dedup. Drilled in below.
 - **§24.8 Sub-milestone 3.3 — Close-detection sweep** (advance `last_seen_at`, mark stale rows `closed_at`). Another `schedule_task` consumer (lower frequency, no agent wake — does a sweep via script).
-- **§24.9 Sub-milestone 3.4 — Lead-to-application promotion** (orchestrator UX: "I'm applying to that one" → `update_application` + `update_job_lead_status('applied')` paired). Pure orchestrator/persona work; no infra delta.
+- **§24.9 Sub-milestone 3.4 — Funnel curator (Gmail + Calendar)** — daily subagent that classifies inbound mail, links it to leads/applications, synthesizes per-application narratives + a prioritized attention list, and feeds a materialized read-model to the discovery surfaces (daily-briefing absorbs attention items; killer-match suppresses leads already in active funnel; on-demand "state of X?" replies become possible). Subsumes the originally-planned "I'm applying to that one" pattern — the inbox is a richer source of truth than user-asserted state. Drilled in below.
 - **Telegram-driven Gmail OAuth onboarding wizard** — separately scoped follow-up. Not Phase 3 critical-path.
 - **LLM-notes column on `job_leads`** — score-only in v1; notes are a nice-to-have for v1.1.
 - **Evening-briefing schedule** — NanoClaw supports multiple tasks; v1 ships morning-only. Evening briefing is a follow-up if morning signal-to-noise warrants it.
@@ -2316,7 +2316,7 @@ The only thing genuinely new here is one column on `job_leads` (for push dedup) 
 - **Killer-match overrides quiet hours** — could be a future `preferences.killer_match_ignore_quiet_hours` toggle for candidates who want the alert at 2am for a 9pm posting. v1 respects quiet hours; revisit if the candidate explicitly asks.
 - **Per-lead LLM ranking inside the push** — v1 surfaces the lead facts and lets the orchestrator's own turn frame them. No `rank_leads` call. If the push needs a "why this matters" line, the persona can derive it from `rules_score_reasons` cheaply.
 - **Adaptive cron frequency** — fall back to every-30min when the pool is "warm" (recent inserts), every-2h otherwise. Not necessary for v1; the 30min default is fine.
-- **Killer-match acknowledgement loop** — "I've seen that one, ignore" → mark `closed_at`. Pure persona work; lands naturally in §24.9 (lead-to-application promotion).
+- **Killer-match acknowledgement loop** — "I've seen that one, ignore" → mark `closed_at`. Pure persona work; partly subsumed by funnel-curator (§24.9) — once the candidate applies, the inbox-derived `email_events` row suppresses the lead at killer-match-claim time. Remaining gap: the "I saw the alert and am not interested" path. Minor follow-up.
 
 **Risk register:**
 
@@ -2330,6 +2330,271 @@ The only thing genuinely new here is one column on `job_leads` (for push dedup) 
 | **F. `ensureKillerMatchTask()` accretes garbage** (same as §24.6 risk G) | Low | DoD #2 covers it. The `series_id` lookup is the dedup key. Add a guard log on the second-or-later insert call (mirror what daily-briefing does). |
 | **G. Migration 120 breaks on existing DBs** if `killer_match_pushed_at` already exists | Very low | Single ALTER ADD COLUMN. SQLite's `ADD COLUMN IF NOT EXISTS` is not portable, but our migration runner uses version-number gates (`PRAGMA user_version`), so 120 only runs once per DB. |
 | **H. Empty source_allow_list silently disables alerts** | Low | DoD #2 + bootstrap log line: when `source_allow_list` is empty, log "killer-match enabled but source allow-list is empty — no alerts will fire". Surfaces a misconfiguration without throwing. |
+
+#### 24.9 Sub-milestone 3.4 — Funnel curator (Gmail + Calendar)
+
+**Why this sub-milestone next:** §24.6 (daily-briefing) and §24.7 (killer-match push) closed the *discovery* side of the heartbeat — proactive surfacing of leads from the `job_leads` pool. §24.9 closes the *funnel-state observation* side: every step of the candidate's job search after applying generates email (and sometimes calendar) artifacts — application confirmations, recruiter screens, take-home deliveries, onsite invites, offers, rejections, recruiter cold outreach for jobs the candidate never applied to. The inbox is the ground-truth log of the actual funnel — including events outside the agent's own workflow (LinkedIn Easy Apply, direct-from-company applications). This sub-milestone makes the agent an expert at reading that log: classifying messages, linking them to existing `job_leads` / `applications`, synthesizing per-application narratives, prioritizing what deserves the candidate's limited attention, and feeding that materialized view back to the discovery surfaces (daily-briefing absorbs an "attention" section; killer-match suppresses leads already in active funnel; on-demand "what's the state of X?" replies become possible). Originally scoped (pre-deep-dive) as a small "I'm applying to that one" promotion pattern; expanded because inbox-as-source-of-truth is strictly more reliable than user-asserted state and the candidate confirmed they receive a confirmation email for every funnel step.
+
+The work splits along a clean architectural seam: **bookkeeping** (deterministic — delta-sync via `users.history.list` / `events.list`, parsed-message storage, sender-domain → company matching) is host-side and stored cheaply. **Judgment** (classification, narrative synthesis, attention prioritization) is done by a dedicated `funnel-curator` subagent that runs ~1x/day, reasons over the bookkeeping + DB joins, and emits a structured read-model that other surfaces consume cheaply. Mirrors §24.5's "scrape-jobs writer pattern over a deterministic crawl" — same principle, applied to inbound mail instead of outbound ATS scrapes.
+
+**What NanoClaw provides here (use, don't rebuild — per [[feedback-nanoclaw-infra-first]]):**
+
+| Concern | NanoClaw module | Notes |
+|---|---|---|
+| Scheduling primitive | `container/agent-runner/src/mcp-tools/scheduling.ts` (`schedule_task`) | Reused from §24.6 / §24.7. Single daily fire at 07:30 (before the 08:00 briefing reads the output). |
+| Synthetic-trigger delivery | Container poll-loop delivers `kind='task'` rows | Same path — only the `prompt` sentinel changes. |
+| Subagent dispatch + isolation | NanoClaw's `Agent` tool + composer rendering of `agents-src/funnel-curator.md` | Standard subagent pattern (mirrors §24.1-§24.5). Sibling `funnel-curator.VERIFICATION.md` for DoD per the runtime-artifact rule. |
+| System-action contract (host-roundtrip) | `src/delivery.ts` + `registerDeliveryAction` | Reused for all new host actions. **Architectural choice (deliberate):** funnel-curator's Gmail/Calendar tools are host-roundtrip wrappers, NOT direct OneCLI-MCP servers. Matches the existing `create_gmail_draft` pattern — same `*_FIXTURE`-style test seam (extends `GMAIL_STUB=1`), same owner/sandbox enforcement at the host. Direct `mcp__gmail__*` would lose both. |
+| OneCLI Gmail OAuth scope | Already granted by `add-gmail-tool` NanoClaw skill: `gmail.readonly gmail.modify gmail.send` | `gmail.readonly` covers everything §24.9 reads; `modify`+`send` are already there for `create_gmail_draft`. **No reconnect or scope expansion required.** |
+| OneCLI Calendar OAuth scope | Granted by `add-gcal-tool` NanoClaw skill | `calendar.readonly` is sufficient — curator reads events only, never writes. Verify the skill's exact scope set during impl. |
+| Credential injection at host egress | OneCLI vault SDK | Host process reads token from OneCLI vault, calls Google REST API directly (`users.history.list`, `users.messages.get`, `events.list`). Same shape as `create_gmail_draft`'s host handler. |
+| Gmail incremental sync semantics | (External) Google Gmail API — `users.history.list?startHistoryId=X` | Per Google docs: typically valid ≥1 week, "in rare circumstances may be valid for only a few hours". **Invalidation returns HTTP 404** (NOT 410 — Calendar uses 410, Gmail uses 404; don't conflate). Response carries `messagesAdded[]` with `{id, threadId}` only — curator must follow up with `messages.get?format=FULL` per ID. `messages.get` costs 20 quota units; `history.list` costs 2. |
+| Calendar incremental sync semantics | (External) Google Calendar API — `events.list?syncToken=...&singleEvents=true` | Invalidation returns HTTP **410 GONE**. No documented TTL. Recovery is per-calendar full re-sync via `timeMin=now-lookback_days`. `syncToken` is per-calendar — multi-calendar candidates need one token per calendar ID (the `calendar_sync_state` table is keyed `(account_id, calendar_id)`). |
+| Quota headroom | Gmail: 80M units/day cap; Calendar: 1M req/day | Daily curator (50-200 new messages) ≈ 4000 Gmail units, ~10 Calendar requests. Three orders of magnitude under quota. Document for future-proofing only. |
+
+The new domain-specific layers are: the funnel-curator subagent prompt, the Gmail/Calendar host-side read-handlers (with fixture seam mirroring `GMAIL_STUB=1`), the `email_events` audit table, the `funnel_curator_output` read-model, and integrations into the three consumer surfaces (daily-briefing, on-demand persona replies, killer-match suppression).
+
+**Architectural shape:**
+
+```
+   [container spawn]
+         │
+         ▼
+   ┌──────────────────────────────────────────────────┐
+   │ host: container-runner.ts                        │
+   │   - daily-briefing bootstrap (§24.6)             │
+   │   - killer-match bootstrap (§24.7)               │
+   │   - NEW: ensureFunnelCuratorTask()               │
+   │       inserts kind='task' with stable            │
+   │       series_id='funnel-curator', recurrence     │
+   │       '30 7 * * *' (07:30 daily, TZ-local).      │
+   │       Idempotent. Owner only — never sandbox.    │
+   └──────────────────────────────────────────────────┘
+
+   [daily at 07:30, host-sweep ticks → container poll delivers
+    prompt "[scheduled trigger: funnel-curator]"]
+         │
+         ▼
+   ┌──────────────────────────────────────────────────┐
+   │ orchestrator (persona has funnel-curator handler)│
+   │   1. dispatch Agent("funnel-curator")            │
+   │   2. await subagent reply (≤5 min cap)           │
+   │   3. read_funnel_state() → check attention[]     │
+   │   4. relay highlights ONLY if any item has       │
+   │      priority='same_day' AND under freq cap AND  │
+   │      outside quiet hours; else silent (briefing  │
+   │      at 08:00 will surface the rest).            │
+   └──────────────────────────────────────────────────┘
+         │
+         ▼
+   ┌──────────────────────────────────────────────────┐
+   │ funnel-curator subagent (Sonnet)                 │
+   │  Read palette (host-roundtrip via sendAction):   │
+   │   • query_gmail_delta()  — historyId-driven,     │
+   │     404 → lookback-window full-sync fallback     │
+   │   • query_calendar_delta()  — per-calendar       │
+   │     syncToken, 410 → full-sync fallback          │
+   │   • query_applications(), query_job_leads(),     │
+   │     query_outreach_drafts()                      │
+   │   • read_funnel_state()  — prior output          │
+   │   • read_email_events()  — prior classifications │
+   │  Write palette:                                  │
+   │   • persist_funnel_state({                       │
+   │       new_email_events[], narratives[],          │
+   │       attention[], suggestions[],                │
+   │       gmail_history_id, calendar_sync_tokens     │
+   │     })  — single transactional write at end      │
+   │                                                  │
+   │  Cheap-out: if gmail+cal deltas BOTH empty AND   │
+   │   no ghosting-threshold transitions are due      │
+   │   since last run → emit cheap_out=true row and   │
+   │   exit without classification pass.              │
+   │                                                  │
+   │  Otherwise: classify new emails, link to leads / │
+   │   applications (matching strategies in component │
+   │   5), synthesize narratives per active company,  │
+   │   prioritize attention list (ghosting, interviews│
+   │   tomorrow, offers expiring, follow-ups owed),   │
+   │   emit suggestions[] (read-only — orchestrator   │
+   │   decides whether/when to apply them).           │
+   └──────────────────────────────────────────────────┘
+         │
+         ▼
+   ┌──────────────────────────────────────────────────┐
+   │ funnel_curator_output (latest row = read model)  │
+   │ email_events (audit trail of all classifications)│
+   └─────────────────────┬────────────────────────────┘
+                         │
+   ┌─────────────────────┼──────────────────────────┐
+   ▼                     ▼                          ▼
+ daily-briefing       on-demand                  killer-match
+ builder (reads       "state of X?"              host action
+ attention[]) —       (orchestrator reads        (joins through
+ prepends to          narratives[]               email_events to
+ morning push         matching company)          suppress leads
+                                                 in active funnel)
+```
+
+**Components to build:**
+
+1. **DB migration: `121-funnel-curator.ts`.**
+   - `CREATE TABLE email_events` — UPSERT-on-(gmail_msg_id):
+     - `gmail_msg_id TEXT PRIMARY KEY`
+     - `thread_id TEXT NOT NULL`
+     - `classification TEXT NOT NULL` — one of: `application_confirmation`, `screen_invite`, `screen_rejection`, `take_home_delivery`, `onsite_invite`, `next_round_update`, `offer`, `rejection`, `cold_recruiter_outreach`, `reference_check`, `noise`, `unclassified`
+     - `confidence REAL NOT NULL` — 0..1
+     - `linked_job_lead_id TEXT`, `linked_application_id TEXT` — both nullable
+     - `from_addr TEXT`, `subject TEXT`, `received_at TEXT`
+     - `evidence_excerpt TEXT` — ≤500 chars; for narrative recall, NOT a full body store (PII discipline)
+     - `classified_at TEXT NOT NULL`
+     - `classified_by_run_id TEXT` — FK to `funnel_curator_output.id`
+   - `CREATE TABLE funnel_curator_output` — append-only per run:
+     - `id TEXT PRIMARY KEY` (UUID), `run_at TEXT NOT NULL`
+     - `gmail_history_id TEXT` — snapshot when this run completed
+     - `calendar_sync_tokens TEXT` — JSON map `{ calendar_id → syncToken }`
+     - `narratives_json TEXT NOT NULL`, `attention_json TEXT NOT NULL`, `suggestions_json TEXT NOT NULL`
+     - `cheap_out INTEGER NOT NULL` (0/1) — true when curator exited early on no-delta
+     - `cost_usd REAL` — estimated cost (telemetry)
+   - `CREATE TABLE gmail_sync_state` — keyed on `account_id` (`'primary'` for v1):
+     - `history_id TEXT NOT NULL`, `last_full_sync_at TEXT NOT NULL`
+   - `CREATE TABLE calendar_sync_state` — primary key `(account_id, calendar_id)`:
+     - `sync_token TEXT NOT NULL`, `last_full_sync_at TEXT NOT NULL`
+   - Indexes: `email_events(linked_application_id)`, `email_events(linked_job_lead_id)`, `email_events(thread_id)`, `funnel_curator_output(run_at DESC)`.
+
+2. **Host bootstrap: `ensureFunnelCuratorTask()`** in `src/modules/career-pilot/funnel-curator-bootstrap.ts` (sibling to the daily-briefing + killer-match bootstraps).
+   - On each container spawn for the `career-pilot` group: read inbound.db for `messages_in WHERE series_id='funnel-curator'`.
+   - If missing AND `preferences.funnel_curator_enabled=true`: direct INSERT with `recurrence` from `preferences.funnel_curator_cron` (default `'30 7 * * *'`), `prompt='[scheduled trigger: funnel-curator]'`.
+   - Idempotent. Only runs for owner group.
+
+3. **Host actions (5 new), all in `src/modules/career-pilot/funnel-actions.ts`:**
+   - **`career_pilot.gmail_query_delta`**: read `gmail_sync_state.history_id`. Call `users.history.list?startHistoryId=X`. For each new ID, call `users.messages.get?format=FULL` (parse `payload.headers[]` for `From`/`Subject`/`Date`; parse `payload.parts[]` for body text). Update `gmail_sync_state.history_id`. On HTTP 404: `q="after:YYYY/MM/DD"`-windowed full sync using `lookback_days`. **Fixture seam:** when `GMAIL_FIXTURE=<name>` env is set, returns from `tests/fixtures/gmail/<name>.json` instead of calling Google (mirrors existing `GMAIL_STUB=1`).
+   - **`career_pilot.calendar_query_delta`**: for each row in `calendar_sync_state`, call `events.list?syncToken=...&singleEvents=true`. On HTTP 410: full sync with `timeMin=now-lookback_days`. `CALENDAR_FIXTURE=<name>` env mirrors the Gmail seam.
+   - **`career_pilot.persist_funnel_state`**: single `db.transaction(...)` — UPSERT each `new_email_events[]` row keyed on `gmail_msg_id`; INSERT one `funnel_curator_output` row; update sync-state pointers passed in by curator. All-or-nothing.
+   - **`career_pilot.read_funnel_state`**: returns most-recent `funnel_curator_output` row (parsed JSON). Cheap read; called by daily-briefing builder, on-demand persona, and killer-match suppression path.
+   - **`career_pilot.read_email_events`**: queries `email_events` by linked application/lead or by date range. Used by curator for prior classifications + by persona for on-demand narrative pulls.
+   - **All 5 reject sandbox sessions** (mirror `create_gmail_draft`'s `actions.ts:268` guard).
+
+4. **Container-side MCP tools (5 thin wrappers)** in `container/agent-runner/src/mcp-tools/funnel-curator.ts`. Each body is a single `sendAction(...)` call mirroring the host-action contract.
+   - `query_gmail_delta`, `query_calendar_delta`, `persist_funnel_state` — funnel-curator subagent only (not orchestrator).
+   - `read_funnel_state`, `read_email_events` — exposed to BOTH funnel-curator AND orchestrator (orchestrator uses them for on-demand "state of X?" replies).
+
+5. **Funnel-curator subagent:** `groups/career-pilot/.claude/agents-src/funnel-curator.md` + sibling `funnel-curator.VERIFICATION.md`.
+   - **Model tier:** Sonnet — frontmatter specifies. Synthesis is the heavy lift; Haiku quality not sufficient (per [[reference-claude-validation-cost]] testing principle: quality work → Claude tier).
+   - **Tool palette:** 7 read tools (`query_gmail_delta`, `query_calendar_delta`, `query_applications`, `query_job_leads`, `query_outreach_drafts`, `read_funnel_state`, `read_email_events`) + 1 write tool (`persist_funnel_state`). No Bash, no WebFetch, no `Agent` (curator is a leaf — no nested subagent delegation).
+   - **Prompt sections (no spec refs per runtime-artifact rule):**
+     - Role + scope: read inbox + calendar + DB; emit structured funnel state; never send mail, never directly mutate application status.
+     - Email taxonomy table — the 12 classification classes with descriptions + the funnel-state implication each carries.
+     - Matching strategies: sender domain → company; ATS-pattern in subject/body (Greenhouse/Lever/Ashby/etc.); thread-chain inheritance (once first message linked, rest inherit); URL substring match against `apply_url`; recruiter-name overlap with prior threads.
+     - Output schema for `persist_funnel_state` payload.
+     - Confidence policy: how confidence interacts with `approval_scope.update_application_status: "if_terminal"` — transitional state suggestions can be auto-applied; terminal (offer / rejection) must surface for confirm.
+     - Ghosting heuristics: per-stage thresholds from preferences are *hints*, not hard triggers; curator narrates context ("Sarah said next steps within a week, it's been 11 days").
+   - **`funnel-curator.VERIFICATION.md` lists:** curator emits valid schema; classifications respect taxonomy enum; suggestions don't include direct-write actions; cheap-out path triggers correctly on empty deltas.
+
+6. **Persona — funnel-curator handler section** added to `groups/career-pilot/.claude-host-fragments/persona.md` under "Scheduled wakeups", sibling to daily-briefing and killer-match handlers.
+   - On `[scheduled trigger: funnel-curator]`: dispatch the `funnel-curator` subagent via the `Agent` tool. After return:
+     1. Read just-written output via `read_funnel_state()`.
+     2. If `attention[]` has any `priority='same_day'` items AND not in quiet hours AND under freq cap → emit short `<message to="owner">` highlighting them. Else silent (briefing surfaces the rest).
+     3. Audit count of new email_events, `cheap_out`, `cost_usd` via `<internal>`.
+   - On-demand pattern: when candidate asks "what's the state of Acme?" / "what needs attention?" / "anything new from Stripe?", orchestrator calls `read_funnel_state()` (cached read; no curator re-spawn) and synthesizes a narrative reply. If `run_at` is >24h stale, the reply suggests a fresh sweep.
+   - No spec refs, no file paths, no DoD in persona text (runtime-artifact rule).
+
+7. **Daily-briefing integration** (modify `src/modules/career-pilot/daily-briefing-builder.ts`).
+   - Briefing builder calls `read_funnel_state()` before composing.
+   - If `attention[]` non-empty: prepend an "Applications needing attention" section ahead of the leads section. Items render as `{company} — {state} — {reason}` with optional `{action_hint}`.
+   - If `attention[]` empty: briefing format unchanged from §24.6.
+   - No extra LLM cost — DB read only.
+
+8. **Killer-match suppression integration** (modify `handleClaimKillerMatches` in `src/modules/career-pilot/job-lead-actions.ts`).
+   - Before SELECT-for-claim: derive a Set of `job_lead_id` values with ≥1 `email_events` row whose `linked_job_lead_id IS NOT NULL` AND linked application's status is `applied` or later.
+   - Add `AND id NOT IN (...)` to the existing SELECT.
+   - Prevents pinging the candidate about jobs they've already applied to — the worst v1 funnel-data footgun.
+
+9. **Test fixtures + harness flows.**
+   - `tests/fixtures/gmail/*.json` and `tests/fixtures/calendar/*.json` — canonical scenario set listed under "E2E flow" below.
+   - Loader: `scripts/test/load-funnel-fixtures.ts` reads fixture JSON, normalizes `relative` dates (e.g., `{ "relative": { "hours": -21*24 } }`) against test-now, returns the parsed-message shape the host action would return from a real Google call.
+   - `scripts/test/e2e.ts` gains three new `Flow` handlers: `funnel-curator-consumer`, `funnel-curator`, `funnel-curator-calibration`.
+
+10. **Preferences additions** (seeded in `config/defaults.json`):
+    - `funnel_curator_enabled` = `true`
+    - `funnel_curator_cron` = `"30 7 * * *"` (07:30 daily, TZ-local; before 08:00 briefing)
+    - `funnel_curator_gmail_lookback_days` = `30` (initial backfill window + 404/410 recovery window)
+    - `funnel_curator_ghosting_thresholds_days` = `{"applied": 21, "screen": 10, "onsite": 7}` (JSON object — curator reasons over these as hints, not as hard triggers)
+    - `funnel_curator_max_narratives` = `20`
+    - `funnel_curator_max_attention_items` = `10`
+    - `funnel_curator_skip_if_no_deltas` = `true`
+    - Note: `approval_scope.update_application_status: "if_terminal"` is already present in defaults — curator obeys it via `suggestions[].action` framing.
+
+**E2E flow** (`scripts/test/e2e.ts --flow=funnel-curator-*`):
+
+Testing splits across five layers per the host-roundtrip + fixture-seam architecture. Most CI runs are LLM-free; LLM-driven runs are gated to manual / curator-touching commits per [[reference-claude-validation-cost]] (mechanics → Ollama / no-LLM; quality → Claude).
+
+| Layer | Coverage | LLM | Cost |
+|---|---|---|---|
+| **1. Unit (`vitest`)** | Pure helpers: company-domain matcher, ghosting-threshold computer, historyId / syncToken bookkeeping, fixture loader, output schema validator, `evidence_excerpt` truncation, ICS-attachment parser. | None | Free |
+| **2. Integration (`vitest`)** | Host-side action handlers: `gmail_query_delta` against `GMAIL_FIXTURE=`-seeded fixtures, `persist_funnel_state` transactionality, `read_funnel_state` returns latest row, `email_events` UPSERT-on-conflict, sandbox-group rejection, 404/410 recovery paths. Shape mirrors `job-lead-actions.integration.test.ts`. | None | Free |
+| **3. E2E (`funnel-curator-consumer` flow)** | Consumer paths only. Seed `funnel_curator_output` + `email_events` directly into DB; verify daily-briefing absorbs attention[], on-demand "state of Acme?" pulls narrative, killer-match suppression excludes linked leads. **No curator spawn; no Gmail / Calendar fixtures even loaded.** | Ollama (mechanics — LLM only frames the response per §24.6 pattern) | ~free / ~$0.05 |
+| **4. E2E (`funnel-curator` flow)** | Full curator spawn against fixtures. `GMAIL_FIXTURE=acme-pipeline-multi` + `CALENDAR_FIXTURE=acme-onsite-tomorrow`. Verify: subagent dispatched, host actions called with correct args, `email_events` rows written with correct classifications, `funnel_curator_output` has expected narratives + attention items, output validates against schema. | **Claude** (quality matters) | ~$0.30/run |
+| **5. E2E calibration (`funnel-curator-calibration`)** | Hand-picked scenarios with content assertions: `acme-applied` → narrative state `applied`; `beta-ghosting-21d` → attention flags Beta with `priority='action_owed'`; `noise-newsletter` → classified `noise`, no state change; `cold-recruiter-stripe` → suggestion to `create_lead`. Run manually when curator prompt or schema changes; not on every CI tick. | Claude | ~$0.30 × ~6 scenarios ≈ $2/sweep |
+
+**Canonical fixture set (v1):**
+
+- `tests/fixtures/gmail/acme-applied-confirmation.json` — single Greenhouse-shaped ATS auto-reply.
+- `tests/fixtures/gmail/stripe-screen-invite.json` — recruiter inviting candidate to a 30-min screen.
+- `tests/fixtures/gmail/beta-applied-then-silent.jsonl` — multi-message: application from 21d ago, no follow-up (exercises ghosting heuristic).
+- `tests/fixtures/gmail/cold-recruiter-stripe.json` — Stripe recruiter outreach for a role candidate never applied to (exercises `create_lead` suggestion path).
+- `tests/fixtures/gmail/noise-newsletter.json` — promotional email from a job board the candidate also uses (exercises noise filter; must NOT pollute state).
+- `tests/fixtures/gmail/acme-pipeline-multi.jsonl` — full multi-stage thread (apply → screen → take-home → onsite) for one application.
+- `tests/fixtures/calendar/acme-onsite-tomorrow.json` — Google Calendar event arriving from the onsite invite above.
+
+Dates in fixtures use `{ "relative": { "hours": -N } }` shape so the loader renders them fresh-or-stale relative to a test-clock `now`. Mirrors the existing `freshTimestamp(hours)` helper in `job-lead-actions.integration.test.ts`.
+
+**Definition of done:**
+
+1. Migration 121 lands; `email_events`, `funnel_curator_output`, `gmail_sync_state`, `calendar_sync_state` tables + indexes present.
+2. `ensureFunnelCuratorTask()` runs on container spawn for `career-pilot`; idempotent; inserts `kind='task'` row with `series_id='funnel-curator'` and configured cron; respects `preferences.funnel_curator_enabled`; never runs for sandbox.
+3. Five host actions (`gmail_query_delta`, `calendar_query_delta`, `persist_funnel_state`, `read_funnel_state`, `read_email_events`) registered; each rejects sandbox sessions; each respects its `*_FIXTURE` env override.
+4. Five container-side MCP tools wired; correct tools exposed to funnel-curator vs. orchestrator per component 4.
+5. `funnel-curator` subagent + sibling `VERIFICATION.md` defined; composer renders it; tool palette exactly the 8 tools listed in component 5; Sonnet frontmatter set.
+6. Persona's `[scheduled trigger: funnel-curator]` handler dispatches the subagent, reads `read_funnel_state()`, emits same-day push only when warranted, otherwise silent; on-demand "state of X?" pattern documented and works against cached read-model.
+7. Daily-briefing builder reads `funnel_curator_output` and prepends "Applications needing attention" section when present; no regression on the empty-attention case.
+8. `handleClaimKillerMatches` excludes leads already in active funnel via `email_events` join.
+9. `pnpm test:e2e --flow=funnel-curator-consumer --llm-provider=ollama` green: daily-briefing absorbs seeded attention; on-demand reply pulls narrative; killer-match suppression works. **No real Gmail/Calendar; no fixtures even loaded.**
+10. `pnpm test:e2e --flow=funnel-curator --gmail-fixture=acme-pipeline-multi --calendar-fixture=acme-onsite-tomorrow --llm-provider=claude` green: subagent emits valid schema, classifications correct, narrative captures the 4-stage timeline, attention list flags onsite-tomorrow.
+11. One `funnel-curator-calibration` sweep at DoD time confirms the canonical fixture set produces sensible classifications across the 6 scenarios (manual eyeball + spec'd content assertions per Layer 5).
+12. Sandbox isolation verified: spawning a `career-pilot-sandbox` session never schedules funnel-curator; calling `query_gmail_delta` from sandbox returns `FORBIDDEN`-shaped error.
+13. Cheap-out path verified: when both deltas are empty AND no ghosting transitions are due, curator emits `funnel_curator_output` row with `cheap_out=1` and `cost_usd ≤ $0.01` without doing a classification pass.
+14. historyId-404 fallback: corrupt `gmail_sync_state.history_id` to a garbage value, trigger curator, verify it falls back to a `lookback_days`-window full sync without erroring; `last_full_sync_at` advances.
+15. syncToken-410 fallback: same shape on calendar side.
+16. PII discipline: `email_events.evidence_excerpt` is ≤500 chars; full body text is never persisted in `email_events`; verified by integration test that inspects a real-fixture-shaped payload.
+17. Host restart survival: kill host, restart, funnel-curator task still scheduled and fires on next cron tick.
+
+**Out of scope (deferred — separate sub-milestones or follow-ups):**
+
+- **Auto-sending follow-ups when ghosting threshold passes.** v1 *suggests* via `attention[].action_hint`; landing actual outbound drafts is `draft-outreach` re-invocation territory + approval gating. Likely §24.9.1.
+- **Multi-account Gmail.** v1 reads from candidate's primary inbox only. `gmail_sync_state.account_id` exists so multi-account fits cleanly later, but OAuth + UX for connecting more inboxes is its own work.
+- **Real-time push via Gmail Pub/Sub watch.** Daily polling is sufficient for funnel observation. Push would land as §24.9.2 if telemetry shows daily latency is hurting.
+- **Outlook / iCloud / non-Google Calendar.** Google-only for v1.
+- **Per-candidate ML-trained classifier.** Curator uses LLM-prompted reasoning + a deterministic taxonomy; no fine-tuning.
+- **Cross-application correlation insights** ("Stripe is hiring for X and Y; you only applied to X" → "want to apply to Y?"). Mostly leaks into the existing killer-match / daily-briefing surfaces if relevant; no dedicated UX for v1.
+- **Promote-on-user-say-so escape hatch** (the originally-planned "I'm applying to that one" pattern). Per the candidate, confirmation emails reliably cover every funnel step; an explicit user-says-it path is no longer worth dedicated scope. A trivial persona note handles the rare exception (e.g., applied via a system that doesn't send confirmations).
+- **`update_email_event` / re-classification-by-user-correction API.** Curator can UPSERT on subsequent runs; explicit user-driven re-classification is §24.9.3 if asked for.
+
+**Risk register:**
+
+| Risk | Likelihood | Mitigation |
+|---|---|---|
+| **A. historyId 404 storm** if Google invalidates frequently | Low | Per Google docs: typically ≥1 week valid. Fallback graceful: 404 → `lookback_days` window full sync via `q="after:YYYY/MM/DD"` (default 30d). One extra `messages.list` call per invalidation, NOT a re-classification of the universe (`email_events` retains prior classifications keyed by `gmail_msg_id`). Telemetry counter on full-sync events. |
+| **B. syncToken 410 GONE on calendar** | Low | Per-calendar full re-sync via `timeMin=now-lookback_days`. Calendar list is much smaller than email; full-sync cost negligible. **Don't conflate with Gmail's 404** — Calendar is 410, Gmail is 404. Spec calls out both error codes explicitly. |
+| **C. Misclassification → state pollution** (e.g., curator marks marketing email as `application_confirmation`) | Medium | Calibration sweep (DoD #11) is the primary defense — canonical scenarios exercise classification boundary cases. `approval_scope.update_application_status: "if_terminal"` means terminal-state writes need confirm; non-terminal writes are tolerable if wrong because curator can correct on next run. `email_events.evidence_excerpt` makes misclassifications inspectable post-hoc. |
+| **D. Ambiguous application matching** (multiple recruiters from same company, different stages) | Medium | Matching strategy uses thread-chain inheritance + sender-name overlap + ATS-URL substring. Where ambiguous: curator emits `suggestions[].action='confirm_match'` rather than auto-linking. |
+| **E. PII in `email_events` table** | Low | `evidence_excerpt` capped at 500 chars; full body never persisted. Local-only DB (single VM, no remote replication) bounds exposure. DB-at-rest encryption already a Phase 4 item. |
+| **F. Backfill cost spike on first-ever run** if 30 days = 600+ messages | Medium | Document as expected one-time cost. Sonnet on 600 short messages ≈ $2-5; spikes once, never repeats (subsequent runs are deltas only). Refine `lookback_days` cap during impl if needed. |
+| **G. Briefing reads stale `funnel_curator_output`** if curator hasn't run that day (container down at 07:30) | Low | Briefing includes `run_at` in context; if >24h stale, briefing notes "(inbox sweep stale — N hours since last run)" and orchestrator can prompt a refresh. |
+| **H. ATS auto-reply false-positives** (LinkedIn Easy Apply triggers generic "thanks for your interest" with no real ATS link) | Medium | Matching requires BOTH sender-domain match AND subject/body pattern. Pure marketing templates fail the body-pattern check (no "application" / "received" / "thank you for applying" keywords). Calibration scenario covers this. |
+| **I. Calendar ICS edge cases** (timezones, recurring events, declined-then-uninvited) | Low | Use Calendar API's structured fields (`start.dateTime`, `attendees[].responseStatus`, `conferenceData`) rather than parsing ICS. ICS parsing from Gmail attachment is fallback only — for unaccepted invites that haven't auto-added to Calendar. |
+| **J. Curator spawn cost climbs over time** as inbox grows | Low | Cost scales with *new* messages per day (deltas), not total inbox size. `email_events` UPSERT keyed on `gmail_msg_id` means we never re-classify prior messages. Worst-case daily: ~50 new messages × Sonnet ≈ $0.20-0.50. Budget ~$15/mo. |
+| **K. Fixture drift from real Gmail shapes** | Low | Fixtures match `users.messages.get` response shape (`payload.headers[]`, `payload.parts[]`). Integration test (Layer 2) catches host-action parser mismatches without needing real Gmail. When wiring real Gmail, capture 3-5 real responses (PII-scrubbed) and add as additional fixtures. |
+| **L. Sandbox group accidentally gains Gmail visibility** | Very low | Three layers of defense: host-action sandbox rejection (DoD #3), composer-side `disallowedTools` for funnel-curator subagent in sandbox group, bootstrap-side group-name gate (DoD #2). Same shape as `create_gmail_draft`'s defense-in-depth. |
 
 ---
 
