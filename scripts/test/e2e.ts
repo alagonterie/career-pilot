@@ -86,6 +86,16 @@
  *                           round-trip. rank_leads always uses Haiku via
  *                           Portkey regardless of --llm-provider; cost
  *                           ~$0.05/run for the Haiku call.
+ *   --flow=mirror-audit     Seeded profile + one APPLIED application for
+ *                           Acme Corp (obfuscated_label=fintech-a). Asks
+ *                           the agent to move it to PHONE_SCREEN and log
+ *                           the event with PII-bearing context (recruiter
+ *                           email + $ amount). Phase 4 §24.10 Sub-milestone
+ *                           4.1 live validation: confirms record_funnel_
+ *                           event triggers the public mirror writer, the
+ *                           audit row uses the obfuscated_label, Pass 1
+ *                           redacts the email + amount, and Pass 2 redacts
+ *                           the real company name. ~$0.05/run with Claude.
  *   --llm-provider=ollama   Default. Routes all model calls through the
  *                           local Ollama daemon via the Anthropic shim.
  *                           Zero LLM cost. Requires Ollama + glm-4.7-flash.
@@ -168,7 +178,8 @@ type Flow =
   | 'killer-match'
   | 'funnel-curator-consumer'
   | 'funnel-curator'
-  | 'close-detection';
+  | 'close-detection'
+  | 'mirror-audit';
 const FLOWS: ReadonlySet<Flow> = new Set([
   'smoke',
   'onboarding',
@@ -184,6 +195,7 @@ const FLOWS: ReadonlySet<Flow> = new Set([
   'funnel-curator-consumer',
   'funnel-curator',
   'close-detection',
+  'mirror-audit',
 ]);
 const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'smoke',
@@ -199,6 +211,7 @@ const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'funnel-curator-consumer',
   'funnel-curator',
   'close-detection',
+  'mirror-audit',
 ]);
 
 type LlmProvider = 'ollama' | 'claude';
@@ -3260,6 +3273,189 @@ async function runCloseDetection(): Promise<void> {
   ok('orchestrator reply does not echo the trigger sentinel');
 }
 
+async function runMirrorAudit(): Promise<void> {
+  header('Flow: mirror-audit');
+  // Phase 4 §24.10 Sub-milestone 4.1 live validation.
+  //
+  // Confirms that record_funnel_event, in a real container session,
+  // triggers the public-mirror writer and produces a sanitized row in
+  // public_audit_trail. Unit + integration tests already exercise the
+  // sanitizer and mirror in isolation; this flow proves the end-to-end
+  // hook fires from the agent's MCP call all the way through to the
+  // audit table.
+  //
+  // Seed: an APPLIED application for "Acme Corp" with public_state=
+  // 'obfuscated' and obfuscated_label='fintech-a'. The prompt nudges
+  // the agent to (a) bump status to PHONE_SCREEN via update_application
+  // and (b) log a record_funnel_event whose payload naturally embeds an
+  // email + monetary amount + the real company name.
+  //
+  // Hard assertions:
+  //   1. ≥1 funnel_events row for the seeded app
+  //   2. ≥1 public_audit_trail row with category='funnel' and
+  //      application_ref='fintech-a' (mirror fired AND obfuscation correct)
+  //   3. summary does NOT leak 'jane@acme.com' (Pass 1 email redaction)
+  //   4. summary does NOT leak 'Acme Corp' (Pass 2 redaction OR agent
+  //      simply didn't embed it — either outcome is fine)
+  //   5. details_json has the expected shape
+  //
+  // Soft assertions (info-only when the agent didn't embed the relevant
+  // PII in its payload):
+  //   6. summary contains [EMAIL_REDACTED]
+  //   7. summary contains [AMOUNT_REDACTED]
+  //   8. summary contains [REDACTED:fintech-a]
+  //
+  // Cost: ~$0.05/run (single Sonnet turn).
+  const appId = 'app-e2e-mirror-1';
+  const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
+  {
+    const seedDb = new Database(dbPath);
+    try {
+      const now = new Date().toISOString();
+      seedDb
+        .prepare(
+          `INSERT INTO applications
+             (id, company_name, obfuscated_label, public_state, role_title,
+              status, applied_at, last_activity_at, created_at)
+           VALUES (?, 'Acme Corp', 'fintech-a', 'obfuscated',
+              'Senior Backend Engineer', 'APPLIED', ?, ?, ?)`,
+        )
+        .run(appId, now, now, now);
+      ok(`seeded APPLIED application: Acme Corp (fintech-a)`);
+    } finally {
+      seedDb.close();
+    }
+  }
+
+  const reply = await chatTurn(
+    'Update my Acme Corp application. They emailed me — phone screen ' +
+      'tomorrow. The recruiter, jane@acme.com, mentioned a $220k base. ' +
+      'Move it from APPLIED to PHONE_SCREEN and log the event.',
+    600_000,
+  );
+  if (reply.length === 0) fail('reply was empty');
+
+  // WAL surface lag — both the funnel_events INSERT and the mirror
+  // INSERT happen on the host's write connection; give the readonly
+  // assertion connection a beat to see them.
+  await sleep(750);
+
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    // 1. Private funnel_events row exists.
+    const events = db
+      .prepare(
+        'SELECT id, kind, from_status, to_status, payload FROM funnel_events WHERE application_id = ?',
+      )
+      .all(appId) as Array<{
+        id: string;
+        kind: string;
+        from_status: string | null;
+        to_status: string | null;
+        payload: string;
+      }>;
+    if (events.length === 0) {
+      const jsonl = findLatestSessionJsonl();
+      if (jsonl) {
+        console.error('  --- orchestrator tool_use calls ---');
+        for (const c of listAllToolCalls(jsonl)) console.error(`  ${c}`);
+      }
+      fail('no funnel_events row written — agent did not call record_funnel_event');
+    }
+    ok(`funnel_events row(s) written: ${events.length} (kind=${events[0].kind})`);
+
+    // 2. Mirror fired — public_audit_trail row with our obfuscated_label.
+    const auditRows = db
+      .prepare(
+        "SELECT application_ref, summary, category, details_json " +
+          "FROM public_audit_trail WHERE category = 'funnel'",
+      )
+      .all() as Array<{
+        application_ref: string | null;
+        summary: string;
+        category: string;
+        details_json: string | null;
+      }>;
+    if (auditRows.length === 0) {
+      fail(
+        'no public_audit_trail (category=funnel) rows written — ' +
+          'mirrorFunnelEvent either did not fire OR was suppressed by ' +
+          'the defense-in-depth scan (check host logs for ' +
+          '"mirrorFunnelEvent: dropped row").',
+      );
+    }
+    ok(`public_audit_trail funnel-category row(s) written: ${auditRows.length}`);
+
+    const ours = auditRows.find((r) => r.application_ref === 'fintech-a');
+    if (!ours) {
+      console.error(`  --- audit rows ---\n${JSON.stringify(auditRows, null, 2)}`);
+      fail(
+        "no public_audit_trail row had application_ref='fintech-a' — " +
+          'mirror used the wrong identifier (expected obfuscated_label, ' +
+          'not company_name).',
+      );
+    }
+    ok("audit row application_ref='fintech-a' (obfuscated, not real name)");
+
+    // 3-4. PII redaction — the hard floor is "no leaks".
+    const summary = ours.summary;
+    if (/jane@acme\.com/i.test(summary)) {
+      console.error(`  --- summary ---\n${summary}`);
+      fail("summary leaks 'jane@acme.com' — Pass 1 email regex failed");
+    }
+    ok("summary does not leak 'jane@acme.com'");
+
+    if (/Acme\s+Corp/i.test(summary)) {
+      console.error(`  --- summary ---\n${summary}`);
+      fail(
+        "summary leaks 'Acme Corp' — Pass 2 company replacement failed " +
+          '(the company is non-public and should have been swapped for ' +
+          '[REDACTED:fintech-a]).',
+      );
+    }
+    ok("summary does not leak 'Acme Corp'");
+
+    // 5. details_json shape.
+    if (!ours.details_json) fail('public_audit_trail row has null details_json');
+    let details: { kind?: string; from_status?: string | null; to_status?: string | null; sanitized?: string };
+    try {
+      details = JSON.parse(ours.details_json) as typeof details;
+    } catch (e) {
+      fail(`details_json is not valid JSON: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    if (!details.kind) fail('details_json missing kind');
+    if (typeof details.sanitized !== 'string') fail('details_json missing sanitized (string)');
+    ok(
+      `details_json shape OK: kind=${details.kind}, ` +
+        `from=${details.from_status ?? 'null'}, to=${details.to_status ?? 'null'}`,
+    );
+
+    // 6-8. Soft assertions — confirm redaction markers fired when the
+    // corresponding PII actually entered the payload. If the agent
+    // produced a terse payload that omitted any of these, that's a
+    // persona-shape observation, not a sanitizer regression.
+    const markers: string[] = [];
+    const missingMarkers: string[] = [];
+    for (const [marker, label] of [
+      ['[EMAIL_REDACTED]', 'email'],
+      ['[AMOUNT_REDACTED]', 'monetary'],
+      ['[REDACTED:fintech-a]', 'company'],
+    ] as const) {
+      if (summary.includes(marker)) markers.push(marker);
+      else missingMarkers.push(`${marker} (${label})`);
+    }
+    if (markers.length > 0) ok(`summary contains redaction markers: ${markers.join(', ')}`);
+    if (missingMarkers.length > 0) {
+      console.log(
+        `  (info: agent payload omitted PII for ${missingMarkers.join(', ')} — ` +
+          'soft signal, hard-leak checks above already passed)',
+      );
+    }
+  } finally {
+    db.close();
+  }
+}
+
 function seedBookmarkedApplication(opts: {
   id: string;
   company_name: string;
@@ -3766,6 +3962,7 @@ async function main(): Promise<void> {
       'funnel-curator-consumer': runFunnelCuratorConsumer,
       'funnel-curator': runFunnelCurator,
       'close-detection': runCloseDetection,
+      'mirror-audit': runMirrorAudit,
     };
     await FLOW_HANDLERS[args.flow]();
     assertionsPassed = true;
