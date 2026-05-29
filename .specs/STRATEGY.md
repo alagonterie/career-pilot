@@ -186,9 +186,14 @@ CREATE TABLE applications (
   job_url             TEXT,
   jd_text             TEXT,
   jd_analyzed         TEXT,                       -- JSON: {level, skills, comp_hint, ...}
-  status              TEXT NOT NULL,              -- 'BOOKMARKED' | 'APPLIED' | 'SCREENING'
+  status              TEXT NOT NULL,              -- canonical vocabulary, pinned in code as
+                                                  -- APPLICATION_STATUSES (validated warn-not-reject):
+                                                  -- 'BOOKMARKED' | 'APPLIED' | 'SCREENING'
                                                   -- | 'TECH_SCREEN' | 'SYS_DESIGN' | 'FINAL'
-                                                  -- | 'OFFER' | 'REJECTED' | 'WITHDRAWN'
+                                                  -- | 'OFFER' | 'REJECTED' | 'WITHDRAWN'.
+                                                  -- deriveFunnelStage() maps these → the 5 public
+                                                  -- funnel stages (applied/screening/tech/final/offer)
+                                                  -- + terminal (rejected/withdrawn). See §24.14.
   win_confidence      INTEGER,                    -- 0-100, heuristic
   applied_at          TEXT,
   last_activity_at    TEXT,
@@ -217,22 +222,52 @@ CREATE INDEX idx_funnel_events_app ON funnel_events(application_id, ts DESC);
 -- Written by src/modules/portal/public-audit.ts via PostToolUse-style taps
 CREATE TABLE public_audit_trail (
   id                  TEXT PRIMARY KEY,
+  seq                 INTEGER,                   -- monotonic SSE/pagination cursor (migration 123);
+                                                 -- MAX(seq)+1 at insert (host single-writer). The
+                                                 -- /api/activity[/stream] cursor — NOT ts. See PORTAL §8.3.
   ts                  TEXT NOT NULL,
-  category            TEXT NOT NULL,             -- 'agent_trace' | 'funnel_event'
-                                                 -- | 'briefing' | 'system'
+  category            TEXT NOT NULL,             -- shipped: 'funnel' | 'subagent_progress'
+                                                 -- (future: 'research' | 'outreach' | 'system')
   agent_name          TEXT,                      -- subagent name, if applicable
-  proactive           INTEGER DEFAULT 0,         -- 0/1 — the ◆ marker
-  application_ref     TEXT,                      -- obfuscated_label (never company_name)
-  model_used          TEXT,
+  proactive           INTEGER DEFAULT 0,         -- 0/1 — the ◆ marker (capture path: §24.14, Phase 5)
+  application_ref     TEXT,                      -- obfuscated_label, or company_name when public
+  model_used          TEXT,                      -- trace telemetry (capture path: §24.14, Phase 5)
   tokens              INTEGER,
   cost_cents          INTEGER,
   cache_hit           INTEGER DEFAULT 0,
   latency_ms          INTEGER,
   summary             TEXT NOT NULL,             -- sanitized one-liner
-  details_json        TEXT                       -- sanitized, optional
+  details_json        TEXT,                      -- sanitized, optional
+  source_funnel_event_id TEXT                    -- links a 'funnel' row to its funnel_events source
+                                                 -- (migration 122; for retroactive resanitization)
 );
 CREATE INDEX idx_audit_ts ON public_audit_trail(ts DESC);
 CREATE INDEX idx_audit_category ON public_audit_trail(category, ts DESC);
+CREATE UNIQUE INDEX idx_audit_seq ON public_audit_trail(seq);                     -- migration 123
+CREATE INDEX idx_audit_source_fe ON public_audit_trail(source_funnel_event_id);  -- migration 122
+
+-- public_funnel_view — sanitized current-state projection of applications (one row
+-- per application). The /api/funnel read-model. Maintained by a host-side hook
+-- (src/modules/portal/public-funnel-view.ts) on every applications/funnel_events
+-- write — same best-effort, post-commit discipline as the public_audit_trail mirror.
+-- The portal API SELECTs from here, never from applications. See migration 124, §24.14.
+CREATE TABLE public_funnel_view (
+  application_id      TEXT PRIMARY KEY REFERENCES applications(id),
+  application_ref     TEXT NOT NULL,             -- obfuscated_label, or company_name when public
+  public_state        TEXT NOT NULL,             -- 'obfuscated' | 'partial' | 'public'
+  role_title          TEXT,
+  status              TEXT NOT NULL,             -- raw canonical status (see applications.status)
+  stage               TEXT NOT NULL,             -- deriveFunnelStage(status): the 5-stage value
+  applied_at          TEXT,
+  stage_entered_at    TEXT,                      -- timestamps only; "days in stage/pipeline" is
+  last_activity_at    TEXT,                      -- computed at read time so a row never goes stale
+  win_confidence      INTEGER,                   -- 0-100, heuristic
+  published_learning  TEXT,                      -- sanitized excerpt of latest published reflection
+                                                 -- (nullable); feeds /funnel "What I learned" (§6.7)
+                                                 -- without the API reading the private learnings table
+  updated_at          TEXT NOT NULL
+);
+CREATE INDEX idx_public_funnel_view_stage ON public_funnel_view(stage);
 
 -- learnings — rejection-as-fuel + sibling feedback loops
 CREATE TABLE learnings (
@@ -1064,7 +1099,8 @@ Two surfaces of observability: **public** (sanitized, recruiter-facing on the po
 |---|---|---|
 | LLM cost / cache rate / token usage | Portkey Analytics API (or SDK fallback if `PORTKEY_BYPASS`) | `/api/telemetry` → `/live` panel |
 | Active sessions / containers (counts) | NanoClaw central DB + Docker | `/api/architecture` → `/architecture` page |
-| Agent trace events (sanitized) | `public_audit_trail` | `/api/activity` + SSE → `/live` stream |
+| Agent trace events (sanitized) | `public_audit_trail` (cursor = `seq`) | `/api/activity` + SSE → `/live` stream |
+| Funnel current-state (per application, sanitized) | `public_funnel_view` | `/api/funnel` → `/` strip, `/funnel` board, `/live` compact |
 | Host health (color-coded) | systemd + `journalctl` aggregate | `/api/system-status` |
 | Simulator runs (success/failure rate, aggregate) | `simulator_runs` table | `/api/telemetry` |
 
@@ -2930,7 +2966,7 @@ Pass 1 (regex) + Pass 2 (company replacement) is the deterministic backbone — 
 
 - **Pass 3 (Haiku LLM review).** Sub-milestone 4.2 — **architecture DECIDED, build DEFERRED.** See §24.12 for the full decision. Short version: option (b) (host runs Pass 1+2 immediately; a scheduled container batch finalizes Pass 3) is the committed shape, but the build is deferred until the first non-funnel category is mirrored, because Pass 3's value on short, structured, threshold-gated funnel payloads is near-zero today. The seam stays dormant — `applyPass3` is a no-op stub, `sanitization_pass3_enabled` defaults `false`.
 - **`applications` UPDATE → retroactive re-sanitization** of past public_audit_trail rows. If `obfuscated_label` changes or `public_state` flips from `obfuscated` → `public`, existing rows are NOT rewritten. Sub-milestone 4.3.
-- **`public_funnel_view` materialized projection.** The `/api/funnel` endpoint will need this; Phase 5 (portal backend).
+- **`public_funnel_view` materialized projection.** The `/api/funnel` endpoint needs this. **Now specified + built in the Phase 5 BFF-readiness pass — see §24.14.** (Originally deferred to "Phase 5"; pulled forward as a data-shape prerequisite so the Phase 5 API/SSE build opens against an already-shaped public layer.)
 - **Sandbox group sanitization.** The sandbox's public surface is different (per-session synthetic output, not real applications). Phase 5 / portal channel work.
 - **Agent traces SSE sanitization.** `/api/activity/stream` sanitizes on the fly when it queries `public_audit_trail`; if the source row is already sanitized (which 4.1 guarantees), the SSE layer just selects from `public_audit_trail` without re-sanitizing. No work needed in 4.1.
 - **Admin spot-check UI** (raw vs sanitized side-by-side panel). Phase 8 (`/admin`).
@@ -3137,6 +3173,45 @@ Building the full batch engine now (state column + migration, a new scheduled tr
 5. ✅ Production-safety invariant test: well-formed `<message>`/`<internal>` output yields zero detections → pre-existing dispatch path.
 6. ✅ **`--flow=research-company-discovery` under `--llm-provider=ollama` — recorded result:** detection + text→tool_use conversion fired **3/3**; **end-to-end 2/3**. The 1 failure was a 590s chat-turn timeout (GLM full-flow latency on a local 30B model: Agent-text → nudge → `description`-retry → subagent's ~19-tool web-research loop → delivery), **not** a recovery miss. This converges → Tier 1 gate condition (a) is false (above). `--llm-provider=claude` remains the reliable validation path.
 7. ✅ No change to any persona/subagent runtime artifact (the fix is runner-side, per the localized-trigger finding). No new MCP tool, no migration.
+
+---
+
+#### 24.14 Phase 5 BFF readiness — backend-shaping pass (pre-portal-backend)
+
+**Status:** spec + cheap data-shape changes landing now; the remaining capture/endpoint work is Phase 5 proper.
+
+**What this is.** A forward-looking pass run after the Phase 4 close-out and before the Phase 5 portal backend (the `/api/*` Express + SSE layer). The portal is the project's primary deliverable; this pass shapes the public data layer *before* the Phase 5 queries are written against it, so the API — and the TanStack Start frontend behind it — is frictionless and honors the anonymization boundary by construction. Governed by the frontend-first guardrail (root CLAUDE.md rule #4): every change maps to a concrete PORTAL.md surface and removes real future frontend friction; anything that can't name its surface is dropped to V2.
+
+**Finding that framed the work.** The entire portal API is unbuilt — `src/modules/portal/api.ts` and its 7 sibling modules are `export {}` placeholders; only `sanitizer.ts` + `public-audit.ts` are real. So this is data-shaping ahead of the build, not a retrofit.
+
+**Changes landing now (low-risk, behavior-preserving):**
+
+1. **`public_audit_trail.seq` monotonic cursor (migration 123).** `public_audit_trail.id` (`pat-${Date.now()}-${rand}`) is not a usable cursor, and a `?since=<ts>` resume ties at millisecond granularity → dupes (`>=`) or gaps (`>`) on reconnect across the Cloudflare Tunnel idle timeout (Part VI Q#2). Add `seq INTEGER` (PRAGMA-guarded ALTER), backfill existing rows by `ts ASC, id ASC` via `ROW_NUMBER()`, `UNIQUE INDEX`. Both writers (`mirrorFunnelEvent`, `handleRecordProgress`) set `seq = (SELECT COALESCE(MAX(seq),0)+1 FROM public_audit_trail)` inside the INSERT — safe under the host's single synchronous writer. The retroactive-resanitization delete+re-insert re-assigns `seq` via the same `MAX+1`, so re-mirrored rows sort after surviving rows (a live/pagination consumer re-reads them from the cursor on next fetch); a freed `seq` is only reused when the deleted rows included the table max — acceptable for a forward tail. `/api/activity[/stream]` uses `seq` as the cursor / SSE `id:`.
+
+2. **`public_funnel_view` projection table (migration 124) + maintenance hook.** A maintained *physical* public table (one row per application) — chosen over a SQL VIEW so the API can `SELECT *` from a genuinely public table with zero leak risk and so it can carry sanitized free-text (`published_learning`) a column-level VIEW could not. Written by `upsertPublicFunnelView(db, applicationId)` in `src/modules/portal/public-funnel-view.ts`, called best-effort/post-`writeResponse` from `handleUpdateApplication` + `handleRecordFunnelEvent` (and refreshed when `resanitizeApplicationAuditTrail` fires, since `application_ref` changes) — identical discipline to the 4.1 mirror. Schema in §3. The portal `/api/funnel` reads only this view, never `applications`.
+
+3. **`applications.status` vocabulary pinned + `deriveFunnelStage`.** The §3 vocabulary existed only as a DDL comment (unenforced; `job_leads` had a `VALID_STATUSES` set but `applications` did not). Pin it as an exported `APPLICATION_STATUSES` const, validate in the write handlers **warn-not-reject** (prod is pre-LIVE_MODE with no real rows; a hard reject risks breaking an in-flight agent turn on an unforeseen status). `deriveFunnelStage(status)` maps the fine-grained status → the 5 public stages (`applied`/`screening`/`tech`/`final`/`offer`) + terminal (`rejected`/`withdrawn`), with an unknown-status passthrough (lowercased) so `stage` is never null.
+
+**Specified now, built in Phase 5 (capture path decided, build deferred):**
+
+4. **Trace telemetry + `proactive` capture.** The `TraceLine` metrics (`model_used`/`tokens`/`cost_cents`/`cache_hit`/`latency_ms`) and the `proactive` ◆ marker — the `/live` centerpiece (PORTAL §5.2) + COST & CACHE panel + the Reactive/Proactive filter — are columns that no writer fills today. Decided source: mirror the Agent SDK's per-turn usage from the container/poll-loop level into `public_audit_trail`; source `proactive` from the session trigger kind (cron/webhook vs user message). Build lands in Phase 5 alongside the SSE layer, so there is real data to stream; until then these render as the §10 `—` empty-state.
+
+**Out of scope (guardrail-enforced):**
+
+- **killer-match "signals" feed** (`job_leads.rules_score_reasons`/`llm_score_reasons`) — no concrete PORTAL panel names it → V2_IDEAS, no backend now.
+- **funnel-curator narratives → richer `/funnel` detail** — marginal over the existing `funnel_events` timeline; deferred.
+- **Shared TS types package** — Phase 6 frontend bootstrap; the new read-model row shapes become the typed contract for free.
+- **All `/api/*` endpoints, the SSE layer, simulator + contact relay** — Phase 5 proper.
+
+**Definition of done.**
+
+1. Migration 123 adds `public_audit_trail.seq` (idempotent/PRAGMA-guarded), backfills by `ts ASC`, creates the unique index; both audit-row writers assign `seq = MAX+1` at insert.
+2. Migration 124 creates `public_funnel_view` per §3; both migrations registered in `src/db/migrations/index.ts`.
+3. `public-funnel-view.ts` exports `upsertPublicFunnelView` (best-effort, never throws, runs after `writeResponse`; `published_learning` run through `sanitize()`) + `deriveFunnelStage` + `APPLICATION_STATUSES`; wired at the three call sites.
+4. Write handlers validate `status` warn-not-reject against `APPLICATION_STATUSES`.
+5. Vitest: `public-funnel-view.integration.test.ts` (obfuscated vs public `application_ref`; `stage` mapping; sanitized `published_learning`; `public_state`-flip refresh); `seq` monotonicity across interleaved writers + backfill + resanitize re-insert; `deriveFunnelStage` per-status + unknown fallback.
+6. All existing host tests stay green; host + container typecheck clean. No container-side change.
+7. Spec deltas applied: PORTAL.md §9 (read-model), §8.3/§11 (cursor), §5.2 (capture-path note); STRATEGY.md §3 (schema), §24.10 (repoint), this §24.14, §17.1 (data-source row).
 
 ---
 

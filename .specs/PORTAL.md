@@ -362,6 +362,8 @@ The stream auto-scrolls until the visitor manually scrolls up, at which point a 
 
 Filter chips above the stream: `[All] [Reactive] [Proactive] [Research] [Tailor] [Outreach] [Prep] [Scrape] [System]`.
 
+> **Backend note — trace telemetry capture.** The per-line metrics (`model_used`, `tokens`, `cost_cents`, `cache_hit`, `latency_ms`) and the `proactive` marker that powers the `◆` glyph + the Reactive/Proactive filter exist as columns on `public_audit_trail` but are not yet populated by any writer. The capture path (mirror the Agent SDK's per-turn usage from the container/poll-loop level; source `proactive` from the session trigger kind) is specified in STRATEGY.md §24.14 and built in Phase 5 alongside the SSE layer. Until then these fields render as `—` (the empty-state per §10).
+
 #### Panel: `FUNNEL (compact)`
 A reduced version of the funnel race. Same data as `/funnel` but compacted to one row.
 
@@ -1055,6 +1057,8 @@ The status string is live (single tick per 30s). If degraded or offline, it chan
 
 Used on `/` and in the footer. A single small dot with `● live` label. Connects to `/api/activity/stream` and pulses on each received event. Disconnects gracefully if SSE drops.
 
+**Resume cursor:** the stream carries a monotonic `seq` (the `public_audit_trail.seq` column) as the SSE `id:` / `Last-Event-ID`. On reconnect the client resumes with `/api/activity?since=<seq>` (or the stream's `Last-Event-ID` header). The cursor is `seq`, **not** `ts` — wall-clock timestamps tie at millisecond granularity (multiple events in one host tick), so a `since=<ts>` resume either duplicates the boundary (`>=`) or skips same-ms siblings (`>`). A monotonic integer cursor makes reconnects across the Cloudflare Tunnel idle timeout exactly-once with no gaps or dupes.
+
 ---
 
 ## 9. Anonymization model
@@ -1091,11 +1095,28 @@ Failed sanitization = event dropped, NOT published. Better to lose an event than
 ### Public/private partitioning
 
 Backend tables:
-- `applications` (private, host-only)
-- `public_audit_trail` (sanitized, served to portal)
-- `public_funnel_view` (a materialized projection of applications, sanitized)
+- `applications`, `learnings`, `job_leads`, `candidate_profile` (private, host-only — never served)
+- `public_audit_trail` (sanitized event log, served to portal)
+- `public_funnel_view` (sanitized current-state projection of applications, served to portal)
 
-The portal API only ever queries the public tables. The portal Cloudflare Worker has no path to private data.
+**The invariant:** the portal API `SELECT`s only from `public_audit_trail` + `public_funnel_view`. It never touches a private table. The portal Cloudflare Worker has no path to private data. This is enforced by *structure*, not per-query discipline — both public tables are populated by host-side maintenance hooks that run the sanitizer before writing, so any row the API can read is already safe.
+
+#### `public_funnel_view` — the current-state read-model
+
+`public_audit_trail` is an append-only *event log*; the funnel surfaces (`/` strip, `/funnel` board, `/live` compact funnel) need *current state per application*. `public_funnel_view` is a maintained physical projection table (one row per application), written by a host-side hook on every `applications` / `funnel_events` write — the same best-effort, post-commit discipline as the `public_audit_trail` mirror. Columns:
+
+| Column | Meaning |
+|---|---|
+| `application_id` | PK (links back to the private row, host-side only) |
+| `application_ref` | `obfuscated_label`, OR real `company_name` when `public_state = 'public'` |
+| `public_state` | `obfuscated` / `partial` / `public` |
+| `role_title`, `status` | current canonical status (see the pinned status vocabulary) |
+| `stage` | the derived 5-stage value for the funnel strip (Applied / Screening / Tech / Final / Offer, + terminal) |
+| `applied_at`, `stage_entered_at`, `last_activity_at` | timestamps — the API/frontend computes "days in stage / pipeline" at read time (never precomputed, so a row never goes stale) |
+| `win_confidence` | heuristic %, labeled low-rigor on `/funnel` |
+| `published_learning` | sanitized excerpt of the latest published reflection for this application (nullable) — feeds the `/funnel` "What I learned" block (§6.7) without the API ever reading the private `learnings` table |
+
+When an application's obfuscation policy changes (`public_state` flip, label/name edit), the hook refreshes the row so `application_ref` reflects current intent — mirroring the retroactive resanitization already done for `public_audit_trail`.
 
 ---
 
@@ -1119,9 +1140,9 @@ To support this portal, the backend must expose:
 
 | Surface | Source | Cardinality | Latency budget |
 |---|---|---|---|
-| `GET /api/funnel` | central DB `applications` + `public_funnel_view` | ~10-50 rows | <100ms |
-| `GET /api/activity?since=<ts>&limit=50` | `public_audit_trail` | up to 50 events | <100ms |
-| `GET /api/activity/stream` | SSE; tails new `public_audit_trail` rows | streaming | first event <500ms |
+| `GET /api/funnel` | `public_funnel_view` (sanitized projection; never reads `applications` directly — see §9) | ~10-50 rows | <100ms |
+| `GET /api/activity?since=<seq>&limit=50` | `public_audit_trail` (cursor = monotonic `seq`, not `ts`; see §8.3) | up to 50 events | <100ms |
+| `GET /api/activity/stream` | SSE; tails new `public_audit_trail` rows; emits `seq` as `id:` for resume | streaming | first event <500ms |
 | `GET /api/telemetry` | Portkey `/analytics/summary` + local aggregates | 1 record | <500ms (cache 30s) |
 | `GET /api/architecture` | NanoClaw central DB + Docker status | 1 record | <300ms |
 | `POST /api/simulator` | Spawns sandbox session in `career-pilot-sandbox` agent group | 1 session | <3s to ready |
