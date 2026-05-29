@@ -26,6 +26,12 @@ export interface RunnerConfig {
    * See host-side `migration 109` + STRATEGY.md §24.3 task #86.
    */
   disallowedTools?: string[];
+  /**
+   * Emit simulator trace events (tool/subagent/cost) for the live activity
+   * pane. Host sets this true only for the career-pilot-sandbox group
+   * (materializeContainerJson). See STRATEGY.md §24.20.
+   */
+  emitTrace?: boolean;
 }
 
 const DEFAULT_MAX_MESSAGES = 10;
@@ -58,6 +64,7 @@ export function loadConfig(): RunnerConfig {
     disallowedTools: Array.isArray(raw.disallowedTools)
       ? (raw.disallowedTools as unknown[]).filter((x): x is string => typeof x === 'string')
       : undefined,
+    emitTrace: raw.emitTrace === true,
   };
 
   return _config;

@@ -57,6 +57,15 @@ export interface ProviderOptions {
    * See host-side migration 109 + STRATEGY.md §24.3 task #86.
    */
   extraDisallowedTools?: string[];
+
+  /**
+   * Emit `trace` ProviderEvents (tool calls, subagent dispatch, per-run cost)
+   * for the public Recruiter Simulator's live activity pane. Host-gated to the
+   * career-pilot-sandbox group only (materializeContainerJson sets
+   * container.json `emitTrace`); false (the default) for the owner group keeps
+   * the event stream byte-identical to upstream. See STRATEGY.md §24.20.
+   */
+  emitTrace?: boolean;
 }
 
 export interface QueryInput {
@@ -101,6 +110,21 @@ export interface AgentQuery {
   abort(): void;
 }
 
+/**
+ * A single rich-trace step for the simulator's live activity pane (§24.20).
+ * `tool` — a non-Task tool call; `subagent` — a `Task` dispatch (subagent in
+ * `subagent`); `result` — end-of-run cost. `parent_tool_use_id` is non-null
+ * when the call originated inside a subagent's context (nested indentation).
+ */
+export interface TraceEvent {
+  t: 'tool' | 'subagent' | 'result';
+  name?: string;
+  subagent?: string;
+  parent_tool_use_id?: string | null;
+  input_summary?: string;
+  cost_usd?: number;
+}
+
 export type ProviderEvent =
   | { type: 'init'; continuation: string }
   | { type: 'result'; text: string | null }
@@ -111,4 +135,10 @@ export type ProviderEvent =
    * event (tool call, thinking, partial message, anything) so the
    * poll-loop's idle timer stays honest during long tool runs.
    */
-  | { type: 'activity' };
+  | { type: 'activity' }
+  /**
+   * Rich-trace step for the simulator activity pane. Emitted only when the
+   * provider was constructed with `emitTrace` (sandbox group); the poll-loop
+   * writes each as a `kind:'trace'` outbound row. See STRATEGY.md §24.20.
+   */
+  | { type: 'trace'; trace: TraceEvent };

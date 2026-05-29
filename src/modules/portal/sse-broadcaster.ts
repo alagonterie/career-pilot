@@ -200,7 +200,77 @@ export function stopBroadcaster(): void {
     }
   }
   activityClients.clear();
+  endAllSimulatorClients();
   log.info('sse broadcaster stopped');
+}
+
+// ── simulator topic (Sub-milestone 5.5b, §24.20) ──────────────────────────
+//
+// Push-based (unlike the poll-based `activity` tail): the portal channel
+// adapter calls pushSimulatorEvent() from delivery.ts as the sandbox session's
+// trace/chat/task outbound rows drain. Keyed by run id (= the session threadId).
+// A run is short-lived; there is no backlog replay (the visitor watches live)
+// and no tail timer.
+
+const simulatorClients = new Map<string, Set<http.ServerResponse>>();
+
+/**
+ * Register an SSE client for a simulator run. The caller must already have
+ * written the event-stream response headers. No backlog is replayed — the
+ * visitor watches the run live from connect.
+ */
+export function addSimulatorClient(runId: string, res: http.ServerResponse): void {
+  let set = simulatorClients.get(runId);
+  if (!set) {
+    set = new Set();
+    simulatorClients.set(runId, set);
+  }
+  set.add(res);
+  // Establish the stream immediately (Node otherwise buffers until first write).
+  try {
+    res.write(': open\n\n');
+  } catch {
+    set.delete(res);
+  }
+}
+
+/**
+ * Push one event to every client watching `runId`. `event` is the SSE event
+ * name (the outbound `kind` — 'trace' | 'chat' | 'task'); `payload` is the
+ * already-parsed JSON body. No-op when nobody is watching that run.
+ */
+export function pushSimulatorEvent(runId: string, event: string, payload: unknown): void {
+  const set = simulatorClients.get(runId);
+  if (!set || set.size === 0) return;
+  const frame = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
+  for (const res of set) {
+    try {
+      res.write(frame);
+    } catch {
+      set.delete(res);
+    }
+  }
+}
+
+/** Deregister a simulator client (call from the request's `close` event). */
+export function removeSimulatorClient(runId: string, res: http.ServerResponse): void {
+  const set = simulatorClients.get(runId);
+  if (!set) return;
+  set.delete(res);
+  if (set.size === 0) simulatorClients.delete(runId);
+}
+
+function endAllSimulatorClients(): void {
+  for (const set of simulatorClients.values()) {
+    for (const res of set) {
+      try {
+        res.end();
+      } catch {
+        // already closed
+      }
+    }
+  }
+  simulatorClients.clear();
 }
 
 // Test seams.
@@ -209,4 +279,7 @@ export function _activityClientCount(): number {
 }
 export function _isTailRunning(): boolean {
   return tailTimer != null;
+}
+export function _simulatorClientCount(runId: string): number {
+  return simulatorClients.get(runId)?.size ?? 0;
 }

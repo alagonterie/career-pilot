@@ -496,6 +496,19 @@ async function processQuery(
             );
           }
         }
+      } else if (event.type === 'trace') {
+        // Simulator trace step (§24.20). Sandbox-only — the provider only emits
+        // these when emitTrace is set. Persist as a kind:'trace' outbound row
+        // routed to the run's portal stream; the host pushes it to the
+        // simulator:<id> SSE topic via the portal channel adapter.
+        writeMessageOut({
+          id: `trace-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          kind: 'trace',
+          content: JSON.stringify(event.trace),
+          platform_id: routing.platformId,
+          channel_type: routing.channelType,
+          thread_id: routing.threadId,
+        });
       }
     }
   } finally {
