@@ -28,6 +28,7 @@ import { getDb } from '../../db/connection.js';
 import { getConfig } from '../../get-config.js';
 import { log } from '../../log.js';
 
+import { addActivityClient, removeActivityClient, stopBroadcaster } from './sse-broadcaster.js';
 import { getSystemStatus } from './system-modes.js';
 
 const DEFAULT_PORT = 3001;
@@ -156,6 +157,38 @@ function handleSystemStatus(res: http.ServerResponse, cors: Record<string, strin
   json(res, 200, getSystemStatus(), cors);
 }
 
+function handleActivityStream(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  url: URL,
+  cors: Record<string, string>,
+): void {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no', // disable proxy buffering (nginx/CF)
+    ...cors,
+  });
+  // Flush headers now so the stream is established even before the first event
+  // (Node otherwise buffers headers until the first body write).
+  res.flushHeaders();
+
+  // Resume cursor: Last-Event-ID (EventSource auto-sets on reconnect) or ?since.
+  // Absent → start live from the current max (no history dump; that's /api/activity).
+  const lastEventId = req.headers['last-event-id'];
+  const sinceQ = url.searchParams.get('since');
+  let cursor: number | null = null;
+  if (typeof lastEventId === 'string' && /^\d+$/.test(lastEventId)) {
+    cursor = parseInt(lastEventId, 10);
+  } else if (sinceQ != null && /^\d+$/.test(sinceQ)) {
+    cursor = parseInt(sinceQ, 10);
+  }
+
+  addActivityClient(res, cursor);
+  req.on('close', () => removeActivityClient(res));
+}
+
 // ── request router ───────────────────────────────────────────────────────
 
 function requestHandler(req: http.IncomingMessage, res: http.ServerResponse): void {
@@ -178,6 +211,8 @@ function requestHandler(req: http.IncomingMessage, res: http.ServerResponse): vo
     }
 
     if (method === 'GET' && path === '/api/funnel') return handleFunnel(res, cors);
+    if (method === 'GET' && path === '/api/activity/stream')
+      return handleActivityStream(req, res, url, cors);
     if (method === 'GET' && path === '/api/activity') return handleActivity(url, res, cors);
     if (method === 'GET' && path === '/api/system-status') return handleSystemStatus(res, cors);
 
@@ -240,6 +275,9 @@ export async function stopPortalApi(): Promise<void> {
   if (server) {
     const srv = server;
     server = null;
+    // End all live SSE streams first — otherwise server.close() waits forever
+    // on the long-lived connections.
+    stopBroadcaster();
     await new Promise<void>((resolve) => srv.close(() => resolve()));
     log.info('Portal API stopped');
   }
