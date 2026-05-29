@@ -235,18 +235,16 @@ describe('poll loop integration', () => {
   it('should process messages arriving after loop starts', async () => {
     const provider = new MockProvider({}, () => '<message to="discord-test">Processed</message>');
     const controller = new AbortController();
-    // Generous windows: abort() only rejects the race wrapper — it does NOT stop
-    // runPollLoop's while(true) — so every prior test leaves a loop running
-    // against the shared (synchronous better-sqlite3) inbound DB. By this point
-    // in the suite that contention can briefly starve a tight delivery window
-    // under machine load, flaking this otherwise-deterministic assertion.
-    const loopPromise = runPollLoopWithTimeout(provider, controller.signal, 8000);
+    // runPollLoopWithTimeout now threads the signal into runPollLoop, so each
+    // test's controller.abort() actually stops that loop — no leaked while(true)
+    // contending on the shared inbound DB. Standard windows are reliable again.
+    const loopPromise = runPollLoopWithTimeout(provider, controller.signal, 3000);
 
     // Insert message after loop has started
     await sleep(200);
     insertMessage('m-late', { sender: 'Charlie', text: 'Late arrival' });
 
-    await waitFor(() => getUndeliveredMessages().length > 0, 6000);
+    await waitFor(() => getUndeliveredMessages().length > 0, 2000);
     controller.abort();
 
     const out = getUndeliveredMessages();
@@ -302,16 +300,19 @@ describe('poll loop integration', () => {
 
 });
 
-// Helper: run poll loop until aborted or timeout
+// Helper: run poll loop until aborted or timeout.
+// The signal is passed INTO runPollLoop so controller.abort() actually stops the
+// loop's while(true) (it exits at the next iteration; the abortable idle sleep
+// wakes immediately). The timeout is a safety net so a wedged loop can't hang
+// the suite. `await loopPromise` therefore genuinely awaits loop termination —
+// no leaked loop contending on the shared inbound DB across tests.
 async function runPollLoopWithTimeout(provider: MockProvider, signal: AbortSignal, timeoutMs: number): Promise<void> {
   return Promise.race([
     runPollLoop({
       provider,
       providerName: 'mock',
       cwd: '/tmp',
-    }),
-    new Promise<void>((_, reject) => {
-      signal.addEventListener('abort', () => reject(new Error('aborted')));
+      signal,
     }),
     new Promise<void>((_, reject) => setTimeout(() => reject(new Error('timeout')), timeoutMs)),
   ]);
