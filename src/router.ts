@@ -19,7 +19,7 @@
  */
 import { getChannelAdapter } from './channels/channel-registry.js';
 import { gateCommand } from './command-gate.js';
-import { executeControlCommand, parseControlReason } from './modules/portal/kill-switch.js';
+import { executeControlCommand, parseControlReason, requestKillswitchApproval } from './modules/portal/kill-switch.js';
 import { getAgentGroup } from './db/agent-groups.js';
 import { recordDroppedMessage } from './db/dropped-messages.js';
 import {
@@ -447,16 +447,26 @@ async function deliverToAgent(
       return;
     }
     if (gate.action === 'control') {
-      // Operator control plane (/pause /resume /halt). The gate already
-      // admin-checked; execute the side effects host-side and reply directly.
-      // The command never reaches the container.
+      // Operator control plane. The gate already admin-checked; execute
+      // host-side. The command never reaches the container.
       let text = '';
       try {
         text = (JSON.parse(event.message.content).text || '').toString();
       } catch {
         text = event.message.content;
       }
-      const outcome = executeControlCommand(gate.command, parseControlReason(text), userId);
+      const reason = parseControlReason(text);
+
+      // /killswitch is catastrophic — route through a confirmation card; the
+      // destructive path only runs after the admin approves (5.4b). It never
+      // fires inline like /pause /resume /halt.
+      if (gate.command === '/killswitch') {
+        await requestKillswitchApproval(session, agentGroup.name, reason, userId);
+        log.warn('Killswitch confirmation requested', { userId, agentGroupId: agent.agent_group_id });
+        return;
+      }
+
+      const outcome = executeControlCommand(gate.command, reason, userId);
       writeOutboundDirect(session.agent_group_id, session.id, {
         id: `ctl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         kind: 'chat',

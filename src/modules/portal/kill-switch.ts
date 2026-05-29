@@ -10,19 +10,39 @@
  *   /resume → setPauseState('active')   clears paused/halted (NOT killswitch)
  *   /halt   → setPauseState('halted')   hard: kill running containers + block new spawns
  *
- * 5.4b (deferred) — /killswitch adds, after the local steps above, OneCLI agent
- *   token revoke + Portkey budget→0. Those are external-admin, best-effort, gated
- *   behind an admin confirmation card; recovery is the manual
- *   scripts/recover-from-killswitch.sh. Not wired here yet — see STRATEGY.md §24.18.
+ * 5.4b (this file) — /killswitch. Never fires inline: the router routes it
+ *   through requestKillswitchApproval (a confirmation card). On approve, the
+ *   registered handler runs executeKillswitch — the local hard-stop
+ *   (setPauseState('killswitch') + kill running containers; the 5.4a spawn gate
+ *   blocks new ones) plus best-effort external revocations (OneCLI token revoke,
+ *   Portkey budget→0), which are NOT_WIRED today (see killswitch-external.ts).
+ *   Recovery is the manual scripts/recover-from-killswitch.sh → clearKillswitch.
  *
  * See STRATEGY.md §11 + §24.18 + PORTAL.md §7 + RECOVERY.md.
  */
 import { killContainer } from '../../container-runner.js';
 import { getRunningSessions } from '../../db/sessions.js';
+import { getDeliveryAdapter } from '../../delivery.js';
 import { log } from '../../log.js';
 import type { Session } from '../../types.js';
+// Import from primitive.js (not index.js) — the index has top-level side
+// effects (onDeliveryAdapterReady/registerResponseHandler) that we don't want
+// in kill-switch's import graph. The dispatch handler that calls our registered
+// 'killswitch' handler is registered at startup via src/modules/index.js.
+import {
+  registerApprovalHandler,
+  requestApproval,
+  type ApprovalHandlerContext,
+} from '../approvals/primitive.js';
+import { ensureUserDm } from '../permissions/user-dm.js';
 
-import { getPauseState, setPauseState, type PauseState } from './system-modes.js';
+import {
+  revokeOneCliAgentTokens,
+  summarizeExternal,
+  zeroPortkeyBudget,
+  type ExternalRevocationResult,
+} from './killswitch-external.js';
+import { getPauseState, setLiveMode, setPauseState, type PauseState } from './system-modes.js';
 
 export interface ControlOutcome {
   /** Confirmation text for the channel reply. */
@@ -125,3 +145,123 @@ export function parseControlReason(text: string): string | null {
   const rest = text.trim().replace(/^\/\S+\s*/, '').trim();
   return rest.length > 0 ? rest : null;
 }
+
+// ── /killswitch (Sub-milestone 5.4b) ──────────────────────────────────────────
+
+export interface KillswitchResult {
+  /** Always 'killswitch' after a successful run. */
+  state: PauseState;
+  /** How many running containers were killed. */
+  killed: number;
+  /** Per-system external-revocation statuses (NOT_WIRED today). */
+  external: ExternalRevocationResult[];
+}
+
+export interface KillswitchDeps extends ControlDeps {
+  revokeOneCli?: (agentIds: string[]) => Promise<ExternalRevocationResult>;
+  zeroPortkey?: () => Promise<ExternalRevocationResult>;
+}
+
+/**
+ * The catastrophic stop. Local-effective steps first (state + kill containers;
+ * the spawn gate already blocks new ones), then the best-effort external tail.
+ * Never throws — external seams are best-effort and the local hard-stop stands
+ * on its own. Returns a structured result so the reply can be honest about what
+ * was and wasn't revoked.
+ */
+export async function executeKillswitch(
+  reason: string | null = null,
+  changedBy: string | null = null,
+  deps: KillswitchDeps = {},
+): Promise<KillswitchResult> {
+  setPauseState('killswitch', reason, changedBy);
+
+  const list = (deps.getRunningSessions ?? getRunningSessions)();
+  const kill = deps.killContainer ?? killContainer;
+  const agentIds = [...new Set(list.map((s) => s.agent_group_id))];
+  for (const s of list) {
+    kill(s.id, 'killswitch');
+  }
+
+  const revokeOneCli = deps.revokeOneCli ?? revokeOneCliAgentTokens;
+  const zeroPortkey = deps.zeroPortkey ?? zeroPortkeyBudget;
+  const external = [await revokeOneCli(agentIds), await zeroPortkey()];
+
+  log.warn('KILLSWITCH ENGAGED', { changedBy, reason, killed: list.length, external });
+  return { state: 'killswitch', killed: list.length, external };
+}
+
+/**
+ * Manual recovery primitive (RECOVERY.md §3). Returns the system to shadow:
+ * pause_state='active' + live_mode=false (always shadow — the operator re-enables
+ * live mode deliberately after observation). Does NOT re-issue OneCLI/Portkey
+ * credentials — that stays a manual step while those admin APIs are NOT_WIRED.
+ */
+export function clearKillswitch(changedBy: string | null = null): void {
+  setPauseState('active', null, changedBy);
+  setLiveMode(false, changedBy);
+  log.warn('Killswitch cleared — system back in shadow mode (live_mode=false)', { changedBy });
+}
+
+/** Deliver a message straight to an admin's DM, bypassing the (killed) agent. */
+async function deliverToApprover(userId: string, text: string): Promise<void> {
+  try {
+    const mg = userId ? await ensureUserDm(userId) : null;
+    const adapter = getDeliveryAdapter();
+    if (mg && adapter) {
+      await adapter.deliver(mg.channel_type, mg.platform_id, null, 'chat', JSON.stringify({ text }));
+      return;
+    }
+    log.warn('killswitch reply not delivered — no DM/adapter resolved', { userId });
+  } catch (err) {
+    log.error('killswitch reply delivery failed', { userId, err });
+  }
+}
+
+/**
+ * Approval handler for action='killswitch'. Runs the killswitch, then delivers
+ * the result DIRECTLY to the approver's DM — under killswitch the spawn gate
+ * refuses to wake the agent container, so the standard agent-routed `notify`
+ * would never reach the owner.
+ */
+export async function killswitchApprovalHandler(ctx: ApprovalHandlerContext): Promise<void> {
+  const reason = typeof ctx.payload.reason === 'string' ? ctx.payload.reason : null;
+  const changedBy =
+    ctx.userId || (typeof ctx.payload.changedBy === 'string' ? ctx.payload.changedBy : null);
+
+  const result = await executeKillswitch(reason, changedBy);
+
+  const text =
+    `🛑 Killswitch engaged. Killed ${result.killed} running container(s); new spawns blocked. ` +
+    `External: ${summarizeExternal(result.external)}. ` +
+    `Recovery is manual — SSH in and run scripts/recover-from-killswitch.sh (RECOVERY.md §3).`;
+  await deliverToApprover(ctx.userId, text);
+}
+
+/**
+ * Post the killswitch confirmation card to an admin. The destructive path only
+ * runs after they approve (killswitchApprovalHandler). Called by the router for
+ * `/killswitch` instead of executeControlCommand.
+ */
+export async function requestKillswitchApproval(
+  session: Session,
+  agentName: string,
+  reason: string | null,
+  changedBy: string | null,
+): Promise<void> {
+  await requestApproval({
+    session,
+    agentName,
+    action: 'killswitch',
+    payload: { reason, changedBy },
+    title: '⚠ KILLSWITCH — revokes credentials, requires manual SSH recovery',
+    question:
+      'This kills all running containers, blocks new spawns, and (at deploy) revokes credentials. ' +
+      'Recovery is manual. Approve only if you intend to STOP everything and keep it stopped.',
+  });
+}
+
+// Register the handler at import. kill-switch.ts is statically imported by the
+// router, so this runs at startup; the approvals module's response handler
+// (loaded via src/modules/index.ts) dispatches approved 'killswitch' rows here.
+registerApprovalHandler('killswitch', killswitchApprovalHandler);

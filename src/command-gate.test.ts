@@ -30,10 +30,16 @@ describe('gateCommand', () => {
     closeDb();
   });
 
-  it('classifies /pause /resume /halt as control for an admin', () => {
+  it('classifies /pause /resume /halt /killswitch as control for an admin', () => {
     expect(gateCommand('/pause', 'owner-1', 'ag-1')).toEqual({ action: 'control', command: '/pause' });
     expect(gateCommand('/resume', 'owner-1', 'ag-1')).toEqual({ action: 'control', command: '/resume' });
     expect(gateCommand('/halt', 'owner-1', 'ag-1')).toEqual({ action: 'control', command: '/halt' });
+    expect(gateCommand('/killswitch', 'owner-1', 'ag-1')).toEqual({ action: 'control', command: '/killswitch' });
+  });
+
+  it('denies /killswitch from a non-admin', () => {
+    expect(gateCommand('/killswitch', 'rando', 'ag-1')).toEqual({ action: 'deny', command: '/killswitch' });
+    expect(gateCommand('/killswitch', null, 'ag-1')).toEqual({ action: 'deny', command: '/killswitch' });
   });
 
   it('extracts the command from JSON content and ignores trailing reason text', () => {
