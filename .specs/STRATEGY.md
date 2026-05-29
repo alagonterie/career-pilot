@@ -1024,6 +1024,8 @@ Detailed procedure in [RECOVERY.md §7](RECOVERY.md).
 
 The host watches `data/v2.dev.db` `preferences` and `system_modes` tables (via SQLite's file-modification time or a simple poll). When a row changes, it writes a `messages_in` row of `kind: 'system'` with `action: 'reload_preferences'` to all active sessions. Containers invalidate their cached preferences on receipt.
 
+> **Status (2026-05-29): DEFERRED as a unit — not built.** Verified against the container code: the consumer half does not exist. `reload_preferences` has no handler, the poll loop *discards* inbound `kind:'system'` rows (`container/agent-runner/src/poll-loop.ts`), and the container reads `container.json` only (`config.ts`) — it never reads `preferences`/`system_modes`, so there is no cache to invalidate. Pause/live-mode are enforced host-side today (spawn gate + host-sweep + host-side action gating), so nothing currently *needs* this. Build the signal + consumer together when a running container must observe a mutable mode mid-turn (first real case: `send_outreach_email` observing a `live_mode` flip without a respawn). See §24.18 for the full finding.
+
 This means changes to quiet hours, budgets, frequency caps, etc. take effect within ~5 seconds, no restart required. Same mechanism applies in production.
 
 #### 16.7 Configuration discipline
@@ -1245,6 +1247,8 @@ The host has a runtime helper `getConfig(key, fallback?)` that reads from the ri
 4. Next config read returns the new value
 
 No container restart required. No service restart required. Telegram commands like `/set quiet_hours 22:00-07:00` update preferences and the change takes effect inline.
+
+> **Status (2026-05-29): DEFERRED as a unit — not built** (steps 2–4 above). The container has no `reload_preferences` handler, the poll loop filters out inbound `kind:'system'` rows, and the container does not read `preferences`/`system_modes` directly — so there is no cached `getConfig()` read to invalidate. The 5.4 control plane (§24.18) lands the `system_modes` *writers* without the hot-reload signal, because pause/live-mode are enforced host-side and the signal has no consumer yet. Build signal + consumer together when a warm container must pick up a mutable mode mid-turn. Full finding in §24.18.
 
 ### 21. CLI tooling reference
 
@@ -3311,10 +3315,12 @@ Building the full batch engine now (state column + migration, a new scheduled tr
 **Integration points (from the existing code):**
 - `src/command-gate.ts` is today a pure *classifier* (`gateCommand` → `pass`/`filter`/`deny`). Extend it with a `CONTROL_COMMANDS` set returning a new `{ action: 'control', command }`, admin-gated via the existing `isAdmin()`. The *execution* (side effects + reply) lives in `kill-switch.ts`, dispatched by the router where `gateCommand` is already called — keeping command-gate side-effect-free.
 - `src/container-runner.ts` `wakeContainer(session)` is the spawn entry. The pause gate goes here: refuse to spawn when `getPauseState()` is `halted`/`killswitch` (return `false`, the contract's existing "transient failure" path). Reactive vs proactive suppression for the soft `paused` state lives at the proactive trigger sites (host-sweep/cron), not here.
-- `src/modules/portal/system-modes.ts` gains the writers `setPauseState(state, reason, changedBy)` / `setLiveMode(on, changedBy)` — UPSERT `system_modes` + **hot-reload** by writing a `kind:'system'` `messages_in` row to each active session (so running containers re-read within ~5s, STRATEGY §11/§20.2).
+- `src/modules/portal/system-modes.ts` gains the writers `setPauseState(state, reason, changedBy)` / `setLiveMode(on, changedBy)` — UPSERT `system_modes` (the 5.1 readers reflect the change on their next read). **No hot-reload row** — see the deferral note below.
+
+**Hot-reload deferral (verified against the container code, 2026-05-29):** Earlier drafts of this sub-milestone had the writers also write a `kind:'system'` / `action:'reload_preferences'` `messages_in` row to each active session so running containers re-read within ~5s (the mechanism specced in §16.6 / §20.2). That mechanism's **consumer half does not exist**: (1) `reload_preferences` has no handler anywhere in the container; (2) the poll loop *discards* inbound `kind:'system'` rows (`container/agent-runner/src/poll-loop.ts` filters `m.kind !== 'system'` on both the initial and follow-up paths); (3) the container does not read `preferences`/`system_modes` at all — `container/agent-runner/src/config.ts` reads `container.json` only, so there is no container-side cache to invalidate. Pause/live-mode are enforced **entirely host-side** (the spawn gate, host-sweep proactive suppression, and the future external-action tools reading `getLiveMode()` fresh via the host round-trip per §11). Writing the row today lands a row nothing consumes (and that nothing marks `completed`), and this sub-milestone's DoD forbids container changes — so the hot-reload signal would be premature plumbing. **Hot-reload (signal + consumer) is deferred as a unit** until a running container genuinely reads a mutable mode mid-turn — concretely, when `send_outreach_email` lands and must observe a `live_mode` flip without a respawn. At that point the consumer (a `reload_preferences` handler + a container-side mode cache) and the writer-side signal land together. §16.6 / §20.2 carry the same deferral note.
 
 **5.4a — operational core (locally testable, lands first):**
-- `system-modes.ts` writers + hot-reload.
+- `system-modes.ts` writers (UPSERT only; hot-reload deferred — see note above).
 - `command-gate.ts` `CONTROL_COMMANDS` recognition (`/pause` `/resume` `/halt`) + admin gate.
 - `kill-switch.ts` `executeControlCommand`: `/pause`→`setPauseState('paused')`; `/resume`→`setPauseState('active')`; `/halt`→`setPauseState('halted')` + `killContainer()` for each running session. Returns a confirmation string for the channel reply.
 - `container-runner.ts` spawn gate on `halted`/`killswitch`.
@@ -3324,7 +3330,7 @@ Building the full batch engine now (state column + migration, a new scheduled tr
 - `/killswitch` adds, after the local-effective steps (`setPauseState('killswitch')` + kill containers + spawn gate already blocks new ones): (3) OneCLI agent-token revoke, (4) Portkey budget→0. These are external admin calls with no local test surface (like 5.3's Portkey). **Each is best-effort with loud logging** — the local steps already halt the system; the external revokes are defense-in-depth, and recovery is the manual `scripts/recover-from-killswitch.sh` (RECOVERY.md). Requires an admin confirmation card (NanoClaw `ask_user_question`) before firing. If the OneCLI/Portkey admin clients aren't wired, the step logs `NOT_WIRED` and the operator falls back to the manual runbook — never a silent partial success.
 
 **Definition of done (5.4a; 5.4b tracked separately):**
-1. `setPauseState`/`setLiveMode` UPSERT `system_modes` and the readers (5.1) reflect the change; a `kind:'system'` hot-reload row lands for each active session.
+1. `setPauseState`/`setLiveMode` UPSERT `system_modes` and the readers (5.1) reflect the change. (Hot-reload row deferred — see the deferral note above.)
 2. `gateCommand` returns `{action:'control'}` for `/pause` `/resume` `/halt` from an admin, `deny` for a non-admin; normal messages still `pass`.
 3. `executeControlCommand` transitions pause_state correctly and `/halt` kills running containers; returns the right confirmation text.
 4. `wakeContainer` refuses to spawn under `halted`/`killswitch` (returns false, logs); spawns normally under `active`.
