@@ -183,3 +183,74 @@ export function mirrorFunnelEvent(db: Database.Database, eventId: string): Mirro
   }
   return 'inserted';
 }
+
+// ── Sub-milestone 4.3: retroactive resanitization ──────────────────────────
+
+export interface ResanitizeResult {
+  rewritten: number;
+  deleted: number;
+}
+
+/**
+ * Delete and re-mirror every funnel-category audit row derived from an
+ * application's funnel_events. Call after the application's obfuscation
+ * policy changes — a public_state flip, or an edit to obfuscated_label /
+ * company_name / company_aliases — so the public rows reflect current
+ * intent. Truth lives in funnel_events (never deleted); the audit trail is
+ * a derived projection, so "rewriting history" here is intended.
+ *
+ * Runs in a single IMMEDIATE transaction. The host is the sole writer to
+ * data/v2.db and better-sqlite3 is synchronous, so a concurrent mirror for
+ * the same application cannot interleave mid-transaction; the IMMEDIATE
+ * write lock makes that explicit and gives all-or-nothing atomicity (a
+ * mid-run failure rolls back, leaving the prior rows intact).
+ *
+ * Defensive: never throws. On failure logs and returns { rewritten: 0,
+ * deleted: 0 }. Callers (the handleUpdateApplication hook and the operator
+ * script) treat a failed re-mirror as non-fatal — the application UPDATE is
+ * already committed and funnel_events truth is untouched.
+ *
+ * Note: legacy audit rows with a NULL source_funnel_event_id (pre-migration
+ * 122; none in practice) are NOT matched by the DELETE and are left as-is.
+ */
+export function resanitizeApplicationAuditTrail(
+  db: Database.Database,
+  applicationId: string,
+): ResanitizeResult {
+  const run = db.transaction((): ResanitizeResult => {
+    const del = db
+      .prepare(
+        `DELETE FROM public_audit_trail
+          WHERE category = 'funnel'
+            AND source_funnel_event_id IN (
+              SELECT id FROM funnel_events WHERE application_id = ?
+            )`,
+      )
+      .run(applicationId);
+
+    // Re-read inside the transaction so any event committed before our
+    // BEGIN IMMEDIATE is visible; concurrent inserts serialize behind us.
+    const events = db
+      .prepare('SELECT id FROM funnel_events WHERE application_id = ? ORDER BY ts ASC')
+      .all(applicationId) as Array<{ id: string }>;
+
+    let rewritten = 0;
+    for (const { id } of events) {
+      if (mirrorFunnelEvent(db, id) === 'inserted') rewritten++;
+    }
+    return { rewritten, deleted: del.changes };
+  });
+
+  try {
+    const result = run.immediate();
+    log.info('resanitizeApplicationAuditTrail complete', {
+      applicationId,
+      rewritten: result.rewritten,
+      deleted: result.deleted,
+    });
+    return result;
+  } catch (err) {
+    log.error('resanitizeApplicationAuditTrail failed', { applicationId, err });
+    return { rewritten: 0, deleted: 0 };
+  }
+}
