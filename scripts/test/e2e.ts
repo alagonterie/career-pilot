@@ -3714,8 +3714,18 @@ async function runResearchCompanyDiscovery(): Promise<void> {
   const jsonl = findLatestSessionJsonl();
   if (!jsonl) fail('no session JSONL found under data/v2-sessions/');
 
-  const taskCall = findTaskDelegation(jsonl, 'research-company');
-  if (!taskCall) {
+  // Tolerate the documented GLM retry pattern (§24.13, mirroring §24.2's
+  // tailor-resume tolerance): GLM may (a) emit the delegation as <Agent>-text
+  // first and be nudged into a real tool_use by the runner, and/or (b) omit a
+  // required param like `description` on its first structured call, get the
+  // SDK's InputValidationError, and self-correct on retry. So we assert on ALL
+  // research-company delegations and require >=1 to have SUCCEEDED. A
+  // first-attempt error followed by a successful retry is an internal detail
+  // the user never sees — the subagent still runs and the digest still ships.
+  const researchCalls = findAllSubagentDelegations(jsonl).filter(
+    (c) => c.input?.subagent_type === 'research-company',
+  );
+  if (researchCalls.length === 0) {
     // Dump all tool calls so the mode-of-failure is visible: did the
     // model attempt research inline (WebSearch/WebFetch), did it call
     // a different subagent, or did it not tool-call at all?
@@ -3732,25 +3742,24 @@ async function runResearchCompanyDiscovery(): Promise<void> {
         'Per STRATEGY.md §24.1 fallback: try prompt-tuning the persona first, then LLM_PROVIDER.',
     );
   }
-  ok(`Task delegation emitted (input: ${JSON.stringify(taskCall.input).slice(0, 120)}...)`);
+  ok(`Task delegation emitted (${researchCalls.length} attempt(s))`);
 
-  // CRITICAL: the Task emission alone is NOT proof of working delegation.
-  // The SDK can accept the tool_use, fail to find the named agent in its
-  // registry, and return "Agent type 'research-company' not found" as a
-  // tool_result error -- after which the orchestrator typically falls
-  // back to inline research. We must verify the tool_result was NOT an
-  // error. (Discovered the hard way 2026-05-26: missing `name:` field
-  // in agent frontmatter caused every Task call to fail silently this
-  // way for hours of iteration before catching it.)
-  if (!taskCallSucceeded(jsonl, taskCall)) {
-    console.error('  --- Task tool_result was an error ---');
+  // CRITICAL: emission alone is NOT proof of working delegation. The SDK can
+  // accept the tool_use and return an error tool_result -- a missing-required-
+  // param InputValidationError (GLM omitting `description`, self-corrected on
+  // retry) or, historically, "Agent type 'research-company' not found" from a
+  // missing `name:` in agent frontmatter. Require >=1 attempt to have SUCCEEDED.
+  const succeeded = researchCalls.filter((c) => taskCallSucceeded(jsonl, c));
+  if (succeeded.length === 0) {
+    console.error(`  --- all ${researchCalls.length} research-company Task tool_result(s) were errors ---`);
+    for (const c of researchCalls.slice(0, 3)) console.error(`    input: ${JSON.stringify(c.input).slice(0, 160)}`);
     fail(
-      'Task tool_result was an error (subagent registry lookup failed). ' +
-        'Most likely cause: agent .md file missing `name:` field in frontmatter. ' +
-        'Check groups/<group>/.claude/agents/research-company.md.',
+      'all research-company Task tool_results were errors. If a required param was missing, GLM ' +
+        'failed to self-correct across retries; if registry lookup failed, check `name:` in ' +
+        'groups/<group>/.claude/agents/research-company.md.',
     );
   }
-  ok('Task tool_result succeeded — subagent ran end-to-end');
+  ok(`Task tool_result succeeded — subagent ran end-to-end (${succeeded.length}/${researchCalls.length} attempt(s) ok)`);
 }
 
 function taskCallSucceeded(jsonlPath: string, taskBlock: ToolUseBlock): boolean {
