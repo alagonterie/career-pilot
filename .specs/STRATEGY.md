@@ -3282,6 +3282,28 @@ Building the full batch engine now (state column + migration, a new scheduled tr
 
 ---
 
+#### 24.17 Sub-milestone 5.3 — telemetry + architecture endpoints
+
+**What this is.** `GET /api/telemetry` (the `/live` LLM-telemetry + cost/cache panels) and `GET /api/architecture` (the `/architecture` page's live node status). The first Phase 5 milestone that reaches **outside the DB** — Portkey's analytics REST API and Docker. Both degrade gracefully per PORTAL §10 (never error on a missing dependency).
+
+**`GET /api/telemetry`** → `{ portkey, local }`, cached 30s (PORTAL §11):
+- `portkey`: from `src/modules/portal/portkey-analytics.ts`. Source = `GET https://api.portkey.ai/v1/analytics/summary?range=1d` with header `x-portkey-api-key: $PORTKEY_API_KEY`. When `PORTKEY_BYPASS=true`, `PORTKEY_API_KEY` is unset, or the fetch errors/times out → `{ available: false, reason }` (the frontend renders `—`, PORTAL §10). When live → `{ available: true, summary: <response> }`. **Field-level normalization (cache rate, p50/p95, top model) is calibrated against a real response in a later pass** — there is no live Portkey in dev, so 5.3 ships the raw passthrough + the tested degraded path rather than bluffing Portkey's schema.
+- `local`: reliably-computable aggregates — `{ simulator_runs_total, activity_events_total, activity_events_24h }` (from `simulator_runs` + `public_audit_trail`). Today's-spend/cache-savings come from Portkey, not local, since `public_audit_trail.cost_cents` is null until the trace-capture phase.
+
+**`GET /api/architecture`** → `{ sessions, containers, backend }`, short cache (~5s) on the Docker call:
+- `sessions`: `{ active, running }` via the existing `getActiveSessions()` / `getRunningSessions()` (`src/db/sessions.ts`).
+- `containers`: `{ running, capacity_max, memory_mb_each, runtime }`. `running` = count from `docker ps --filter label=<install> --format '{{.Names}}'` (reuse the `cleanupOrphans` pattern; new `countRunningContainers()` in `container-runtime.ts`, returns `null` on any Docker error). `capacity_max` / `memory_mb_each` from `getConfig('container_max_concurrent')` / `getConfig('container_memory_mb')`. `runtime`: `'up'` if the count succeeded, else `'down'`. Per-container live mem% (needs `docker stats`) is deferred — the panel shows running/max for 5.3.
+
+**What lands:** `portkey-analytics.ts` (`getPortkeyAnalytics`, `getTelemetry`, 30s cache + `_resetTelemetryCache` seam); `countRunningContainers()` in `container-runtime.ts`; `handleTelemetry` + `handleArchitecture` routes in `api.ts`; config `portal_telemetry_cache_ms` (30000), `portal_architecture_cache_ms` (5000).
+
+**Definition of done.**
+1. `GET /api/telemetry` returns `{ portkey: { available: false, reason } , local: {…} }` under `PORTKEY_BYPASS`/no-key, and is cached 30s; local aggregates reflect seeded `simulator_runs`/`public_audit_trail`.
+2. `GET /api/architecture` returns `sessions` counts from the DB + `containers` with `running` (number when Docker is reachable, else `null`) + `runtime` flag + capacity from config — never throws when Docker is absent.
+3. Neither endpoint requires a live Portkey or Docker to return 200.
+4. Vitest covers the bypass/degraded telemetry path + local aggregates + the 30s cache, and the architecture shape with seeded sessions (Docker-agnostic). Full host suite + host tsc clean. No container change.
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
