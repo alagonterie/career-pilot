@@ -266,4 +266,32 @@ describe('mirrorFunnelEvent', () => {
     expect(() => mirrorFunnelEvent(db, 'fe-nonexistent')).not.toThrow();
     expect(readAuditRows()).toHaveLength(0);
   });
+
+  it('links the audit row back to its source funnel_event (§24.11 migration 122)', () => {
+    seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a' });
+    seedEvent({ id: 'fe-1', application_id: 'app-1', payload: JSON.stringify({ note: 'hello' }) });
+
+    const outcome = mirrorFunnelEvent(db, 'fe-1');
+    expect(outcome).toBe('inserted');
+
+    const row = db
+      .prepare('SELECT source_funnel_event_id FROM public_audit_trail')
+      .get() as { source_funnel_event_id: string | null };
+    expect(row.source_funnel_event_id).toBe('fe-1');
+  });
+
+  it('returns a typed outcome for skipped/dropped paths', () => {
+    // Non-existent event → skipped.
+    expect(mirrorFunnelEvent(db, 'fe-nope')).toBe('skipped');
+
+    // Defense-in-depth drop → dropped.
+    seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a' });
+    seedApp({ id: 'app-2', company_name: 'PartnerCo', obfuscated_label: '' });
+    seedEvent({
+      id: 'fe-1',
+      application_id: 'app-1',
+      payload: JSON.stringify({ note: 'collaboration with PartnerCo announced' }),
+    });
+    expect(mirrorFunnelEvent(db, 'fe-1')).toBe('dropped');
+  });
 });
