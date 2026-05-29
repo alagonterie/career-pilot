@@ -3462,6 +3462,29 @@ The catastrophic control. Unlike 5.4a's commands, `/killswitch` **never fires on
 
 ---
 
+#### 24.22 Sub-milestone 5.6 — contact relay (`POST /api/contact` → owner)
+
+**What this is.** The lowest-friction conversion path (PORTAL §5.7): a recruiter submits the contact form and it's relayed to the owner's channel. One-way — "no conversation" (PORTAL §8 §820). Small + self-contained; host-only, no container change.
+
+**Design.** `POST /api/contact` (the deploy-phase Worker route `hire.<DOMAIN>/api/contact` Turnstile-verifies + rate-limits 5/IP/hr, then forwards the verified body to this host handler over the Tunnel; in dev it's posted directly). The handler validates, formats a notification, and delivers it to the owner's wired channel(s) — resolved channel-agnostically as `getMessagingGroupsByAgentGroup(getAgentGroupByFolder('career-pilot').id)` and delivered via `getDeliveryAdapter().deliver(channel_type, platform_id, null, 'chat', JSON.stringify({ text }))` (the same host-initiated delivery path the §24.18 killswitch uses). This reaches Telegram in prod and the CLI in dev with no code change, and **spawns no container** (a one-way notification doesn't need the agent).
+
+**No public sanitizer — deliberate (corrects the Phase-0 placeholder comment).** The Phase-0 stub said "sanitize via sanitizer.ts." That's wrong here: the sanitizer redacts emails/phones for the **public** surface, but a contact submission goes to the owner's **private** channel and its entire value is the recruiter's name + email + message — redacting the email would defeat the feature. 5.6 delivers the submission verbatim (length-capped per field; no DB persistence — it lives in the owner's channel history, per the placeholder). Defense is structural (caps + the deploy-phase Turnstile/RL in front), not PII redaction.
+
+**Best-effort honesty.** The visitor is told "Sent" only if the relay actually delivered to ≥1 owner channel. If no channel is wired or no delivery adapter is up, the handler returns a failure (the route surfaces `503`) rather than claiming a delivery that didn't happen — same discipline as the NOT_WIRED seams.
+
+**What lands:**
+1. **`src/modules/portal/contact-relay.ts`** — `relayContactSubmission(input): { ok; delivered?; error? }`: validate (`name` + `email` + `message` required; `role`/`company` optional), build the notification text, resolve the owner channel(s), deliver to each, return `ok` iff ≥1 delivery succeeded. Never throws.
+2. **`POST /api/contact` in `api.ts`** — parse the JSON body (reuse the 5.5a `readJsonBody`), `400` on missing required fields / bad JSON, `200 { ok: true }` on relay, `503` when the relay couldn't reach a channel.
+3. **`config/defaults.json`** — `contact_message_max_chars` (4000) for the message cap (other fields capped inline).
+
+**Definition of done.**
+1. `relayContactSubmission` validates (`name`/`email`/`message` required), formats a notification with the submitter's details verbatim, and delivers it to every channel wired to the `career-pilot` agent group via the delivery adapter; returns `ok:true` iff ≥1 delivery succeeded.
+2. It never runs the public PII sanitizer and never persists to the DB; it never throws (delivery/resolution failures → `ok:false`).
+3. `POST /api/contact` returns `400` (missing fields/bad JSON), `200 { ok:true }` (relayed), or `503` (no channel/adapter).
+4. Vitest: validation (400-shaped), the resolve→deliver path with a mock delivery adapter + a seeded `career-pilot` group/wiring (assert the adapter received the formatted text), and the no-channel → `ok:false` path. Full host suite + host tsc clean. No container change. (Deploy-phase: Turnstile + Workers RL live in the Worker, verified at deploy.)
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
