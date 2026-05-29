@@ -754,7 +754,7 @@ export async function sanitize(raw: string, opts?: { application_id?: string }):
 
 ### 10. Public API layer
 
-Express app, lives in `src/modules/portal/api.ts`. Started by the NanoClaw host on a configurable port (default `3001`, behind Cloudflare Tunnel).
+A native-`http` server (NOT Express), lives in `src/modules/portal/api.ts`. Started by the NanoClaw host on a configurable port (default `3001`, bound to `127.0.0.1`, behind Cloudflare Tunnel). **Reconciled 2026-05-29 (§24.15):** the host already ships a native-`http` server (`src/webhook-server.ts`) with module-level lifecycle + reusable Request/Response helpers; the portal API reuses that pattern rather than adding a web-framework dependency. SSE (Sub-milestone 5.2) is also more natural in raw node. CORS is a small allow-list; the deploy-phase JWT auth uses `jose` standalone — neither needs Express.
 
 **Domain split (verified via Cloudflare research, see [CLOUDFLARE_PATTERNS.md §1](CLOUDFLARE_PATTERNS.md)):**
 
@@ -1446,7 +1446,7 @@ Everything that NanoClaw v2 ships: `bin/`, `scripts/` (NanoClaw's own), `setup/`
 | **2. Subagents + skills** | 3 | 5 subagent definitions, skill instructions, remaining MCP tools | I can paste a JD and ask "tailor my resume" — agent invokes research-company + tailor-resume, returns tailored bullets. |
 | **3. Heartbeat — daily briefing + cron** | 4 | Host-side cron primitive + orchestrator-notify intake + daily-briefing flow + LLM rank-at-draw-time. See §24.6 for the sub-milestone drill-in. | At the scheduled morning time, the orchestrator wakes, queries `job_leads`, LLM-ranks the top-N against the candidate brief, and emits a Telegram briefing — OR skips cleanly per quiet-hours / frequency-cap / no-news rules. Cron schedules survive host restart. |
 | **4. Sanitization + public_audit_trail** | 5 | `src/modules/portal/sanitizer.ts`, post-write hooks, sanitized mirror to `public_audit_trail`. See §24.10 for Sub-milestone 4.1 (Pass 1 regex + Pass 2 company replacement) and §24.11 for Sub-milestone 4.3 (retroactive resanitization on `applications` UPDATE). Pass 3 LLM review (Sub-milestone 4.2) architecture decided in §24.12 (container batch); build deferred until the first non-funnel category is mirrored. | Every funnel_event has a matching sanitized row in public_audit_trail; flipping `public_state` rewrites past audit rows to match. Spot check: real company name nowhere in public table even after the candidate edits an application's obfuscation policy. |
-| **5. Portal backend** | 6 | Express API, SSE infra, system modes, portal channel adapter, sandbox agent group | I can `curl /api/funnel` and get real (sanitized) data. SSE stream emits events. `POST /api/simulator` spawns a sandbox container. |
+| **5. Portal backend** | 6 | HTTP API (native `http`), SSE infra, system modes, portal channel adapter, sandbox agent group. See §24.15 for the Phase 5 decomposition + Sub-milestone 5.1 drill-in. | I can `curl /api/funnel` and get real (sanitized) data. SSE stream emits events. `POST /api/simulator` spawns a sandbox container. |
 | **6. Frontend bootstrap** | 7 | **TanStack Start docs deep-read** + scaffold + landing + /work | Hero renders. Live ticker connects to SSE. /work renders with placeholders. |
 | **7. Frontend depth** | 8 | /live, /funnel, /architecture pages | All three pages render real data. Filter chips work. Funnel race animates. |
 | **8. Simulator end-to-end** | 9 | /simulator interactive sandbox | A visitor can type a company + JD, hit Run, see real streaming output side-by-side. Sandbox session tears down cleanly. |
@@ -3212,6 +3212,50 @@ Building the full batch engine now (state column + migration, a new scheduled tr
 5. Vitest: `public-funnel-view.integration.test.ts` (obfuscated vs public `application_ref`; `stage` mapping; sanitized `published_learning`; `public_state`-flip refresh); `seq` monotonicity across interleaved writers + backfill + resanitize re-insert; `deriveFunnelStage` per-status + unknown fallback.
 6. All existing host tests stay green; host + container typecheck clean. No container-side change.
 7. Spec deltas applied: PORTAL.md §9 (read-model), §8.3/§11 (cursor), §5.2 (capture-path note); STRATEGY.md §3 (schema), §24.10 (repoint), this §24.14, §17.1 (data-source row).
+
+---
+
+#### 24.15 Phase 5 decomposition + Sub-milestone 5.1 — read-only public API skeleton
+
+**What this is.** Phase 5 (portal backend — the `api.hire.<DOMAIN>` HTTP layer feeding the frontend) is large: 8 `src/modules/portal/*` modules (all still `export {}`), SSE, the simulator + `portal` channel adapter + sandbox group, and origin auth. It decomposes into sub-milestones, each its own drill-in + DoD + commit — same discipline as Phases 2–4.
+
+**Phase 5 decomposition:**
+
+| Sub | Scope | Depends on |
+|---|---|---|
+| **5.1** | Read-only API skeleton: server lifecycle + CORS + dev-open auth seam + `GET /api/funnel`, `GET /api/activity`, `GET /api/system-status` | already-built public tables |
+| 5.2 | SSE: `GET /api/activity/stream` + `sse-broadcaster.ts` (tails `public_audit_trail.seq`) | 5.1 |
+| 5.3 | `GET /api/telemetry` (Portkey + 30s cache + local aggregates) + `GET /api/architecture` (Docker + central DB) | Portkey client, Docker introspection |
+| 5.4 | system-modes write/control plane: `/pause` `/resume` `/halt` `/killswitch` command-gate + container-runner pause gate | RECOVERY.md |
+| 5.5 | Simulator: `POST /api/simulator`, `/api/simulator/:id/stream`, results + `portal` channel adapter + sandbox agent group | 5.2 |
+| 5.6 | `POST /api/contact` relay → owner Telegram | — |
+| cross-cutting | Real CF-Access JWT (`jose`) + AOP mTLS → **deploy phase**; 5.1 ships a pluggable dev-open auth seam | — |
+
+**Locked choices (§24.15):** native `http` (not Express — see §10 reconciliation above); SSE is its own sub-milestone (5.2).
+
+**What lands in 5.1:**
+
+1. **`src/modules/portal/api.ts`** — native-`http` server mirroring `webhook-server.ts` lifecycle: `startPortalApi(opts?)` / `stopPortalApi()`, bound to `127.0.0.1` (Cloudflared connects locally), port via `getConfig('portal_api_port', 3001)`. A tiny `method + pathname` router; every handler error-wrapped (JSON 500, never throws out). `cors()` allow-list from `getConfig('portal_cors_origins')` + `OPTIONS` preflight (no `*`). `checkAuth()` — the single auth chokepoint, **dev-open now**, structured for CF-Access JWT at deploy. Routes: `GET /api/funnel`, `GET /api/activity`, `GET /api/system-status`, `404` fallback.
+2. **`src/modules/portal/system-modes.ts`** — read accessors only (`getLiveMode`, `getPauseState`, `getSystemStatus`); query `system_modes` directly with defaults (`live_mode=false`, `pause_state='active'`) when rows absent. Write/control plane is 5.4.
+3. **`config/defaults.json`** — `portal_api_port` (3001), `portal_cors_origins`.
+4. **`src/index.ts`** — wire `startPortalApi()` into `main()` (after `startCliServer`) + `stopPortalApi()` into `shutdown()`.
+
+**Response shapes:**
+- `GET /api/funnel` → `{ applications: [...], stage_counts: {...} }`. Each row = `public_funnel_view` columns + read-time-computed `days_in_stage` / `days_in_pipeline` (never stored — computed from `stage_entered_at` / `applied_at` so a row never goes stale). The four `/funnel` stat tiles are frontend-derivable from these.
+- `GET /api/activity?since=<seq>&limit=<n>` → `{ events: [...], next_since }`; `WHERE seq > @since ORDER BY seq ASC LIMIT @limit` (default 50, cap 200). Trace-telemetry fields stay null until the capture phase.
+- `GET /api/system-status` → `{ live_mode, pause_state, pause_reason, backend: 'online' }`.
+
+**Staged auth (load-bearing).** 5.1 ships dev-open (CORS allow-list only). The data served is sanitized public tables (`public_funnel_view`, `public_audit_trail`, `system_modes`) — no PII, no private tables — so dev-open is safe pre-deploy. The §10 triple-defense (CF-Access service-auth header check + `Cf-Access-Jwt-Assertion` validation via `jose` against the team JWKS + Authenticated Origin Pulls) lands at the deploy phase, dropped into the `checkAuth()` chokepoint.
+
+**Definition of done.**
+
+1. `api.ts` exports `startPortalApi`/`stopPortalApi`; binds `127.0.0.1`, port from `getConfig`; reuses the `webhook-server.ts` native-`http` lifecycle shape; handlers never throw out (JSON 500).
+2. `GET /api/funnel` returns `public_funnel_view` rows + computed `days_in_stage`/`days_in_pipeline` + `stage_counts`, never touching `applications`.
+3. `GET /api/activity?since=<seq>&limit=<n>` paginates by the monotonic `seq` cursor and returns `next_since`.
+4. `GET /api/system-status` returns `live_mode`/`pause_state`/`pause_reason` (defaults when `system_modes` empty).
+5. CORS restricted to the allow-list (no `*`); `OPTIONS` preflight handled. `checkAuth()` is the single dev-open chokepoint.
+6. `system-modes.ts` read accessors implemented with defaults.
+7. Vitest: a `portal-api` integration test (ephemeral port + `fetch`) covering all three endpoints + cursor paging + CORS + 404 + error-safety; `system-modes` unit tests. Full host suite + host tsc clean. No container change.
 
 ---
 
