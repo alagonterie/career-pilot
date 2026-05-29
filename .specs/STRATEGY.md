@@ -3304,6 +3304,34 @@ Building the full batch engine now (state column + migration, a new scheduled tr
 
 ---
 
+#### 24.18 Sub-milestone 5.4 — system-modes write/control plane (`/pause` `/resume` `/halt` `/killswitch`)
+
+**What this is.** The operator control plane behind PORTAL §7 and RECOVERY.md: the `system_modes` *writers* (5.1 shipped only the readers), the Telegram command surface, the container-spawn pause gate, and the catastrophic kill-switch. Safety-critical — this is the machinery that stops the system touching the real world. It splits into a locally-testable operational core (5.4a) and the external-admin kill-switch tail (5.4b).
+
+**Integration points (from the existing code):**
+- `src/command-gate.ts` is today a pure *classifier* (`gateCommand` → `pass`/`filter`/`deny`). Extend it with a `CONTROL_COMMANDS` set returning a new `{ action: 'control', command }`, admin-gated via the existing `isAdmin()`. The *execution* (side effects + reply) lives in `kill-switch.ts`, dispatched by the router where `gateCommand` is already called — keeping command-gate side-effect-free.
+- `src/container-runner.ts` `wakeContainer(session)` is the spawn entry. The pause gate goes here: refuse to spawn when `getPauseState()` is `halted`/`killswitch` (return `false`, the contract's existing "transient failure" path). Reactive vs proactive suppression for the soft `paused` state lives at the proactive trigger sites (host-sweep/cron), not here.
+- `src/modules/portal/system-modes.ts` gains the writers `setPauseState(state, reason, changedBy)` / `setLiveMode(on, changedBy)` — UPSERT `system_modes` + **hot-reload** by writing a `kind:'system'` `messages_in` row to each active session (so running containers re-read within ~5s, STRATEGY §11/§20.2).
+
+**5.4a — operational core (locally testable, lands first):**
+- `system-modes.ts` writers + hot-reload.
+- `command-gate.ts` `CONTROL_COMMANDS` recognition (`/pause` `/resume` `/halt`) + admin gate.
+- `kill-switch.ts` `executeControlCommand`: `/pause`→`setPauseState('paused')`; `/resume`→`setPauseState('active')`; `/halt`→`setPauseState('halted')` + `killContainer()` for each running session. Returns a confirmation string for the channel reply.
+- `container-runner.ts` spawn gate on `halted`/`killswitch`.
+- Proactive-trigger suppression: the cron/heartbeat enqueue sites skip when `pause_state !== 'active'`; reactive (direct message) always passes.
+
+**5.4b — kill-switch external tail (highest stakes; external-admin, not locally testable):**
+- `/killswitch` adds, after the local-effective steps (`setPauseState('killswitch')` + kill containers + spawn gate already blocks new ones): (3) OneCLI agent-token revoke, (4) Portkey budget→0. These are external admin calls with no local test surface (like 5.3's Portkey). **Each is best-effort with loud logging** — the local steps already halt the system; the external revokes are defense-in-depth, and recovery is the manual `scripts/recover-from-killswitch.sh` (RECOVERY.md). Requires an admin confirmation card (NanoClaw `ask_user_question`) before firing. If the OneCLI/Portkey admin clients aren't wired, the step logs `NOT_WIRED` and the operator falls back to the manual runbook — never a silent partial success.
+
+**Definition of done (5.4a; 5.4b tracked separately):**
+1. `setPauseState`/`setLiveMode` UPSERT `system_modes` and the readers (5.1) reflect the change; a `kind:'system'` hot-reload row lands for each active session.
+2. `gateCommand` returns `{action:'control'}` for `/pause` `/resume` `/halt` from an admin, `deny` for a non-admin; normal messages still `pass`.
+3. `executeControlCommand` transitions pause_state correctly and `/halt` kills running containers; returns the right confirmation text.
+4. `wakeContainer` refuses to spawn under `halted`/`killswitch` (returns false, logs); spawns normally under `active`.
+5. Vitest covers writers + hot-reload row + command classification + control execution + the spawn gate (mock/seed sessions). Full host suite + host tsc clean. No container change.
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
