@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from 'bun:test';
 
-import { parseAgentMessages } from './poll-loop.js';
+import { parseAgentMessages, detectAgentTextEmission } from './poll-loop.js';
 
 describe('parseAgentMessages — strict path', () => {
   it('parses a single complete block, body trimmed', () => {
@@ -120,5 +120,65 @@ describe('parseAgentMessages — no-blocks path', () => {
     expect(r.parseMode).toBe('no-blocks');
     expect(r.blocks).toEqual([]);
     expect(r.scratchpad).toBe('');
+  });
+});
+
+describe('detectAgentTextEmission — GLM <Agent>-text failure (§24.13)', () => {
+  it('detects a self-closing <Agent> with subagent_type + prompt (the observed failure)', () => {
+    const text =
+      'I\'ll research Anthropic for you now.\n\n' +
+      '<Agent subagent_type="research-company" prompt="Research Anthropic for a Staff Backend Engineer." />';
+    const r = detectAgentTextEmission(text);
+    expect(r).toHaveLength(1);
+    expect(r[0].tool).toBe('Agent');
+    expect(r[0].subagentType).toBe('research-company');
+    expect(r[0].prompt).toBe('Research Anthropic for a Staff Backend Engineer.');
+  });
+
+  it('detects a non-self-closing open tag', () => {
+    const r = detectAgentTextEmission('<Agent subagent_type="scrape-jobs">do the thing</Agent>');
+    expect(r).toHaveLength(1);
+    expect(r[0].tool).toBe('Agent');
+    expect(r[0].subagentType).toBe('scrape-jobs');
+  });
+
+  it('detects the <Task> alias', () => {
+    const r = detectAgentTextEmission('<Task subagent_type="tailor-resume" prompt="x" />');
+    expect(r).toHaveLength(1);
+    expect(r[0].tool).toBe('Task');
+    expect(r[0].subagentType).toBe('tailor-resume');
+  });
+
+  it('returns prompt:null when the tag has subagent_type but no prompt', () => {
+    const r = detectAgentTextEmission('<Agent subagent_type="prep-interview" />');
+    expect(r).toHaveLength(1);
+    expect(r[0].subagentType).toBe('prep-interview');
+    expect(r[0].prompt).toBeNull();
+  });
+
+  it('detects multiple emissions in one output', () => {
+    const r = detectAgentTextEmission(
+      '<Agent subagent_type="research-company" />\nthen\n<Agent subagent_type="tailor-resume" />',
+    );
+    expect(r).toHaveLength(2);
+    expect(r.map((e) => e.subagentType)).toEqual(['research-company', 'tailor-resume']);
+  });
+
+  // --- Negatives / production-safety invariant ---
+
+  it('returns [] for a well-formed <message> block (production-safety: real Claude path)', () => {
+    expect(detectAgentTextEmission('<message to="owner">Here are your results.</message>')).toEqual([]);
+  });
+
+  it('returns [] for prose that merely mentions the Agent tool', () => {
+    expect(detectAgentTextEmission('I will use the Agent tool to delegate this to research-company.')).toEqual([]);
+  });
+
+  it('returns [] for a fenced code sample (no XML tag)', () => {
+    expect(detectAgentTextEmission('```\nAgent({ subagent_type: "research-company" })\n```')).toEqual([]);
+  });
+
+  it('returns [] for empty input', () => {
+    expect(detectAgentTextEmission('')).toEqual([]);
   });
 });

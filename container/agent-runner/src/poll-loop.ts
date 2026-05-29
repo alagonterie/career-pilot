@@ -441,17 +441,34 @@ async function processQuery(
         // at all — either way the turn is finished.
         markCompleted(initialBatchIds);
         if (event.text) {
-          const { hasUnwrapped } = dispatchResultText(event.text, routing);
+          const { hasUnwrapped, agentTextEmissions } = dispatchResultText(event.text, routing);
           if (hasUnwrapped && !unwrappedNudged) {
             unwrappedNudged = true;
-            const destinations = getAllDestinations();
-            const names = destinations.map((d) => d.name).join(', ');
-            query.push(
-              `<system>Your response was not delivered — it was not wrapped in <message to="name">...</message> blocks. ` +
-                `All output must be wrapped: use <message to="name"> for content to send, or <internal> for scratchpad. ` +
-                `Your destinations: ${names}. ` +
-                `Please re-send your response with the correct wrapping.</system>`,
-            );
+            if (agentTextEmissions.length > 0) {
+              // §24.13 footgun fix: the model TRIED to delegate but wrote the
+              // Agent/Task tool as text. The generic "wrap it in <message>"
+              // nudge below makes GLM fabricate a "work done" reply — so steer
+              // it to re-issue a REAL tool call instead. Keyed on detected
+              // <Agent>-text, so this branch never runs for real Claude.
+              const tool = agentTextEmissions[0].tool;
+              const types = [...new Set(agentTextEmissions.map((e) => e.subagentType).filter(Boolean))].join(', ');
+              query.push(
+                `<system>Your delegation did NOT happen. You wrote ${tool} as XML-shaped text ` +
+                  `(e.g. "<${tool} subagent_type=...>") — that is inert text, not a tool call, so no subagent ran. ` +
+                  `Re-issue it as a REAL structured tool call: invoke the ${tool} tool` +
+                  `${types ? ` with subagent_type "${types}"` : ''} via the tool-use mechanism, exactly as you call any ` +
+                  `other tool. Do NOT describe the call in text and do NOT claim the work is done — make the tool call now.</system>`,
+              );
+            } else {
+              const destinations = getAllDestinations();
+              const names = destinations.map((d) => d.name).join(', ');
+              query.push(
+                `<system>Your response was not delivered — it was not wrapped in <message to="name">...</message> blocks. ` +
+                  `All output must be wrapped: use <message to="name"> for content to send, or <internal> for scratchpad. ` +
+                  `Your destinations: ${names}. ` +
+                  `Please re-send your response with the correct wrapping.</system>`,
+              );
+            }
           }
         }
       }
@@ -567,12 +584,59 @@ export function parseAgentMessages(text: string): ParsedAgentOutput {
   };
 }
 
+export interface AgentTextEmission {
+  /** "Agent" or "Task" — the SDK subagent-dispatch tool the model tried to call. */
+  tool: string;
+  /** The `subagent_type` attribute value, if present. */
+  subagentType: string | null;
+  /** The `prompt` attribute value, if present (best-effort; Tier-1 will use this). */
+  prompt: string | null;
+}
+
+/**
+ * Detect the GLM tool-shape failure (STRATEGY.md §24.13): the model emits the
+ * subagent-dispatch tool (`Agent`/`Task`) as literal XML-shaped TEXT instead of
+ * a structured `tool_use` block, e.g.
+ *   <Agent subagent_type="research-company" prompt="..." />
+ * The SDK ignores such text, the subagent never runs, and the turn ends with no
+ * delegation. The localized trigger is the `claude_code` system preset (upstream,
+ * not author-controllable) — so the only in-our-control fix is runner-side.
+ *
+ * Production-safety invariant: a correct structured `tool_use` (what real Claude
+ * emits) NEVER serializes into the final result text as `<Agent ...>` / `<Task ...>`.
+ * So this returns [] for well-behaved output and every recovery path keyed on it
+ * is a strict no-op in production. Exported for unit testing.
+ *
+ * `prompt` extraction is best-effort: a double-quote inside the prompt value
+ * truncates capture. Tier-0 only needs the tag + subagent_type; a robust parse
+ * is Tier-1's concern.
+ */
+export function detectAgentTextEmission(text: string): AgentTextEmission[] {
+  const TAG_RE = /<(Agent|Task)\b([^>]*?)\/?>/gi;
+  const out: AgentTextEmission[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = TAG_RE.exec(text)) !== null) {
+    const attrs = m[2] ?? '';
+    const subType = /\bsubagent_type\s*=\s*"([^"]*)"/i.exec(attrs);
+    const prompt = /\bprompt\s*=\s*"([^"]*)"/i.exec(attrs);
+    out.push({
+      tool: m[1],
+      subagentType: subType ? subType[1] : null,
+      prompt: prompt ? prompt[1] : null,
+    });
+  }
+  return out;
+}
+
 /**
  * Parse the agent's final text into message blocks (via `parseAgentMessages`)
  * and dispatch each block to its resolved destination. Logs the lenient
  * salvage path when it fires so operators can see when GLM trips it.
  */
-function dispatchResultText(text: string, routing: RoutingContext): { sent: number; hasUnwrapped: boolean } {
+function dispatchResultText(
+  text: string,
+  routing: RoutingContext,
+): { sent: number; hasUnwrapped: boolean; agentTextEmissions: AgentTextEmission[] } {
   const parsed = parseAgentMessages(text);
   let sent = 0;
 
@@ -593,6 +657,20 @@ function dispatchResultText(text: string, routing: RoutingContext): { sent: numb
     );
   }
 
+  // GLM tool-shape failure (§24.13): the model wrote a subagent dispatch as
+  // XML-shaped text instead of calling the tool. Log loudly so e2e + operators
+  // see the real cause rather than a downstream symptom. No-op for real Claude
+  // (structured tool_use never serializes as <Agent ...> text).
+  const agentTextEmissions = detectAgentTextEmission(text);
+  if (agentTextEmissions.length > 0) {
+    const types = agentTextEmissions.map((e) => e.subagentType ?? `${e.tool}(?)`).join(', ');
+    log(
+      `KNOWN GLM TOOL-SHAPE FAILURE: ${agentTextEmissions.length} subagent dispatch(es) emitted as ` +
+        `XML-shaped TEXT, not a structured tool_use block (subagent_type: ${types}). No delegation ran. ` +
+        `See STRATEGY.md §24.13.`,
+    );
+  }
+
   if (parsed.scratchpad) {
     log(`[scratchpad] ${parsed.scratchpad.slice(0, 500)}${parsed.scratchpad.length > 500 ? '…' : ''}`);
   }
@@ -601,7 +679,7 @@ function dispatchResultText(text: string, routing: RoutingContext): { sent: numb
   if (hasUnwrapped) {
     log(`WARNING: agent output had no <message to="..."> blocks — nothing was sent`);
   }
-  return { sent, hasUnwrapped };
+  return { sent, hasUnwrapped, agentTextEmissions };
 }
 
 function sendToDestination(dest: DestinationEntry, body: string, routing: RoutingContext): void {
