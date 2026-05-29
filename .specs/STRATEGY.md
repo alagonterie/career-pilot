@@ -3259,6 +3259,29 @@ Building the full batch engine now (state column + migration, a new scheduled tr
 
 ---
 
+#### 24.16 Sub-milestone 5.2 — SSE live activity stream
+
+**What this is.** `GET /api/activity/stream` — the Server-Sent Events feed behind the portal's `● live` indicator and the `/live` trace stream. Live counterpart to 5.1's `GET /api/activity` (which serves the cursor-paginated backlog). Source is the same already-built `public_audit_trail`, tailed by the monotonic `seq` cursor (BFF pass).
+
+**Design — poll-based tail (locked).** The broadcaster learns of new rows by **polling** `public_audit_trail` by `seq` on an interval (`getConfig('portal_sse_tail_interval_ms', 1000)`), not by event-driven hooks from the writers. Rationale: consistent with the host's poll-everywhere model (delivery/sweep), decouples SSE from `mirrorFunnelEvent`/`handleRecordProgress` (the broadcaster only *reads*), and handles the §24.14 resanitize delete+re-insert for free (it just re-reads by `seq`). The first event (backlog replay) is synchronous on connect (well under the §11 <500ms budget); live rows arrive within one interval. The tail timer is **client-gated** — it runs only while ≥1 client is connected.
+
+**Resume semantics.** On connect the route resolves a cursor from the `Last-Event-ID` header (EventSource auto-sets it on reconnect) or `?since=<seq>`. If present, the backlog `seq > cursor` is replayed immediately; the client's watermark is set to the replayed max. A fresh connect (no cursor) starts live from `MAX(seq)` (no history dump — that's `/api/activity`'s job). Each client carries its own `lastSeq`; the tail dispatches rows `seq > client.lastSeq` exactly once, in order. Frame format: `id: <seq>\ndata: <json row>\n\n`. Keep-alive comment (`: ka\n\n`) every `getConfig('portal_sse_keepalive_ms', 15000)`.
+
+**What lands:**
+1. **`src/modules/portal/sse-broadcaster.ts`** — a topic-keyed connection registry (5.2 uses the `activity` topic; `simulator:<id>` arrives in 5.5). `addActivityClient(res, cursor)` (replay + register + ensure tail running), `removeActivityClient(res)` (deregister + stop tail when empty), `stopBroadcaster()` (clear timer + end all responses). Internal tail tick + keep-alive.
+2. **`GET /api/activity/stream` in `api.ts`** — `text/event-stream` + `Cache-Control: no-cache` + `X-Accel-Buffering: no` headers (+ CORS), resolve cursor, hand to `addActivityClient`, `req.on('close')` → `removeActivityClient`.
+3. **`config/defaults.json`** — `portal_sse_tail_interval_ms` (1000), `portal_sse_keepalive_ms` (15000).
+4. **`stopPortalApi`/`shutdown`** — call `stopBroadcaster()` so streams close cleanly on host shutdown.
+
+**Definition of done.**
+1. `addActivityClient` replays `seq > cursor` on connect (Last-Event-ID or `?since`), then the client receives live rows exactly once, in `seq` order, as `id: <seq>\ndata: …` frames.
+2. A fresh connect (no cursor) emits no backlog and receives only rows inserted after connect.
+3. The tail timer is client-gated (starts on first client, stops on last) and `stopBroadcaster()` ends all open responses; wired into `stopPortalApi`.
+4. Keep-alive comments are emitted on idle.
+5. Vitest: an integration test (ephemeral port + `fetch` stream reader) asserting backlog replay by cursor + live push of a freshly-inserted row; a broadcaster unit asserting the tail is inert with no clients. Full host suite + host tsc clean. No container change.
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
