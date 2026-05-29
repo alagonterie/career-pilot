@@ -1,25 +1,110 @@
 /**
- * src/channels/portal/adapter.ts — portal channel adapter (NanoClaw channel).
+ * src/channels/portal/adapter.ts — the `portal` channel adapter.
  *
- * Conforms to NanoClaw's channel interface but transport is HTTP + SSE
- * instead of bot polling. Distinct from the Telegram channel (`/add-telegram`
- * skill) which is bot-polling.
+ * A NanoClaw channel whose transport is HTTP + SSE rather than bot-polling.
+ * It carries the public Recruiter Simulator (PORTAL §5.3): each visitor run is
+ * a first-class NanoClaw session in the `career-pilot-sandbox` agent group.
  *
- * Inbound: POST /api/sandbox/start (from frontend) → portal/api.ts → this
- *   adapter's submit() → creates a NanoClaw session (session_mode='per-thread')
- *   and writes the initial `messages_in` row of `kind='chat'`.
+ * Inbound: POST /api/simulator (src/modules/portal/{api,simulator}.ts) →
+ *   submitSimulatorRun() → the captured ChannelSetup.onInbound, which the host
+ *   routes like any other channel message. The run id is passed as the
+ *   threadId, so the pre-seeded per-thread sandbox wiring (see
+ *   scripts/init-sandbox-group.ts) spawns a fresh isolated session per run.
  *
- * Outbound: registry of active SSE connections keyed by session_id. When
- *   delivery.ts calls this adapter's sendMessage(), it pushes a formatted
- *   event into the matching SSE stream via sse-output.ts.
+ * Outbound: delivery.ts drains the sandbox session's messages_out and calls
+ *   deliver(). In 5.5a that is a logged no-op — the outbound row is already
+ *   persisted, so nothing is lost; the SSE push to the `simulator:<id>` topic
+ *   lands in 5.5b (STRATEGY.md §24.20).
  *
- * Session lifecycle:
- *   - 30s idle timeout on the sandbox container
- *   - 5min hard wall on total session duration (safety)
- *   - Session torn down after final `messages_out` of `kind='task'`
- *
- * See STRATEGY.md §7 ("portal channel (custom)").
- *
- * Phase 0 status: PLACEHOLDER. Implementation lands in Phase 4 (STRATEGY.md §V).
+ * Sub-milestone 5.5a (STRATEGY.md §24.19).
  */
-export {};
+import { log } from '../../log.js';
+import type { ChannelAdapter, ChannelSetup, InboundMessage, OutboundMessage } from '../adapter.js';
+import { registerChannelAdapter } from '../channel-registry.js';
+
+/**
+ * The messaging-group platform id for the public sandbox. Must match the row
+ * created by scripts/init-sandbox-group.ts EXACTLY: the host's onInbound
+ * forwards this string verbatim to routeInbound (no namespacing), so the
+ * messaging_groups lookup `(channel_type='portal', platform_id=<this>)` only
+ * resolves when both sides use the same literal.
+ */
+export const SANDBOX_PLATFORM_ID = 'sandbox';
+
+// Module-level state: the host hands us one ChannelSetup at startup; the HTTP
+// layer reaches submitSimulatorRun() to inject runs through it.
+let activeSetup: ChannelSetup | null = null;
+let connected = false;
+
+export function createPortalAdapter(): ChannelAdapter {
+  return {
+    name: 'portal',
+    channelType: 'portal',
+    // Threaded so each run's threadId keys a distinct per-thread session and
+    // the host does not collapse it to the channel.
+    supportsThreads: true,
+
+    async setup(config: ChannelSetup): Promise<void> {
+      activeSetup = config;
+      connected = true;
+      log.info('Portal channel adapter ready');
+    },
+
+    async teardown(): Promise<void> {
+      activeSetup = null;
+      connected = false;
+    },
+
+    isConnected(): boolean {
+      return connected;
+    },
+
+    async deliver(
+      platformId: string,
+      threadId: string | null,
+      _message: OutboundMessage,
+    ): Promise<string | undefined> {
+      // 5.5a: the SSE push to simulator:<id> lands in 5.5b. The outbound row is
+      // already persisted by delivery.ts, so this is not data loss — there is
+      // just no stream to push into yet.
+      log.debug('portal deliver (no-op until 5.5b)', { platformId, threadId });
+      return undefined;
+    },
+  };
+}
+
+/**
+ * Inject a simulator run as an inbound message on the sandbox messaging group.
+ * Called by the simulator orchestration. The run id becomes the threadId;
+ * per-thread session_mode gives each run a fresh isolated session.
+ *
+ * Throws if the adapter is not yet set up (host not started) — the caller
+ * (startSimulatorRun) translates that into a 503-shaped result.
+ */
+export function submitSimulatorRun(runId: string, prompt: string): void {
+  if (!activeSetup) {
+    throw new Error('portal channel adapter not initialized');
+  }
+  const message: InboundMessage = {
+    id: `sim-${runId}`,
+    kind: 'chat',
+    timestamp: new Date().toISOString(),
+    content: { text: prompt, sender: 'simulator', senderId: `portal:${SANDBOX_PLATFORM_ID}` },
+  };
+  // onInbound is fire-and-forget on the host side (it .catch()es routeInbound
+  // internally); we don't await it. Guard the sync call defensively.
+  try {
+    void activeSetup.onInbound(SANDBOX_PLATFORM_ID, runId, message);
+  } catch (err) {
+    log.error('portal submitSimulatorRun: onInbound threw', { runId, err });
+    throw err;
+  }
+}
+
+/** Test seam — reset module state between tests. */
+export function _resetPortalAdapter(): void {
+  activeSetup = null;
+  connected = false;
+}
+
+registerChannelAdapter('portal', { factory: createPortalAdapter });
