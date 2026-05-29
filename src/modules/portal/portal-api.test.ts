@@ -306,6 +306,27 @@ describe('GET /api/simulator/results/:id + /recent', () => {
   });
 });
 
+// ── POST /api/contact (5.6) ─────────────────────────────────────────────────
+
+describe('POST /api/contact', () => {
+  async function post(body: unknown): Promise<Response> {
+    return fetch(`${base}/api/contact`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: typeof body === 'string' ? body : JSON.stringify(body),
+    });
+  }
+
+  it('400 on missing required fields', async () => {
+    expect((await post({ name: 'A' })).status).toBe(400);
+  });
+
+  it('503 when no owner channel is wired (fresh DB has no career-pilot group)', async () => {
+    const res = await post({ name: 'Jane', email: 'jane@example.com', message: 'hi' });
+    expect(res.status).toBe(503);
+  });
+});
+
 // ── CORS + routing + error-safety ──────────────────────────────────────────
 
 describe('CORS + routing', () => {

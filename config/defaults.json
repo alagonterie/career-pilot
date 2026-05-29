@@ -72,7 +72,8 @@
     "simulator_idle_timeout_ms": 30000,
     "simulator_hard_wall_ms": 300000,
     "simulator_results_ttl_days": 30,
-    "simulator_recent_limit": 10
+    "simulator_recent_limit": 10,
+    "contact_message_max_chars": 4000
   },
   "system_modes": {
     "live_mode": false,

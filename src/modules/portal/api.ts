@@ -36,6 +36,7 @@ import { getActiveSessions, getRunningSessions } from '../../db/sessions.js';
 import { getConfig } from '../../get-config.js';
 import { log } from '../../log.js';
 
+import { relayContactSubmission, type ContactInput } from './contact-relay.js';
 import { getTelemetry } from './portkey-analytics.js';
 import {
   getRecentSimulatorRuns,
@@ -281,6 +282,29 @@ async function handleSimulatorStart(
   json(res, status, { error: result.error?.code ?? 'error', message: result.error?.message }, cors);
 }
 
+/** Contact relay (5.6) — POST /api/contact → owner channel. One-way; 200/400/503. */
+async function handleContact(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  cors: Record<string, string>,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch {
+    json(res, 400, { error: 'bad_request', message: 'invalid or oversized JSON body' }, cors);
+    return;
+  }
+  const input: ContactInput = body && typeof body === 'object' ? (body as ContactInput) : {};
+  const result = await relayContactSubmission(input);
+  if (result.ok) {
+    json(res, 200, { ok: true }, cors);
+    return;
+  }
+  const status = result.error?.code === 'BAD_ARGS' ? 400 : 503;
+  json(res, status, { error: result.error?.code ?? 'error', message: result.error?.message }, cors);
+}
+
 /** Shareable cached run for /simulator/results/:id (5.5c). 404 when absent/expired. */
 function handleSimulatorResult(res: http.ServerResponse, runId: string, cors: Record<string, string>): void {
   const row = getSimulatorResult(runId);
@@ -379,6 +403,7 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
     if (method === 'GET' && path === '/api/telemetry') return await handleTelemetry(res, cors);
     if (method === 'GET' && path === '/api/architecture') return handleArchitecture(res, cors);
     if (method === 'GET' && path === '/api/system-status') return handleSystemStatus(res, cors);
+    if (method === 'POST' && path === '/api/contact') return await handleContact(req, res, cors);
     if (method === 'POST' && path === '/api/simulator') return await handleSimulatorStart(req, res, cors);
     if (method === 'GET' && path === '/api/simulator/recent') return handleSimulatorRecent(res, cors);
     if (method === 'GET' && path.startsWith('/api/simulator/results/')) {
