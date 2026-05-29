@@ -3326,15 +3326,37 @@ Building the full batch engine now (state column + migration, a new scheduled tr
 - `container-runner.ts` spawn gate on `halted`/`killswitch`.
 - Proactive-trigger suppression: the cron/heartbeat enqueue sites skip when `pause_state !== 'active'`; reactive (direct message) always passes.
 
-**5.4b — kill-switch external tail (highest stakes; external-admin, not locally testable):**
-- `/killswitch` adds, after the local-effective steps (`setPauseState('killswitch')` + kill containers + spawn gate already blocks new ones): (3) OneCLI agent-token revoke, (4) Portkey budget→0. These are external admin calls with no local test surface (like 5.3's Portkey). **Each is best-effort with loud logging** — the local steps already halt the system; the external revokes are defense-in-depth, and recovery is the manual `scripts/recover-from-killswitch.sh` (RECOVERY.md). Requires an admin confirmation card (NanoClaw `ask_user_question`) before firing. If the OneCLI/Portkey admin clients aren't wired, the step logs `NOT_WIRED` and the operator falls back to the manual runbook — never a silent partial success.
+**5.4b — kill-switch (`/killswitch`): confirmation gate + local hard-stop + external-revocation seams.**
 
-**Definition of done (5.4a; 5.4b tracked separately):**
+The catastrophic control. Unlike 5.4a's commands, `/killswitch` **never fires on a single command** — it requires an admin confirmation card first, because recovery is deliberately manual (RECOVERY.md §3). Components:
+
+1. **Recognition.** `command-gate.ts` adds `/killswitch` to `CONTROL_COMMANDS` (admin-gated → `{action:'control'}`; non-admin → `deny`). The router special-cases it: instead of `executeControlCommand`, it calls `requestKillswitchApproval` so the destructive path always passes through a confirmation card.
+
+2. **Confirmation card.** Reuse the host-side approvals primitive (`src/modules/approvals/`): `requestApproval({ action: 'killswitch', payload: { reason, changedBy }, title, question })`. The primitive ships the standard two-button Approve/Reject card (we do not fork it for custom `YES, KILL`/`Cancel` labels); the **title makes the severity unmistakable** (`⚠ KILLSWITCH — revokes credentials, requires manual SSH recovery`). The approvals module's response handler is already loaded at startup (`src/modules/index.ts`) and dispatches the click to the handler registered for `'killswitch'`. There is precedent for host-initiated `requestApproval` in `src/cli/dispatch.ts`.
+
+3. **Execution on approve.** `kill-switch.ts` registers `registerApprovalHandler('killswitch', …)` at import (it's statically imported by the router, so it registers at startup). On approve, `executeKillswitch(reason, changedBy, deps)` runs the **local-effective steps** — `setPauseState('killswitch', reason)` + `killContainer()` for every running session (new spawns are already blocked by the 5.4a spawn gate) — then the **external tail** (below). It returns a structured result `{ state, killed, external: ExternalRevocationResult[] }`.
+
+4. **External-revocation seams (NOT_WIRED today).** `src/modules/portal/killswitch-external.ts`: `revokeOneCliAgentTokens(agentIds)` and `zeroPortkeyBudget()`. **Verified 2026-05-29 against primary sources:** the `@onecli-sh/sdk` public surface is `getContainerConfig` + `applyContainerConfig` only — *there is no token-revoke method* — and the Portkey client we have (`portkey-analytics.ts`) is analytics-only (budget is a separate admin API). So both seams are **NOT_WIRED today**: each detects the absent admin client/credential, logs a loud `NOT_WIRED` line, and returns `{ wired:false, ok:false, detail }` — **never throws, never a silent partial success**. The local hard-stop (state + kill + spawn gate) already halts the system; these are defense-in-depth for the credential-compromise case and become real at deploy (OneCLI Cloud admin API / `onecli` CLI; Portkey admin key). The result reply states which steps were `NOT_WIRED` and that recovery is manual.
+
+5. **Reply routing under killswitch.** The approval response handler's `notify`/`wakeContainer(session)` route through the agent container — but under `killswitch` the spawn gate refuses to wake it, so the owner would never see the result via the agent. The `'killswitch'` handler therefore delivers its result **directly to the approver's DM** (resolve via `ensureUserDm(userId)` + `getDeliveryAdapter().deliver(...)`, the same path `requestApproval` uses), best-effort.
+
+6. **Recovery primitive.** `kill-switch.ts` `clearKillswitch(changedBy)` = `setPauseState('active')` + `setLiveMode(false)` (always returns to shadow). `scripts/recover-from-killswitch.ts` (a testable TS entry) calls it and prints the manual external re-issue steps; `scripts/recover-from-killswitch.sh` becomes a thin wrapper that runs the TS entry plus the VM-only steps (service restart, etc., which land at deploy). The OneCLI/Portkey re-issue stays a documented manual step while the admin APIs are NOT_WIRED.
+
+**Testable now** (DoD below): command recognition, `executeKillswitch` local steps + external-seam invocation (injected deps), the NOT_WIRED seam contract (no throw, loud log, `wired:false`), `clearKillswitch`. **Deferred to deploy** (no local surface, like 5.3's Portkey): the real OneCLI revoke + Portkey budget call, the card-deliver→click→dispatch round-trip (relies on the delivery adapter + permissions, exercised by their own suites), and the `.sh` VM orchestration.
+
+**Definition of done (5.4a):**
 1. `setPauseState`/`setLiveMode` UPSERT `system_modes` and the readers (5.1) reflect the change. (Hot-reload row deferred — see the deferral note above.)
 2. `gateCommand` returns `{action:'control'}` for `/pause` `/resume` `/halt` from an admin, `deny` for a non-admin; normal messages still `pass`.
 3. `executeControlCommand` transitions pause_state correctly and `/halt` kills running containers; returns the right confirmation text.
 4. `wakeContainer` refuses to spawn under `halted`/`killswitch` (returns false, logs); spawns normally under `active`.
-5. Vitest covers writers + hot-reload row + command classification + control execution + the spawn gate (mock/seed sessions). Full host suite + host tsc clean. No container change.
+5. Vitest covers writers + command classification + control execution + the spawn gate (mock/seed sessions). Full host suite + host tsc clean. No container change.
+
+**Definition of done (5.4b):**
+1. `gateCommand` recognizes `/killswitch` (control for an admin, deny for a non-admin); the router routes it through `requestKillswitchApproval` (confirmation card), never executing it inline.
+2. `executeKillswitch` sets `pause_state='killswitch'`, kills every running container, and invokes both external seams; returns a result enumerating each seam's `wired`/`ok` status.
+3. `revokeOneCliAgentTokens` / `zeroPortkeyBudget` return `{wired:false}` + log `NOT_WIRED` today, never throw; the killswitch result + reply surface that honestly (no silent partial success).
+4. `clearKillswitch` returns the system to `pause_state='active'` + `live_mode=false`; `scripts/recover-from-killswitch.ts` calls it (no longer a placeholder).
+5. Vitest covers `/killswitch` recognition, `executeKillswitch` (seeded sessions + injected seams/kill), the NOT_WIRED contract, and `clearKillswitch`. Full host suite + host tsc clean. No container change.
 
 ---
 

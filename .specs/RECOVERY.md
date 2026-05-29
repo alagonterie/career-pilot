@@ -72,9 +72,9 @@ Queued webhook events (recruiter replies that arrived during the pause) fire in 
 
 ### Triggering
 
-1. In Telegram: `/killswitch`. The bot posts a confirmation card: `⚠ KILLSWITCH — this will revoke credentials and require manual recovery. Confirm? [YES, KILL] [Cancel]`
-2. Tap `YES, KILL`.
-3. The bot replies: `🛑 Killswitch engaged. All active sessions killed. OneCLI agent tokens revoked. Portkey budget set to 0. Portal serving static "paused for review" page. Recovery requires SSH.`
+1. In Telegram: `/killswitch`. The bot posts a confirmation card titled `⚠ KILLSWITCH — revokes credentials and requires manual SSH recovery` with **Approve / Reject** buttons (the standard host approval card; it is never executed inline).
+2. Tap `Approve`.
+3. The bot replies (directly to your DM — the agent container is killed, so the reply does not route through it): `🛑 Killswitch engaged. All active sessions killed. <external-revocation status>. Recovery requires SSH.`
 
 What just happened:
 - All running containers killed.
@@ -82,6 +82,8 @@ What just happened:
 - Portkey's rate limit / budget on the career-pilot AI Providers flipped to 0 → no LLM calls succeed regardless of credential.
 - A flag is written to `system_modes` table marking the killswitch state.
 - The Cloudflare Worker reads this on every request and serves a static `Paused for review — the candidate` page instead of the normal portal.
+
+> **Implementation status (2026-05-29, Sub-milestone 5.4b):** The **local hard-stop is real** — `pause_state='killswitch'` is written, every running container is killed, and the spawn gate blocks all new containers, so no LLM call or external action can originate. The **external revocations (OneCLI token revoke, Portkey budget→0) are NOT_WIRED** until deploy: the `@onecli-sh/sdk` has no revoke method and the Portkey admin/budget API is not configured. When unwired, each step logs a loud `NOT_WIRED` line and the bot's reply says so — it will **not** claim a revoke it did not perform. Treat credentials as *potentially still valid* after a killswitch until you have manually rotated them (see Recovery below), even though nothing in the system can use them while halted. The static-page Worker is also deploy-phase.
 
 ### Recovery
 
