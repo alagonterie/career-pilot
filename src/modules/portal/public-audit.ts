@@ -13,8 +13,13 @@
  * mirror runs.
  *
  * Categories beyond 'funnel' are deferred to Sub-milestone 4.2+.
- * Retroactive resanitization when applications.public_state flips
- * obfuscated → public is deferred to Sub-milestone 4.3.
+ *
+ * Sub-milestone 4.3 adds `resanitizeApplicationAuditTrail` (below): when an
+ * application's obfuscation policy changes (public_state flip, or an edit to
+ * obfuscated_label / company_name / company_aliases), the past audit rows
+ * derived from that application's funnel_events are deleted and re-mirrored
+ * from the still-canonical `funnel_events` truth. The link is
+ * `public_audit_trail.source_funnel_event_id` (migration 122).
  */
 import type Database from 'better-sqlite3';
 
@@ -68,7 +73,15 @@ interface JoinedRow {
   public_state: string | null;
 }
 
-export function mirrorFunnelEvent(db: Database.Database, eventId: string): void {
+/**
+ * Outcome of a single mirror attempt. Returned so callers (notably
+ * resanitizeApplicationAuditTrail) can count rows actually written vs
+ * dropped by the defense-in-depth scan. handleRecordFunnelEvent ignores
+ * the return — the mirror is best-effort there.
+ */
+export type MirrorOutcome = 'inserted' | 'dropped' | 'skipped' | 'error';
+
+export function mirrorFunnelEvent(db: Database.Database, eventId: string): MirrorOutcome {
   let row: JoinedRow | undefined;
   try {
     row = db
@@ -82,19 +95,19 @@ export function mirrorFunnelEvent(db: Database.Database, eventId: string): void 
       .get(eventId) as JoinedRow | undefined;
   } catch (err) {
     log.error('mirrorFunnelEvent: load failed', { eventId, err });
-    return;
+    return 'error';
   }
 
   if (!row) {
     log.warn('mirrorFunnelEvent: funnel_event not found', { eventId });
-    return;
+    return 'skipped';
   }
 
   // application_id is NOT NULL on funnel_events (migration 101 FK), but the
   // LEFT JOIN can produce null application cols if the FK target is gone
   // (shouldn't happen given the constraint). Skip defensively.
   if (!row.application_id || !row.company_name) {
-    return;
+    return 'skipped';
   }
 
   const payloadText = `${row.kind} ${row.from_status ?? ''}→${row.to_status ?? ''} ${row.payload}`;
@@ -122,7 +135,7 @@ export function mirrorFunnelEvent(db: Database.Database, eventId: string): void 
             eventId,
             leaked: company_name,
           });
-          return;
+          return 'dropped';
         }
       }
     } catch (err) {
@@ -152,8 +165,9 @@ export function mirrorFunnelEvent(db: Database.Database, eventId: string): void 
 
   try {
     db.prepare(
-      `INSERT INTO public_audit_trail (id, ts, category, application_ref, summary, details_json)
-       VALUES (@id, @ts, @category, @application_ref, @summary, @details_json)`,
+      `INSERT INTO public_audit_trail
+         (id, ts, category, application_ref, summary, details_json, source_funnel_event_id)
+       VALUES (@id, @ts, @category, @application_ref, @summary, @details_json, @source_funnel_event_id)`,
     ).run({
       id: generateId(),
       ts: new Date().toISOString(),
@@ -161,8 +175,11 @@ export function mirrorFunnelEvent(db: Database.Database, eventId: string): void 
       application_ref: applicationRef,
       summary,
       details_json: details,
+      source_funnel_event_id: row.id,
     });
   } catch (err) {
     log.error('mirrorFunnelEvent: INSERT failed', { eventId, err });
+    return 'error';
   }
+  return 'inserted';
 }

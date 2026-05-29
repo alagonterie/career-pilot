@@ -28,6 +28,7 @@ import { migration109 } from './109-disallowed-tools.js';
 import { migration110 } from './110-job-leads.js';
 import { migration120 } from './120-job-leads-killer-match.js';
 import { migration121 } from './121-funnel-curator.js';
+import { migration122 } from './122-audit-source-fe.js';
 
 export interface Migration {
   version: number;
@@ -63,6 +64,7 @@ const migrations: Migration[] = [
   migration110,
   migration120,
   migration121,
+  migration122,
 ];
 
 export function runMigrations(db: Database.Database): void {
