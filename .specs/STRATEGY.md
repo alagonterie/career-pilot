@@ -3435,6 +3435,33 @@ The catastrophic control. Unlike 5.4a's commands, `/killswitch` **never fires on
 
 ---
 
+#### 24.21 Sub-milestone 5.5c — results cache + run lifecycle
+
+**What this is.** The final 5.5 step: make a run *durable* (the shareable `/simulator/results/:id` page + the "recent runs" fallback when the sandbox is disabled, PORTAL §5.3) and *bounded* (tear the sandbox session down promptly so a public visitor can't pin a container slot). Host-only — **no container change**.
+
+**Run accumulation + finalize.** `simulator.ts` keeps an in-memory accumulator per run (created in `startSimulatorRun` with company/role/jd + `startedAt`). The portal adapter's `deliver()` already sees every outbound row (5.5b) — it also calls `recordSimulatorOutput(runId, kind, content)`, which: captures `cost_usd` from `kind:'trace'` `result` events; appends `kind:'chat'`/`'task'` text to the run's output; and on the **final `kind:'task'`** (the orchestrator's wrap-up — the §7 completion signal) calls `finalizeSimulatorRun(runId, 'complete')`.
+
+`finalizeSimulatorRun` (best-effort, never throws, never blocks delivery): inserts a `simulator_runs` row (`id=runId`, `visitor_company`/`visitor_role`/`jd_excerpt`, the accumulated output, `total_cost_cents` from the trace result, `total_latency_ms = now − startedAt`, `cache_hit_count`, `shareable=1`, `expires_at = now + simulator_results_ttl_days`), **sweeps expired rows** (`DELETE … WHERE expires_at < now` — sweep-on-write, no timer), **tears down the session**, clears the accumulator + hard-wall timer.
+
+**Output structure note (honest scope).** The two-panel RESUME/OUTREACH split (PORTAL §5.3) depends on the sandbox persona emitting distinguishable sections, which isn't pinned yet. 5.5c stores the accumulated final output text (best-effort split into `tailored_resume`/`outreach_draft` when a marker is present, else the whole text in `tailored_resume`); the structured split is refined alongside the sandbox persona + frontend. The row is sufficient now for the share URL + recent-runs fallback.
+
+**Teardown.** `IDLE_TIMEOUT` is host-wide (30 min) — too long to leave a finished public sandbox container holding one of the ~4 concurrent slots. So: on finalize, resolve the session (`getAgentGroupByFolder('career-pilot-sandbox')` + `getMessagingGroupByPlatform('portal','sandbox')` + `findSessionForAgent(ag, mg, runId)`) and `killContainer(session.id, 'simulator-complete')` (guarded — a no-op when no session/container is found, so tests don't need a live runtime). A per-run **hard-wall** timer (`simulator_hard_wall_ms`, started at run start, cleared on finalize) catches a stalled run: on fire it finalizes with whatever partial output exists + kills. The spec's separate "30 s idle" is subsumed — a completed run is killed immediately; a stalled one is bounded by the hard wall.
+
+**What lands:**
+1. **`src/modules/portal/simulator.ts`** — the accumulator + `recordSimulatorOutput`, `finalizeSimulatorRun`, `getSimulatorResult(id)`, `getRecentSimulatorRuns(limit)`, `sweepExpiredSimulatorRuns()`, and the guarded session teardown; `startSimulatorRun` registers the accumulator + hard-wall timer.
+2. **`src/channels/portal/adapter.ts`** — `deliver()` also calls `recordSimulatorOutput(threadId, message.kind, message.content)` (alongside the 5.5b SSE push).
+3. **`src/modules/portal/api.ts`** — `GET /api/simulator/results/:id` (404 when absent/expired) + `GET /api/simulator/recent` (last N shareable non-expired). §10's route list gains `/api/simulator/recent`.
+4. **`config/defaults.json`** — `simulator_results_ttl_days` (30), `simulator_recent_limit` (10). (`simulator_hard_wall_ms` was seeded in 5.5a.)
+
+**Definition of done.**
+1. On the final `kind:'task'`, `finalizeSimulatorRun` persists a `simulator_runs` row (metadata + output + cost + latency + `expires_at = +ttl`) and clears the accumulator + hard-wall timer.
+2. Session teardown resolves the run's session and calls `killContainer` (guarded no-op when none found); the hard-wall timer finalizes + kills a run that exceeds `simulator_hard_wall_ms`.
+3. `GET /api/simulator/results/:id` returns a non-expired run, `404` when absent/expired; `GET /api/simulator/recent` lists the last `simulator_recent_limit` shareable non-expired runs.
+4. Expired rows are swept on finalize; persistence is best-effort (never throws, never blocks the delivery path).
+5. Vitest (host): finalize-persists-row + results/recent endpoints + sweep-evicts-expired + teardown is a guarded no-op without a session. Full host suite + host tsc clean. No container change.
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
