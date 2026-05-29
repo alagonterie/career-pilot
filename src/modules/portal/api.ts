@@ -19,8 +19,14 @@
  * + AOP mTLS) drops into `checkAuth()` at the deploy phase. Safe pre-deploy
  * because every served row is sanitized public data.
  *
- * Later sub-milestones add: SSE (/api/activity/stream, 5.2), telemetry +
- * architecture (5.3), simulator streams (5.5). See STRATEGY.md §10 + §24.15.
+ * Sub-milestone 5.5a (STRATEGY.md §24.19) adds the simulator entry point:
+ *   POST /api/simulator   { company, role, jd?, public_url? } → { simulation_id }
+ * which spawns a per-thread sandbox session via the portal channel adapter.
+ * The simulator SSE stream (/api/simulator/:id/stream) + results endpoint land
+ * in 5.5b/5.5c.
+ *
+ * Later sub-milestones add: telemetry/architecture (done, 5.3), simulator
+ * streams (5.5b), results (5.5c). See STRATEGY.md §10 + §24.15 + §24.19.
  */
 import http from 'http';
 
@@ -31,6 +37,7 @@ import { getConfig } from '../../get-config.js';
 import { log } from '../../log.js';
 
 import { getTelemetry } from './portkey-analytics.js';
+import { startSimulatorRun, type SimulatorInput } from './simulator.js';
 import { addActivityClient, removeActivityClient, stopBroadcaster } from './sse-broadcaster.js';
 import { getSystemStatus } from './system-modes.js';
 
@@ -58,7 +65,7 @@ function corsHeaders(req: http.IncomingMessage): Record<string, string> {
     return {
       'Access-Control-Allow-Origin': origin,
       Vary: 'Origin',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     };
   }
@@ -88,6 +95,35 @@ function daysSince(iso: string | null, now: number): number | null {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return null;
   return Math.max(0, Math.floor((now - t) / MS_PER_DAY));
+}
+
+const MAX_BODY_BYTES = 64 * 1024;
+
+/** Read + JSON-parse a request body (size-capped). Rejects on overflow/bad JSON. */
+function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on('data', (c: Buffer) => {
+      size += c.length;
+      if (size > MAX_BODY_BYTES) {
+        reject(new Error('body too large'));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on('end', () => {
+      const raw = Buffer.concat(chunks).toString('utf8').trim();
+      if (!raw) return resolve({});
+      try {
+        resolve(JSON.parse(raw));
+      } catch (err) {
+        reject(err);
+      }
+    });
+    req.on('error', reject);
+  });
 }
 
 // ── route handlers ───────────────────────────────────────────────────────
@@ -212,6 +248,28 @@ function handleArchitecture(res: http.ServerResponse, cors: Record<string, strin
   );
 }
 
+async function handleSimulatorStart(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  cors: Record<string, string>,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch {
+    json(res, 400, { error: 'bad_request', message: 'invalid or oversized JSON body' }, cors);
+    return;
+  }
+  const input: SimulatorInput = body && typeof body === 'object' ? (body as SimulatorInput) : {};
+  const result = startSimulatorRun(input);
+  if (result.ok) {
+    json(res, 200, { simulation_id: result.simulation_id }, cors);
+    return;
+  }
+  const status = result.error?.code === 'BAD_ARGS' ? 400 : 503;
+  json(res, status, { error: result.error?.code ?? 'error', message: result.error?.message }, cors);
+}
+
 function handleActivityStream(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -272,6 +330,7 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
     if (method === 'GET' && path === '/api/telemetry') return await handleTelemetry(res, cors);
     if (method === 'GET' && path === '/api/architecture') return handleArchitecture(res, cors);
     if (method === 'GET' && path === '/api/system-status') return handleSystemStatus(res, cors);
+    if (method === 'POST' && path === '/api/simulator') return await handleSimulatorStart(req, res, cors);
 
     json(res, 404, { error: 'not_found', path }, cors);
   } catch (err) {

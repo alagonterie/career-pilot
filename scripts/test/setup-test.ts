@@ -51,6 +51,7 @@ import {
 import { runMigrations } from '../../src/db/migrations/index.js';
 import { initGroupFilesystem } from '../../src/group-init.js';
 import { upsertUser } from '../../src/modules/permissions/db/users.js';
+import { ensureSandboxGroup, SANDBOX_FOLDER } from '../init-sandbox-group.js';
 import type { AgentGroup, MessagingGroup } from '../../src/types.js';
 
 const CLI_CHANNEL = 'cli';
@@ -257,6 +258,11 @@ async function main(): Promise<void> {
   const ag = ensureAgentGroup();
   initGroupFilesystem(ag);
   ensureCliWiring(ag);
+
+  // Public sandbox group + portal channel wiring (Sub-milestone 5.5a) so the
+  // simulator path is exercisable in e2e. Idempotent.
+  const sandbox = ensureSandboxGroup();
+  console.log(`  sandbox group ready: ${sandbox.id} (${SANDBOX_FOLDER}) + portal/sandbox wiring`);
 
   if (args.seedProfile) {
     seedCandidateProfile();

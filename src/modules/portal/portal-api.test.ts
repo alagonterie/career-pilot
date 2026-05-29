@@ -12,6 +12,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { closeDb, getDb, initTestDb } from '../../db/connection.js';
 import { runMigrations } from '../../db/migrations/index.js';
+import type { ChannelSetup, InboundMessage } from '../../channels/adapter.js';
+import { _resetPortalAdapter, createPortalAdapter } from '../../channels/portal/adapter.js';
 
 import { startPortalApi, stopPortalApi } from './api.js';
 
@@ -214,6 +216,61 @@ describe('GET /api/system-status', () => {
       pause_reason: null,
       backend: 'online',
     });
+  });
+});
+
+// ── POST /api/simulator (5.5a) ─────────────────────────────────────────────
+
+describe('POST /api/simulator', () => {
+  let inbound: Array<[string, string | null, InboundMessage]>;
+
+  beforeEach(async () => {
+    inbound = [];
+    const setup: ChannelSetup = {
+      onInbound: (platformId, threadId, message) => {
+        inbound.push([platformId, threadId, message]);
+      },
+      onInboundEvent: () => {},
+      onMetadata: () => {},
+      onAction: () => {},
+    };
+    await createPortalAdapter().setup(setup);
+  });
+
+  afterEach(() => _resetPortalAdapter());
+
+  async function post(body: unknown): Promise<Response> {
+    return fetch(`${base}/api/simulator`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: typeof body === 'string' ? body : JSON.stringify(body),
+    });
+  }
+
+  it('400 on missing company/role, with no session injected', async () => {
+    const res = await post({ role: 'SWE' });
+    expect(res.status).toBe(400);
+    expect(inbound).toHaveLength(0);
+  });
+
+  it('400 on an invalid JSON body', async () => {
+    const res = await post('{ not json');
+    expect(res.status).toBe(400);
+    expect(inbound).toHaveLength(0);
+  });
+
+  it('200 + simulation_id and injects exactly one sandbox inbound on valid input', async () => {
+    const res = await post({ company: 'Acme', role: 'Senior SWE', jd: 'Build things' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { simulation_id: string };
+    expect(body.simulation_id).toMatch(/^sb-/);
+
+    expect(inbound).toHaveLength(1);
+    const [platformId, threadId, message] = inbound[0];
+    expect(platformId).toBe('sandbox');
+    expect(threadId).toBe(body.simulation_id);
+    expect(message.kind).toBe('chat');
+    expect((message.content as { text: string }).text).toContain('Acme');
   });
 });
 

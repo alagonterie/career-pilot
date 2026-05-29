@@ -76,6 +76,38 @@ function warnUnknownStatus(status: unknown, where: string): void {
   }
 }
 
+/**
+ * Owner-only gate for private career_pilot actions — the host-side half of the
+ * sandbox's two-layer isolation (STRATEGY.md §24.19). Layer 1 is the sandbox
+ * container's `disallowedTools` list, which removes these tools from the SDK
+ * context; this is Layer 2: even if that list is ever misconfigured, a
+ * non-owner session (any agent group whose folder !== 'career-pilot' — i.e.
+ * career-pilot-sandbox) can never read or write candidate data. Writes a
+ * FORBIDDEN response and returns true when the caller is not the owner group;
+ * returns false (caller proceeds) otherwise. Applied at the single
+ * registration chokepoint in index.ts so every action is guarded by
+ * construction.
+ */
+export function denyIfNotOwner(
+  action: string,
+  content: Record<string, unknown>,
+  session: Session,
+  inDb: Database.Database,
+): boolean {
+  const group = getAgentGroup(session.agent_group_id);
+  if (!group || group.folder !== 'career-pilot') {
+    writeResponse(inDb, reqId(content), {
+      ok: false,
+      error: {
+        code: 'FORBIDDEN',
+        message: `${action} is not available in this agent group (sandbox sessions cannot access private career-pilot data).`,
+      },
+    });
+    return true;
+  }
+  return false;
+}
+
 // ── update_profile_field ───────────────────────────────────────────────────
 
 const PROFILE_FIELDS = new Set([

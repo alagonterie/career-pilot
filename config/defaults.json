@@ -65,7 +65,12 @@
     "portal_sse_tail_interval_ms": 1000,
     "portal_sse_keepalive_ms": 15000,
     "portal_telemetry_cache_ms": 30000,
-    "portal_architecture_cache_ms": 5000
+    "portal_architecture_cache_ms": 5000,
+    "simulator_enabled": true,
+    "simulator_max_turns": 30,
+    "simulator_max_budget_usd": 0.1,
+    "simulator_idle_timeout_ms": 30000,
+    "simulator_hard_wall_ms": 300000
   },
   "system_modes": {
     "live_mode": false,
