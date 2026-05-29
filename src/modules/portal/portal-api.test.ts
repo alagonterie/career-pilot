@@ -274,6 +274,38 @@ describe('POST /api/simulator', () => {
   });
 });
 
+// ── simulator results + recent (5.5c) ──────────────────────────────────────
+
+describe('GET /api/simulator/results/:id + /recent', () => {
+  function seedRun(id: string, company: string, expiresAt: string | null): void {
+    getDb()
+      .prepare(
+        `INSERT INTO simulator_runs (id, ts, visitor_company, visitor_role, tailored_resume, shareable, expires_at)
+         VALUES (?, ?, ?, 'SWE', 'bullets', 1, ?)`,
+      )
+      .run(id, new Date().toISOString(), company, expiresAt);
+  }
+
+  it('returns 404 for an absent run and 200 for a live one', async () => {
+    expect((await fetch(`${base}/api/simulator/results/sb-missing`)).status).toBe(404);
+
+    seedRun('sb-live', 'Acme', new Date(Date.now() + 86_400_000).toISOString());
+    const res = await fetch(`${base}/api/simulator/results/sb-live`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { id: string; visitor_company: string };
+    expect(body.id).toBe('sb-live');
+    expect(body.visitor_company).toBe('Acme');
+  });
+
+  it('lists recent shareable runs', async () => {
+    seedRun('sb-a', 'Globex', new Date(Date.now() + 86_400_000).toISOString());
+    const body = (await (await fetch(`${base}/api/simulator/recent`)).json()) as {
+      runs: Array<{ visitor_company: string }>;
+    };
+    expect(body.runs.map((r) => r.visitor_company)).toContain('Globex');
+  });
+});
+
 // ── CORS + routing + error-safety ──────────────────────────────────────────
 
 describe('CORS + routing', () => {

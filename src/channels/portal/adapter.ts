@@ -37,6 +37,18 @@ export const SANDBOX_PLATFORM_ID = 'sandbox';
 let activeSetup: ChannelSetup | null = null;
 let connected = false;
 
+/**
+ * Optional sink for outbound rows of an active run, registered by the simulator
+ * module (5.5c) to accumulate output → persist to simulator_runs. Decoupled via
+ * a setter (rather than importing simulator.ts here) so there is no import cycle
+ * — simulator.ts already imports this module for submitSimulatorRun.
+ */
+type SimulatorOutputSink = (runId: string, kind: string, content: unknown) => void;
+let outputSink: SimulatorOutputSink | null = null;
+export function setSimulatorOutputSink(sink: SimulatorOutputSink | null): void {
+  outputSink = sink;
+}
+
 export function createPortalAdapter(): ChannelAdapter {
   return {
     name: 'portal',
@@ -71,6 +83,8 @@ export function createPortalAdapter(): ChannelAdapter {
       // when no client is watching (the row is still persisted by delivery.ts).
       if (threadId) {
         pushSimulatorEvent(threadId, message.kind, message.content);
+        // 5.5c: feed the run accumulator (persist on completion). Best-effort.
+        outputSink?.(threadId, message.kind, message.content);
       } else {
         log.debug('portal deliver: no threadId, dropping', { platformId, kind: message.kind });
       }
