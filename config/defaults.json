@@ -59,7 +59,9 @@
     "funnel_curator_skip_if_no_deltas": true,
     "close_detection_enabled": true,
     "close_detection_cron": "0 6 * * *",
-    "close_detection_threshold_days": 14
+    "close_detection_threshold_days": 14,
+    "portal_api_port": 3001,
+    "portal_cors_origins": ["http://localhost:3000"]
   },
   "system_modes": {
     "live_mode": false,

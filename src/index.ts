@@ -59,6 +59,7 @@ import './modules/index.js';
 import './cli/commands/index.js';
 import './cli/delivery-action.js';
 import { startCliServer, stopCliServer } from './cli/socket-server.js';
+import { startPortalApi, stopPortalApi } from './modules/portal/api.js';
 
 import type { ChannelAdapter, ChannelSetup } from './channels/adapter.js';
 import { initChannelAdapters, teardownChannelAdapters, getChannelAdapter } from './channels/channel-registry.js';
@@ -177,6 +178,9 @@ async function main(): Promise<void> {
   // 7. Start the `ncl` CLI socket server (data/ncl.sock).
   await startCliServer();
 
+  // 8. Start the public portal HTTP API (api.hire.<DOMAIN> via Tunnel).
+  await startPortalApi();
+
   log.info('NanoClaw running');
 }
 
@@ -193,6 +197,7 @@ async function shutdown(signal: string): Promise<void> {
   stopDeliveryPolls();
   stopHostSweep();
   await stopCliServer();
+  await stopPortalApi();
   try {
     await teardownChannelAdapters();
   } finally {
