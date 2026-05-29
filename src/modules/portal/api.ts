@@ -25,9 +25,12 @@
 import http from 'http';
 
 import { getDb } from '../../db/connection.js';
+import { countRunningContainers } from '../../container-runtime.js';
+import { getActiveSessions, getRunningSessions } from '../../db/sessions.js';
 import { getConfig } from '../../get-config.js';
 import { log } from '../../log.js';
 
+import { getTelemetry } from './portkey-analytics.js';
 import { addActivityClient, removeActivityClient, stopBroadcaster } from './sse-broadcaster.js';
 import { getSystemStatus } from './system-modes.js';
 
@@ -157,6 +160,58 @@ function handleSystemStatus(res: http.ServerResponse, cors: Record<string, strin
   json(res, 200, getSystemStatus(), cors);
 }
 
+async function handleTelemetry(res: http.ServerResponse, cors: Record<string, string>): Promise<void> {
+  json(res, 200, await getTelemetry(), cors);
+}
+
+// Short cache around the (blocking) `docker ps` call so repeated /api/architecture
+// hits don't stall the event loop. Sessions are a cheap DB read — computed fresh.
+let dockerCache: { at: number; value: number | null } | null = null;
+
+function countRunningContainersCached(): number | null {
+  let ttl = 5000;
+  try {
+    ttl = getConfig<number>(getDb(), 'portal_architecture_cache_ms', 5000);
+  } catch {
+    ttl = 5000;
+  }
+  if (dockerCache && Date.now() - dockerCache.at < ttl) return dockerCache.value;
+  const value = countRunningContainers();
+  dockerCache = { at: Date.now(), value };
+  return value;
+}
+
+function handleArchitecture(res: http.ServerResponse, cors: Record<string, string>): void {
+  const active = getActiveSessions().length;
+  const running = getRunningSessions().length;
+  const containerCount = countRunningContainersCached();
+
+  let capacityMax = 4;
+  let memoryMbEach = 512;
+  try {
+    capacityMax = getConfig<number>(getDb(), 'container_max_concurrent', 4);
+    memoryMbEach = getConfig<number>(getDb(), 'container_memory_mb', 512);
+  } catch {
+    // defaults
+  }
+
+  json(
+    res,
+    200,
+    {
+      sessions: { active, running },
+      containers: {
+        running: containerCount,
+        capacity_max: capacityMax,
+        memory_mb_each: memoryMbEach,
+        runtime: containerCount === null ? 'down' : 'up',
+      },
+      backend: 'online',
+    },
+    cors,
+  );
+}
+
 function handleActivityStream(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -191,7 +246,7 @@ function handleActivityStream(
 
 // ── request router ───────────────────────────────────────────────────────
 
-function requestHandler(req: http.IncomingMessage, res: http.ServerResponse): void {
+async function requestHandler(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   const cors = corsHeaders(req);
   try {
     const method = req.method || 'GET';
@@ -214,6 +269,8 @@ function requestHandler(req: http.IncomingMessage, res: http.ServerResponse): vo
     if (method === 'GET' && path === '/api/activity/stream')
       return handleActivityStream(req, res, url, cors);
     if (method === 'GET' && path === '/api/activity') return handleActivity(url, res, cors);
+    if (method === 'GET' && path === '/api/telemetry') return await handleTelemetry(res, cors);
+    if (method === 'GET' && path === '/api/architecture') return handleArchitecture(res, cors);
     if (method === 'GET' && path === '/api/system-status') return handleSystemStatus(res, cors);
 
     json(res, 404, { error: 'not_found', path }, cors);

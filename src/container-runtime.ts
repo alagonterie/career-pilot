@@ -88,3 +88,22 @@ export function cleanupOrphans(): void {
     log.warn('Failed to clean up orphaned containers', { err });
   }
 }
+
+/**
+ * Count this install's running containers (for the portal /api/architecture
+ * panel). Returns `null` when the container runtime is unreachable so the
+ * caller can render a graceful "runtime down" state (PORTAL §10) rather than
+ * erroring. Scoped by the install label like cleanupOrphans.
+ */
+export function countRunningContainers(): number | null {
+  try {
+    const output = execSync(
+      `${CONTAINER_RUNTIME_BIN} ps --filter label=${CONTAINER_INSTALL_LABEL} --format '{{.Names}}'`,
+      { stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf-8', timeout: 5000 },
+    );
+    return output.trim().split('\n').filter(Boolean).length;
+  } catch (err) {
+    log.warn('countRunningContainers failed (runtime unavailable?)', { err });
+    return null;
+  }
+}
