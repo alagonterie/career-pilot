@@ -61,7 +61,9 @@
     "close_detection_cron": "0 6 * * *",
     "close_detection_threshold_days": 14,
     "portal_api_port": 3001,
-    "portal_cors_origins": ["http://localhost:3000"]
+    "portal_cors_origins": ["http://localhost:3000"],
+    "portal_sse_tail_interval_ms": 1000,
+    "portal_sse_keepalive_ms": 15000
   },
   "system_modes": {
     "live_mode": false,
