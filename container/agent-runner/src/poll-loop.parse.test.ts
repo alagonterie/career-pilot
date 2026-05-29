@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from 'bun:test';
 
-import { parseAgentMessages, detectAgentTextEmission } from './poll-loop.js';
+import { parseAgentMessages, detectToolCallTextEmission } from './poll-loop.js';
 
 describe('parseAgentMessages — strict path', () => {
   it('parses a single complete block, body trimmed', () => {
@@ -123,12 +123,12 @@ describe('parseAgentMessages — no-blocks path', () => {
   });
 });
 
-describe('detectAgentTextEmission — GLM <Agent>-text failure (§24.13)', () => {
-  it('detects a self-closing <Agent> with subagent_type + prompt (the observed failure)', () => {
+describe('detectToolCallTextEmission — GLM tool-call-as-text failure (§24.13)', () => {
+  it('detects a self-closing <Agent> with subagent_type + prompt (the observed delegation failure)', () => {
     const text =
       'I\'ll research Anthropic for you now.\n\n' +
       '<Agent subagent_type="research-company" prompt="Research Anthropic for a Staff Backend Engineer." />';
-    const r = detectAgentTextEmission(text);
+    const r = detectToolCallTextEmission(text);
     expect(r).toHaveLength(1);
     expect(r[0].tool).toBe('Agent');
     expect(r[0].subagentType).toBe('research-company');
@@ -136,49 +136,68 @@ describe('detectAgentTextEmission — GLM <Agent>-text failure (§24.13)', () =>
   });
 
   it('detects a non-self-closing open tag', () => {
-    const r = detectAgentTextEmission('<Agent subagent_type="scrape-jobs">do the thing</Agent>');
+    const r = detectToolCallTextEmission('<Agent subagent_type="scrape-jobs">do the thing</Agent>');
     expect(r).toHaveLength(1);
     expect(r[0].tool).toBe('Agent');
     expect(r[0].subagentType).toBe('scrape-jobs');
   });
 
   it('detects the <Task> alias', () => {
-    const r = detectAgentTextEmission('<Task subagent_type="tailor-resume" prompt="x" />');
+    const r = detectToolCallTextEmission('<Task subagent_type="tailor-resume" prompt="x" />');
     expect(r).toHaveLength(1);
     expect(r[0].tool).toBe('Task');
     expect(r[0].subagentType).toBe('tailor-resume');
   });
 
-  it('returns prompt:null when the tag has subagent_type but no prompt', () => {
-    const r = detectAgentTextEmission('<Agent subagent_type="prep-interview" />');
+  it('detects <send_message> emitted as text (the observed delivery-step failure)', () => {
+    const r = detectToolCallTextEmission('<send_message to="local-cli-test">Research complete. Here is the digest…</send_message>');
+    expect(r).toHaveLength(1);
+    expect(r[0].tool).toBe('send_message');
+    // Non-delegation tools don't populate subagent_type/prompt.
+    expect(r[0].subagentType).toBeNull();
+    expect(r[0].prompt).toBeNull();
+  });
+
+  it('detects an mcp__* tool tag', () => {
+    const r = detectToolCallTextEmission('<mcp__career-pilot__update_application status="APPLIED" />');
+    expect(r).toHaveLength(1);
+    expect(r[0].tool).toBe('mcp__career-pilot__update_application');
+  });
+
+  it('returns prompt:null when the delegation tag has subagent_type but no prompt', () => {
+    const r = detectToolCallTextEmission('<Agent subagent_type="prep-interview" />');
     expect(r).toHaveLength(1);
     expect(r[0].subagentType).toBe('prep-interview');
     expect(r[0].prompt).toBeNull();
   });
 
-  it('detects multiple emissions in one output', () => {
-    const r = detectAgentTextEmission(
-      '<Agent subagent_type="research-company" />\nthen\n<Agent subagent_type="tailor-resume" />',
+  it('detects multiple, mixed emissions in one output', () => {
+    const r = detectToolCallTextEmission(
+      '<Agent subagent_type="research-company" />\nthen\n<send_message to="owner">done</send_message>',
     );
     expect(r).toHaveLength(2);
-    expect(r.map((e) => e.subagentType)).toEqual(['research-company', 'tailor-resume']);
+    expect(r.map((e) => e.tool)).toEqual(['Agent', 'send_message']);
   });
 
   // --- Negatives / production-safety invariant ---
 
-  it('returns [] for a well-formed <message> block (production-safety: real Claude path)', () => {
-    expect(detectAgentTextEmission('<message to="owner">Here are your results.</message>')).toEqual([]);
+  it('returns [] for the legit <message> delivery-protocol tag (production-safety: real Claude path)', () => {
+    expect(detectToolCallTextEmission('<message to="owner">Here are your results.</message>')).toEqual([]);
   });
 
-  it('returns [] for prose that merely mentions the Agent tool', () => {
-    expect(detectAgentTextEmission('I will use the Agent tool to delegate this to research-company.')).toEqual([]);
+  it('returns [] for the legit <internal> scratchpad tag', () => {
+    expect(detectToolCallTextEmission('<internal>thinking through the plan</internal>')).toEqual([]);
+  });
+
+  it('returns [] for prose that merely mentions a tool by name', () => {
+    expect(detectToolCallTextEmission('I will use the Agent tool to send_message after research.')).toEqual([]);
   });
 
   it('returns [] for a fenced code sample (no XML tag)', () => {
-    expect(detectAgentTextEmission('```\nAgent({ subagent_type: "research-company" })\n```')).toEqual([]);
+    expect(detectToolCallTextEmission('```\nAgent({ subagent_type: "research-company" })\n```')).toEqual([]);
   });
 
   it('returns [] for empty input', () => {
-    expect(detectAgentTextEmission('')).toEqual([]);
+    expect(detectToolCallTextEmission('')).toEqual([]);
   });
 });
