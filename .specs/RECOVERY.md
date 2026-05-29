@@ -20,6 +20,7 @@ You're not going to break this thing. The kill switches exist so you can stop it
 | Portkey is down or I exhausted the budget | [§8 Portkey bypass to direct Anthropic](#8-portkey-bypass-to-direct-anthropic) |
 | Cloudflare Tunnel disconnected | [§9 Cloudflare Tunnel recovery](#9-cloudflare-tunnel-recovery) |
 | DB feels corrupt | [§10 DB restore from backup](#10-db-restore-from-backup) |
+| I edited an application's obfuscation directly in SQL / a public name is leaking in the audit trail | [§11 Resanitize an application's public audit trail](#11-resanitize-an-applications-public-audit-trail) |
 
 ---
 
@@ -327,6 +328,35 @@ sudo systemctl restart career-pilot.service
 ```
 
 **Recovery time:** ~2 minutes for local backup; ~5 minutes for GCS.
+
+---
+
+## 11. Resanitize an application's public audit trail
+
+**When:** You changed an application's obfuscation policy *outside* the normal agent flow and the public `public_audit_trail` rows are now stale — most urgently, a real company name is showing publicly that should be obfuscated. Common causes:
+
+- You edited `applications.public_state`, `obfuscated_label`, `company_name`, or `company_aliases` with direct SQL.
+- You flipped a company to `obfuscated` that was previously `public` (past rows still hold the real name in plaintext).
+- You tightened a sanitizer rule and want past rows re-run.
+
+The agent's normal `update_application` path already re-sanitizes automatically (§24.11 hook). This procedure is only for the out-of-band cases — and note `obfuscated_label` is immutable through the agent path, so an `obfuscated_label` edit *always* needs this script.
+
+**Procedure:**
+
+```bash
+sudo -i -u career-pilot
+cd /opt/career-pilot
+
+# Re-mirror this application's audit rows from the canonical funnel_events
+# truth, applying the current obfuscation policy. Safe to run while the
+# host is up.
+pnpm exec tsx scripts/resanitize-application.ts --id <application-id>
+# Prints: Resanitized application <id> (...): rewrote N row(s), deleted M stale row(s).
+```
+
+It deletes the application's existing funnel-category `public_audit_trail` rows and re-mirrors each `funnel_events` row through the sanitizer, so the public projection matches current intent. Truth in `funnel_events` is never touched.
+
+**Recovery time:** seconds. **Note:** this is a host-side operator script with no agent surface — the rewrite-the-audit-trail capability is deliberately kept out of the agent's tool palette.
 
 ---
 
