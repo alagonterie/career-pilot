@@ -26,7 +26,7 @@ import { getAgentGroup } from '../../db/agent-groups.js';
 import { getDb } from '../../db/connection.js';
 import { insertMessage } from '../../db/session-db.js';
 import { log } from '../../log.js';
-import { mirrorFunnelEvent } from '../portal/public-audit.js';
+import { mirrorFunnelEvent, resanitizeApplicationAuditTrail } from '../portal/public-audit.js';
 import type { Session } from '../../types.js';
 
 // ── Response writer (shared by all handlers) ──
@@ -60,6 +60,18 @@ function payload(content: Record<string, unknown>): Record<string, unknown> {
 
 function generateId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function readBoolPref(db: Database.Database, key: string, fallback: boolean): boolean {
+  try {
+    const row = db.prepare('SELECT value FROM preferences WHERE key = ?').get(key) as
+      | { value: string }
+      | undefined;
+    if (!row) return fallback;
+    return row.value === 'true' || row.value === '1';
+  } catch {
+    return fallback;
+  }
 }
 
 // ── update_profile_field ───────────────────────────────────────────────────
@@ -349,6 +361,33 @@ const APPLICATION_COLUMNS = [
 
 const INSERT_REQUIRED = ['company_name', 'role_title', 'status'] as const;
 
+// §24.11 Sub-milestone 4.3: the obfuscation-policy fields. A change to any
+// of these invalidates an application's past public_audit_trail rows, so an
+// UPDATE that moves one triggers retroactive resanitization. obfuscated_label
+// is included for completeness but is immutable via this handler (excluded
+// from the UPDATE set below) — out-of-band changes to it go through the
+// operator script (scripts/resanitize-application.ts).
+const OBFUSCATION_TRIGGER_FIELDS = [
+  'company_name',
+  'company_aliases',
+  'obfuscated_label',
+  'public_state',
+] as const;
+
+interface ObfuscationSnapshot {
+  obfuscated_label: string;
+  company_name: string | null;
+  company_aliases: string | null;
+  public_state: string | null;
+}
+
+function obfuscationPolicyChanged(
+  before: ObfuscationSnapshot,
+  after: ObfuscationSnapshot,
+): boolean {
+  return OBFUSCATION_TRIGGER_FIELDS.some((k) => before[k] !== after[k]);
+}
+
 export async function handleUpdateApplication(
   content: Record<string, unknown>,
   _session: Session,
@@ -366,9 +405,11 @@ export async function handleUpdateApplication(
 
   try {
     const db = getDb();
-    const existing = db.prepare('SELECT obfuscated_label FROM applications WHERE id = ?').get(id) as
-      | { obfuscated_label: string }
-      | undefined;
+    const existing = db
+      .prepare(
+        'SELECT obfuscated_label, company_name, company_aliases, public_state FROM applications WHERE id = ?',
+      )
+      .get(id) as ObfuscationSnapshot | undefined;
 
     const now = new Date().toISOString();
 
@@ -452,6 +493,31 @@ export async function handleUpdateApplication(
       ok: true,
       data: { id, created: false, obfuscated_label: existing.obfuscated_label },
     });
+
+    // §24.11 Sub-milestone 4.3 — retroactive resanitization. Runs AFTER
+    // writeResponse so re-mirror latency never blocks the agent's MCP call,
+    // and is wrapped in try/catch (same shape as the 4.1 mirror hook):
+    // failure is logged, never propagated, never rolls back the UPDATE.
+    // Gated on the obfuscation-policy fields actually changing (before/after
+    // snapshot diff — robust to obfuscated_label being immutable here) and
+    // on the operator preference.
+    if (readBoolPref(db, 'sanitization_resanitize_on_application_update', true)) {
+      const after = db
+        .prepare(
+          'SELECT obfuscated_label, company_name, company_aliases, public_state FROM applications WHERE id = ?',
+        )
+        .get(id) as ObfuscationSnapshot | undefined;
+      if (after && obfuscationPolicyChanged(existing, after)) {
+        try {
+          resanitizeApplicationAuditTrail(db, id);
+        } catch (resanErr) {
+          log.error('resanitizeApplicationAuditTrail threw despite internal try/catch', {
+            id,
+            resanErr,
+          });
+        }
+      }
+    }
   } catch (err) {
     log.error('handleUpdateApplication failed', { id, err });
     writeResponse(inDb, requestId, {

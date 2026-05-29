@@ -251,6 +251,207 @@ describe('handleUpdateApplication', () => {
   });
 });
 
+// ── update_application → §24.11 resanitization hook ─────────────────────────
+
+describe('handleUpdateApplication — §24.11 resanitization hook', () => {
+  // Seed an obfuscated application + one funnel event mentioning the real
+  // company name. The mirror runs via handleRecordFunnelEvent's own hook, so
+  // after this helper there is exactly one redacted public_audit_trail row.
+  async function seedObfuscatedAppWithEvent(note = 'jane wrote on behalf of Acme Corp'): Promise<string> {
+    await handleUpdateApplication(
+      actionContent('career_pilot.update_application', {
+        id: 'app-r',
+        patch: { company_name: 'Acme Corp', role_title: 'Backend', status: 'APPLIED' },
+      }),
+      FAKE_SESSION,
+      inDb,
+    );
+    const label = (
+      getDb().prepare("SELECT obfuscated_label FROM applications WHERE id = 'app-r'").get() as {
+        obfuscated_label: string;
+      }
+    ).obfuscated_label;
+    await handleRecordFunnelEvent(
+      actionContent('career_pilot.record_funnel_event', {
+        application_id: 'app-r',
+        kind: 'recruiter_email',
+        payload: { note },
+      }),
+      FAKE_SESSION,
+      inDb,
+    );
+    return label;
+  }
+
+  it('fires on a public_state change, rewriting the audit row to the real name', async () => {
+    const label = await seedObfuscatedAppWithEvent();
+
+    const before = getDb()
+      .prepare('SELECT application_ref, summary FROM public_audit_trail')
+      .get() as { application_ref: string; summary: string };
+    expect(before.summary).toContain(`[REDACTED:${label}]`);
+    expect(before.summary).not.toContain('Acme Corp');
+
+    const c = actionContent('career_pilot.update_application', {
+      id: 'app-r',
+      patch: { public_state: 'public' },
+    });
+    await handleUpdateApplication(c, FAKE_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+
+    const rows = getDb()
+      .prepare('SELECT application_ref, summary FROM public_audit_trail')
+      .all() as { application_ref: string; summary: string }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].application_ref).toBe('Acme Corp');
+    expect(rows[0].summary).toContain('Acme Corp');
+    expect(rows[0].summary).not.toContain(`[REDACTED:${label}]`);
+  });
+
+  it('fires on a company_aliases change, redacting the newly-known alias', async () => {
+    const label = await seedObfuscatedAppWithEvent('AcmeCo recruiter pinged me');
+
+    let row = getDb().prepare('SELECT summary FROM public_audit_trail').get() as { summary: string };
+    expect(row.summary).toContain('AcmeCo'); // alias unknown at write time → leaked
+
+    const c = actionContent('career_pilot.update_application', {
+      id: 'app-r',
+      patch: { company_aliases: '["AcmeCo"]' },
+    });
+    await handleUpdateApplication(c, FAKE_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+
+    row = getDb().prepare('SELECT summary FROM public_audit_trail').get() as { summary: string };
+    expect(row.summary).toContain(`[REDACTED:${label}]`);
+    expect(row.summary).not.toContain('AcmeCo');
+  });
+
+  it('does NOT fire on a non-trigger field change (status)', async () => {
+    const label = await seedObfuscatedAppWithEvent();
+    const before = getDb()
+      .prepare('SELECT id, summary FROM public_audit_trail')
+      .get() as { id: string; summary: string };
+
+    const c = actionContent('career_pilot.update_application', {
+      id: 'app-r',
+      patch: { status: 'PHONE_SCREEN' },
+    });
+    await handleUpdateApplication(c, FAKE_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+
+    const after = getDb()
+      .prepare('SELECT id, summary FROM public_audit_trail')
+      .all() as { id: string; summary: string }[];
+    expect(after).toHaveLength(1);
+    expect(after[0].id).toBe(before.id); // same row — no delete+reinsert
+    expect(after[0].summary).toBe(before.summary);
+    expect(after[0].summary).toContain(`[REDACTED:${label}]`);
+  });
+
+  it('does NOT fire when the resanitize preference is off, but still persists the UPDATE', async () => {
+    const label = await seedObfuscatedAppWithEvent();
+    getDb()
+      .prepare(
+        `INSERT INTO preferences (key, value, updated_at)
+         VALUES ('sanitization_resanitize_on_application_update', 'false', '2026-05-28T00:00:00Z')`,
+      )
+      .run();
+    const before = getDb()
+      .prepare('SELECT id, summary FROM public_audit_trail')
+      .get() as { id: string; summary: string };
+
+    const c = actionContent('career_pilot.update_application', {
+      id: 'app-r',
+      patch: { public_state: 'public' },
+    });
+    await handleUpdateApplication(c, FAKE_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+
+    // Application IS updated...
+    const app = getDb()
+      .prepare("SELECT public_state FROM applications WHERE id = 'app-r'")
+      .get() as { public_state: string };
+    expect(app.public_state).toBe('public');
+    // ...but the audit row was NOT rewritten.
+    const after = getDb()
+      .prepare('SELECT id, summary FROM public_audit_trail')
+      .all() as { id: string; summary: string }[];
+    expect(after).toHaveLength(1);
+    expect(after[0].id).toBe(before.id);
+    expect(after[0].summary).toContain(`[REDACTED:${label}]`);
+  });
+
+  it('keeps audit count == funnel_events count across an update then a new event', async () => {
+    await handleUpdateApplication(
+      actionContent('career_pilot.update_application', {
+        id: 'app-r',
+        patch: { company_name: 'Acme Corp', role_title: 'Backend', status: 'APPLIED' },
+      }),
+      FAKE_SESSION,
+      inDb,
+    );
+    // Event 1 (obfuscated → redacted audit row).
+    await handleRecordFunnelEvent(
+      actionContent('career_pilot.record_funnel_event', {
+        application_id: 'app-r',
+        kind: 'recruiter_email',
+        payload: { note: 'first from Acme Corp' },
+      }),
+      FAKE_SESSION,
+      inDb,
+    );
+    // Flip to public — resanitize rewrites event 1's row.
+    await handleUpdateApplication(
+      actionContent('career_pilot.update_application', { id: 'app-r', patch: { public_state: 'public' } }),
+      FAKE_SESSION,
+      inDb,
+    );
+    // Event 2 (mirrors as public).
+    await handleRecordFunnelEvent(
+      actionContent('career_pilot.record_funnel_event', {
+        application_id: 'app-r',
+        kind: 'recruiter_email',
+        payload: { note: 'second from Acme Corp' },
+      }),
+      FAKE_SESSION,
+      inDb,
+    );
+
+    const eventCount = (
+      getDb().prepare("SELECT COUNT(*) AS n FROM funnel_events WHERE application_id = 'app-r'").get() as {
+        n: number;
+      }
+    ).n;
+    const auditCount = (
+      getDb().prepare('SELECT COUNT(*) AS n FROM public_audit_trail').get() as { n: number }
+    ).n;
+    expect(eventCount).toBe(2);
+    expect(auditCount).toBe(2); // no duplicates, no drops
+    const rows = getDb().prepare('SELECT summary FROM public_audit_trail').all() as { summary: string }[];
+    for (const r of rows) expect(r.summary).toContain('Acme Corp');
+  });
+
+  it('does not roll back the UPDATE if resanitization fails', async () => {
+    await seedObfuscatedAppWithEvent();
+    // Force the resanitize transaction to throw by removing its target table.
+    // The function catches internally and the handler wraps it in try/catch,
+    // so the already-committed UPDATE must survive and the response stays ok.
+    getDb().exec('DROP TABLE public_audit_trail');
+
+    const c = actionContent('career_pilot.update_application', {
+      id: 'app-r',
+      patch: { public_state: 'public' },
+    });
+    await handleUpdateApplication(c, FAKE_SESSION, inDb);
+
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+    const app = getDb()
+      .prepare("SELECT public_state FROM applications WHERE id = 'app-r'")
+      .get() as { public_state: string };
+    expect(app.public_state).toBe('public');
+  });
+});
+
 // ── record_funnel_event ────────────────────────────────────────────────────
 
 describe('handleRecordFunnelEvent', () => {
