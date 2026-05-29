@@ -28,6 +28,7 @@ import { getConfig } from '../../get-config.js';
 import { insertMessage } from '../../db/session-db.js';
 import { log } from '../../log.js';
 import { mirrorFunnelEvent, resanitizeApplicationAuditTrail } from '../portal/public-audit.js';
+import { isKnownApplicationStatus, upsertPublicFunnelView } from '../portal/public-funnel-view.js';
 import type { Session } from '../../types.js';
 
 // ── Response writer (shared by all handlers) ──
@@ -61,6 +62,18 @@ function payload(content: Record<string, unknown>): Record<string, unknown> {
 
 function generateId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * Warn (do not reject) when an application status is outside the canonical
+ * vocabulary (APPLICATION_STATUSES). Prod is pre-LIVE_MODE with no real rows;
+ * a hard reject risks breaking an in-flight agent turn on an unforeseen
+ * status. The funnel read-model's deriveFunnelStage handles unknowns gracefully.
+ */
+function warnUnknownStatus(status: unknown, where: string): void {
+  if (typeof status === 'string' && status && !isKnownApplicationStatus(status)) {
+    log.warn(`${where}: non-canonical application status`, { status });
+  }
 }
 
 // ── update_profile_field ───────────────────────────────────────────────────
@@ -201,8 +214,9 @@ export async function handleRecordProgress(
     const id = generateId('prog');
     const now = new Date().toISOString();
     db.prepare(
-      `INSERT INTO public_audit_trail (id, ts, category, agent_name, summary, details_json)
-       VALUES (@id, @ts, @category, @agent_name, @summary, @details_json)`,
+      `INSERT INTO public_audit_trail (id, seq, ts, category, agent_name, summary, details_json)
+       VALUES (@id, (SELECT COALESCE(MAX(seq), 0) + 1 FROM public_audit_trail),
+               @ts, @category, @agent_name, @summary, @details_json)`,
     ).run({
       id,
       ts: now,
@@ -386,6 +400,7 @@ export async function handleUpdateApplication(
   const p = payload(content);
   const id = p.id as string;
   const patch = (p.patch as Record<string, unknown>) ?? {};
+  warnUnknownStatus(patch.status, 'handleUpdateApplication');
 
   if (!id) {
     writeResponse(inDb, requestId, { ok: false, error: { code: 'BAD_ARGS', message: 'id is required' } });
@@ -451,6 +466,7 @@ export async function handleUpdateApplication(
         ok: true,
         data: { id, created: true, obfuscated_label },
       });
+      upsertPublicFunnelView(db, id);
       return;
     }
 
@@ -465,6 +481,7 @@ export async function handleUpdateApplication(
         ok: true,
         data: { id, created: false, obfuscated_label: existing.obfuscated_label },
       });
+      upsertPublicFunnelView(db, id);
       return;
     }
 
@@ -507,6 +524,10 @@ export async function handleUpdateApplication(
         }
       }
     }
+
+    // Refresh the public funnel read-model (application_ref / stage / activity
+    // may have changed). Best-effort; the function catches + never throws.
+    upsertPublicFunnelView(db, id);
   } catch (err) {
     log.error('handleUpdateApplication failed', { id, err });
     writeResponse(inDb, requestId, {
@@ -587,6 +608,7 @@ export async function handleRecordFunnelEvent(
   const payloadJson = p.payload as Record<string, unknown> | undefined;
   const from_status = (p.from_status as string | null) ?? null;
   const to_status = (p.to_status as string | null) ?? null;
+  warnUnknownStatus(to_status, 'handleRecordFunnelEvent');
 
   if (!application_id || !kind || !payloadJson) {
     writeResponse(inDb, requestId, {
@@ -639,6 +661,10 @@ export async function handleRecordFunnelEvent(
     } catch (mirrorErr) {
       log.error('mirrorFunnelEvent threw despite internal try/catch', { event_id, mirrorErr });
     }
+
+    // Refresh the public funnel read-model (status / stage_entered_at /
+    // last_activity_at changed). Best-effort; the function never throws.
+    upsertPublicFunnelView(db, application_id);
   } catch (err) {
     log.error('handleRecordFunnelEvent failed', { application_id, err });
     writeResponse(inDb, requestId, {
