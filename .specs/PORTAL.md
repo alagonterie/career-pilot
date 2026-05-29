@@ -576,6 +576,8 @@ Click a card → side panel opens with:
 - Sanitized recent activity for that application (resume tailoring count, outreach drafted, etc.)
 - A "win confidence" % (low rigor — a heuristic, labeled as such)
 
+> **Backend note.** The richest source for "sanitized recent activity" is the funnel-curator's per-company narratives (`funnel_curator_output`, already captured privately). Surfacing them is V1-scoped but **built in Phase 6** alongside this panel and **gated on the Pass 3 LLM sanitization review** (STRATEGY.md §24.12): the narratives are free-form prose where regex + exact-name redaction isn't sufficient. Until then this panel renders from the structured `funnel_events` timeline + `public_funnel_view`.
+
 **Reveal tier:**
 - Default: obfuscated label (`[REDACTED:fintech-b]`)
 - Toggle `◆ public` on an application = real company name shown + clickable to their public job listing (only set for closed or pre-public outcomes)

@@ -128,3 +128,13 @@ Considered for Phase 2.3 (`draft-outreach`) as an alternative channel to Gmail. 
 Gmail covers the cold-outreach channel for v1 with a real, official, low-risk API.
 
 **Reactivate when:** LinkedIn ships an official DM-send endpoint on their public REST surface (and only then). No expected timeline.
+
+---
+
+## 15. Killer-match "signals" feed on the portal
+
+Surface the orchestrator's *judgment* publicly: a `/live` feed of why a discovered role is a strong fit, sourced from `job_leads.rules_score` + `rules_score_reasons` (and `llm_score_reasons`) — e.g. *"94/100 at [REDACTED]: matches your Kubernetes + multi-region experience, comp above floor, remote-OK."* A stronger "the agent has taste" signal than raw activity. The killer-match alert pipeline (STRATEGY.md §24.7) already computes these privately.
+
+**Why deferred:** No PORTAL.md panel specs it (charter brainstorm, not a spec'd surface). More consequentially, it has an **unspecced anonymization gap**: §9's privacy model is per-*application* (`public_state` / `obfuscated_label` live on `applications`); `job_leads` has no obfuscation columns at all. A public lead-signals feed needs a fresh privacy decision — most leads are companies the candidate never engaged, and "agent found a 94 match at &lt;Company&gt;" publishes a match the candidate didn't choose to surface. Building backend before that product/privacy question is answered is speculative.
+
+**Reactivate when:** the portal is live and there's a decision that a signals feed earns a PORTAL panel — at which point spec the lead-anonymization model first (obfuscation for unengaged leads), then add a sanitized projection + best-effort hook (the same pattern as `public_funnel_view`). The raw data is already captured, so it's a small add on the established pattern, not a big backend change.
