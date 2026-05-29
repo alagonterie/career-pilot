@@ -12,7 +12,7 @@ import type Database from 'better-sqlite3';
 import { closeDb, initTestDb } from '../../db/connection.js';
 import { runMigrations } from '../../db/migrations/index.js';
 
-import { mirrorFunnelEvent } from './public-audit.js';
+import { mirrorFunnelEvent, resanitizeApplicationAuditTrail } from './public-audit.js';
 
 describe('mirrorFunnelEvent', () => {
   let db: Database.Database;
@@ -293,5 +293,165 @@ describe('mirrorFunnelEvent', () => {
       payload: JSON.stringify({ note: 'collaboration with PartnerCo announced' }),
     });
     expect(mirrorFunnelEvent(db, 'fe-1')).toBe('dropped');
+  });
+
+  // ── §24.11 Sub-milestone 4.3: retroactive resanitization ───────────────
+  describe('resanitizeApplicationAuditTrail', () => {
+    it('rewrites public→obfuscated: real name replaced with [REDACTED:<label>]', () => {
+      seedApp({
+        id: 'app-1',
+        company_name: 'Acme Corp',
+        obfuscated_label: 'fintech-a',
+        public_state: 'public',
+      });
+      seedEvent({
+        id: 'fe-1',
+        application_id: 'app-1',
+        payload: JSON.stringify({ note: 'call with Acme Corp went well' }),
+      });
+      expect(mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
+
+      // Baseline: public row shows the real name.
+      let rows = readAuditRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].application_ref).toBe('Acme Corp');
+      expect(rows[0].summary).toContain('Acme Corp');
+
+      db.prepare("UPDATE applications SET public_state = 'obfuscated' WHERE id = 'app-1'").run();
+      expect(resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 1, deleted: 1 });
+
+      rows = readAuditRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].application_ref).toBe('fintech-a');
+      expect(rows[0].summary).toContain('[REDACTED:fintech-a]');
+      expect(rows[0].summary).not.toContain('Acme Corp');
+    });
+
+    it('rewrites obfuscated→public: [REDACTED:<label>] replaced with the real name', () => {
+      seedApp({
+        id: 'app-1',
+        company_name: 'Acme Corp',
+        obfuscated_label: 'fintech-a',
+        public_state: 'obfuscated',
+      });
+      seedEvent({
+        id: 'fe-1',
+        application_id: 'app-1',
+        payload: JSON.stringify({ note: 'call with Acme Corp went well' }),
+      });
+      expect(mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
+
+      let rows = readAuditRows();
+      expect(rows[0].summary).toContain('[REDACTED:fintech-a]');
+      expect(rows[0].summary).not.toContain('Acme Corp');
+
+      db.prepare("UPDATE applications SET public_state = 'public' WHERE id = 'app-1'").run();
+      expect(resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 1, deleted: 1 });
+
+      rows = readAuditRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].application_ref).toBe('Acme Corp');
+      expect(rows[0].summary).toContain('Acme Corp');
+      expect(rows[0].summary).not.toContain('[REDACTED:fintech-a]');
+    });
+
+    it('rewrites after an obfuscated_label change: rows reflect the new label', () => {
+      seedApp({
+        id: 'app-1',
+        company_name: 'Acme Corp',
+        obfuscated_label: 'fintech-a',
+        public_state: 'obfuscated',
+      });
+      seedEvent({
+        id: 'fe-1',
+        application_id: 'app-1',
+        payload: JSON.stringify({ note: 'spoke with Acme Corp' }),
+      });
+      expect(mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
+
+      db.prepare("UPDATE applications SET obfuscated_label = 'fintech-z' WHERE id = 'app-1'").run();
+      expect(resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 1, deleted: 1 });
+
+      const rows = readAuditRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].application_ref).toBe('fintech-z');
+      expect(rows[0].summary).toContain('[REDACTED:fintech-z]');
+      expect(rows[0].summary).not.toContain('fintech-a');
+    });
+
+    it('rewrites after a company_aliases add: the new alias is now redacted', () => {
+      seedApp({
+        id: 'app-1',
+        company_name: 'Acme Corp',
+        obfuscated_label: 'fintech-a',
+        public_state: 'obfuscated',
+      });
+      // Payload mentions only the alias, not the canonical name.
+      seedEvent({
+        id: 'fe-1',
+        application_id: 'app-1',
+        payload: JSON.stringify({ note: 'AcmeCo recruiter reached out' }),
+      });
+      expect(mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
+
+      // Baseline: alias not yet known → leaks through.
+      let rows = readAuditRows();
+      expect(rows[0].summary).toContain('AcmeCo');
+
+      db.prepare(`UPDATE applications SET company_aliases = '["AcmeCo"]' WHERE id = 'app-1'`).run();
+      expect(resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 1, deleted: 1 });
+
+      rows = readAuditRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].summary).toContain('[REDACTED:fintech-a]');
+      expect(rows[0].summary).not.toContain('AcmeCo');
+    });
+
+    it('is a no-op when the application has no funnel_events', () => {
+      seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a' });
+      expect(resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 0, deleted: 0 });
+      expect(readAuditRows()).toHaveLength(0);
+    });
+
+    it('rewrites only the target application; counts match and other rows are untouched', () => {
+      seedApp({
+        id: 'app-1',
+        company_name: 'Acme Corp',
+        obfuscated_label: 'fintech-a',
+        public_state: 'obfuscated',
+      });
+      // A second, unrelated app whose audit rows must NOT be touched.
+      seedApp({
+        id: 'app-2',
+        company_name: 'Globex',
+        obfuscated_label: 'retail-a',
+        public_state: 'obfuscated',
+      });
+
+      seedEvent({ id: 'fe-1', application_id: 'app-1', payload: JSON.stringify({ note: 'first with Acme Corp' }) });
+      seedEvent({ id: 'fe-2', application_id: 'app-1', payload: JSON.stringify({ note: 'second with Acme Corp' }) });
+      seedEvent({ id: 'fe-3', application_id: 'app-1', payload: JSON.stringify({ note: 'third with Acme Corp' }) });
+      seedEvent({ id: 'fe-x', application_id: 'app-2', payload: JSON.stringify({ note: 'unrelated Globex note' }) });
+
+      for (const id of ['fe-1', 'fe-2', 'fe-3', 'fe-x']) {
+        expect(mirrorFunnelEvent(db, id)).toBe('inserted');
+      }
+
+      db.prepare("UPDATE applications SET public_state = 'public' WHERE id = 'app-1'").run();
+      expect(resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 3, deleted: 3 });
+
+      // app-1 rows now public (real name); app-2 row untouched (still redacted).
+      const app1Rows = db
+        .prepare("SELECT summary FROM public_audit_trail WHERE application_ref = 'Acme Corp'")
+        .all() as { summary: string }[];
+      expect(app1Rows).toHaveLength(3);
+      for (const r of app1Rows) expect(r.summary).toContain('Acme Corp');
+
+      const app2Rows = db
+        .prepare("SELECT summary FROM public_audit_trail WHERE application_ref = 'retail-a'")
+        .all() as { summary: string }[];
+      expect(app2Rows).toHaveLength(1);
+      expect(app2Rows[0].summary).toContain('[REDACTED:retail-a]');
+    });
   });
 });
