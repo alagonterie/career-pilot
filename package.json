@@ -28,7 +28,8 @@
     "test:watch": "vitest",
     "test:check-ollama": "tsx scripts/test/check-ollama.ts",
     "test:setup": "tsx scripts/test/setup-test.ts",
-    "test:e2e": "tsx scripts/test/e2e.ts"
+    "test:e2e": "tsx scripts/test/e2e.ts",
+    "cleanup:onecli-agents": "tsx scripts/cleanup-onecli-agents.ts"
   },
   "dependencies": {
     "@clack/core": "^1.2.0",
