@@ -31,6 +31,36 @@ const ACTIVE_POLL_MS = 1000;
 const SWEEP_POLL_MS = 60_000;
 const MAX_DELIVERY_ATTEMPTS = 3;
 
+/**
+ * Hot-journal race detector for the outbound.db readonly prepare path.
+ *
+ * The container owns outbound.db and writes in journal_mode=DELETE. During
+ * a write transaction SQLite creates outbound.db-journal transiently
+ * (~1-5ms). If the host's poll lands inside that window, our readonly
+ * prepare() must determine whether the journal is "hot" (writer crashed
+ * mid-transaction → rollback needed) or live (writer in flight). From a
+ * readonly handle the determination cannot be completed, and SQLite
+ * returns SQLITE_READONLY_ROLLBACK (extended code 776) with the canonical
+ * message "attempt to write a readonly database". The 5s busy_timeout
+ * doesn't apply — this isn't BUSY, it's a readonly determination
+ * impossibility.
+ *
+ * Self-heals on the next poll (1s later, ACTIVE_POLL_MS) when the writer
+ * commits and the journal disappears. We treat the catch as informational
+ * and let the natural poll cadence retry — see drainSession below.
+ *
+ * Deliberate deviation from upstream NanoClaw — to be filed as an
+ * upstream issue and dropped once accepted.
+ *
+ * Exported solely so unit tests can exercise the discrimination logic
+ * deterministically without provoking a real race.
+ */
+export function isReadonlyRollbackError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const code = (err as { code?: unknown }).code;
+  return typeof code === 'string' && code.startsWith('SQLITE_READONLY');
+}
+
 /** Track delivery attempt counts. Resets on process restart (gives failed messages a fresh chance). */
 const deliveryAttempts = new Map<string, number>();
 
@@ -175,8 +205,23 @@ async function drainSession(session: Session): Promise<void> {
   }
 
   try {
-    // Read all due messages from outbound.db (read-only)
-    const allDue = getDueOutboundMessages(outDb);
+    // Read all due messages from outbound.db (read-only). The first SQL
+    // op against a freshly-opened readonly handle is where SQLite checks
+    // for a hot journal on outbound.db. See isReadonlyRollbackError above
+    // for the race mechanism; swallowing here lets the next ACTIVE_POLL_MS
+    // tick absorb the transient.
+    let allDue: ReturnType<typeof getDueOutboundMessages>;
+    try {
+      allDue = getDueOutboundMessages(outDb);
+    } catch (err) {
+      if (isReadonlyRollbackError(err)) {
+        log.debug('Outbound poll hit hot-journal race; next poll will retry', {
+          sessionId: session.id,
+        });
+        return;
+      }
+      throw err;
+    }
     if (allDue.length === 0) return;
 
     // Filter out already-delivered messages using inbound.db's delivered table
