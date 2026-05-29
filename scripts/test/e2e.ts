@@ -96,6 +96,16 @@
  *                           audit row uses the obfuscated_label, Pass 1
  *                           redacts the email + amount, and Pass 2 redacts
  *                           the real company name. ~$0.05/run with Claude.
+ *   --flow=resanitize       Seeded profile + an obfuscated APPLIED Acme Corp
+ *                           application, a funnel_event naming it, and a
+ *                           pre-existing REDACTED public_audit_trail row
+ *                           (raw-SQL seed, no LLM). Phase 4 §24.11 Sub-
+ *                           milestone 4.3 live wrap-up: asks the agent to
+ *                           flip the application to public, then asserts the
+ *                           handler hook fired resanitizeApplicationAuditTrail
+ *                           — the original redacted row is deleted and the
+ *                           re-mirrored row now surfaces the real company
+ *                           name. ~$0.05/run with Claude.
  *   --llm-provider=ollama   Default. Routes all model calls through the
  *                           local Ollama daemon via the Anthropic shim.
  *                           Zero LLM cost. Requires Ollama + glm-4.7-flash.
@@ -179,7 +189,8 @@ type Flow =
   | 'funnel-curator-consumer'
   | 'funnel-curator'
   | 'close-detection'
-  | 'mirror-audit';
+  | 'mirror-audit'
+  | 'resanitize';
 const FLOWS: ReadonlySet<Flow> = new Set([
   'smoke',
   'onboarding',
@@ -196,6 +207,7 @@ const FLOWS: ReadonlySet<Flow> = new Set([
   'funnel-curator',
   'close-detection',
   'mirror-audit',
+  'resanitize',
 ]);
 const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'smoke',
@@ -212,6 +224,7 @@ const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'funnel-curator',
   'close-detection',
   'mirror-audit',
+  'resanitize',
 ]);
 
 type LlmProvider = 'ollama' | 'claude';
@@ -3456,6 +3469,156 @@ async function runMirrorAudit(): Promise<void> {
   }
 }
 
+async function runResanitize(): Promise<void> {
+  header('Flow: resanitize');
+  // Phase 4 §24.11 Sub-milestone 4.3 live wrap-up.
+  //
+  // Confirms the conversational privacy-flip path end-to-end: an
+  // application that was mirrored to the public audit trail while
+  // obfuscated gets its real name re-exposed once the candidate asks the
+  // agent to make it public — i.e. handleUpdateApplication's public_state
+  // change fires resanitizeApplicationAuditTrail in a real container
+  // session. The hook + resanitize mechanics are exhaustively unit/
+  // integration tested; this proves the wire from a live agent turn.
+  //
+  // Setup is deterministic (raw SQL, no LLM): seed an obfuscated APPLIED
+  // application + a funnel_event whose payload names the company, plus a
+  // pre-existing REDACTED public_audit_trail row linked to that event
+  // (source_funnel_event_id). The single host turn asks the agent to flip
+  // the application to public; after, the audit row must show the real
+  // name and the seed row must be gone (rewritten, not appended).
+  //
+  // Cost: ~$0.05/run (one Sonnet turn; the agent does list_applications →
+  // update_application).
+  const appId = 'app-e2e-resanitize-1';
+  const eventId = 'fe-e2e-resanitize-1';
+  const seedAuditId = 'pat-e2e-resanitize-seed';
+  const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
+  {
+    const seedDb = new Database(dbPath);
+    try {
+      const now = new Date().toISOString();
+      seedDb
+        .prepare(
+          `INSERT INTO applications
+             (id, company_name, obfuscated_label, public_state, role_title,
+              status, applied_at, last_activity_at, created_at)
+           VALUES (?, 'Acme Corp', 'fintech-a', 'obfuscated',
+              'Senior Backend Engineer', 'APPLIED', ?, ?, ?)`,
+        )
+        .run(appId, now, now, now);
+      // The canonical truth — names the company; re-mirror will surface it
+      // once the app is public.
+      seedDb
+        .prepare(
+          `INSERT INTO funnel_events
+             (id, application_id, kind, from_status, to_status, payload, source, ts)
+           VALUES (?, ?, 'recruiter_email', NULL, NULL, ?, 'agent', ?)`,
+        )
+        .run(
+          eventId,
+          appId,
+          JSON.stringify({ note: 'jane@acme.com from Acme Corp wrote about the $220k offer' }),
+          now,
+        );
+      // The "before" public row: redacted, linked to the event. Its exact
+      // text doesn't matter — only that it exists, is linked, and hides the
+      // real name. resanitize will DELETE it and re-mirror from truth.
+      seedDb
+        .prepare(
+          `INSERT INTO public_audit_trail
+             (id, ts, category, application_ref, summary, details_json, source_funnel_event_id)
+           VALUES (?, ?, 'funnel', 'fintech-a',
+              'recruiter_email — [REDACTED:fintech-a] sent [AMOUNT_REDACTED] offer ([EMAIL_REDACTED])',
+              '{}', ?)`,
+        )
+        .run(seedAuditId, now, eventId);
+      ok('seeded obfuscated Acme Corp + funnel_event + redacted audit row');
+    } finally {
+      seedDb.close();
+    }
+  }
+
+  // Sanity-check the seed state before the turn.
+  {
+    const db = new Database(dbPath, { readonly: true });
+    try {
+      const row = db
+        .prepare("SELECT application_ref, summary FROM public_audit_trail WHERE id = ?")
+        .get(seedAuditId) as { application_ref: string; summary: string } | undefined;
+      if (!row) fail('seed audit row missing before turn');
+      if (row!.summary.includes('Acme Corp')) fail('seed audit row already leaks the real name');
+      ok("pre-turn state: audit row is redacted (application_ref='fintech-a', no real name)");
+    } finally {
+      db.close();
+    }
+  }
+
+  const reply = await chatTurn(
+    'I just accepted the Acme Corp offer, so I want that application shown ' +
+      'publicly on my portal now. Please update the Acme Corp application to ' +
+      "set its public_state to 'public'.",
+    600_000,
+  );
+  if (reply.length === 0) fail('reply was empty');
+
+  // Resanitize runs synchronously in the host handler after writeResponse;
+  // give WAL a beat to surface on the readonly assertion connection.
+  await sleep(1000);
+
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    // 1. The agent's update actually flipped the application to public.
+    const app = db.prepare('SELECT public_state FROM applications WHERE id = ?').get(appId) as
+      | { public_state: string }
+      | undefined;
+    if (!app) fail('seeded application vanished');
+    if (app!.public_state !== 'public') {
+      const jsonl = findLatestSessionJsonl();
+      if (jsonl) {
+        console.error('  --- orchestrator tool_use calls ---');
+        for (const c of listAllToolCalls(jsonl)) console.error(`  ${c}`);
+      }
+      fail(
+        `application public_state is '${app!.public_state}', expected 'public' — ` +
+          'the agent did not flip it via update_application, so the resanitize ' +
+          'hook never had a trigger.',
+      );
+    }
+    ok("agent flipped public_state → 'public' via update_application");
+
+    // 2. The seed (redacted) row is gone — rewritten, not appended.
+    const seedStill = db.prepare('SELECT 1 FROM public_audit_trail WHERE id = ?').get(seedAuditId);
+    if (seedStill) {
+      fail('the original redacted audit row still exists — resanitize did not delete+re-mirror');
+    }
+    ok('original redacted audit row was deleted (rewrite, not append)');
+
+    // 3. The funnel-category rows for this app now show the REAL name.
+    const rows = db
+      .prepare(
+        "SELECT application_ref, summary FROM public_audit_trail " +
+          "WHERE category = 'funnel' AND source_funnel_event_id = ?",
+      )
+      .all(eventId) as Array<{ application_ref: string; summary: string }>;
+    if (rows.length === 0) {
+      fail('no re-mirrored audit row for the event after the flip');
+    }
+    for (const r of rows) {
+      if (r.application_ref !== 'Acme Corp') {
+        fail(`re-mirrored row application_ref='${r.application_ref}', expected 'Acme Corp'`);
+      }
+      if (!r.summary.includes('Acme Corp')) {
+        console.error(`  --- summary ---\n${r.summary}`);
+        fail('re-mirrored row does not surface the real company name after the public flip');
+      }
+    }
+    ok(`audit row(s) re-mirrored to public: application_ref='Acme Corp', real name surfaced`);
+  } finally {
+    db.close();
+  }
+}
+
 function seedBookmarkedApplication(opts: {
   id: string;
   company_name: string;
@@ -3963,6 +4126,7 @@ async function main(): Promise<void> {
       'funnel-curator': runFunnelCurator,
       'close-detection': runCloseDetection,
       'mirror-audit': runMirrorAudit,
+      'resanitize': runResanitize,
     };
     await FLOW_HANDLERS[args.flow]();
     assertionsPassed = true;
