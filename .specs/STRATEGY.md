@@ -3198,8 +3198,8 @@ Building the full batch engine now (state column + migration, a new scheduled tr
 
 **Out of scope (guardrail-enforced):**
 
-- **killer-match "signals" feed** (`job_leads.rules_score_reasons`/`llm_score_reasons`) — no concrete PORTAL panel names it → V2_IDEAS, no backend now.
-- **funnel-curator narratives → richer `/funnel` detail** — marginal over the existing `funnel_events` timeline; deferred.
+- **killer-match "signals" feed** (`job_leads.rules_score_reasons`/`llm_score_reasons`) — no concrete PORTAL panel names it, and `job_leads` has no anonymization model (§9 is per-application); needs a product + lead-privacy decision first → **V2_IDEAS.md item 15**, no backend now.
+- **funnel-curator narratives → richer `/funnel` detail** — a legitimate V1 surface (PORTAL.md §5.4 "sanitized recent activity"), but **timed to Phase 6** (build the public projection when the `/funnel` panel that consumes it is built) and **gated on Pass 3**: the narratives are free-form LLM prose, exactly the §24.12 trigger for the deferred Haiku sanitization review. Raw data is already captured in `funnel_curator_output`; deferring rides the established projection pattern, not a big change.
 - **Shared TS types package** — Phase 6 frontend bootstrap; the new read-model row shapes become the typed contract for free.
 - **All `/api/*` endpoints, the SSE layer, simulator + contact relay** — Phase 5 proper.
 
