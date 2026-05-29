@@ -146,6 +146,27 @@ export function countDueMessages(db: Database.Database): number {
   ).count;
 }
 
+/**
+ * Like countDueMessages but restricted to *reactive* (direct-message) rows —
+ * `kind IN ('chat','chat-sdk')`. Proactive work (scheduled `task` rows, agent
+ * system messages) is excluded. Used by the host sweep's pause gate so a
+ * `paused` system still wakes for a direct message but not for a heartbeat
+ * cron (STRATEGY.md §24.18).
+ */
+export function countDueReactiveMessages(db: Database.Database): number {
+  return (
+    db
+      .prepare(
+        `SELECT COUNT(*) as count FROM messages_in
+       WHERE status = 'pending'
+         AND trigger = 1
+         AND kind IN ('chat', 'chat-sdk')
+         AND (process_after IS NULL OR datetime(process_after) <= datetime('now'))`,
+      )
+      .get() as { count: number }
+  ).count;
+}
+
 export function markMessageFailed(db: Database.Database, messageId: string): void {
   db.prepare("UPDATE messages_in SET status = 'failed' WHERE id = ?").run(messageId);
 }

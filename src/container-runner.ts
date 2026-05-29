@@ -32,6 +32,7 @@ import { ensureDailyBriefingTask } from './modules/career-pilot/daily-briefing-b
 import { ensureFunnelCuratorTask } from './modules/career-pilot/funnel-curator-bootstrap.js';
 import { ensureKillerMatchTask } from './modules/career-pilot/killer-match-bootstrap.js';
 import { renderPersonaForGroup } from './modules/career-pilot/render-persona.js';
+import { getPauseState, type PauseState } from './modules/portal/system-modes.js';
 import { stopTypingRefresh } from './modules/typing/index.js';
 import { log } from './log.js';
 import { validateAdditionalMounts } from './modules/mount-security/index.js';
@@ -87,8 +88,29 @@ export function isContainerRunning(sessionId: string): boolean {
  * need to wrap — the inbound row stays pending and host-sweep retries on
  * its next tick. Callers that care (e.g. the router's typing indicator)
  * can branch on the boolean.
+ *
+ * Pause gate (Sub-milestone 5.4a, STRATEGY.md §24.18): when the system is
+ * `halted` or `killswitch`, refuse to spawn — return `false` (the same
+ * "transient failure" contract, so the inbound row stays pending and resumes
+ * after `/resume`). The soft `paused` state is NOT gated here; its proactive
+ * suppression lives at the trigger sites (host-sweep + recurrence) so reactive
+ * direct messages still wake a container. `getPauseState()` defaults to
+ * `active` when the system_modes table is absent (non-career-pilot hosts), so
+ * this is inert for upstream NanoClaw.
  */
+export function spawnBlockedByPause(pauseState: PauseState): boolean {
+  return pauseState === 'halted' || pauseState === 'killswitch';
+}
+
 export function wakeContainer(session: Session): Promise<boolean> {
+  const pauseState = getPauseState();
+  if (spawnBlockedByPause(pauseState)) {
+    log.info('Refusing to spawn — system pause state blocks new containers', {
+      sessionId: session.id,
+      pauseState,
+    });
+    return Promise.resolve(false);
+  }
   if (activeContainers.has(session.id)) {
     log.debug('Container already running', { sessionId: session.id });
     return Promise.resolve(true);

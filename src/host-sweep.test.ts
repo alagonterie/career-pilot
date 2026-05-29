@@ -6,13 +6,14 @@
 import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
 
-import { deleteOrphanProcessingClaims, getProcessingClaims } from './db/session-db.js';
+import { countDueReactiveMessages, deleteOrphanProcessingClaims, getProcessingClaims } from './db/session-db.js';
 import {
   ABSOLUTE_CEILING_MS,
   CLAIM_STUCK_MS,
   _resetStuckProcessingRowsForTesting,
   decideStuckAction,
   parseSqliteUtc,
+  shouldSuppressColdWake,
 } from './host-sweep.js';
 import type { Session } from './types.js';
 
@@ -332,5 +333,56 @@ describe('parseSqliteUtc', () => {
     // bare string returns different values depending on the host TZ.)
     const bare = '2026-04-20T12:00:00';
     expect(parseSqliteUtc(bare)).toBe(Date.parse(bare + 'Z'));
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sub-milestone 5.4a — pause-state cold-wake suppression (STRATEGY.md §24.18)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('shouldSuppressColdWake', () => {
+  it('never suppresses while active', () => {
+    expect(shouldSuppressColdWake('active', 0)).toBe(false);
+    expect(shouldSuppressColdWake('active', 3)).toBe(false);
+  });
+
+  it('always suppresses under halted/killswitch (hard stop)', () => {
+    expect(shouldSuppressColdWake('halted', 0)).toBe(true);
+    expect(shouldSuppressColdWake('halted', 5)).toBe(true);
+    expect(shouldSuppressColdWake('killswitch', 0)).toBe(true);
+    expect(shouldSuppressColdWake('killswitch', 5)).toBe(true);
+  });
+
+  it('paused suppresses proactive-only work but lets a direct message through', () => {
+    expect(shouldSuppressColdWake('paused', 0)).toBe(true); // only proactive due
+    expect(shouldSuppressColdWake('paused', 1)).toBe(false); // a reactive msg is due
+  });
+});
+
+describe('countDueReactiveMessages', () => {
+  it('counts only due trigger=1 chat/chat-sdk rows', () => {
+    const { inDb } = makeSessionDbs();
+    const past = '2020-01-01T00:00:00Z';
+    const future = new Date(Date.now() + 3_600_000).toISOString();
+    const ins = inDb.prepare(
+      "INSERT INTO messages_in (id, seq, kind, timestamp, status, process_after, trigger, content) VALUES (?, ?, ?, '2026-05-29T00:00:00Z', 'pending', ?, ?, '{}')",
+    );
+    ins.run('chat-due', 1, 'chat', past, 1); // counts
+    ins.run('sdk-due', 2, 'chat-sdk', null, 1); // counts (null process_after = due)
+    ins.run('task-due', 3, 'task', past, 1); // excluded (proactive)
+    ins.run('chat-future', 4, 'chat', future, 1); // excluded (not yet due)
+    ins.run('chat-notrigger', 5, 'chat', past, 0); // excluded (trigger=0)
+
+    expect(countDueReactiveMessages(inDb)).toBe(2);
+  });
+
+  it('returns 0 when only proactive task rows are due', () => {
+    const { inDb } = makeSessionDbs();
+    inDb
+      .prepare(
+        "INSERT INTO messages_in (id, seq, kind, timestamp, status, process_after, trigger, content) VALUES ('t', 1, 'task', '2026-05-29T00:00:00Z', 'pending', '2020-01-01T00:00:00Z', 1, '{}')",
+      )
+      .run();
+    expect(countDueReactiveMessages(inDb)).toBe(0);
   });
 });

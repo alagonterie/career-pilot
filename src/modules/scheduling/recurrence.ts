@@ -15,11 +15,28 @@ import type Database from 'better-sqlite3';
 
 import { TIMEZONE } from '../../config.js';
 import { log } from '../../log.js';
+import { getPauseState } from '../portal/system-modes.js';
 import type { Session } from '../../types.js';
 import { clearRecurrence, getCompletedRecurring, insertRecurrence } from './db.js';
 
 export async function handleRecurrence(inDb: Database.Database, session: Session): Promise<void> {
   const recurring = getCompletedRecurring(inDb);
+  if (recurring.length === 0) return;
+
+  // Proactive suppression (Sub-milestone 5.4a, STRATEGY.md §24.18): while the
+  // system is not `active` (paused/halted/killswitch), do NOT advance recurring
+  // proactive tasks. The completed rows keep their recurrence, so the chain
+  // resumes cleanly on the next tick after `/resume` — occurrences are deferred,
+  // not dropped. Reactive (direct-message) flows never route through here.
+  // `getPauseState()` defaults to `active` when the system_modes table is absent
+  // (non-career-pilot hosts), so this is inert for upstream NanoClaw.
+  if (getPauseState() !== 'active') {
+    log.debug('Recurrence suppressed — system not active', {
+      sessionId: session.id,
+      count: recurring.length,
+    });
+    return;
+  }
 
   for (const msg of recurring) {
     try {
