@@ -319,6 +319,50 @@ describe('handleRecordFunnelEvent', () => {
       expect(resp.frame.error.code).toBe('NOT_FOUND');
     }
   });
+
+  it('mirrors a sanitized row to public_audit_trail (Phase 4 §24.10 spot check)', async () => {
+    // Override the seeded app's obfuscated_label so the spot check is
+    // deterministic regardless of how update_application sequenced labels.
+    getDb()
+      .prepare(`UPDATE applications SET company_name = 'Acme Corp', obfuscated_label = 'fintech-a' WHERE id = ?`)
+      .run('app-funnel');
+
+    const c = actionContent('career_pilot.record_funnel_event', {
+      application_id: 'app-funnel',
+      kind: 'recruiter_email',
+      payload: {
+        note: 'jane@acme.com from Acme Corp wrote about the $220k offer',
+      },
+    });
+    await handleRecordFunnelEvent(c, FAKE_SESSION, inDb);
+
+    // Action response is ok and references the new event_id.
+    const resp = readResponse(c.requestId);
+    expect(resp.frame.ok).toBe(true);
+
+    // Private write preserves the truth.
+    const privateRow = getDb()
+      .prepare(`SELECT payload FROM funnel_events WHERE application_id = 'app-funnel' AND kind = 'recruiter_email'`)
+      .get() as { payload: string } | undefined;
+    expect(privateRow).toBeDefined();
+    expect(privateRow!.payload).toContain('Acme Corp');
+    expect(privateRow!.payload).toContain('jane@acme.com');
+    expect(privateRow!.payload).toContain('$220k');
+
+    // Public mirror lands sanitized.
+    const publicRow = getDb()
+      .prepare(`SELECT application_ref, summary, category FROM public_audit_trail`)
+      .get() as { application_ref: string; summary: string; category: string } | undefined;
+    expect(publicRow).toBeDefined();
+    expect(publicRow!.application_ref).toBe('fintech-a');
+    expect(publicRow!.category).toBe('funnel');
+    expect(publicRow!.summary).toContain('[REDACTED:fintech-a]');
+    expect(publicRow!.summary).toContain('[EMAIL_REDACTED]');
+    expect(publicRow!.summary).toContain('[AMOUNT_REDACTED]');
+    expect(publicRow!.summary).not.toContain('Acme Corp');
+    expect(publicRow!.summary).not.toContain('jane@acme.com');
+    expect(publicRow!.summary).not.toContain('$220k');
+  });
 });
 
 // ── get_application / list_applications ────────────────────────────────────

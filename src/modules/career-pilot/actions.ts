@@ -26,6 +26,7 @@ import { getAgentGroup } from '../../db/agent-groups.js';
 import { getDb } from '../../db/connection.js';
 import { insertMessage } from '../../db/session-db.js';
 import { log } from '../../log.js';
+import { mirrorFunnelEvent } from '../portal/public-audit.js';
 import type { Session } from '../../types.js';
 
 // ── Response writer (shared by all handlers) ──
@@ -574,6 +575,15 @@ export async function handleRecordFunnelEvent(
 
     log.info('Funnel event recorded', { event_id, application_id, kind });
     writeResponse(inDb, requestId, { ok: true, data: { event_id } });
+
+    // Phase 4 §24.10 public mirror. Runs after writeResponse so mirror
+    // latency never blocks the agent's MCP call. Errors are logged and
+    // swallowed — the private write is committed regardless.
+    try {
+      mirrorFunnelEvent(db, event_id);
+    } catch (mirrorErr) {
+      log.error('mirrorFunnelEvent threw despite internal try/catch', { event_id, mirrorErr });
+    }
   } catch (err) {
     log.error('handleRecordFunnelEvent failed', { application_id, err });
     writeResponse(inDb, requestId, {
