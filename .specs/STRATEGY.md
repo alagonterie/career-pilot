@@ -3400,6 +3400,41 @@ The catastrophic control. Unlike 5.4a's commands, `/killswitch` **never fires on
 
 ---
 
+#### 24.20 Sub-milestone 5.5b — rich tool-call trace → simulator SSE stream
+
+**What this is.** The live "ACTIVITY pane" (PORTAL §5.3): the visitor watches subagent invocations, tool calls, and per-step cost stream as the sandbox run executes. This is the **first container-side change of Phase 5** and the **5th deliberate deviation from upstream NanoClaw** (after the four in NANOCLAW_INTERNALS.md §11) — track it for `/update-nanoclaw`.
+
+**Verified seam (against the real agent-runner, not the cribsheet).** `container/agent-runner/src/providers/claude.ts` `translateEvents()` already iterates the entire SDK message stream and today translates only `init`/`result`/`api_retry`/`rate_limit`/`compact`/`task_notification`. The dropped messages carry everything the pane needs: `assistant` messages with `tool_use` content blocks (tool name + input; `Task` is subagent dispatch; `parent_tool_use_id` marks calls *inside* a subagent), and the `result` message's `usage` + `total_cost_usd`. So the trace is captured from the **existing** stream — **no `includePartialMessages`** (that's token-level, finer than the tool/subagent granularity the pane shows, and would balloon volume).
+
+**Transport — reuse the whole pipeline.** Trace events become outbound rows of a new `kind:'trace'`, drained by the host's normal delivery sweep, handed to the `portal` adapter's `deliver()`, and pushed into the run's SSE stream. No bespoke sidecar channel; the trace rides the same path as the agent's chat/task output (5.5a left `deliver()` a no-op precisely for this).
+
+**Gating — owner path byte-identical (production-safe by construction).** Trace emission is gated on an `emitTrace` flag that the host derives in `materializeContainerJson` as `group.folder === 'career-pilot-sandbox'` (no migration, no new column — derived from the folder at spawn) and writes into `container.json`; the runner reads it (`config.ts` `RunnerConfig.emitTrace`) and the Claude provider only emits `trace` events when it is true. For the owner `career-pilot` group `emitTrace` is false → `translateEvents` yields exactly what it does today → owner Telegram outbound gains no `trace` rows. The trace is therefore sandbox-only by construction.
+
+**Sanitization.** Trace is sandbox-only, and the sandbox cannot reach candidate private data (§24.19 two-layer isolation), so trace content carries no candidate PII — it is the visitor's own input + public web-tool calls. It is **not** routed through the `public_audit_trail` sanitizer (that guards the owner's real funnel). Tool inputs are truncated for size, not redacted.
+
+**What lands:**
+
+*Container:*
+1. **`providers/types.ts`** — add `ProviderEvent` variant `{ type: 'trace'; trace: TraceEvent }` where `TraceEvent` = `{ t: 'tool' | 'subagent' | 'result'; name?: string; subagent?: string; parent_tool_use_id?: string | null; input_summary?: string; cost_usd?: number; … }`.
+2. **`providers/claude.ts`** — constructor reads `options.emitTrace`; `translateEvents` (when `emitTrace`) translates `assistant` `tool_use` blocks (→ `tool`, or `subagent` when name is `Task`) and the `result` usage/cost (→ `result`) into `trace` events. Still yields `activity` for every SDK message as today.
+3. **`config.ts`** — `RunnerConfig.emitTrace?: boolean`; the provider factory passes it into `ProviderOptions`.
+4. **`poll-loop.ts`** — in the event loop, on `trace` write `writeMessageOut({ kind: 'trace', content: JSON.stringify(event.trace), … routing })` (channel/platform/thread from `RoutingContext`).
+
+*Host:*
+5. **`src/container-config.ts`** — `ContainerConfig.emitTrace?: boolean`; `materializeContainerJson` sets it `= group.folder === 'career-pilot-sandbox'`.
+6. **`src/modules/portal/sse-broadcaster.ts`** — a **push-based** `simulator:<id>` topic (distinct from the poll-based `activity` tail): `addSimulatorClient(id, res)`, `pushSimulatorEvent(id, payload)`, `removeSimulatorClient(id, res)`; `stopBroadcaster()` ends these too.
+7. **`src/modules/portal/api.ts`** — `GET /api/simulator/:id/stream` (text/event-stream headers, `flushHeaders`, register via `addSimulatorClient`, `req.on('close')` → remove).
+8. **`src/channels/portal/adapter.ts`** — `deliver(platformId, threadId, message)` now pushes into `simulator:<threadId>` (both `trace` rows and the final `chat`/`task` output) via `pushSimulatorEvent`.
+
+**Definition of done.**
+1. With `emitTrace` true, `translateEvents` emits `trace` events for `tool_use` (incl. `Task`→`subagent`) and the final `result` cost; with `emitTrace` false (owner) it emits none and the event stream is byte-identical to today.
+2. `poll-loop` writes `kind:'trace'` outbound rows (with session routing) for `trace` events; `materializeContainerJson` writes `emitTrace=true` only for the sandbox folder; `config.ts` reads it.
+3. `sse-broadcaster` `simulator:<id>` topic registers/pushes/removes and is torn down by `stopBroadcaster`; `GET /api/simulator/:id/stream` streams to it and cleans up on disconnect.
+4. `portal` adapter `deliver()` pushes trace + chat/task to the matching `simulator:<id>` stream.
+5. Vitest (host): simulator SSE topic register/push/teardown + `GET /:id/stream` + adapter routing. Container test: `translateEvents` over a mocked SDK stream emits the right trace events under `emitTrace` and none without. Full host + container suites + both tscs clean.
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
