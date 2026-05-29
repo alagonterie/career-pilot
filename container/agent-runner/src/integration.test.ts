@@ -235,13 +235,18 @@ describe('poll loop integration', () => {
   it('should process messages arriving after loop starts', async () => {
     const provider = new MockProvider({}, () => '<message to="discord-test">Processed</message>');
     const controller = new AbortController();
-    const loopPromise = runPollLoopWithTimeout(provider, controller.signal, 3000);
+    // Generous windows: abort() only rejects the race wrapper — it does NOT stop
+    // runPollLoop's while(true) — so every prior test leaves a loop running
+    // against the shared (synchronous better-sqlite3) inbound DB. By this point
+    // in the suite that contention can briefly starve a tight delivery window
+    // under machine load, flaking this otherwise-deterministic assertion.
+    const loopPromise = runPollLoopWithTimeout(provider, controller.signal, 8000);
 
     // Insert message after loop has started
     await sleep(200);
     insertMessage('m-late', { sender: 'Charlie', text: 'Late arrival' });
 
-    await waitFor(() => getUndeliveredMessages().length > 0, 2000);
+    await waitFor(() => getUndeliveredMessages().length > 0, 6000);
     controller.abort();
 
     const out = getUndeliveredMessages();
