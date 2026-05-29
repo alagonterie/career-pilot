@@ -1408,7 +1408,7 @@ Everything that NanoClaw v2 ships: `bin/`, `scripts/` (NanoClaw's own), `setup/`
 | **1. Career-pilot agent group** | 2 | `groups/career-pilot/`, migrations 100-107, first MCP tools | Agent has a persona; I can say "add an application for X" and it writes to the DB and confirms. |
 | **2. Subagents + skills** | 3 | 5 subagent definitions, skill instructions, remaining MCP tools | I can paste a JD and ask "tailor my resume" — agent invokes research-company + tailor-resume, returns tailored bullets. |
 | **3. Heartbeat — daily briefing + cron** | 4 | Host-side cron primitive + orchestrator-notify intake + daily-briefing flow + LLM rank-at-draw-time. See §24.6 for the sub-milestone drill-in. | At the scheduled morning time, the orchestrator wakes, queries `job_leads`, LLM-ranks the top-N against the candidate brief, and emits a Telegram briefing — OR skips cleanly per quiet-hours / frequency-cap / no-news rules. Cron schedules survive host restart. |
-| **4. Sanitization + public_audit_trail** | 5 | `src/modules/portal/sanitizer.ts`, post-write hooks, sanitized mirror to `public_audit_trail`. See §24.10 for Sub-milestone 4.1 (Pass 1 regex + Pass 2 company replacement) and §24.11 for Sub-milestone 4.3 (retroactive resanitization on `applications` UPDATE). Pass 3 LLM review (Sub-milestone 4.2) deferred. | Every funnel_event has a matching sanitized row in public_audit_trail; flipping `public_state` rewrites past audit rows to match. Spot check: real company name nowhere in public table even after the candidate edits an application's obfuscation policy. |
+| **4. Sanitization + public_audit_trail** | 5 | `src/modules/portal/sanitizer.ts`, post-write hooks, sanitized mirror to `public_audit_trail`. See §24.10 for Sub-milestone 4.1 (Pass 1 regex + Pass 2 company replacement) and §24.11 for Sub-milestone 4.3 (retroactive resanitization on `applications` UPDATE). Pass 3 LLM review (Sub-milestone 4.2) architecture decided in §24.12 (container batch); build deferred until the first non-funnel category is mirrored. | Every funnel_event has a matching sanitized row in public_audit_trail; flipping `public_state` rewrites past audit rows to match. Spot check: real company name nowhere in public table even after the candidate edits an application's obfuscation policy. |
 | **5. Portal backend** | 6 | Express API, SSE infra, system modes, portal channel adapter, sandbox agent group | I can `curl /api/funnel` and get real (sanitized) data. SSE stream emits events. `POST /api/simulator` spawns a sandbox container. |
 | **6. Frontend bootstrap** | 7 | **TanStack Start docs deep-read** + scaffold + landing + /work | Hero renders. Live ticker connects to SSE. /work renders with placeholders. |
 | **7. Frontend depth** | 8 | /live, /funnel, /architecture pages | All three pages render real data. Filter chips work. Funnel race animates. |
@@ -2925,7 +2925,7 @@ Pass 1 (regex) + Pass 2 (company replacement) is the deterministic backbone — 
 
 **Out of scope (explicit — to keep the increment small):**
 
-- **Pass 3 (Haiku LLM review).** Sub-milestone 4.2. Will land as a swap of the `applyPass3` stub, plus the threshold gate, plus the `notifyOwnerOfSanitizationFlag` path, plus Pass-3 flagged rows showing in an owner-private inbox. **Architectural choice required before 4.2 implementation:** the original §9 sketch wrote `await haikuReviewForLeak(text)` as a host-side LLM call, which is incompatible with our actual architecture — OneCLI's HTTPS_PROXY credential injection only applies to container env (per §24.6's `rank_leads` pivot and §24.9's host-roundtrip-to-container amendment). Three options to weigh when drilling 4.2: (a) move the entire sanitizer pipeline container-side and call it via MCP — cleanest architecturally, couples public_audit_trail correctness to container being alive when funnel events fire; (b) queue Pass 3 work and run it from a container batch job — decouples timing, public_audit_trail rows go in `pending_pass3` state, container batch processes on a schedule; (c) drop Pass 3 entirely and rely on Pass 1 + Pass 2 + defense-in-depth — simplest, deletes future capability. Pick the path before any 4.2 code lands.
+- **Pass 3 (Haiku LLM review).** Sub-milestone 4.2 — **architecture DECIDED, build DEFERRED.** See §24.12 for the full decision. Short version: option (b) (host runs Pass 1+2 immediately; a scheduled container batch finalizes Pass 3) is the committed shape, but the build is deferred until the first non-funnel category is mirrored, because Pass 3's value on short, structured, threshold-gated funnel payloads is near-zero today. The seam stays dormant — `applyPass3` is a no-op stub, `sanitization_pass3_enabled` defaults `false`.
 - **`applications` UPDATE → retroactive re-sanitization** of past public_audit_trail rows. If `obfuscated_label` changes or `public_state` flips from `obfuscated` → `public`, existing rows are NOT rewritten. Sub-milestone 4.3.
 - **`public_funnel_view` materialized projection.** The `/api/funnel` endpoint will need this; Phase 5 (portal backend).
 - **Sandbox group sanitization.** The sandbox's public surface is different (per-session synthetic output, not real applications). Phase 5 / portal channel work.
@@ -3068,6 +3068,36 @@ Same pattern as 4.1 — one spec commit, then one code commit per logical chunk:
 - Commit 6: end-to-end spot check + memory update + ship.
 
 Targeting ~4-6 hours total. The race-surface tests in DoD #7 case 6 are the load-bearing risk — if those reveal the transaction serialization assumption is wrong, the design needs to fall back to a unique index + INSERT OR REPLACE.
+
+---
+
+#### 24.12 Sub-milestone 4.2 — Pass 3 LLM review: decision (architecture committed, build deferred)
+
+**Status: DECIDED 2026-05-28. Architecture = option (b). Build deferred to a trigger condition (below). No code lands now beyond this decision record.**
+
+Pass 3 is the LLM-judgment layer of the sanitizer — the only one that catches leaks Pass 1 (regex) and Pass 2 (DB company/alias replacement) structurally can't: a paraphrase that identifies a company without naming it ("the ride-sharing giant"), a person's name that isn't an email ("spoke with Sarah on the team"), or a company named in passing that has no `applications` row for Pass 2 to match against. §24.10's out-of-scope flagged that the original host-side `await haikuReviewForLeak(text)` sketch is impossible under our architecture — the host cannot make LLM calls; OneCLI's HTTPS_PROXY credential injection reaches only container env (the §24.6 `rank_leads` precedent, reaffirmed by the §24.9 amendment). Three options were on the table; this section records the choice and the reasoning.
+
+**Decision: (b) — host runs Pass 1+2 synchronously at mirror time (unchanged); a scheduled container batch finalizes Pass 3 asynchronously.**
+
+- The audit row lands immediately from Pass 1+2 (as it does today) but carries a Pass-3 lifecycle state (e.g. a `pass3_state` column: `pending` → `clean` | `flagged`). A scheduled container flow — reusing the Phase 3 heartbeat machinery (bootstrap + persona handler + cron, exactly like daily-briefing / funnel-curator) — wakes periodically, reads `pending` rows via an MCP read tool, runs each through Haiku with the container's normal (OneCLI-gated) LLM access, and writes the result back through an MCP write tool that round-trips to a host delivery action. Flagged rows notify the owner (the §17.3 alert channel) and are withheld from / redacted in the public projection until reviewed.
+
+**Why not the alternatives:**
+
+- **(a) Move the whole sanitizer container-side, call via MCP.** Rejected. Pass 1+2 are deterministic, fast, host-side, and fully tested — relocating them only to co-locate Pass 3 is a large refactor of working code. It couples public_audit_trail correctness to a live container, and it breaks the §24.11 operator-script re-mirror path (no container exists there). (b) keeps the deterministic backbone where it belongs and only sends the LLM-needing slice to the container.
+- **(c) Drop Pass 3 forever.** Rejected as a *permanent* choice (though it is effectively the current dormant state). The capability's value climbs sharply once non-funnel categories are mirrored (see trigger).
+
+**Why the build is deferred (not built now):** for the only category mirrored today — `funnel` — Pass 3's marginal value is near-zero:
+
+1. Funnel-event payloads are short, structured, agent-generated notes ("submitted application", "recruiter replied → phone screen"), not the free-form prose where paraphrastic leaks live.
+2. The existing `sanitization_llm_review_threshold_chars` gate (default 1000) means funnel payloads almost never qualify for review even if Pass 3 were on.
+3. Defense-in-depth already hard-drops any row where a *known* non-public company name survives — the high-severity case is covered.
+4. It produces nothing visible on the portal, and the project rule is to not add backend complexity that doesn't translate to the public surface.
+
+Building the full batch engine now (state column + migration, a new scheduled trigger, read/write MCP tools + host actions, the review prompt, tests — comparable to 4.3 in size) would be premature for that risk profile.
+
+**Build trigger:** implement (b) when the **first non-funnel category is mirrored** — i.e. when `public_audit_trail` starts carrying `category='outreach'` or `category='research'` rows (outreach drafts / research digests are free-form prose, where paraphrastic and incidental-name leaks are genuinely likely). That is the point Pass 3 earns its complexity. Until then the seam stays dormant: `applyPass3` is a no-op stub, `sanitization_pass3_enabled` defaults `false`.
+
+**Definition of done for this decision (already satisfied):** the §24.10 out-of-scope Pass-3 bullet points here; the dormant seam exists in code; the trigger condition is written down. No tests, no migration, no new code — this is a decision record, not an implementation.
 
 ---
 
