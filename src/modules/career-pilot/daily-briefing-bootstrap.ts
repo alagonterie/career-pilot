@@ -21,6 +21,7 @@ import { CronExpressionParser } from 'cron-parser';
 import type Database from 'better-sqlite3';
 
 import { TIMEZONE } from '../../config.js';
+import { getConfig } from '../../get-config.js';
 import { nextEvenSeq } from '../../db/session-db.js';
 import { log } from '../../log.js';
 import type { AgentGroup, Session } from '../../types.js';
@@ -33,8 +34,6 @@ import type { AgentGroup, Session } from '../../types.js';
  */
 const SERIES_ID = 'daily-briefing';
 const TASK_PROMPT = '[scheduled trigger: daily-briefing]';
-
-const DEFAULT_CRON_EXPR = '0 8 * * *'; // 8am TZ-local daily
 
 export interface BootstrapPreferences {
   enabled: boolean;
@@ -54,21 +53,12 @@ export interface BootstrapResult {
  * fresh dev environment that hasn't run config seeding yet).
  */
 export function readBriefingPreferences(centralDb: Database.Database): BootstrapPreferences {
-  try {
-    const rows = centralDb
-      .prepare(
-        "SELECT key, value FROM preferences WHERE key IN ('daily_briefing_enabled', 'daily_briefing_time')",
-      )
-      .all() as Array<{ key: string; value: string }>;
-    const lookup = new Map(rows.map((r) => [r.key, r.value]));
-    // enabled defaults to true; only the literal "false" disables.
-    const enabledRaw = lookup.get('daily_briefing_enabled');
-    const enabled = enabledRaw !== 'false';
-    const cronExpr = lookup.get('daily_briefing_time') || DEFAULT_CRON_EXPR;
-    return { enabled, cronExpr };
-  } catch {
-    return { enabled: true, cronExpr: DEFAULT_CRON_EXPR };
-  }
+  // Defaults (daily_briefing_enabled=true, daily_briefing_time=0 8 * * *) live
+  // in config/defaults.json; getConfig resolves env > preferences table > defaults.
+  return {
+    enabled: getConfig<boolean>(centralDb, 'daily_briefing_enabled'),
+    cronExpr: getConfig<string>(centralDb, 'daily_briefing_time'),
+  };
 }
 
 /**

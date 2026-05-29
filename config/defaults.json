@@ -1,5 +1,5 @@
 {
-  "_comment": "Seed values for the preferences and system_modes tables. Loaded by scripts/setup-local.ts on first setup and on `pnpm run reset:dev`. See STRATEGY.md §20 for the four-tier config model.",
+  "_comment": "Canonical defaults for the preferences and system_modes tiers. The host getConfig() helper (src/get-config.ts) reads this file directly as the defaults tier; a preferences-table row (set via Telegram edit, or seeded on first setup once that lands) overrides the value here. See STRATEGY.md §20 for the four-tier config model.",
   "preferences": {
     "gmail_poll_interval_sec": 60,
     "calendar_poll_interval_sec": 300,

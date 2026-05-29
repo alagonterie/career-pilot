@@ -19,14 +19,13 @@ import { CronExpressionParser } from 'cron-parser';
 import type Database from 'better-sqlite3';
 
 import { TIMEZONE } from '../../config.js';
+import { getConfig } from '../../get-config.js';
 import { nextEvenSeq } from '../../db/session-db.js';
 import { log } from '../../log.js';
 import type { AgentGroup, Session } from '../../types.js';
 
 const SERIES_ID = 'funnel-curator';
 const TASK_PROMPT = '[scheduled trigger: funnel-curator]';
-
-const DEFAULT_CRON_EXPR = '30 7 * * *';
 
 export interface BootstrapPreferences {
   enabled: boolean;
@@ -41,20 +40,12 @@ export interface BootstrapResult {
 }
 
 export function readFunnelCuratorPreferences(centralDb: Database.Database): BootstrapPreferences {
-  try {
-    const rows = centralDb
-      .prepare(
-        "SELECT key, value FROM preferences WHERE key IN ('funnel_curator_enabled', 'funnel_curator_cron')",
-      )
-      .all() as Array<{ key: string; value: string }>;
-    const lookup = new Map(rows.map((r) => [r.key, r.value]));
-    const enabledRaw = lookup.get('funnel_curator_enabled');
-    const enabled = enabledRaw !== 'false';
-    const cronExpr = lookup.get('funnel_curator_cron') || DEFAULT_CRON_EXPR;
-    return { enabled, cronExpr };
-  } catch {
-    return { enabled: true, cronExpr: DEFAULT_CRON_EXPR };
-  }
+  // Defaults (funnel_curator_enabled=true, funnel_curator_cron=30 7 * * *) live
+  // in config/defaults.json; getConfig resolves env > preferences table > defaults.
+  return {
+    enabled: getConfig<boolean>(centralDb, 'funnel_curator_enabled'),
+    cronExpr: getConfig<string>(centralDb, 'funnel_curator_cron'),
+  };
 }
 
 export function hasLiveFunnelCuratorTask(inDb: Database.Database): boolean {

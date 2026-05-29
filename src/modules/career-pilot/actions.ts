@@ -24,6 +24,7 @@ import type Database from 'better-sqlite3';
 
 import { getAgentGroup } from '../../db/agent-groups.js';
 import { getDb } from '../../db/connection.js';
+import { getConfig } from '../../get-config.js';
 import { insertMessage } from '../../db/session-db.js';
 import { log } from '../../log.js';
 import { mirrorFunnelEvent, resanitizeApplicationAuditTrail } from '../portal/public-audit.js';
@@ -60,18 +61,6 @@ function payload(content: Record<string, unknown>): Record<string, unknown> {
 
 function generateId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function readBoolPref(db: Database.Database, key: string, fallback: boolean): boolean {
-  try {
-    const row = db.prepare('SELECT value FROM preferences WHERE key = ?').get(key) as
-      | { value: string }
-      | undefined;
-    if (!row) return fallback;
-    return row.value === 'true' || row.value === '1';
-  } catch {
-    return fallback;
-  }
 }
 
 // ── update_profile_field ───────────────────────────────────────────────────
@@ -501,7 +490,7 @@ export async function handleUpdateApplication(
     // Gated on the obfuscation-policy fields actually changing (before/after
     // snapshot diff — robust to obfuscated_label being immutable here) and
     // on the operator preference.
-    if (readBoolPref(db, 'sanitization_resanitize_on_application_update', true)) {
+    if (getConfig<boolean>(db, 'sanitization_resanitize_on_application_update')) {
       const after = db
         .prepare(
           'SELECT obfuscated_label, company_name, company_aliases, public_state FROM applications WHERE id = ?',
