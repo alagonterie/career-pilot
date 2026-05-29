@@ -1490,6 +1490,8 @@ If `Task` round-trip fails, the fallback order is **prescribed, not negotiable**
 | 2 | **Route the orchestrator to a real Anthropic model via `LLM_PROVIDER=claude_test`** (or the production equivalent in prod). The `LLM_PROVIDER` env switch is already part of the local dev story (§16.2) — flipping it sets `ANTHROPIC_BASE_URL` to Anthropic + injects a Portkey AI Provider slug. The subagent itself can still run on GLM if shape-equivalence holds, or also flip up; cost discipline argues for orchestrator-only at first. | Per-call $ | Real Claude has unambiguous `Task` support. This is "spend money to preserve the architecture." |
 | 3 | **Never: orchestrator handles research inline.** | — | This would collapse five subagents into a monolithic orchestrator and break the foundation that Phase 2.2-2.5 rely on. Architectural integrity is preserved at the cost of LLM spend, not at the cost of design. |
 
+> **Update (2026-05-29):** the specific GLM failure observed in Phases 2.5/3.1/3.2 is the `<Agent>`-as-text emission, whose trigger is localized to the `claude_code` system preset (upstream, not author-controllable). Rung 1 (prompt-tune) therefore **cannot** fix it — see §24.13 for the runner-side recovery that sits between rungs 1 and 2. Rung 2 (`LLM_PROVIDER=claude`) remains the unconditional fallback.
+
 The **discovery test is the trigger** for moving down the hierarchy. We run the `--flow=research-company-discovery` first (assertion: `Task` tool_use emitted with the right `subagent_type`), see what GLM does, and only then commit time to fleshing out the prompt body. ~20 minutes of cheap discovery before the larger prompt-writing investment.
 
 **Definition of done:**
@@ -3098,6 +3100,40 @@ Building the full batch engine now (state column + migration, a new scheduled tr
 **Build trigger:** implement (b) when the **first non-funnel category is mirrored** — i.e. when `public_audit_trail` starts carrying `category='outreach'` or `category='research'` rows (outreach drafts / research digests are free-form prose, where paraphrastic and incidental-name leaks are genuinely likely). That is the point Pass 3 earns its complexity. Until then the seam stays dormant: `applyPass3` is a no-op stub, `sanitization_pass3_enabled` defaults `false`.
 
 **Definition of done for this decision (already satisfied):** the §24.10 out-of-scope Pass-3 bullet points here; the dormant seam exists in code; the trigger condition is written down. No tests, no migration, no new code — this is a decision record, not an implementation.
+
+#### 24.13 GLM `<Agent>`-text recovery (runner-side detection + targeted nudge)
+
+**Status:** Tier 0 (detect + targeted nudge + loud diagnostic) — implementing. Tier 1 (runner-side subagent synthesis) — specified but **gated**, see below.
+
+**What this is.** A cross-cutting correction to the §24.1 fallback hierarchy's rung 1. Phases 2.5, 3.1, and 3.2 logged GLM-4.7-Flash emitting `<Agent subagent_type="..." prompt="..." />` as plain text instead of a structured `tool_use` block — the subagent never runs and the turn ends. This section records the failure's localized cause, a correctness footgun it exposed, and the recovery model.
+
+**Failure mode (precise, re-confirmed by live e2e 2026-05-29).** In `--flow=research-company-discovery` under `--llm-provider=ollama`, GLM's thinking block reasons correctly ("invoke the Agent tool properly"), then its output is a *text* block containing `<Agent subagent_type="research-company" prompt="<a well-formed prompt>" />` with `stop_reason: end_turn` and zero `tool_use`. The emitted text is clean and fully-specified — GLM does the delegation reasoning right; it just puts it in the wrong envelope.
+
+**Localized trigger: the `claude_code` system preset.** A faithful `/v1/messages` probe (`scripts/test/glm-toolshape-probe.ts`) could NOT reproduce the failure across 23 runs — GLM emitted real `tool_use` 18/23 even with streaming + a ~45k-token padded context + the real persona (including its own `<Agent>` negative examples) + the NanoClaw `<message>` envelope + the exact failing prompt. The only full-stack element the probe cannot replicate is the `claude_code` preset the SDK prepends to the persona (`container/agent-runner/src/providers/claude.ts`: `systemPrompt: { preset: 'claude_code', append: instructions }`), which is authored for Claude and baked into the Claude Code binary. **Consequence: rung 1 of the §24.1 ladder (prompt-tune the persona) cannot fix this** — the trigger is upstream of anything we author. The only in-our-control layer is runner-side recovery of the model's output text.
+
+**Footgun exposed (correctness bug — fix unconditionally).** When the `<Agent>`-text turn ends, the runner's unwrapped-message nudge (`poll-loop.ts` `dispatchResultText` → the `hasUnwrapped` branch) fires: "your response was not wrapped in `<message>` blocks." GLM obeys *literally* and fabricates a `<message>`: "research is in progress, will share findings once complete" — when no research ran. The generic nudge converts a recoverable miss into a confident, silent falsehood. This is wrong independent of any GLM-CI goal and is corrected in Tier 0.
+
+**Tiered recovery model.**
+
+| Tier | Mechanism | Status |
+|---|---|---|
+| 0 | Detect literal `<Agent ...>` / `<Task ...>` text in the result; replace the generic unwrapped nudge with a TARGETED one ("you emitted Agent as text, not a tool call — re-issue it as a real tool call"); log it loudly as the known GLM tool-shape failure so e2e fails with the right diagnosis instead of a fabricated success. | Implementing. |
+| 1 | Parse the `<Agent>` text into `{subagent_type, prompt}`, run that subagent as a nested one-shot `sdkQuery` scoped to its composed body + `tools:` palette, push the result back into the parent query as framed text. Deterministic — does not depend on the model retrying. | Specified, gated. |
+| 2 | Intercept the assistant stream and forge a real `tool_use` block so the SDK's own subagent loop runs. | **Rejected** — needs Claude Code internals we don't control; would diverge on every NanoClaw upgrade (same grounds as the rejected provider-fork, NANOCLAW_INTERNALS.md §11 Δ1). |
+
+**Tier 1 gating.** Build Tier 1 only if BOTH hold: (a) the Tier-0 targeted nudge fails to converge in the real flow (GLM keeps emitting text after the corrective), AND (b) an explicit ROI decision favors it. ROI note: these subagent e2e flows require Docker + Ollama (17 GB model) + OneCLI, so they **cannot run in hosted CI** — the benefit is cheaper *local* iteration only, against a `--llm-provider=claude` fallback that costs ~$0.75/flow ([[reference-claude-validation-cost]]) a handful of times per phase. Tier 1 is ~1-2 sessions and its end-to-end payoff is contingent on GLM's unproven post-delegation synthesis quality.
+
+**Production-safety invariant (load-bearing).** Every behavior in this section is gated behind detecting literal `<Agent>` / `<Task>` text in the agent's output. A correct structured `tool_use` — what real Claude emits in production — never produces that text, so detection never fires and the production delivery path is byte-for-byte unchanged. This is asserted directly in unit tests: well-formed output (real `<message>` blocks, or output following a real tool_use) takes the identical pre-existing path with zero new side effects.
+
+**Definition of done.**
+
+1. A pure detector recognizes `<Agent ...>` / `<Task ...>` text emissions and extracts `subagent_type` (+ `prompt` when present); unit-tested with positives (self-closing, open/close, with/without prompt) and negatives (a real `<message>` block, prose merely mentioning "Agent", a fenced code sample).
+2. When `<Agent>`-text is detected with no delivered `<message>` block, the runner emits the TARGETED nudge, not the generic "wrap your output" one — verified by a unit test on nudge selection.
+3. The generic unwrapped-message nudge path is unchanged for the no-`<Agent>`-text case (regression guard for the legitimate "agent forgot to wrap" scenario).
+4. The runner logs the emission as the known GLM tool-shape failure (operator-visible).
+5. Production-safety invariant test: a result containing only well-formed `<message>` blocks produces zero Tier-0 side effects and takes the pre-existing dispatch path.
+6. `--flow=research-company-discovery` re-run under `--llm-provider=ollama` is recorded here: either the targeted nudge converges (GLM re-emits a real `Task` tool_use → flow green) OR it does not, and that outcome is the Tier-1 gating evidence.
+7. No change to any persona/subagent runtime artifact (the fix is runner-side, per the localized-trigger finding). No new MCP tool, no migration.
 
 ---
 
