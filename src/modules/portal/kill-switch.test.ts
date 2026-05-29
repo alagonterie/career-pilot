@@ -11,13 +11,19 @@ import { closeDb, initTestDb } from '../../db/connection.js';
 import { runMigrations } from '../../db/migrations/index.js';
 import type { Session } from '../../types.js';
 
-import { executeControlCommand, parseControlReason } from './kill-switch.js';
-import { getPauseReason, getPauseState, setPauseState } from './system-modes.js';
+import {
+  clearKillswitch,
+  executeControlCommand,
+  executeKillswitch,
+  parseControlReason,
+} from './kill-switch.js';
+import type { ExternalRevocationResult } from './killswitch-external.js';
+import { getLiveMode, getPauseReason, getPauseState, setLiveMode, setPauseState } from './system-modes.js';
 
-function fakeSession(id: string): Session {
+function fakeSession(id: string, agentGroupId = 'ag-1'): Session {
   return {
     id,
-    agent_group_id: 'ag-1',
+    agent_group_id: agentGroupId,
     messaging_group_id: 'mg-1',
     thread_id: null,
     status: 'active',
@@ -26,6 +32,13 @@ function fakeSession(id: string): Session {
     container_status: 'running',
   } as Session;
 }
+
+const wiredFalse = (name: 'onecli' | 'portkey'): ExternalRevocationResult => ({
+  name,
+  wired: false,
+  ok: false,
+  detail: 'NOT_WIRED',
+});
 
 describe('executeControlCommand', () => {
   let db: Database.Database;
@@ -101,5 +114,80 @@ describe('parseControlReason', () => {
   it('returns null when no reason is given', () => {
     expect(parseControlReason('/pause')).toBeNull();
     expect(parseControlReason('/resume   ')).toBeNull();
+  });
+});
+
+describe('executeKillswitch (Sub-milestone 5.4b)', () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    closeDb();
+    db = initTestDb();
+    runMigrations(db);
+  });
+
+  afterEach(() => {
+    closeDb();
+  });
+
+  it('sets killswitch, kills every running container, and invokes both external seams', async () => {
+    const kill = vi.fn();
+    const revokeOneCli = vi.fn(async () => wiredFalse('onecli'));
+    const zeroPortkey = vi.fn(async () => wiredFalse('portkey'));
+
+    const result = await executeKillswitch('compromise', 'owner-1', {
+      getRunningSessions: () => [fakeSession('s1', 'ag-1'), fakeSession('s2', 'ag-2')],
+      killContainer: kill,
+      revokeOneCli,
+      zeroPortkey,
+    });
+
+    expect(result.state).toBe('killswitch');
+    expect(result.killed).toBe(2);
+    expect(kill).toHaveBeenCalledTimes(2);
+    expect(kill).toHaveBeenCalledWith('s1', 'killswitch');
+    expect(kill).toHaveBeenCalledWith('s2', 'killswitch');
+    // Distinct agent group ids passed to the OneCLI revoke seam.
+    expect(revokeOneCli).toHaveBeenCalledWith(['ag-1', 'ag-2']);
+    expect(zeroPortkey).toHaveBeenCalledTimes(1);
+    expect(result.external).toHaveLength(2);
+    expect(getPauseState()).toBe('killswitch');
+    expect(getPauseReason()).toBe('compromise');
+  });
+
+  it('uses the real (NOT_WIRED) seams by default and never throws', async () => {
+    const result = await executeKillswitch(null, 'owner-1', {
+      getRunningSessions: () => [],
+      killContainer: vi.fn(),
+    });
+    expect(result.state).toBe('killswitch');
+    expect(result.killed).toBe(0);
+    expect(result.external.every((e) => e.wired === false)).toBe(true);
+    expect(getPauseState()).toBe('killswitch');
+  });
+});
+
+describe('clearKillswitch (Sub-milestone 5.4b)', () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    closeDb();
+    db = initTestDb();
+    runMigrations(db);
+  });
+
+  afterEach(() => {
+    closeDb();
+  });
+
+  it('returns the system to active shadow mode', () => {
+    setPauseState('killswitch', 'incident', 'owner-1');
+    setLiveMode(true, 'owner-1');
+
+    clearKillswitch('operator:recover');
+
+    expect(getPauseState()).toBe('active');
+    expect(getPauseReason()).toBeNull();
+    expect(getLiveMode()).toBe(false); // always shadow after recovery
   });
 });

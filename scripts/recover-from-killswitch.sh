@@ -1,28 +1,31 @@
 #!/usr/bin/env bash
 # scripts/recover-from-killswitch.sh
 #
-# Manual recovery from /killswitch state. Owner must SSH to the VM and run
-# this script (or follow its steps). The killswitch is intentionally NOT
-# self-resetting — recovery requires a deliberate, audited action.
+# Manual recovery from /killswitch state. Owner must SSH to the VM and run this
+# (or follow its steps). The killswitch is intentionally NOT self-resetting —
+# recovery requires a deliberate, audited action. Full procedure: RECOVERY.md §3.
 #
-# Full procedure: RECOVERY.md §3.
-#
-# Phase 0 status: PLACEHOLDER skeleton. Implementation lands in Phase 4 when
-# the kill-switch control plane (src/modules/portal/kill-switch.ts) is built.
-#
-# What this will do (each step prompts for confirmation):
-#   1. Confirm operator identity (echo current user, hostname, current state)
-#   2. Re-issue OneCLI agent tokens for career-pilot and career-pilot-sandbox
-#   3. Reset Portkey budget caps to configured defaults (from preferences table)
-#   4. Clear the killswitch flag in system_modes (sets pause_state='active')
-#   5. Bring services back online with LIVE_MODE=false (shadow mode)
-#   6. Tail logs for 30s to verify no immediate errors
-#   7. Print: "Recovered to shadow mode. Flip LIVE_MODE=true via Telegram when ready."
-#
-# Why NOT in production yet: Phase 0 doesn't have a running system to recover.
+# This is a thin wrapper around the testable TS recovery
+# (scripts/recover-from-killswitch.ts), which clears the killswitch flag and
+# returns the system to SHADOW mode (live_mode stays false). The external
+# re-issues (OneCLI tokens, Portkey budget) and the VM service restart are still
+# manual — they are NOT_WIRED until the deploy phase (see killswitch-external.ts).
 
 set -euo pipefail
 
-echo "recover-from-killswitch: not yet implemented (Phase 0 scaffolding)."
-echo "See RECOVERY.md §3 for the full procedure. Implementation: Phase 4."
-exit 1
+cd "$(dirname "$0")/.."
+
+read -r -p "I have reviewed the incident and want to recover to SHADOW mode [y/N]: " ok
+if [[ "${ok:-}" != "y" && "${ok:-}" != "Y" ]]; then
+  echo "Aborted. Killswitch remains engaged."
+  exit 1
+fi
+
+# Clears the killswitch flag in system_modes -> pause_state='active', live_mode=false.
+pnpm exec tsx scripts/recover-from-killswitch.ts
+
+echo ""
+echo "Remaining manual steps (until deploy automates them):"
+echo "  - Restart the host service so containers re-spawn on the next message."
+echo "  - Verify the portal shows the SHADOW MODE badge."
+echo "  - Re-enable live mode (/setmode live) only after observation."
