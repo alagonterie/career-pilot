@@ -21,8 +21,15 @@
  * sanitization layer exists to protect. Modeled on
  * scripts/delete-cli-agent.ts.
  *
- * Usage:
+ * Usage (provide exactly one selector):
  *   pnpm exec tsx scripts/resanitize-application.ts --id <application-id>
+ *   pnpm exec tsx scripts/resanitize-application.ts --company "<company name>"
+ *   pnpm exec tsx scripts/resanitize-application.ts --label <obfuscated_label>
+ *
+ * --company / --label exist so you don't need the internal application id to
+ * hand. --company is case-insensitive and may match more than one row (same
+ * company, multiple roles) — when it does, the script lists the candidates
+ * and asks you to re-run with --id. --label and --id are unique.
  *
  * Safe to run while the host is up — it opens its own connection; SQLite's
  * busy_timeout covers brief write contention. Prints { rewritten, deleted }.
@@ -34,35 +41,81 @@ import { initDb } from '../src/db/connection.js';
 import { runMigrations } from '../src/db/migrations/index.js';
 import { resanitizeApplicationAuditTrail } from '../src/modules/portal/public-audit.js';
 
-function parseArgs(): { id: string } {
+const SELECTORS = ['id', 'company', 'label'] as const;
+type Selector = (typeof SELECTORS)[number];
+
+const USAGE =
+  'usage: pnpm exec tsx scripts/resanitize-application.ts (--id <id> | --company "<name>" | --label <obfuscated_label>)';
+
+function parseArgs(): { by: Selector; value: string } {
   const argv = process.argv.slice(2);
-  let id = '';
+  const flags: Partial<Record<Selector, string>> = {};
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--id' && argv[i + 1]) id = argv[++i];
-    else if (argv[i].startsWith('--id=')) id = argv[i].slice('--id='.length);
+    const a = argv[i];
+    for (const key of SELECTORS) {
+      if (a === `--${key}` && argv[i + 1]) {
+        flags[key] = argv[++i];
+        break;
+      }
+      if (a.startsWith(`--${key}=`)) {
+        flags[key] = a.slice(`--${key}=`.length);
+        break;
+      }
+    }
   }
-  if (!id) {
-    console.error('usage: pnpm exec tsx scripts/resanitize-application.ts --id <application-id>');
+  const provided = SELECTORS.filter((k) => flags[k]);
+  if (provided.length !== 1) {
+    console.error(USAGE);
+    if (provided.length > 1) {
+      console.error(`  provide exactly one selector; got: ${provided.join(', ')}`);
+    }
     process.exit(1);
   }
-  return { id };
+  const by = provided[0];
+  return { by, value: flags[by] as string };
 }
 
-const { id } = parseArgs();
+interface AppRow {
+  id: string;
+  company_name: string;
+  public_state: string;
+  obfuscated_label: string;
+}
+
+const sel = parseArgs();
 
 const db = initDb(path.join(DATA_DIR, 'v2.db'));
 runMigrations(db);
 
-const app = db.prepare('SELECT id, public_state, obfuscated_label FROM applications WHERE id = ?').get(id) as
-  | { id: string; public_state: string; obfuscated_label: string }
-  | undefined;
-if (!app) {
-  console.error(`No application with id "${id}" — nothing to resanitize.`);
+const where =
+  sel.by === 'id'
+    ? 'id = ?'
+    : sel.by === 'label'
+      ? 'obfuscated_label = ?'
+      : 'lower(company_name) = lower(?)';
+const candidates = db
+  .prepare(`SELECT id, company_name, public_state, obfuscated_label FROM applications WHERE ${where}`)
+  .all(sel.value) as AppRow[];
+
+if (candidates.length === 0) {
+  console.error(`No application matched --${sel.by} "${sel.value}" — nothing to resanitize.`);
+  process.exit(1);
+}
+if (candidates.length > 1) {
+  // Only --company can realistically be ambiguous (one company, several
+  // roles). Surface the candidates and ask for the unique --id.
+  console.error(`Ambiguous: ${candidates.length} applications matched --${sel.by} "${sel.value}". Re-run with --id:`);
+  for (const c of candidates) {
+    console.error(
+      `  --id ${c.id}  (company="${c.company_name}", label=${c.obfuscated_label}, public_state=${c.public_state})`,
+    );
+  }
   process.exit(1);
 }
 
-const result = resanitizeApplicationAuditTrail(db, id);
+const app = candidates[0];
+const result = resanitizeApplicationAuditTrail(db, app.id);
 console.log(
-  `Resanitized application ${id} (public_state=${app.public_state}, label=${app.obfuscated_label}): ` +
-    `rewrote ${result.rewritten} row(s), deleted ${result.deleted} stale row(s).`,
+  `Resanitized application ${app.id} (company="${app.company_name}", public_state=${app.public_state}, ` +
+    `label=${app.obfuscated_label}): rewrote ${result.rewritten} row(s), deleted ${result.deleted} stale row(s).`,
 );
