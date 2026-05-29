@@ -63,7 +63,9 @@
     "portal_api_port": 3001,
     "portal_cors_origins": ["http://localhost:3000"],
     "portal_sse_tail_interval_ms": 1000,
-    "portal_sse_keepalive_ms": 15000
+    "portal_sse_keepalive_ms": 15000,
+    "portal_telemetry_cache_ms": 30000,
+    "portal_architecture_cache_ms": 5000
   },
   "system_modes": {
     "live_mode": false,
