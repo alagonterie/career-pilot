@@ -1,19 +1,27 @@
 /**
  * src/modules/portal/system-modes.ts — system_modes table accessors.
  *
- * Sub-milestone 5.1 (STRATEGY.md §24.15) implements the READ accessors used by
+ * Sub-milestone 5.1 (STRATEGY.md §24.15) implemented the READ accessors used by
  * GET /api/system-status: getLiveMode(), getPauseState(), getPauseReason(),
- * getSystemStatus(). The write/control plane (setPauseState + hot-reload +
- * the /pause /resume /halt /killswitch command-gate + the container-runner
- * pause gate) lands in Sub-milestone 5.4.
+ * getSystemStatus().
+ *
+ * Sub-milestone 5.4a (STRATEGY.md §24.18) adds the WRITERS: setPauseState() and
+ * setLiveMode(). They UPSERT the key/value rows; the readers above reflect the
+ * change on their next read. The /pause /resume /halt command surface
+ * (command-gate.ts → kill-switch.ts) and the container-runner spawn gate consume
+ * these. Hot-reload of running containers (a kind:'system' nudge so warm
+ * containers re-read mid-turn) is DEFERRED as a unit — the container has no
+ * consumer for it today (the poll loop discards inbound kind:'system' rows and
+ * config.ts reads container.json only), and pause/live-mode are enforced
+ * host-side. See the deferral note in STRATEGY.md §24.18 / §16.6 / §20.2.
  *
  * The system_modes table (migration 106) is empty until first written, so
  * every reader has a safe default: live_mode=false (shadow), pause_state='active'.
  *
- * Stored values are read defensively (JSON first, raw string fallback) so this
- * tolerates whatever encoding 5.4's writers settle on.
+ * Stored values are written JSON-encoded and read defensively (JSON first, raw
+ * string fallback) so the readers also tolerate hand-seeded raw values.
  *
- * See STRATEGY.md §11 + §24.15 + RECOVERY.md.
+ * See STRATEGY.md §11 + §24.15 + §24.18 + RECOVERY.md.
  */
 import { getDb } from '../../db/connection.js';
 import { log } from '../../log.js';
@@ -79,4 +87,55 @@ export function getSystemStatus(): SystemStatus {
     pause_reason: getPauseReason(),
     backend: 'online',
   };
+}
+
+// ── Writers (Sub-milestone 5.4a) ──────────────────────────────────────────────
+
+/**
+ * UPSERT a single system_modes row. Values are JSON-encoded so the readers'
+ * JSON-first `parseStored` round-trips cleanly (booleans stay booleans, null
+ * stays null). `changed_at` is an ISO-ish UTC string to match the rest of the
+ * schema; `changed_by` records the actor (admin user id / 'operator' / null).
+ */
+function writeMode(key: string, value: unknown, changedBy: string | null): void {
+  getDb()
+    .prepare(
+      `INSERT INTO system_modes (key, value, changed_at, changed_by)
+       VALUES (@key, @value, datetime('now'), @changedBy)
+       ON CONFLICT(key) DO UPDATE SET
+         value = excluded.value,
+         changed_at = excluded.changed_at,
+         changed_by = excluded.changed_by`,
+    )
+    .run({ key, value: JSON.stringify(value ?? null), changedBy });
+}
+
+/**
+ * Set the pause state and its reason atomically. `paused` is the soft state
+ * (proactive suppressed, reactive still answered); `halted`/`killswitch` are
+ * hard (the container-runner spawn gate refuses new containers). Recovery from
+ * `killswitch` is intentionally manual (RECOVERY.md) — `/resume` does not clear it.
+ */
+export function setPauseState(
+  state: PauseState,
+  reason: string | null = null,
+  changedBy: string | null = null,
+): void {
+  const tx = getDb().transaction(() => {
+    writeMode('pause_state', state, changedBy);
+    writeMode('pause_reason', reason, changedBy);
+  });
+  tx();
+  log.info('system mode: pause_state set', { state, reason, changedBy });
+}
+
+/**
+ * Flip live mode. `false` = shadow/dry-run (no real external side effects);
+ * `true` = real outreach. External-action tools read this fresh at action time
+ * (host-side), so no running-container hot-reload is required for it to take
+ * effect on the next action.
+ */
+export function setLiveMode(on: boolean, changedBy: string | null = null): void {
+  writeMode('live_mode', on, changedBy);
+  log.info('system mode: live_mode set', { on, changedBy });
 }

@@ -31,8 +31,10 @@ import fs from 'fs';
 
 import { getActiveSessions } from './db/sessions.js';
 import { getAgentGroup } from './db/agent-groups.js';
+import { getPauseState, type PauseState } from './modules/portal/system-modes.js';
 import {
   countDueMessages,
+  countDueReactiveMessages,
   deleteOrphanProcessingClaims,
   getContainerState,
   getMessageForRetry,
@@ -117,6 +119,23 @@ export function decideStuckAction(args: {
   return { action: 'ok' };
 }
 
+/**
+ * Whether a cold container wake should be suppressed this tick given the
+ * system pause state (Sub-milestone 5.4a, STRATEGY.md §24.18).
+ *
+ *   - `halted` / `killswitch` — suppress every cold wake (hard stop).
+ *   - `paused` — soft: suppress only when there is no due *reactive* (direct-
+ *     message) work; a direct message still wakes, a proactive cron does not.
+ *   - `active` — never suppress.
+ *
+ * Pure so the policy is unit-testable without running the sweep.
+ */
+export function shouldSuppressColdWake(pauseState: PauseState, dueReactiveCount: number): boolean {
+  if (pauseState === 'halted' || pauseState === 'killswitch') return true;
+  if (pauseState === 'paused' && dueReactiveCount === 0) return true;
+  return false;
+}
+
 let running = false;
 
 export function startHostSweep(): void {
@@ -179,10 +198,23 @@ async function sweepSession(session: Session): Promise<void> {
     // and the wake would never fire.
     const dueCount = countDueMessages(inDb);
     if (dueCount > 0 && !isContainerRunning(session.id)) {
-      log.info('Waking container for due messages', { sessionId: session.id, count: dueCount });
-      // wakeContainer never throws — transient spawn failures (OneCLI down,
-      // etc.) return false and leave messages pending for the next tick.
-      await wakeContainer(session);
+      // Pause gate (Sub-milestone 5.4a, STRATEGY.md §24.18). `halted`/
+      // `killswitch` block every cold wake (wakeContainer also refuses, this
+      // just avoids the call). `paused` is soft: still wake for a due reactive
+      // (direct) message, but skip a wake whose only due work is proactive
+      // (heartbeat cron / agent system rows). `getPauseState()` defaults to
+      // `active` when system_modes is absent, so this is inert for upstream.
+      const pauseState = getPauseState();
+      const suppress =
+        pauseState !== 'active' && shouldSuppressColdWake(pauseState, countDueReactiveMessages(inDb));
+      if (suppress) {
+        log.debug('Suppressing wake under pause state', { sessionId: session.id, pauseState, dueCount });
+      } else {
+        log.info('Waking container for due messages', { sessionId: session.id, count: dueCount });
+        // wakeContainer never throws — transient spawn failures (OneCLI down,
+        // etc.) return false and leave messages pending for the next tick.
+        await wakeContainer(session);
+      }
     }
 
     const alive = isContainerRunning(session.id);

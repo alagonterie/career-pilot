@@ -5,14 +5,26 @@
  * - Filtered commands: dropped silently (never reach the container)
  * - Admin commands: checked against user_roles; denied senders get a
  *   "Permission denied" response written directly to messages_out
+ * - Control commands: operator control plane (/pause /resume /halt). Admin-only.
+ *   The gate only *classifies* them ({ action: 'control' }); the side effects +
+ *   reply live in src/modules/portal/kill-switch.ts, dispatched by the router —
+ *   keeping this module side-effect-free. See STRATEGY.md §24.18.
  * - Normal messages: pass through unchanged
  */
 import { getDb, hasTable } from './db/connection.js';
 
-export type GateResult = { action: 'pass' } | { action: 'filter' } | { action: 'deny'; command: string };
+export type GateResult =
+  | { action: 'pass' }
+  | { action: 'filter' }
+  | { action: 'deny'; command: string }
+  | { action: 'control'; command: string };
 
 const FILTERED_COMMANDS = new Set(['/help', '/login', '/logout', '/doctor', '/config', '/remote-control']);
 const ADMIN_COMMANDS = new Set(['/clear', '/compact', '/context', '/cost', '/files']);
+// Operator control plane (Sub-milestone 5.4a). Admin-only; non-admins are denied.
+// /killswitch (5.4b) is deliberately NOT here yet — it requires the external-tail
+// machinery + an admin confirmation card before it's safe to wire.
+const CONTROL_COMMANDS = new Set(['/pause', '/resume', '/halt']);
 
 /**
  * Classify a message and decide whether it should reach the container.
@@ -34,6 +46,13 @@ export function gateCommand(content: string, userId: string | null, agentGroupId
   const command = text.split(/\s/)[0].toLowerCase();
 
   if (FILTERED_COMMANDS.has(command)) return { action: 'filter' };
+
+  if (CONTROL_COMMANDS.has(command)) {
+    if (isAdmin(userId, agentGroupId)) {
+      return { action: 'control', command };
+    }
+    return { action: 'deny', command };
+  }
 
   if (ADMIN_COMMANDS.has(command)) {
     if (isAdmin(userId, agentGroupId)) {

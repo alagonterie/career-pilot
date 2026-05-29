@@ -19,6 +19,7 @@
  */
 import { getChannelAdapter } from './channels/channel-registry.js';
 import { gateCommand } from './command-gate.js';
+import { executeControlCommand, parseControlReason } from './modules/portal/kill-switch.js';
 import { getAgentGroup } from './db/agent-groups.js';
 import { recordDroppedMessage } from './db/dropped-messages.js';
 import {
@@ -443,6 +444,34 @@ async function deliverToAgent(
         content: JSON.stringify({ text: `Permission denied: ${gate.command} requires admin access.` }),
       });
       log.info('Admin command denied by gate', { command: gate.command, userId, agentGroupId: agent.agent_group_id });
+      return;
+    }
+    if (gate.action === 'control') {
+      // Operator control plane (/pause /resume /halt). The gate already
+      // admin-checked; execute the side effects host-side and reply directly.
+      // The command never reaches the container.
+      let text = '';
+      try {
+        text = (JSON.parse(event.message.content).text || '').toString();
+      } catch {
+        text = event.message.content;
+      }
+      const outcome = executeControlCommand(gate.command, parseControlReason(text), userId);
+      writeOutboundDirect(session.agent_group_id, session.id, {
+        id: `ctl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        kind: 'chat',
+        platformId: deliveryAddr.platformId,
+        channelType: deliveryAddr.channelType,
+        threadId: deliveryAddr.threadId,
+        content: JSON.stringify({ text: outcome.message }),
+      });
+      log.info('Control command executed', {
+        command: gate.command,
+        state: outcome.state,
+        killed: outcome.killed,
+        userId,
+        agentGroupId: agent.agent_group_id,
+      });
       return;
     }
   }
