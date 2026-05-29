@@ -1407,7 +1407,7 @@ Everything that NanoClaw v2 ships: `bin/`, `scripts/` (NanoClaw's own), `setup/`
 | **1. Career-pilot agent group** | 2 | `groups/career-pilot/`, migrations 100-107, first MCP tools | Agent has a persona; I can say "add an application for X" and it writes to the DB and confirms. |
 | **2. Subagents + skills** | 3 | 5 subagent definitions, skill instructions, remaining MCP tools | I can paste a JD and ask "tailor my resume" — agent invokes research-company + tailor-resume, returns tailored bullets. |
 | **3. Heartbeat — daily briefing + cron** | 4 | Host-side cron primitive + orchestrator-notify intake + daily-briefing flow + LLM rank-at-draw-time. See §24.6 for the sub-milestone drill-in. | At the scheduled morning time, the orchestrator wakes, queries `job_leads`, LLM-ranks the top-N against the candidate brief, and emits a Telegram briefing — OR skips cleanly per quiet-hours / frequency-cap / no-news rules. Cron schedules survive host restart. |
-| **4. Sanitization + public_audit_trail** | 5 | `src/modules/portal/sanitizer.ts`, post-write hooks, sanitized mirror to `public_audit_trail`. See §24.10 for the Sub-milestone 4.1 drill-in (Pass 1 regex + Pass 2 company replacement; Pass 3 LLM review deferred). | Every funnel_event has a matching sanitized row in public_audit_trail. Spot check: real company name nowhere in public table. |
+| **4. Sanitization + public_audit_trail** | 5 | `src/modules/portal/sanitizer.ts`, post-write hooks, sanitized mirror to `public_audit_trail`. See §24.10 for Sub-milestone 4.1 (Pass 1 regex + Pass 2 company replacement) and §24.11 for Sub-milestone 4.3 (retroactive resanitization on `applications` UPDATE). Pass 3 LLM review (Sub-milestone 4.2) deferred. | Every funnel_event has a matching sanitized row in public_audit_trail; flipping `public_state` rewrites past audit rows to match. Spot check: real company name nowhere in public table even after the candidate edits an application's obfuscation policy. |
 | **5. Portal backend** | 6 | Express API, SSE infra, system modes, portal channel adapter, sandbox agent group | I can `curl /api/funnel` and get real (sanitized) data. SSE stream emits events. `POST /api/simulator` spawns a sandbox container. |
 | **6. Frontend bootstrap** | 7 | **TanStack Start docs deep-read** + scaffold + landing + /work | Hero renders. Live ticker connects to SSE. /work renders with placeholders. |
 | **7. Frontend depth** | 8 | /live, /funnel, /architecture pages | All three pages render real data. Filter chips work. Funnel race animates. |
@@ -2945,6 +2945,126 @@ Pass 1 (regex) + Pass 2 (company replacement) is the deterministic backbone — 
 | **G. `public_audit_trail.summary` truncation cuts off mid-redaction marker** (e.g., the 500th character is inside `[REDACTED:...]`) | Low | Truncation is on the OUTER summary string AFTER all replacements; if the truncation point lands inside a marker, the marker is incomplete but no real name leaks (the marker comes from sanitizer, not real text). Acceptable. Add a marker-aware truncation only if it produces ugly UX. |
 | **H. Multi-application funnel_event** (a single payload references two companies) | Low | Pass 2 runs ALL applications' replacements over the full text, so both companies get redacted independently. Tested in component 5. |
 | **I. Test fixtures drift from real funnel_event shapes** | Low | The actions.integration test (component 7) exercises the full pipeline through `handleRecordFunnelEvent`, so the fixture shape is whatever that handler accepts. No separate fixture file. |
+
+---
+
+#### 24.11 Sub-milestone 4.3 — Retroactive resanitization on `applications` UPDATE
+
+The 4.1 mirror is fire-and-forget: each funnel_event sanitizes once, using the application row's state *at the moment of the event*. When the application later changes one of four fields — `company_name`, `company_aliases`, `obfuscated_label`, `public_state` — past `public_audit_trail` rows go stale relative to current intent. The most consequential transition is `public_state: public → obfuscated`: prior audit rows still contain the real company name in plaintext, leaking what is now meant to be confidential. 4.3 closes that window.
+
+**Why it's a separate sub-milestone:** the trigger surface (UPDATE hook + delete-and-re-mirror) is orthogonal to the sanitizer pipeline itself, the concurrency story has at least one non-trivial race (concurrent funnel_event mirrors), and the operator escape hatch (manual re-run tool) is its own MCP surface. Bundling with 4.1 would have doubled the commit and added a race surface that's hard to land cleanly without 4.1 first being battle-tested.
+
+**Trigger fields and what each requires:**
+
+| Field changed | Effect on past audit rows | Required action |
+|---|---|---|
+| `public_state: public → obfuscated` | All past rows leak the real company name in plaintext | Delete + re-mirror from `funnel_events` truth |
+| `public_state: obfuscated → public` | All past rows show `[REDACTED:<label>]` instead of the real name | Delete + re-mirror (Pass 2 won't redact since `public_state='public'` now) |
+| `obfuscated_label` changed (with `public_state='obfuscated'`) | `application_ref` is stale; embedded `[REDACTED:<old_label>]` markers are stale | Delete + re-mirror |
+| `company_name` changed | Pass 2 was redacting against an outdated canonical name; future events use new name; past events under-redact if the new name appears in old payloads | Delete + re-mirror |
+| `company_aliases` changed | Similar to `company_name` — alias set has expanded or contracted | Delete + re-mirror |
+
+All five cases collapse to the same action: **delete-and-re-mirror**. Truth lives in `funnel_events`; the audit trail is a derived projection, so "rewriting history" is exactly what 4.3 is meant to do.
+
+**Algorithm:**
+
+1. In `handleUpdateApplication`, after the `applications` UPDATE commits and `writeResponse` lands, compare the patch against the pre-update row. If any of the five trigger fields changed AND the preference `sanitization_resanitize_on_application_update` is `true`, dispatch `resanitizeApplicationAuditTrail(db, application_id)` in a try/catch (same pattern as 4.1's mirror call — failure logged, never propagated, never rolls back the UPDATE).
+2. `resanitizeApplicationAuditTrail` runs in a single SQLite transaction:
+   - Read the application's `funnel_events` ids and their `ts` values into memory.
+   - DELETE FROM `public_audit_trail` WHERE `category='funnel'` AND `details_json` references one of those funnel_event ids (see "audit row → source funnel_event" below).
+   - For each `funnel_events` row in chronological order, call `mirrorFunnelEvent(db, event_id)`.
+   - COMMIT.
+3. Return `{ rewritten: number, deleted: number }` from the function (loggable for ops visibility; never surfaced to the agent or user).
+
+**Audit row → source funnel_event linkage (4.1 backfill):**
+
+4.1's `mirrorFunnelEvent` stores `details_json = { kind, from_status, to_status, sanitized }` — it does NOT include the source `funnel_event.id`. 4.3 needs that link. Two ways to add it:
+
+(a) **Extend `details_json` shape in 4.3** to include `source_funnel_event_id`. New writes from 4.1's hook get it for free; legacy rows from before 4.3 don't have it. Delete by `application_ref` + lack-of-link as the legacy heuristic.
+
+(b) **Add a dedicated indexed column `source_funnel_event_id TEXT` to `public_audit_trail`** via a new migration. Strict referential integrity; cleaner queries; one-time backfill from `details_json` for any rows that happen to have it.
+
+Recommend **(b)** — the audit table is intended to grow indefinitely and a dedicated column is cheaper to query than `json_extract`. Migration `111` (next free number after the 4.1 set) adds the column + an index. Backfill is empty in practice because the table is fresh post-4.1.
+
+**Race surface — concurrent funnel_event during resanitization:**
+
+The hairy case: agent calls `update_application(public_state='public')` then immediately calls `record_funnel_event(...)` in the same turn. Both are MCP system actions handled sequentially by the host, but their *deferred mirror calls* could overlap:
+
+1. `update_application` commits → `writeResponse` → `resanitizeApplicationAuditTrail` scheduled as deferred sync work.
+2. `record_funnel_event` arrives, commits to `funnel_events`, `writeResponse`, `mirrorFunnelEvent` scheduled.
+3. If 2's mirror runs before 1's resanitization, then 1's resanitization will pick up the new event (correct).
+4. If 1's resanitization runs before 2's mirror, then 1 only re-mirrors events that existed at step 1; 2's event mirrors normally after.
+5. **The bad case:** if they run *interleaved*, 1's DELETE could erase the row 2 just inserted, then 1's re-mirror loop misses 2's event because it read the funnel_events list before 2's INSERT.
+
+The mitigation: `resanitizeApplicationAuditTrail` re-reads `funnel_events` for the application *inside the transaction*, so it sees any rows committed before its BEGIN. SQLite's `IMMEDIATE` transaction mode + the fact that both 1's resanitization and 2's mirror are on the same single host process means they serialize on the connection's write lock, not interleave. Test this assumption with at least one integration test that fires UPDATE+EVENT back-to-back and asserts the final audit row count.
+
+**Operator escape hatch — `resanitize_application` admin MCP tool:**
+
+For cases where the host trigger missed (manual SQL edit of `applications`, fixture-driven test setup, etc.) the operator can call:
+
+```
+resanitize_application(application_id: string) → { rewritten: number, deleted: number }
+```
+
+Not exposed in the agent persona's tool palette (no entry in `groups/career-pilot/.claude-host-fragments/persona.md`'s tool table). Available only via direct admin MCP invocation. The tool wraps the same `resanitizeApplicationAuditTrail` host function as the UPDATE hook.
+
+**Out of scope for 4.3 (explicit):**
+
+- **Backfill when sanitizer *rules* change** (regex tightened, new pattern added) without any `applications` UPDATE — operator triggers via the manual tool on the specific application(s) they care about. A bulk "resanitize all" command is Sub-milestone 4.4 or later.
+- **Soft-delete of replaced audit rows.** Hard DELETE is intentional; we don't want a leaked-then-removed row to remain inspectable post-mortem. The truth lives in `funnel_events` and is never deleted — that's the durable record. An auditor can always reconstruct what *should* be public for any application by re-mirroring from that source.
+- **Audit-trail versioning** (multiple rows per funnel_event, one per sanitization-pass version). Adds complexity for no concrete consumer.
+- **`scheduled_tasks` UPDATE triggers** (similar transition could happen on close-detection rows etc.) — different category, defer until a real use case emerges.
+- **`subagent_events` mirror category.** The mirror logic in 4.3 is specific to `category='funnel'`. Outreach / research / system category mirrors will need their own resanitization hooks when those categories ship.
+- **Cross-application leaks.** If application A's payload referenced company B by name and B's `public_state` changes, A's audit row is NOT re-sanitized (we only re-mirror events that BELONG to the application being updated). Acceptable v1 limitation — Pass 2 already sanitizes against ALL non-public applications at write time, so the cross-leak case only matters if a previously-public company gets re-obfuscated. Document as known gap; revisit if it bites.
+
+**Definition of done:**
+
+1. Migration adds `public_audit_trail.source_funnel_event_id TEXT` column + index. Idempotent (uses `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` pattern OR migration version gate).
+2. `mirrorFunnelEvent` in `public-audit.ts` updated to populate the new column.
+3. `resanitizeApplicationAuditTrail(db, application_id)` exported from `public-audit.ts`; returns `{ rewritten, deleted }`; runs in an `IMMEDIATE` transaction; logs at info level with the counts.
+4. `handleUpdateApplication` hooks the call after `writeResponse`, gated by the preference flag and by the field-change check.
+5. New preference seed `sanitization_resanitize_on_application_update = true` in `config/defaults.json`.
+6. Admin MCP tool `resanitize_application` exposed (NOT in the persona persona's tool table; reachable only via direct MCP invocation by the operator's CLI).
+7. ≥6 vitest integration tests on `resanitizeApplicationAuditTrail`:
+   - `public_state: public → obfuscated` — past rows lose the real name, gain `[REDACTED:<label>]`.
+   - `public_state: obfuscated → public` — past rows lose `[REDACTED:<label>]`, gain real name.
+   - `obfuscated_label` changed with `public_state='obfuscated'` — past rows reflect new label.
+   - `company_aliases` added — past rows that mentioned the new alias get redacted.
+   - Operator override: preference set to `false` → trigger does NOT fire on `applications` UPDATE.
+   - Concurrent UPDATE+EVENT in the same logical turn → final audit row count == funnel_events count for the application (no duplicates, no drops).
+8. ≥3 vitest integration tests on `handleUpdateApplication`'s trigger detection:
+   - Field-change check correctly fires on each of the five trigger fields.
+   - Non-trigger field changes (status, role_title, win_confidence, etc.) do NOT fire the re-mirror.
+   - Mirror failure during re-run does NOT roll back the `applications` UPDATE.
+9. ≥1 end-to-end spot check in `actions.integration.test.ts`: seed application, fire 3 funnel events, flip `public_state`, verify all 3 audit rows are rewritten with the new redaction policy.
+10. Existing 497 host tests stay green. Container typecheck stays clean.
+11. Manual smoke check (live e2e or by hand): seed an application in `public` state, fire two funnel events that include the real company name, flip the application to `obfuscated`, query `public_audit_trail` — both rows now show `[REDACTED:<label>]`, no real name remains.
+
+**Risk register:**
+
+| Risk | Likelihood | Mitigation |
+|---|---|---|
+| **A. Concurrent UPDATE+EVENT race produces duplicate or missing audit rows** | Medium | `IMMEDIATE` transaction inside `resanitizeApplicationAuditTrail` + same single host process serializes writes. Dedicated test (DoD #7 case 6). If it slips, the dedupe key is `(application_id, source_funnel_event_id)` — promote to a UNIQUE index and INSERT OR REPLACE. |
+| **B. Resanitization timeout on applications with thousands of funnel_events** | Low (current scale is dozens of events per application) | The mirror is cheap (~ms each); 1000 events would still complete in <2s. If it becomes a problem, batch over multiple ticks. Out of scope until measured. |
+| **C. Hook fires on cosmetic UPDATEs** (e.g., `last_activity_at` updates from `record_funnel_event` itself) producing infinite re-mirror loops | Medium if not guarded | The field-change check inspects ONLY the five trigger fields. `last_activity_at` is not in that set. Dedicated DoD #8 case 2 covers this. |
+| **D. Operator manually flips `public_state` via SQL without the hook firing** | Medium | The `resanitize_application` admin tool covers this. Document in [RECOVERY.md](RECOVERY.md) operator playbook — "after editing `applications.public_state` directly, run `resanitize_application <id>`." |
+| **E. Re-mirror picks up a defense-in-depth drop that wasn't intended** | Low | If a previously-mirrored event was dropped on re-mirror by the audit scan, that's the correct behavior — the audit row was about to leak. Log at info-level so operator can investigate. Surface count in the function's return value. |
+| **F. Migration to add `source_funnel_event_id` breaks for sessions mid-run** | Low | Migration runs at host startup before any agent activity; column is nullable so existing rows back-fill to NULL. Backfill from `details_json` where possible (cheap one-off scan). |
+| **G. `details_json`'s `sanitized` field grows unbounded over re-mirror cycles** | Low | Each re-mirror writes a fresh row; we don't append history within a row. No bloat. |
+| **H. Cross-application leak after re-obfuscation** (the limitation noted in out-of-scope) | Medium | Document as known v1 gap. If it bites, 4.4 introduces a "resanitize_all_referencing(company_name)" sweep. |
+
+**Estimated commit shape:**
+
+Same pattern as 4.1 — one spec commit, then one code commit per logical chunk:
+
+- Commit 1: this spec drill-in. (Done in this session.)
+- Commit 2: migration 111 + `mirrorFunnelEvent` extension to populate `source_funnel_event_id`. Lightweight refresh of 4.1's tests to assert the new column lands.
+- Commit 3: `resanitizeApplicationAuditTrail` + the 6 integration tests.
+- Commit 4: `handleUpdateApplication` hook + the 3 trigger-detection tests + the preference seed.
+- Commit 5: `resanitize_application` admin MCP tool + RECOVERY.md playbook entry.
+- Commit 6: end-to-end spot check + memory update + ship.
+
+Targeting ~4-6 hours total. The race-surface tests in DoD #7 case 6 are the load-bearing risk — if those reveal the transaction serialization assumption is wrong, the design needs to fall back to a unique index + INSERT OR REPLACE.
 
 ---
 
