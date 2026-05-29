@@ -363,10 +363,11 @@ Don't try to constrain `bypassPermissions` with `allowedTools` thinking it'll de
 
 ## 7. Custom tools — `createSdkMcpServer` wrapping
 
-All 14 in-process tools live in `groups/career-pilot/agent-runner-src/mcp-tools/` and are bundled into one `createSdkMcpServer`:
+The **20** career-pilot domain tools live in `container/agent-runner/src/mcp-tools/` — `career-pilot.ts` (7), `scrape-jobs.ts` (8), `funnel-curator.ts` (5) — alongside the NanoClaw built-in tool modules (`core`, `interactive`, `scheduling`, `agents`, `self-mod`). (Four originally-planned tools landed elsewhere by design: `analyze_jd` folds into `update_application`'s `jd_analyzed` patch field, `sanitize_text` is host-side in `src/modules/portal/sanitizer.ts`, `parse_email` is the funnel-curator subagent's job, and `save_outreach_draft` became `create_gmail_draft`.) **Integration note:** our actual wiring uses the `registerTools` self-registration pattern in `mcp-tools/server.ts` — NanoClaw's `^0.2.128` SDK is invoked via `pathToClaudeCodeExecutable` with the MCP server running as a child process (see STRATEGY.md §6 and NANOCLAW_INTERNALS.md §8), **not** the `createSdkMcpServer` barrel shown below. The snippet below is retained only as the SDK-canonical illustration of the `tool()` shape (return `isError`, never throw):
 
 ```typescript
-// groups/career-pilot/agent-runner-src/mcp-tools/index.ts
+// SDK-canonical illustration of the tool() shape.
+// Our real tools live in container/agent-runner/src/mcp-tools/*.ts and self-register via registerTools.
 import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 
@@ -406,7 +407,7 @@ const updateApplication = tool(
   { annotations: { readOnlyHint: false, destructiveHint: false } }
 );
 
-// ... define all 14 tools ...
+// ... define the rest of the tools ...
 
 export const careerPilotMcpServer = createSdkMcpServer({
   name: "career-pilot",

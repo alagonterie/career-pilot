@@ -53,21 +53,22 @@ career-pilot/                         (this repo, public)
 │   │   ├── CLAUDE.md                 (composer-generated every spawn, RO-mounted; do NOT hand-edit)
 │   │   ├── CLAUDE.local.md           (per-group agent memory, auto-loaded by Claude Code; agent may write)
 │   │   ├── .claude-host-fragments/
-│   │   │   └── persona.md            (gitignored; host-rendered from candidate_profile before each spawn; composer pulls into the composed CLAUDE.md via our extension — see NANOCLAW_INTERNALS.md §4)
-│   │   ├── .claude/agents/           (filesystem subagent definitions)
+│   │   │   ├── persona.md            (TRACKED authored persona; composer pulls it into the composed CLAUDE.md via our extension — see NANOCLAW_INTERNALS.md §4)
+│   │   │   └── candidate.md          (gitignored; host-rendered from candidate_profile before each spawn)
+│   │   ├── .claude/agents/           (filesystem subagent definitions; gitignored — materialized from groups/_shared-subagents/ plus the owner-only funnel-curator)
 │   │   │   ├── research-company.md
 │   │   │   ├── tailor-resume.md
 │   │   │   ├── draft-outreach.md
 │   │   │   ├── prep-interview.md
-│   │   │   └── scrape-jobs.md
+│   │   │   ├── scrape-jobs.md
+│   │   │   └── funnel-curator.md
 │   │   ├── skills/                   (skill scripts; NanoClaw native)
 │   │   │   ├── tailor-resume/
 │   │   │   ├── research-company/
 │   │   │   ├── draft-outreach/
 │   │   │   ├── prep-interview/
 │   │   │   └── scrape-jobs/
-│   │   └── agent-runner-src/         (overlay for in-process MCP tools)
-│   │       └── mcp-tools/
+│   │   └── VERIFICATION.md           (persona/subagent DoD; runtime-artifact rule. In-process MCP tools are NOT per-group — v2 removed agent-runner-src overlays; they live in the shared container/agent-runner/src/mcp-tools/)
 │   │
 │   └── career-pilot-sandbox/         ← NEW — public simulator agent group
 │       ├── CLAUDE.md                 (sandbox persona)
@@ -1381,7 +1382,7 @@ Everything that NanoClaw v2 ships: `bin/`, `scripts/` (NanoClaw's own), `setup/`
 
 **THEN ADD (career-pilot specifics, the part that's actually our work):**
 
-- `groups/career-pilot/` — owner agent group folder (CLAUDE.md, .claude/agents/, skills/, agent-runner-src/mcp-tools/)
+- `groups/career-pilot/` — owner agent group folder (CLAUDE.md, .claude/agents/, skills/, .claude-host-fragments/, VERIFICATION.md). In-process MCP tools are NOT here — they live in the shared `container/agent-runner/src/mcp-tools/` (v2 removed per-group `agent-runner-src` overlays; see CHANGELOG v2.0.0).
 - `groups/career-pilot-sandbox/` — public simulator agent group folder
 - `groups/_shared-skills/` — skill code shared between owner and sandbox
 - `src/modules/portal/` — Express API, sanitization, public_audit_trail, system modes, simulator orchestration, contact relay
@@ -3153,7 +3154,7 @@ Building the full batch engine now (state column + migration, a new scheduled tr
 
 6. **Ollama in local dev vs eval-quality testing:** Llama 3.2 vs Claude output quality is night-and-day for nuanced tasks. We'll need a small budget for "real" testing of resume tailoring quality. Recommend $20/mo Anthropic budget for dev/testing.
 
-7. **Initial obfuscated_label assignment:** What's the function that turns a JD into an industry label (`fintech-b` vs `ai-infra-a`)? Probably a simple LLM call on first JD analysis, cached per company. Confirm during Phase 1.
+7. **Initial obfuscated_label assignment:** ✅ RESOLVED (Phase 1) — and the answer is *deterministic*, not the LLM call this question guessed. At application creation, `deriveIndustry()` reuses `jd_analyzed.role_category` (the `analyze_jd` output already carried on the `update_application` patch; falls back to `misc`), and `nextObfuscatedLabel(industry)` appends the next free `<industry>-<letter>` by scanning existing labels for that industry. See `src/modules/career-pilot/actions.ts` (`deriveIndustry` / `nextObfuscatedLabel`) and the Part II schema note above; covered by `actions.test.ts` + `actions.integration.test.ts`.
 
 8. **Headshot for /work:** If the candidate has one, easy. If not, we'll need a clean illustration or skip the headshot block. Owner decision pre-Phase 8.
 

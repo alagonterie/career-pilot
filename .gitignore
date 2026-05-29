@@ -70,6 +70,11 @@ groups/*/container.json
 **/.claude-shared.md
 **/.claude-fragments/
 
+# Agent-generated per-group memory/workspace (the container's /workspace/agent
+# mount, materialized host-side). Runtime state, often seeded with E2E test
+# detritus — never commit.
+groups/*/memory/
+
 # Secrets
 *.keys.json
 .env
