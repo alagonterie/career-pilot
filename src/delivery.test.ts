@@ -36,7 +36,7 @@ import {
 } from './db/index.js';
 import { getDeliveredIds } from './db/session-db.js';
 import { resolveSession, outboundDbPath, openInboundDb } from './session-manager.js';
-import { deliverSessionMessages, setDeliveryAdapter } from './delivery.js';
+import { deliverSessionMessages, isReadonlyRollbackError, setDeliveryAdapter } from './delivery.js';
 
 function now(): string {
   return new Date().toISOString();
@@ -269,5 +269,50 @@ describe('deliverSessionMessages — permission check', () => {
     const delivered = getDeliveredIds(inDb);
     inDb.close();
     expect(delivered.has('out-unauth')).toBe(true);
+  });
+});
+
+describe('isReadonlyRollbackError — hot-journal race discriminator', () => {
+  // Synthesizes the SqliteError shape that better-sqlite3 throws when
+  // SQLite returns SQLITE_READONLY_* extended codes. The helper must
+  // accept all SQLITE_READONLY_* variants (ROLLBACK is the common one in
+  // our drainSession path; RECOVERY / CANTLOCK / DBMOVED are equally
+  // valid candidates for transient-race classification) and reject
+  // everything else.
+  function mkSqliteError(code: string, message = 'attempt to write a readonly database'): Error {
+    const e = new Error(message);
+    (e as Error & { code: string }).code = code;
+    return e;
+  }
+
+  it('accepts SQLITE_READONLY_ROLLBACK (the actual race we observed)', () => {
+    expect(isReadonlyRollbackError(mkSqliteError('SQLITE_READONLY_ROLLBACK'))).toBe(true);
+  });
+
+  it('accepts other SQLITE_READONLY_* extended codes', () => {
+    expect(isReadonlyRollbackError(mkSqliteError('SQLITE_READONLY'))).toBe(true);
+    expect(isReadonlyRollbackError(mkSqliteError('SQLITE_READONLY_RECOVERY'))).toBe(true);
+    expect(isReadonlyRollbackError(mkSqliteError('SQLITE_READONLY_CANTLOCK'))).toBe(true);
+    expect(isReadonlyRollbackError(mkSqliteError('SQLITE_READONLY_DBMOVED'))).toBe(true);
+  });
+
+  it('rejects unrelated SqliteError codes', () => {
+    expect(isReadonlyRollbackError(mkSqliteError('SQLITE_BUSY'))).toBe(false);
+    expect(isReadonlyRollbackError(mkSqliteError('SQLITE_CORRUPT'))).toBe(false);
+    expect(isReadonlyRollbackError(mkSqliteError('SQLITE_IOERR'))).toBe(false);
+    expect(isReadonlyRollbackError(mkSqliteError('SOMETHING_ELSE'))).toBe(false);
+  });
+
+  it('rejects plain errors without a code property', () => {
+    expect(isReadonlyRollbackError(new Error('attempt to write a readonly database'))).toBe(false);
+    expect(isReadonlyRollbackError(new Error('boom'))).toBe(false);
+  });
+
+  it('rejects non-error inputs', () => {
+    expect(isReadonlyRollbackError(null)).toBe(false);
+    expect(isReadonlyRollbackError(undefined)).toBe(false);
+    expect(isReadonlyRollbackError('SQLITE_READONLY_ROLLBACK')).toBe(false);
+    expect(isReadonlyRollbackError({ code: 42 })).toBe(false);
+    expect(isReadonlyRollbackError({})).toBe(false);
   });
 });
