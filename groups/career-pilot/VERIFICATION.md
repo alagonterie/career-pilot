@@ -109,7 +109,7 @@ persona's "Reflection prompting" section need work.
 ## Out of scope for this verification plan
 
 - **Tool implementation correctness.** That's per-tool — see (eventual)
-  per-tool DoD in `groups/career-pilot/agent-runner-src/mcp-tools/`.
+  per-tool DoD in `container/agent-runner/src/mcp-tools/`.
 - **Subagent prompt quality.** Each subagent has its own definition file
   and its own implicit DoD; treat separately.
 - **Sanitization correctness.** Verification of the sanitization pipeline
