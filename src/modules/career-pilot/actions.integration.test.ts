@@ -450,6 +450,60 @@ describe('handleUpdateApplication — §24.11 resanitization hook', () => {
       .get() as { public_state: string };
     expect(app.public_state).toBe('public');
   });
+
+  it('end-to-end: 3 events through the handlers, then a public_state flip rewrites all 3', async () => {
+    await handleUpdateApplication(
+      actionContent('career_pilot.update_application', {
+        id: 'app-r',
+        patch: { company_name: 'Acme Corp', role_title: 'Backend', status: 'APPLIED' },
+      }),
+      FAKE_SESSION,
+      inDb,
+    );
+    const label = (
+      getDb().prepare("SELECT obfuscated_label FROM applications WHERE id = 'app-r'").get() as {
+        obfuscated_label: string;
+      }
+    ).obfuscated_label;
+
+    for (const note of ['first call with Acme Corp', 'second note from Acme Corp', 'third Acme Corp update']) {
+      await handleRecordFunnelEvent(
+        actionContent('career_pilot.record_funnel_event', {
+          application_id: 'app-r',
+          kind: 'recruiter_email',
+          payload: { note },
+        }),
+        FAKE_SESSION,
+        inDb,
+      );
+    }
+
+    // All 3 mirrored while obfuscated → redacted.
+    const before = getDb().prepare('SELECT summary FROM public_audit_trail').all() as { summary: string }[];
+    expect(before).toHaveLength(3);
+    for (const r of before) {
+      expect(r.summary).toContain(`[REDACTED:${label}]`);
+      expect(r.summary).not.toContain('Acme Corp');
+    }
+
+    // Flip to public through the handler → all 3 rewritten with the real name.
+    const c = actionContent('career_pilot.update_application', {
+      id: 'app-r',
+      patch: { public_state: 'public' },
+    });
+    await handleUpdateApplication(c, FAKE_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+
+    const after = getDb()
+      .prepare('SELECT application_ref, summary FROM public_audit_trail')
+      .all() as { application_ref: string; summary: string }[];
+    expect(after).toHaveLength(3);
+    for (const r of after) {
+      expect(r.application_ref).toBe('Acme Corp');
+      expect(r.summary).toContain('Acme Corp');
+      expect(r.summary).not.toContain(`[REDACTED:${label}]`);
+    }
+  });
 });
 
 // ── record_funnel_event ────────────────────────────────────────────────────
