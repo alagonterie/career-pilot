@@ -12,6 +12,7 @@ import { runMigrations } from '../../db/migrations/index.js';
 
 vi.mock('../../channels/portal/adapter.js', () => ({
   submitSimulatorRun: vi.fn(),
+  setSimulatorOutputSink: vi.fn(),
   SANDBOX_PLATFORM_ID: 'sandbox',
 }));
 

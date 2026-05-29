@@ -37,7 +37,12 @@ import { getConfig } from '../../get-config.js';
 import { log } from '../../log.js';
 
 import { getTelemetry } from './portkey-analytics.js';
-import { startSimulatorRun, type SimulatorInput } from './simulator.js';
+import {
+  getRecentSimulatorRuns,
+  getSimulatorResult,
+  startSimulatorRun,
+  type SimulatorInput,
+} from './simulator.js';
 import {
   addActivityClient,
   addSimulatorClient,
@@ -276,6 +281,21 @@ async function handleSimulatorStart(
   json(res, status, { error: result.error?.code ?? 'error', message: result.error?.message }, cors);
 }
 
+/** Shareable cached run for /simulator/results/:id (5.5c). 404 when absent/expired. */
+function handleSimulatorResult(res: http.ServerResponse, runId: string, cors: Record<string, string>): void {
+  const row = getSimulatorResult(runId);
+  if (!row) {
+    json(res, 404, { error: 'not_found' }, cors);
+    return;
+  }
+  json(res, 200, row, cors);
+}
+
+/** Recent shareable runs (metadata) for the disabled-simulator fallback (5.5c). */
+function handleSimulatorRecent(res: http.ServerResponse, cors: Record<string, string>): void {
+  json(res, 200, { runs: getRecentSimulatorRuns() }, cors);
+}
+
 function handleActivityStream(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -360,6 +380,11 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
     if (method === 'GET' && path === '/api/architecture') return handleArchitecture(res, cors);
     if (method === 'GET' && path === '/api/system-status') return handleSystemStatus(res, cors);
     if (method === 'POST' && path === '/api/simulator') return await handleSimulatorStart(req, res, cors);
+    if (method === 'GET' && path === '/api/simulator/recent') return handleSimulatorRecent(res, cors);
+    if (method === 'GET' && path.startsWith('/api/simulator/results/')) {
+      const id = path.slice('/api/simulator/results/'.length);
+      if (id.length > 0) return handleSimulatorResult(res, id, cors);
+    }
     if (method === 'GET' && path.startsWith('/api/simulator/') && path.endsWith('/stream')) {
       const runId = path.slice('/api/simulator/'.length, -'/stream'.length);
       if (runId.length > 0) return handleSimulatorStream(req, res, runId, cors);
