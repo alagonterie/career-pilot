@@ -25,6 +25,7 @@
 import type Database from 'better-sqlite3';
 
 import { getDb } from '../../db/connection.js';
+import { getConfig } from '../../get-config.js';
 import { insertMessage } from '../../db/session-db.js';
 import { log } from '../../log.js';
 import * as payloadCache from '../../scrape-jobs/payload-cache.js';
@@ -586,56 +587,16 @@ interface KillerMatchPreferences {
   maxPerFire: number;
 }
 
-const DEFAULT_KILLER_MATCH_PREFS: KillerMatchPreferences = {
-  minRulesScore: 90,
-  recencyWindowHours: 6,
-  sourceAllowList: ['greenhouse', 'lever'],
-  maxPerFire: 3,
-};
-
 function readKillerMatchActionPrefs(db: Database.Database): KillerMatchPreferences {
-  try {
-    const rows = db
-      .prepare(
-        `SELECT key, value FROM preferences WHERE key IN (
-           'killer_match_min_rules_score',
-           'killer_match_recency_window_hours',
-           'killer_match_source_allow_list',
-           'killer_match_max_per_fire'
-         )`,
-      )
-      .all() as Array<{ key: string; value: string }>;
-    const lookup = new Map(rows.map((r) => [r.key, r.value]));
-
-    const parseInt = (key: string, fallback: number): number => {
-      const raw = lookup.get(key);
-      if (raw == null) return fallback;
-      const n = Number(raw);
-      return Number.isFinite(n) && n >= 0 ? Math.floor(n) : fallback;
-    };
-    const parseList = (key: string, fallback: string[]): string[] => {
-      const raw = lookup.get(key);
-      if (raw == null) return fallback;
-      try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.every((x) => typeof x === 'string')) {
-          return parsed as string[];
-        }
-      } catch {
-        /* fall through to fallback */
-      }
-      return fallback;
-    };
-
-    return {
-      minRulesScore: parseInt('killer_match_min_rules_score', DEFAULT_KILLER_MATCH_PREFS.minRulesScore),
-      recencyWindowHours: parseInt('killer_match_recency_window_hours', DEFAULT_KILLER_MATCH_PREFS.recencyWindowHours),
-      sourceAllowList: parseList('killer_match_source_allow_list', DEFAULT_KILLER_MATCH_PREFS.sourceAllowList),
-      maxPerFire: parseInt('killer_match_max_per_fire', DEFAULT_KILLER_MATCH_PREFS.maxPerFire),
-    };
-  } catch {
-    return { ...DEFAULT_KILLER_MATCH_PREFS };
-  }
+  // Defaults (min_rules_score=90, recency_window_hours=6, source_allow_list=
+  // ["greenhouse","lever"], max_per_fire=3) live in config/defaults.json;
+  // getConfig resolves env > preferences table > defaults and coerces types.
+  return {
+    minRulesScore: getConfig<number>(db, 'killer_match_min_rules_score'),
+    recencyWindowHours: getConfig<number>(db, 'killer_match_recency_window_hours'),
+    sourceAllowList: getConfig<string[]>(db, 'killer_match_source_allow_list'),
+    maxPerFire: getConfig<number>(db, 'killer_match_max_per_fire'),
+  };
 }
 
 export async function handleClaimKillerMatches(
@@ -748,19 +709,9 @@ export async function handleClaimKillerMatches(
 // Promoted leads (those with `application_id` set) are excluded — the
 // application history is more important than the pool-cleanliness signal.
 
-const DEFAULT_CLOSE_DETECTION_THRESHOLD_DAYS = 14;
-
 function readCloseDetectionThresholdDays(db: Database.Database): number {
-  try {
-    const row = db
-      .prepare("SELECT value FROM preferences WHERE key = 'close_detection_threshold_days'")
-      .get() as { value: string } | undefined;
-    if (!row) return DEFAULT_CLOSE_DETECTION_THRESHOLD_DAYS;
-    const n = parseInt(row.value, 10);
-    return Number.isFinite(n) && n > 0 ? n : DEFAULT_CLOSE_DETECTION_THRESHOLD_DAYS;
-  } catch {
-    return DEFAULT_CLOSE_DETECTION_THRESHOLD_DAYS;
-  }
+  // Default (14) lives in config/defaults.json; getConfig resolves env > preferences > defaults.
+  return getConfig<number>(db, 'close_detection_threshold_days');
 }
 
 export async function handleCloseStaleLeads(

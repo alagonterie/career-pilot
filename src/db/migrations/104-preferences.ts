@@ -6,8 +6,11 @@
  * model (env / preferences / system_modes / defaults.json) and §20.2 for
  * the hot-reload mechanism.
  *
- * Seed values are loaded from config/defaults.json by scripts/setup-local.ts
- * during onboarding, or by `pnpm run migrations` on the production VM.
+ * This migration only creates the empty table. config/defaults.json supplies
+ * the runtime defaults — the host getConfig() helper (src/get-config.ts) reads
+ * it directly as the fallback tier, so preferences need not be pre-seeded; a
+ * row is created when the owner edits a preference (or by setup seeding, once
+ * that lands).
  *
  * Schema reference: STRATEGY.md §3.
  */

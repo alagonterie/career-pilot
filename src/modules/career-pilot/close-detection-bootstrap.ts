@@ -19,14 +19,13 @@ import { CronExpressionParser } from 'cron-parser';
 import type Database from 'better-sqlite3';
 
 import { TIMEZONE } from '../../config.js';
+import { getConfig } from '../../get-config.js';
 import { nextEvenSeq } from '../../db/session-db.js';
 import { log } from '../../log.js';
 import type { AgentGroup, Session } from '../../types.js';
 
 const SERIES_ID = 'close-detection';
 const TASK_PROMPT = '[scheduled trigger: close-detection]';
-
-const DEFAULT_CRON_EXPR = '0 6 * * *';
 
 export interface BootstrapPreferences {
   enabled: boolean;
@@ -41,20 +40,12 @@ export interface BootstrapResult {
 }
 
 export function readCloseDetectionPreferences(centralDb: Database.Database): BootstrapPreferences {
-  try {
-    const rows = centralDb
-      .prepare(
-        "SELECT key, value FROM preferences WHERE key IN ('close_detection_enabled', 'close_detection_cron')",
-      )
-      .all() as Array<{ key: string; value: string }>;
-    const lookup = new Map(rows.map((r) => [r.key, r.value]));
-    const enabledRaw = lookup.get('close_detection_enabled');
-    const enabled = enabledRaw !== 'false';
-    const cronExpr = lookup.get('close_detection_cron') || DEFAULT_CRON_EXPR;
-    return { enabled, cronExpr };
-  } catch {
-    return { enabled: true, cronExpr: DEFAULT_CRON_EXPR };
-  }
+  // Defaults (close_detection_enabled=true, close_detection_cron=0 6 * * *) live
+  // in config/defaults.json; getConfig resolves env > preferences table > defaults.
+  return {
+    enabled: getConfig<boolean>(centralDb, 'close_detection_enabled'),
+    cronExpr: getConfig<string>(centralDb, 'close_detection_cron'),
+  };
 }
 
 export function hasLiveCloseDetectionTask(inDb: Database.Database): boolean {

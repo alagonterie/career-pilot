@@ -18,14 +18,13 @@ import { CronExpressionParser } from 'cron-parser';
 import type Database from 'better-sqlite3';
 
 import { TIMEZONE } from '../../config.js';
+import { getConfig } from '../../get-config.js';
 import { nextEvenSeq } from '../../db/session-db.js';
 import { log } from '../../log.js';
 import type { AgentGroup, Session } from '../../types.js';
 
 const SERIES_ID = 'killer-match';
 const TASK_PROMPT = '[scheduled trigger: killer-match]';
-
-const DEFAULT_CRON_EXPR = '*/30 7-22 * * *';
 
 export interface BootstrapPreferences {
   enabled: boolean;
@@ -40,20 +39,12 @@ export interface BootstrapResult {
 }
 
 export function readKillerMatchPreferences(centralDb: Database.Database): BootstrapPreferences {
-  try {
-    const rows = centralDb
-      .prepare(
-        "SELECT key, value FROM preferences WHERE key IN ('killer_match_enabled', 'killer_match_cron')",
-      )
-      .all() as Array<{ key: string; value: string }>;
-    const lookup = new Map(rows.map((r) => [r.key, r.value]));
-    const enabledRaw = lookup.get('killer_match_enabled');
-    const enabled = enabledRaw !== 'false';
-    const cronExpr = lookup.get('killer_match_cron') || DEFAULT_CRON_EXPR;
-    return { enabled, cronExpr };
-  } catch {
-    return { enabled: true, cronExpr: DEFAULT_CRON_EXPR };
-  }
+  // Defaults (killer_match_enabled=true, killer_match_cron=*/30 7-22 * * *) live
+  // in config/defaults.json; getConfig resolves env > preferences table > defaults.
+  return {
+    enabled: getConfig<boolean>(centralDb, 'killer_match_enabled'),
+    cronExpr: getConfig<string>(centralDb, 'killer_match_cron'),
+  };
 }
 
 export function hasLiveKillerMatchTask(inDb: Database.Database): boolean {
