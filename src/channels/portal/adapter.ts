@@ -19,6 +19,7 @@
  * Sub-milestone 5.5a (STRATEGY.md §24.19).
  */
 import { log } from '../../log.js';
+import { pushSimulatorEvent } from '../../modules/portal/sse-broadcaster.js';
 import type { ChannelAdapter, ChannelSetup, InboundMessage, OutboundMessage } from '../adapter.js';
 import { registerChannelAdapter } from '../channel-registry.js';
 
@@ -62,12 +63,17 @@ export function createPortalAdapter(): ChannelAdapter {
     async deliver(
       platformId: string,
       threadId: string | null,
-      _message: OutboundMessage,
+      message: OutboundMessage,
     ): Promise<string | undefined> {
-      // 5.5a: the SSE push to simulator:<id> lands in 5.5b. The outbound row is
-      // already persisted by delivery.ts, so this is not data loss — there is
-      // just no stream to push into yet.
-      log.debug('portal deliver (no-op until 5.5b)', { platformId, threadId });
+      // 5.5b: push the outbound row into the run's SSE stream. The run id is the
+      // threadId (per-thread session). The SSE event name is the message kind
+      // ('trace' | 'chat' | 'task'); the payload is the parsed content. No-op
+      // when no client is watching (the row is still persisted by delivery.ts).
+      if (threadId) {
+        pushSimulatorEvent(threadId, message.kind, message.content);
+      } else {
+        log.debug('portal deliver: no threadId, dropping', { platformId, kind: message.kind });
+      }
       return undefined;
     },
   };

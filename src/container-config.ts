@@ -65,6 +65,13 @@ export interface ContainerConfig {
    * see container/agent-runner/src/providers/claude.ts and migration 109.
    */
   disallowedTools?: string[];
+  /**
+   * Emit simulator trace events (tool/subagent/cost) for the live activity
+   * pane. Derived (not stored) — true only for the career-pilot-sandbox folder.
+   * The provider gates trace emission on this; the owner group's stream stays
+   * byte-identical. See STRATEGY.md §24.20.
+   */
+  emitTrace?: boolean;
 }
 
 /** Build a `ContainerConfig` from a DB row + agent group identity. */
@@ -86,6 +93,9 @@ export function configFromDb(row: ContainerConfigRow, group: AgentGroup): Contai
     model: row.model ?? undefined,
     effort: row.effort ?? undefined,
     disallowedTools: parseDisallowedTools(row.disallowed_tools),
+    // Sandbox-only simulator trace (§24.20) — derived from the folder, not a
+    // stored column. The owner group never emits trace events.
+    emitTrace: group.folder === 'career-pilot-sandbox',
   };
 }
 

@@ -94,6 +94,7 @@ async function main(): Promise<void> {
     model: config.model,
     effort: config.effort,
     extraDisallowedTools: config.disallowedTools,
+    emitTrace: config.emitTrace,
   });
 
   await runPollLoop({

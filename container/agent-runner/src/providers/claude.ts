@@ -6,7 +6,78 @@ import { query as sdkQuery, type HookCallback, type PreCompactHookInput } from '
 
 import { clearContainerToolInFlight, setContainerToolInFlight } from '../db/connection.js';
 import { registerProvider } from './provider-registry.js';
-import type { AgentProvider, AgentQuery, McpServerConfig, ProviderEvent, ProviderOptions, QueryInput } from './types.js';
+import type {
+  AgentProvider,
+  AgentQuery,
+  McpServerConfig,
+  ProviderEvent,
+  ProviderOptions,
+  QueryInput,
+  TraceEvent,
+} from './types.js';
+
+const TRACE_INPUT_SUMMARY_MAX = 200;
+
+/** Compact a tool input object into a short, log-safe one-line summary. */
+function summarizeToolInput(input: unknown): string | undefined {
+  if (input == null) return undefined;
+  try {
+    const s = typeof input === 'string' ? input : JSON.stringify(input);
+    const oneLine = s.replace(/\s+/g, ' ').trim();
+    return oneLine.length > TRACE_INPUT_SUMMARY_MAX
+      ? oneLine.slice(0, TRACE_INPUT_SUMMARY_MAX) + '…'
+      : oneLine;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Pure translation of one SDK message into simulator trace events (§24.20).
+ * Extracted from translateEvents so it is unit-testable without an SDK mock.
+ * Returns [] when `emitTrace` is false or the message carries nothing traceable
+ * — so the owner path (emitTrace=false) yields no trace events at all.
+ *
+ *  - `assistant` message → one event per `tool_use` content block (a `Task`
+ *    block becomes a `subagent` event carrying `subagent_type`); the message's
+ *    `parent_tool_use_id` marks calls made inside a subagent's own context.
+ *  - `result` message → a single `result` event carrying `total_cost_usd`.
+ */
+export function sdkMessageToTraceEvents(message: unknown, emitTrace: boolean): TraceEvent[] {
+  if (!emitTrace || !message || typeof message !== 'object') return [];
+  const m = message as {
+    type?: string;
+    message?: { content?: unknown };
+    parent_tool_use_id?: string | null;
+    total_cost_usd?: number;
+  };
+
+  if (m.type === 'assistant') {
+    const blocks = Array.isArray(m.message?.content) ? (m.message!.content as unknown[]) : [];
+    const out: TraceEvent[] = [];
+    for (const b of blocks) {
+      const block = b as { type?: string; name?: string; input?: unknown };
+      if (block.type !== 'tool_use') continue;
+      const isSubagent = block.name === 'Task';
+      out.push({
+        t: isSubagent ? 'subagent' : 'tool',
+        name: block.name,
+        subagent: isSubagent
+          ? ((block.input as { subagent_type?: string } | undefined)?.subagent_type ?? undefined)
+          : undefined,
+        parent_tool_use_id: m.parent_tool_use_id ?? null,
+        input_summary: summarizeToolInput(block.input),
+      });
+    }
+    return out;
+  }
+
+  if (m.type === 'result') {
+    return [{ t: 'result', cost_usd: typeof m.total_cost_usd === 'number' ? m.total_cost_usd : undefined }];
+  }
+
+  return [];
+}
 
 function log(msg: string): void {
   console.error(`[claude-provider] ${msg}`);
@@ -338,6 +409,7 @@ export class ClaudeProvider implements AgentProvider {
   private model?: string;
   private effort?: string;
   private extraDisallowedTools: string[];
+  private emitTrace: boolean;
 
   constructor(options: ProviderOptions = {}) {
     this.assistantName = options.assistantName;
@@ -346,6 +418,7 @@ export class ClaudeProvider implements AgentProvider {
     this.model = options.model;
     this.effort = options.effort;
     this.extraDisallowedTools = options.extraDisallowedTools ?? [];
+    this.emitTrace = options.emitTrace ?? false;
     this.env = {
       ...(options.env ?? {}),
       CLAUDE_CODE_AUTO_COMPACT_WINDOW,
@@ -429,6 +502,7 @@ export class ClaudeProvider implements AgentProvider {
     });
 
     let aborted = false;
+    const emitTrace = this.emitTrace;
 
     async function* translateEvents(): AsyncGenerator<ProviderEvent> {
       let messageCount = 0;
@@ -438,6 +512,15 @@ export class ClaudeProvider implements AgentProvider {
 
         // Yield activity for every SDK event so the poll loop knows the agent is working
         yield { type: 'activity' };
+
+        // Simulator trace (§24.20): sandbox-gated. Emits tool/subagent calls
+        // from assistant messages and end-of-run cost from the result message.
+        // No-op for the owner group (emitTrace=false) → stream byte-identical.
+        if (emitTrace) {
+          for (const tr of sdkMessageToTraceEvents(message, true)) {
+            yield { type: 'trace', trace: tr };
+          }
+        }
 
         if (message.type === 'system' && message.subtype === 'init') {
           yield { type: 'init', continuation: message.session_id };

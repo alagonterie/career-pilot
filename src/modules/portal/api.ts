@@ -38,7 +38,13 @@ import { log } from '../../log.js';
 
 import { getTelemetry } from './portkey-analytics.js';
 import { startSimulatorRun, type SimulatorInput } from './simulator.js';
-import { addActivityClient, removeActivityClient, stopBroadcaster } from './sse-broadcaster.js';
+import {
+  addActivityClient,
+  addSimulatorClient,
+  removeActivityClient,
+  removeSimulatorClient,
+  stopBroadcaster,
+} from './sse-broadcaster.js';
 import { getSystemStatus } from './system-modes.js';
 
 const DEFAULT_PORT = 3001;
@@ -302,6 +308,29 @@ function handleActivityStream(
   req.on('close', () => removeActivityClient(res));
 }
 
+/**
+ * SSE stream for a single simulator run (§24.20). Push-based: the portal
+ * channel adapter pushes trace/chat/task events as the sandbox session's
+ * outbound rows drain. No backlog — the visitor watches live from connect.
+ */
+function handleSimulatorStream(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  runId: string,
+  cors: Record<string, string>,
+): void {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+    ...cors,
+  });
+  res.flushHeaders();
+  addSimulatorClient(runId, res);
+  req.on('close', () => removeSimulatorClient(runId, res));
+}
+
 // ── request router ───────────────────────────────────────────────────────
 
 async function requestHandler(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -331,6 +360,10 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
     if (method === 'GET' && path === '/api/architecture') return handleArchitecture(res, cors);
     if (method === 'GET' && path === '/api/system-status') return handleSystemStatus(res, cors);
     if (method === 'POST' && path === '/api/simulator') return await handleSimulatorStart(req, res, cors);
+    if (method === 'GET' && path.startsWith('/api/simulator/') && path.endsWith('/stream')) {
+      const runId = path.slice('/api/simulator/'.length, -'/stream'.length);
+      if (runId.length > 0) return handleSimulatorStream(req, res, runId, cors);
+    }
 
     json(res, 404, { error: 'not_found', path }, cors);
   } catch (err) {
