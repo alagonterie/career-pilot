@@ -29,6 +29,8 @@ import { migration110 } from './110-job-leads.js';
 import { migration120 } from './120-job-leads-killer-match.js';
 import { migration121 } from './121-funnel-curator.js';
 import { migration122 } from './122-audit-source-fe.js';
+import { migration123 } from './123-audit-seq.js';
+import { migration124 } from './124-public-funnel-view.js';
 
 export interface Migration {
   version: number;
@@ -65,6 +67,8 @@ const migrations: Migration[] = [
   migration120,
   migration121,
   migration122,
+  migration123,
+  migration124,
 ];
 
 export function runMigrations(db: Database.Database): void {

@@ -166,8 +166,9 @@ export function mirrorFunnelEvent(db: Database.Database, eventId: string): Mirro
   try {
     db.prepare(
       `INSERT INTO public_audit_trail
-         (id, ts, category, application_ref, summary, details_json, source_funnel_event_id)
-       VALUES (@id, @ts, @category, @application_ref, @summary, @details_json, @source_funnel_event_id)`,
+         (id, seq, ts, category, application_ref, summary, details_json, source_funnel_event_id)
+       VALUES (@id, (SELECT COALESCE(MAX(seq), 0) + 1 FROM public_audit_trail),
+               @ts, @category, @application_ref, @summary, @details_json, @source_funnel_event_id)`,
     ).run({
       id: generateId(),
       ts: new Date().toISOString(),
