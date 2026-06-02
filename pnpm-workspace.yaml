@@ -1,18 +1,21 @@
 # Career-pilot extension to NanoClaw upstream (2nd deliberate deviation —
 # upstream config-only, no `packages:`). The agent-runner has its own dep
 # tree with bun-specific types; declaring it as a workspace lets a single
-# root `pnpm install` populate both trees, and `pnpm -r typecheck` covers
-# both. Phase 5 will add `frontend` here when TanStack Start lands.
-# See .specs/NANOCLAW_INTERNALS.md §11 deltas for the upstream-deviation
-# tracking convention.
+# root `pnpm install` populate all trees, and `pnpm -r typecheck` covers
+# them. `frontend` (TanStack Start v1) is a member too (Phase 6, §24.23) so
+# the backend read-model row shapes can be shared with the portal via
+# `workspace:*` — the typed API contract. See .specs/NANOCLAW_INTERNALS.md
+# §11 deltas for the upstream-deviation tracking convention.
 packages:
   - container/agent-runner
+  - frontend
 
 onlyBuiltDependencies:
   - better-sqlite3
   - esbuild
   - protobufjs
   - sharp
+  - workerd
 
 pnpm:
   minimumReleaseAge: 4320
