@@ -1,1 +1,105 @@
 @import 'tailwindcss';
+
+/*
+ * Landing-register theme (PORTAL §3 "Apple hero, Bloomberg gut").
+ * Dark-only showcase: the PORTAL §3 palette is mapped onto shadcn/ui's
+ * semantic tokens so shadcn components inherit the brand without a separate
+ * light mode. Values are HSL triplets from PORTAL §3. The `(ops)` register
+ * (Phase 7) layers denser tokens on top of these via its route group.
+ */
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: hsl(220 14% 6%); /* near-black, slight cool tint */
+  --foreground: hsl(0 0% 96%);
+  --card: hsl(220 14% 9%);
+  --card-foreground: hsl(0 0% 96%);
+  --popover: hsl(220 14% 9%);
+  --popover-foreground: hsl(0 0% 96%);
+  --primary: hsl(160 80% 50%); /* signal green */
+  --primary-foreground: hsl(220 14% 6%);
+  --secondary: hsl(220 14% 13%);
+  --secondary-foreground: hsl(0 0% 96%);
+  --muted: hsl(220 14% 13%);
+  --muted-foreground: hsl(220 10% 64%);
+  --accent: hsl(220 14% 15%);
+  --accent-foreground: hsl(0 0% 96%);
+  --destructive: hsl(0 75% 60%);
+  --destructive-foreground: hsl(0 0% 96%);
+  --border: hsl(220 10% 16%);
+  --input: hsl(220 10% 16%);
+  --ring: hsl(160 80% 50%);
+  --radius: 0.5rem;
+
+  /* PORTAL §3 brand extras beyond the shadcn semantic set. */
+  --accent-cool: hsl(200 90% 60%); /* cyan — traces / links */
+  --warn: hsl(38 95% 60%);
+  --grid: hsl(220 12% 13%);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-accent-cool: var(--accent-cool);
+  --color-warn: var(--warn);
+  --color-grid: var(--grid);
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/*
+ * The single auto-animating element on `/` (PORTAL §3): the ●live pulse.
+ * CSS-only so it stays deterministic under Playwright's `animations:'disabled'`
+ * and respects reduced-motion. motion/react is reserved for Phase 7.
+ */
+@keyframes cp-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.cp-live-pulse {
+  animation: cp-pulse 2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cp-live-pulse {
+    animation: none;
+  }
+}
