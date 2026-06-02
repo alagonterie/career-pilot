@@ -124,7 +124,7 @@ career-pilot/                         (this repo, public)
 │   ├── e2e/                          (Playwright dual-server harness + fixtures)
 │   ├── wrangler.jsonc
 │   ├── vite.config.ts
-│   └── package.json                  (separate pnpm workspace from host)
+│   └── package.json                  (root pnpm workspace member; shares types via workspace:*)
 │
 ├── infra/                            (Terraform; keep + adapt)
 │   ├── provider.tf
@@ -914,7 +914,7 @@ Two GitHub Actions workflows, replacing the existing scaffolding:
 
 **`.github/workflows/deploy-frontend.yml`:**
 - Trigger: push to `master`, paths `frontend/**`
-- Steps: pnpm install in `frontend/`, build via `pnpm build` (Vite + TanStack Start adapter), `wrangler deploy` with secrets from GitHub
+- Steps: root `pnpm install --frozen-lockfile`, `pnpm --filter frontend build` (Vite + `@cloudflare/vite-plugin`), `wrangler deploy` (from `frontend/`) with secrets from GitHub
 - Env injection: `NEXT_PUBLIC_*` style for build-time variables (candidate name, social URLs — but only the URLs, NOT the bio/resume which stay private)
 
 **`.github/workflows/deploy-backend.yml`:**
@@ -938,7 +938,7 @@ Two GitHub Actions workflows, replacing the existing scaffolding:
 - NanoClaw host runs natively (`pnpm dev`) — faster iteration than dockerized
 - Ollama runs in a Docker container (GPU passthrough enabled if available)
 - Agent containers run via local Docker daemon
-- TanStack Start dev server runs natively (`pnpm dev` in `frontend/`)
+- TanStack Start dev server runs natively (`pnpm --filter frontend dev`)
 - A separate dev Telegram bot token (so dev doesn't fight prod)
 - A separate dev SQLite DB at `data/v2.dev.db`
 - A separate OneCLI dev vault namespace (`career-pilot-dev`)
@@ -976,14 +976,14 @@ What it does (each step is idempotent and skip-if-done):
 
 1. **Detect environment.** Refuses to run if `ENVIRONMENT=production` or if hostname matches the prod VM (safety guard).
 2. **Check prerequisites.** Node 20+, pnpm 10+, Docker, gh CLI authenticated, wrangler authenticated. For missing tools, prints the exact install command for the OS and exits non-zero.
-3. **Install deps.** `pnpm install` at root (host) + `cd frontend && pnpm install` (workspace).
+3. **Install deps.** A single root `pnpm install` populates host + `container/agent-runner` + `frontend` (all root workspace members).
 4. **Initialize OneCLI dev vault.** Sets up the `career-pilot-dev` namespace; prompts for any missing secrets (Portkey API key, Anthropic key for fallback, Telegram dev bot token).
 5. **Start Ollama container.** Detects existing `ollama` container; reuses or creates. Pulls `llama3.2` model if not present (idempotent).
 6. **Run NanoClaw setup.** Interactive Telegram pairing for the dev bot (skipped if already paired).
 7. **Apply migrations.** On `data/v2.dev.db`.
 8. **Build agent container image.** Skipped if image exists and `container/` hasn't changed.
 9. **Seed defaults.** Inserts default rows into `preferences` and `system_modes` if not present.
-10. **Print next steps:** `pnpm dev` (host) + `cd frontend && pnpm dev` (portal).
+10. **Print next steps:** `pnpm dev` (host) + `pnpm --filter frontend dev` (portal).
 
 Re-run any time — safe.
 

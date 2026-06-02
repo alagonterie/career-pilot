@@ -1,0 +1,8 @@
+node_modules
+.output
+.wrangler
+dist
+.cache
+.vite
+*.local
+.dev.vars

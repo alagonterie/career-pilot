@@ -26,7 +26,7 @@ non-negotiables.
 - `lib/` — SSE client, API client wrappers, formatting helpers
 - `e2e/` — Playwright dual-server harness (seeded portal API + frontend), fixtures, trace-replay util
 - `wrangler.jsonc` — Worker deploy config (`main: '@tanstack/react-start/server-entry'`, `nodejs_compat`, bindings, secrets)
-- `package.json` — separate pnpm workspace from the host
+- `package.json` — a package in the **root** pnpm workspace (shares backend read-model types via `workspace:*`)
 - `vite.config.ts` — `cloudflare()` + `tanstackStart()` + `react()` plugins
 
 ## Why deferred to Phase 6
