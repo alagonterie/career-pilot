@@ -89,7 +89,7 @@ export function ArchDiagram({
             markerHeight="6"
             orient="auto-start-reverse"
           >
-            <path d="M0 0 L8 4 L0 8 z" className="fill-muted-foreground/50" />
+            <path d="M0 0 L8 4 L0 8 z" className="fill-muted-foreground" />
           </marker>
         </defs>
 
@@ -106,20 +106,25 @@ export function ArchDiagram({
           </g>
         ))}
 
-        {EDGES.map((e) => {
-          const a = nodeById(e.from)
-          const b = nodeById(e.to)
-          if (!a || !b) return null
-          return (
-            <path
-              key={`${e.from}-${e.to}`}
-              d={edgePath(a, b, entryFraction(e.from, e.to))}
-              fill="none"
-              className="stroke-muted-foreground/30"
-              markerEnd="url(#arch-arrow)"
-            />
-          )
-        })}
+        {/* Group opacity (not per-edge alpha) so where two legs overlap they
+            composite opaque first, then the whole group fades once — no
+            darker patches at crossings. */}
+        <g opacity={0.3}>
+          {EDGES.map((e) => {
+            const a = nodeById(e.from)
+            const b = nodeById(e.to)
+            if (!a || !b) return null
+            return (
+              <path
+                key={`${e.from}-${e.to}`}
+                d={edgePath(a, b, entryFraction(e.from, e.to))}
+                fill="none"
+                className="stroke-muted-foreground"
+                markerEnd="url(#arch-arrow)"
+              />
+            )
+          })}
+        </g>
 
         {NODES.map((n) => {
           const status = deriveNodeStatus(n, arch, mode)
