@@ -1,9 +1,10 @@
 import { Link } from '@tanstack/react-router'
 
 /**
- * Slim marketing-register nav (PORTAL §8.1), shared by `/` and `/work`. A plain
- * shared component for now; promote to a `(marketing)` route-group layout when
- * `/contact` lands. Brand wordmark = the persona name (not a domain — the
+ * Slim site nav (PORTAL §8.1), shared by the marketing pages (`/`, `/work`) and
+ * the ops pages (`/funnel`, with `/live` + `/architecture` to follow). A plain
+ * shared component for now; promote to route-group layouts when `/contact` +
+ * more ops pages land. Brand wordmark = the persona name (not a domain — the
  * deployed site is `hire.<DOMAIN>`); links right.
  */
 export function SiteHeader() {
@@ -18,6 +19,9 @@ export function SiteHeader() {
         <div className="flex items-center gap-6 text-sm">
           <Link to="/work" className={linkClass}>
             Work
+          </Link>
+          <Link to="/funnel" className={linkClass}>
+            Funnel
           </Link>
         </div>
       </nav>

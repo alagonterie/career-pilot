@@ -10,11 +10,17 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as marketingIndexRouteImport } from './routes/(marketing)/index'
+import { Route as opsFunnelRouteImport } from './routes/(ops)/funnel'
 import { Route as marketingWorkRouteImport } from './routes/(marketing)/work'
 
 const marketingIndexRoute = marketingIndexRouteImport.update({
   id: '/(marketing)/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const opsFunnelRoute = opsFunnelRouteImport.update({
+  id: '/(ops)/funnel',
+  path: '/funnel',
   getParentRoute: () => rootRouteImport,
 } as any)
 const marketingWorkRoute = marketingWorkRouteImport.update({
@@ -25,27 +31,31 @@ const marketingWorkRoute = marketingWorkRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/work': typeof marketingWorkRoute
+  '/funnel': typeof opsFunnelRoute
   '/': typeof marketingIndexRoute
 }
 export interface FileRoutesByTo {
   '/work': typeof marketingWorkRoute
+  '/funnel': typeof opsFunnelRoute
   '/': typeof marketingIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/(marketing)/work': typeof marketingWorkRoute
+  '/(ops)/funnel': typeof opsFunnelRoute
   '/(marketing)/': typeof marketingIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/work' | '/'
+  fullPaths: '/work' | '/funnel' | '/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/work' | '/'
-  id: '__root__' | '/(marketing)/work' | '/(marketing)/'
+  to: '/work' | '/funnel' | '/'
+  id: '__root__' | '/(marketing)/work' | '/(ops)/funnel' | '/(marketing)/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   marketingWorkRoute: typeof marketingWorkRoute
+  opsFunnelRoute: typeof opsFunnelRoute
   marketingIndexRoute: typeof marketingIndexRoute
 }
 
@@ -56,6 +66,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof marketingIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/(ops)/funnel': {
+      id: '/(ops)/funnel'
+      path: '/funnel'
+      fullPath: '/funnel'
+      preLoaderRoute: typeof opsFunnelRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/(marketing)/work': {
@@ -70,6 +87,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   marketingWorkRoute: marketingWorkRoute,
+  opsFunnelRoute: opsFunnelRoute,
   marketingIndexRoute: marketingIndexRoute,
 }
 export const routeTree = rootRouteImport

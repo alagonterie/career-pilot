@@ -19,6 +19,8 @@ import {
   insertSyntheticEvent,
   maybeAdvanceFunnel,
   newGeneratorState,
+  seedDeterministicBacklog,
+  seedDeterministicFunnel,
   seedRichFixture,
 } from './fixtures.js';
 
@@ -133,6 +135,33 @@ describe('PORTAL_MOCK_PORTKEY env seam', () => {
     const res = await getPortkeyAnalytics();
     expect(res.available).toBe(false);
     if (prevKey !== undefined) process.env.PORTKEY_API_KEY = prevKey;
+  });
+});
+
+describe('seedDeterministicFunnel', () => {
+  it('populates public_funnel_view across the pipeline stages with one public OFFER', () => {
+    seedDeterministicFunnel(db);
+
+    const stages = (db.prepare('SELECT stage FROM public_funnel_view').all() as { stage: string }[]).map(
+      (r) => r.stage,
+    );
+    expect(stages).toEqual(expect.arrayContaining(['applied', 'screening', 'tech', 'final', 'offer']));
+
+    const offer = db
+      .prepare(`SELECT application_ref, public_state FROM public_funnel_view WHERE stage = 'offer'`)
+      .get() as { application_ref: string; public_state: string } | undefined;
+    expect(offer?.public_state).toBe('public');
+    expect(offer?.application_ref).toBe('Wayne Enterprises');
+  });
+
+  it('composes with seedDeterministicBacklog without conflicting on system_modes', () => {
+    // The E2E server calls both; the funnel seed must not re-write system_modes.
+    expect(() => {
+      seedDeterministicBacklog(db);
+      seedDeterministicFunnel(db);
+    }).not.toThrow();
+    expect(count('public_funnel_view')).toBe(5);
+    expect(count('public_audit_trail')).toBe(3);
   });
 });
 

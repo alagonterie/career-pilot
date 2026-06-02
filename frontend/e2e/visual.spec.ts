@@ -27,3 +27,19 @@ test('work page matches visual baseline', { tag: '@visual' }, async ({ page }) =
     fullPage: true,
   })
 })
+
+test('funnel page matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  await page.goto('/funnel')
+  await expect(page.getByRole('heading', { name: 'Funnel', level: 1 })).toBeVisible()
+  // Wait for the board to render from the seeded API so the snapshot is stable.
+  await expect(page.getByTestId('funnel-board')).toBeVisible()
+  await expect(page.getByText('Wayne Enterprises')).toBeVisible()
+  await expect(page).toHaveScreenshot('funnel.png', {
+    animations: 'disabled',
+    fullPage: true,
+    // Day-counts + date-windowed stat values derive from wall-clock and drift
+    // daily; mask them (the layout is the regression guard, the numbers are
+    // covered by the unit + semantic tests).
+    mask: [page.getByTestId('funnel-card-age'), page.getByTestId('stat-value')],
+  })
+})

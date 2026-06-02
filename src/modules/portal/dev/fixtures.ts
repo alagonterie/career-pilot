@@ -118,6 +118,111 @@ export function seedDeterministicBacklog(db: Database.Database): void {
   });
 }
 
+// ── deterministic funnel seed (E2E /funnel — fixed rows, stable board) ──────
+
+interface DetFunnelSeed {
+  company: string;
+  label: string;
+  role: string;
+  status: string;
+  publicState: 'obfuscated' | 'public';
+  win: number;
+  appliedAt: string;
+  lastActivityAt: string;
+}
+
+// Fixed applications spanning the displayed pipeline columns (one public
+// OFFER). Self-contained like seedDeterministicBacklog — no system_modes write
+// (the audit seed owns those). Timestamps are fixed; the day-counts the API
+// derives from them drift with wall-clock, so the /funnel visual baseline masks
+// those numeric regions (the semantic E2E asserts the stage/label/name, which
+// are time-independent). Do NOT change these without re-blessing funnel.png.
+const DET_FUNNEL_SEEDS: DetFunnelSeed[] = [
+  {
+    company: 'Acme Corp',
+    label: 'fintech-a',
+    role: 'Senior Software Engineer',
+    status: 'APPLIED',
+    publicState: 'obfuscated',
+    win: 40,
+    appliedAt: '2026-05-12T09:00:00Z',
+    lastActivityAt: '2026-05-14T09:00:00Z',
+  },
+  {
+    company: 'Globex',
+    label: 'fintech-b',
+    role: 'Staff Engineer',
+    status: 'SCREENING',
+    publicState: 'obfuscated',
+    win: 55,
+    appliedAt: '2026-05-08T09:00:00Z',
+    lastActivityAt: '2026-05-20T09:00:00Z',
+  },
+  {
+    company: 'Initech',
+    label: 'ai-infra-a',
+    role: 'Senior AI Specialist',
+    status: 'TECH_SCREEN',
+    publicState: 'obfuscated',
+    win: 62,
+    appliedAt: '2026-05-05T09:00:00Z',
+    lastActivityAt: '2026-05-22T09:00:00Z',
+  },
+  {
+    company: 'Stark Industries',
+    label: 'devtools-a',
+    role: 'Staff DevX Engineer',
+    status: 'FINAL',
+    publicState: 'obfuscated',
+    win: 73,
+    appliedAt: '2026-05-01T09:00:00Z',
+    lastActivityAt: '2026-05-24T09:00:00Z',
+  },
+  {
+    company: 'Wayne Enterprises',
+    label: 'devtools-b',
+    role: 'Principal Engineer',
+    status: 'OFFER',
+    publicState: 'public',
+    win: 84,
+    appliedAt: '2026-04-26T09:00:00Z',
+    lastActivityAt: '2026-05-25T09:00:00Z',
+  },
+];
+
+/**
+ * Seed a fixed set of applications + their public_funnel_view rows for the
+ * Playwright /funnel E2E. Built through the real `upsertPublicFunnelView`
+ * projection (FK-safe, valid stages). Additive — the existing smoke/work specs
+ * don't read /api/funnel, so they're unaffected.
+ */
+export function seedDeterministicFunnel(db: Database.Database): void {
+  const insertApp = db.prepare(
+    `INSERT INTO applications
+       (id, company_name, obfuscated_label, public_state, role_title, status,
+        win_confidence, applied_at, last_activity_at, created_at)
+     VALUES (@id, @company, @label, @public_state, @role, @status,
+        @win, @applied_at, @last_activity_at, @created_at)`,
+  );
+  for (let i = 0; i < DET_FUNNEL_SEEDS.length; i++) {
+    const a = DET_FUNNEL_SEEDS[i];
+    const id = `det-app-${i + 1}`;
+    insertApp.run({
+      id,
+      company: a.company,
+      label: a.label,
+      public_state: a.publicState,
+      role: a.role,
+      status: a.status,
+      win: a.win,
+      applied_at: a.appliedAt,
+      last_activity_at: a.lastActivityAt,
+      created_at: a.appliedAt,
+    });
+    upsertPublicFunnelView(db, id);
+  }
+}
+
 // ── rich dev seed ───────────────────────────────────────────────────────────
 
 interface AppSeed {
