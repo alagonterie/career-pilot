@@ -1454,7 +1454,7 @@ Everything that NanoClaw v2 ships: `bin/`, `scripts/` (NanoClaw's own), `setup/`
 | **3. Heartbeat — daily briefing + cron** | 4 | Host-side cron primitive + orchestrator-notify intake + daily-briefing flow + LLM rank-at-draw-time. See §24.6 for the sub-milestone drill-in. | At the scheduled morning time, the orchestrator wakes, queries `job_leads`, LLM-ranks the top-N against the candidate brief, and emits a Telegram briefing — OR skips cleanly per quiet-hours / frequency-cap / no-news rules. Cron schedules survive host restart. |
 | **4. Sanitization + public_audit_trail** | 5 | `src/modules/portal/sanitizer.ts`, post-write hooks, sanitized mirror to `public_audit_trail`. See §24.10 for Sub-milestone 4.1 (Pass 1 regex + Pass 2 company replacement) and §24.11 for Sub-milestone 4.3 (retroactive resanitization on `applications` UPDATE). Pass 3 LLM review (Sub-milestone 4.2) architecture decided in §24.12 (container batch); build deferred until the first non-funnel category is mirrored. | Every funnel_event has a matching sanitized row in public_audit_trail; flipping `public_state` rewrites past audit rows to match. Spot check: real company name nowhere in public table even after the candidate edits an application's obfuscation policy. |
 | **5. Portal backend** | 6 | HTTP API (native `http`), SSE infra, system modes, portal channel adapter, sandbox agent group. See §24.15 for the Phase 5 decomposition + Sub-milestone 5.1 drill-in. | I can `curl /api/funnel` and get real (sanitized) data. SSE stream emits events. `POST /api/simulator` spawns a sandbox container. |
-| **6. Frontend bootstrap** | 7 | **TanStack Start docs deep-read** + scaffold + landing + /work. See §24.23 for the Phase 6 decomposition + Sub-milestone 6.0 (test-harness bootstrap) drill-in, §24.24 for Sub-milestone 6.1 (landing hero + live SSE ticker + proactive capture), §24.25 for Sub-milestone 6.2 (`/work` shell + read-model placeholders). | Test harness green (Playwright dual-server + a11y). Hero renders. Live ticker connects to SSE. /work renders with placeholders. |
+| **6. Frontend bootstrap** | 7 | **TanStack Start docs deep-read** + scaffold + landing + /work. See §24.23 for the Phase 6 decomposition + Sub-milestone 6.0 (test-harness bootstrap) drill-in, §24.24 for Sub-milestone 6.1 (landing hero + live SSE ticker + proactive capture), §24.25 for Sub-milestone 6.2 (`/work` shell + read-model placeholders), §24.26 for Sub-milestone 6.3 (dev fixture/demo data harness). | Test harness green (Playwright dual-server + a11y). Hero renders. Live ticker connects to SSE. /work renders with placeholders. `pnpm dev:mock` serves rich, animating data for dynamic-page dev. |
 | **7. Frontend depth** | 8 | /live, /funnel, /architecture pages | All three pages render real data. Filter chips work. Funnel race animates. |
 | **8. Simulator end-to-end** | 9 | /simulator interactive sandbox | A visitor can type a company + JD, hit Run, see real streaming output side-by-side. Sandbox session tears down cleanly. |
 | **9. Polish + deploy** | 10 | Cloudflare deploy pipeline, /about content, /contact form, content placeholders | `hire.example.com` resolves to the deployed Worker. /contact submission lands in Telegram. /about reads honestly. |
@@ -3507,8 +3507,9 @@ The catastrophic control. Unlike 5.4a's commands, `/killswitch` **never fires on
 | **6.0** ✅ | Test-harness bootstrap: `frontend/` scaffold + minimal `/` route reading `/api/system-status`; Playwright dual-server fixture (seeded portal API + frontend); axe a11y; visual-snapshot config (animations disabled); one green smoke E2E; browser MCPs in `.mcp.json`; hosted CI job | Phase 5 portal API |
 | **6.1** (§24.24) | Landing (`(marketing)/index.tsx`): hero + live SSE ticker + proactive trace-capture (agent_name/category already real; LLM telemetry deferred) | 6.0 |
 | **6.2** (§24.25) | `/work` (`(marketing)/work.tsx`): page shell — the 8 PORTAL §5.6 sections rendered from a typed placeholder `WorkProfile` + shared `SiteHeader` nav; live `/api/profile` projection + server-side PDF deferred | 6.0 |
+| **6.3** (§24.26) | dev fixture/demo data harness: `src/modules/portal/dev/fixtures.ts` (fat seed + synthetic activity generator + faked Portkey/Docker via inert env seams) + `scripts/portal-dev-server.ts` + `dev:mock`; the dev-facing analog of 6.0, so Phase 7's dynamic pages are built against rich, animating data | 6.0 |
 
-(Phase 7-8 sub-milestones get their own drill-ins when reached. A **dev fixture/demo harness** — the dev-facing analog of 6.0, extending the seeded `portal-e2e-server.ts` with a fat seed + a synthetic event-generator + a `dev:mock` entry so the dynamic pages are built and tuned against rich, animating data — lands as its own sub-milestone immediately before Phase 7, where `/live` / `/funnel` need it. A deliberately *disclosed* deployed "demo mode" is a separate Phase 9/10 item, gated by the portal's honesty principle.)
+(Phase 7-8 sub-milestones get their own drill-ins when reached. The **dev fixture/demo harness** the dynamic pages need is Sub-milestone 6.3 / §24.26, above. A deliberately *disclosed* deployed "demo mode" remains a separate Phase 9/10 item, gated by the portal's honesty principle and reusing the 6.3 fixtures + seams.)
 
 **What lands (6.0):**
 1. **`frontend/`** — TanStack Start v1 scaffold (own pnpm workspace, pinned versions): `vite.config.ts`, `wrangler.jsonc`, `tsconfig.json` (incl. `routeTree.gen.ts`), Tailwind v4 `@theme`. One `src/routes/index.tsx` that reads the portal base from `import.meta.env.VITE_API_BASE` and renders `/api/system-status`.
@@ -3579,6 +3580,36 @@ The second marketing-register page (PORTAL §5.6): `/work`, the resume/portfolio
 3. `pnpm --filter @career-pilot/frontend test` (section rendering) + `test:e2e` (`/work` semantic + axe + console/network gate; `/` smoke still green) pass locally and in CI; typecheck + build clean (`/work` in `routeTree.gen.ts`).
 4. shadcn `card` + `badge` added (new-york, aliases → `~`).
 5. `work.png` baseline added + `home.png` re-blessed out-of-band (screenshots to the owner). No backend/host files changed.
+
+---
+
+#### 24.26 Sub-milestone 6.3 — dev fixture/demo data harness
+
+The dev-facing analog of the 6.0 test harness. Phase 7's pages (`/live`, `/funnel`, `/architecture`) are the dynamic core — lots of moving, animated data — but no live agent produces activity during development, and `vite dev` points at an empty real API (`VITE_API_BASE ?? http://localhost:3001`). 6.3 stands up a richly-seeded, **continuously-animating** portal backend a `vite dev` browser points at, so the dynamic pages are built and tuned against realistic flowing data. Frontend-adjacent dev tooling; no production behavior change.
+
+**Reuse, not rebuild.** `scripts/portal-e2e-server.ts` already boots the real `startPortalApi` against a seeded in-memory DB, and the SSE broadcaster (§24.16) is a poll-based tail of `public_audit_trail` by `seq` — so a synthetic generator only has to *insert rows* and the live stream delivers them within the tail interval. The harness extracts the seed/generator into a pure `src/modules/portal/dev/fixtures.ts` and adds a `scripts/portal-dev-server.ts` that boots the API on a fat seed, runs the generator on a timer, and spawns `vite dev` itself (single `pnpm dev:mock`).
+
+**Fake everything — transparently.** The tool exists to exercise the UI, so it fakes *every* surface, so every element renders in a populated state during development:
+
+| Surface | Reads | Harness provides |
+|---|---|---|
+| `/api/activity` + `/stream` | `public_audit_trail` | fat backlog + a live generator inserting rows on a timer (→ the SSE tail animates the ticker) |
+| `/api/funnel` | `public_funnel_view` | rows across all stages; the generator occasionally advances a stage |
+| `/api/telemetry` | local counts + Portkey aggregates | seeded `simulator_runs` + audit counts + a fake Portkey summary |
+| `/api/architecture` | `sessions` + Docker count | seeded `sessions` (active/running) + a fake container count |
+
+The two surfaces that call external services in prod (Portkey via `fetch`, the Docker count via `docker ps`) are faked through **inert env-gated dev seams** in the portal module — `PORTAL_MOCK_PORTKEY` beside the existing `PORTKEY_BYPASS` branch in `getPortkeyAnalytics`, and `PORTAL_MOCK_CONTAINERS` in `countRunningContainersCached`. Set only by the dev server; with the envs unset (prod, and the Playwright E2E) the existing graceful-degraded paths are byte-unchanged.
+
+**This is a dev tool, not the deployed site.** The portal's honesty principle (no invented data on the live recruiter-facing site) governs production; here transparency means the mode is a clearly-labelled mock (a loud "MOCK MODE — synthetic data" banner; localhost-only). A future deployed "demo mode" — disclosed synthetic activity so the site isn't dead pre-go-live — is a separate Phase 9/10 item behind a system-mode + an on-page "demo data" banner, and reuses these same fixtures + seams.
+
+**Determinism preserved for E2E.** The existing 3-row deterministic backlog moves into `fixtures.ts` verbatim (`seedDeterministicBacklog`); `portal-e2e-server.ts` keeps using it and does not set the mock envs or run the generator — so the Playwright suite + visual baselines are unchanged. The fat seed + generator are dev-server-only.
+
+**Definition of done.**
+1. `pnpm dev:mock` boots one process that serves a fat-seeded portal API + a `vite dev` frontend pointed at it; the `/` ticker shows a deep backlog and a new row arrives every few seconds (generator → SSE tail).
+2. With the mock envs set, `/api/telemetry` returns populated Portkey aggregates (not the degraded "—") and `/api/architecture` returns a running container count (runtime "up"); funnel rows span all stages.
+3. The env seams are inert when unset: the existing Playwright E2E (`smoke` + `work`) + visual baselines stay green locally + in CI; the host suite + `tsc` stay clean.
+4. `fixtures.ts` is pure + unit-tested (`fixtures.test.ts`): the rich seed populates the four tables; the generator emits a valid row + bumps `seq`; env seams return the mock when set / the existing path when unset.
+5. No production request path is changed; the dev module is imported only by dev/test scripts.
 
 ---
 
