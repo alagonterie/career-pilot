@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as marketingIndexRouteImport } from './routes/(marketing)/index'
+import { Route as opsLiveRouteImport } from './routes/(ops)/live'
 import { Route as opsFunnelRouteImport } from './routes/(ops)/funnel'
 import { Route as opsArchitectureRouteImport } from './routes/(ops)/architecture'
 import { Route as marketingWorkRouteImport } from './routes/(marketing)/work'
@@ -17,6 +18,11 @@ import { Route as marketingWorkRouteImport } from './routes/(marketing)/work'
 const marketingIndexRoute = marketingIndexRouteImport.update({
   id: '/(marketing)/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const opsLiveRoute = opsLiveRouteImport.update({
+  id: '/(ops)/live',
+  path: '/live',
   getParentRoute: () => rootRouteImport,
 } as any)
 const opsFunnelRoute = opsFunnelRouteImport.update({
@@ -39,12 +45,14 @@ export interface FileRoutesByFullPath {
   '/work': typeof marketingWorkRoute
   '/architecture': typeof opsArchitectureRoute
   '/funnel': typeof opsFunnelRoute
+  '/live': typeof opsLiveRoute
   '/': typeof marketingIndexRoute
 }
 export interface FileRoutesByTo {
   '/work': typeof marketingWorkRoute
   '/architecture': typeof opsArchitectureRoute
   '/funnel': typeof opsFunnelRoute
+  '/live': typeof opsLiveRoute
   '/': typeof marketingIndexRoute
 }
 export interface FileRoutesById {
@@ -52,18 +60,20 @@ export interface FileRoutesById {
   '/(marketing)/work': typeof marketingWorkRoute
   '/(ops)/architecture': typeof opsArchitectureRoute
   '/(ops)/funnel': typeof opsFunnelRoute
+  '/(ops)/live': typeof opsLiveRoute
   '/(marketing)/': typeof marketingIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/work' | '/architecture' | '/funnel' | '/'
+  fullPaths: '/work' | '/architecture' | '/funnel' | '/live' | '/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/work' | '/architecture' | '/funnel' | '/'
+  to: '/work' | '/architecture' | '/funnel' | '/live' | '/'
   id:
     | '__root__'
     | '/(marketing)/work'
     | '/(ops)/architecture'
     | '/(ops)/funnel'
+    | '/(ops)/live'
     | '/(marketing)/'
   fileRoutesById: FileRoutesById
 }
@@ -71,6 +81,7 @@ export interface RootRouteChildren {
   marketingWorkRoute: typeof marketingWorkRoute
   opsArchitectureRoute: typeof opsArchitectureRoute
   opsFunnelRoute: typeof opsFunnelRoute
+  opsLiveRoute: typeof opsLiveRoute
   marketingIndexRoute: typeof marketingIndexRoute
 }
 
@@ -81,6 +92,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof marketingIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/(ops)/live': {
+      id: '/(ops)/live'
+      path: '/live'
+      fullPath: '/live'
+      preLoaderRoute: typeof opsLiveRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/(ops)/funnel': {
@@ -111,6 +129,7 @@ const rootRouteChildren: RootRouteChildren = {
   marketingWorkRoute: marketingWorkRoute,
   opsArchitectureRoute: opsArchitectureRoute,
   opsFunnelRoute: opsFunnelRoute,
+  opsLiveRoute: opsLiveRoute,
   marketingIndexRoute: marketingIndexRoute,
 }
 export const routeTree = rootRouteImport

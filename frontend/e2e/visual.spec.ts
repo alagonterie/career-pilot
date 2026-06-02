@@ -57,3 +57,22 @@ test('architecture page matches visual baseline', { tag: '@visual' }, async ({ p
     fullPage: true,
   })
 })
+
+test('live page matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  await page.goto('/live')
+  await expect(page.getByRole('heading', { name: 'Live', level: 1 })).toBeVisible()
+  // Wait for the SSE trace to replay the seeded backlog so the centerpiece is
+  // populated before the snapshot (mirrors the home-ticker wait). The funnel,
+  // sessions, container, and recent-outcomes panels are fixed-seed deterministic;
+  // Portkey is unmocked here so telemetry/cost render the honest empty state.
+  await expect(page.getByTestId('trace-stream')).toBeVisible()
+  await expect(page.getByTestId('trace-stream').getByText('research-company')).toBeVisible()
+  await expect(page).toHaveScreenshot('live.png', {
+    animations: 'disabled',
+    fullPage: true,
+    // The local-aggregate line is wall-clock-windowed (and could shift if a
+    // parallel spec pushed an audit row); the layout is the regression guard,
+    // the numbers are covered by the unit + semantic tests.
+    mask: [page.getByTestId('live-volatile')],
+  })
+})
