@@ -1,33 +1,57 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 
-test.describe('home (/) — frontend <-> backend smoke', () => {
-  test('renders system-status fetched from the real portal API', async ({ page }) => {
+// Harness-only control plane (scripts/portal-e2e-server.ts). Server-to-server
+// POST (Playwright's request context, not the browser) inserts an audit row so
+// we can prove the SSE tail delivers a NEW event through the fetch-reader.
+const CONTROL_URL = `http://127.0.0.1:${process.env.PORTAL_E2E_CONTROL_PORT ?? 3098}`
+
+test.describe('landing (/) — hero + live ticker, frontend <-> backend', () => {
+  test('renders the hero + seeded ticker and live-appends a pushed event', async ({ page, request }) => {
     const consoleErrors: string[] = []
     page.on('console', (msg) => {
       if (msg.type() === 'error') consoleErrors.push(msg.text())
     })
     const failedRequests: string[] = []
-    page.on('requestfailed', (req) =>
-      failedRequests.push(`${req.method()} ${req.url()} — ${req.failure()?.errorText ?? ''}`),
-    )
+    page.on('requestfailed', (req) => {
+      // The long-lived SSE stream is aborted on page close — that teardown
+      // abort is expected, not a failure. Everything else must succeed.
+      if (req.url().includes('/api/activity/stream')) return
+      failedRequests.push(`${req.method()} ${req.url()} — ${req.failure()?.errorText ?? ''}`)
+    })
 
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'Career Pilot' })).toBeVisible()
 
-    // Data comes from GET /api/system-status -> the seeded in-memory DB
-    // (live_mode=true is distinctive from the API's default false, proving
-    // this is a real frontend -> backend -> DB round-trip, not empty-state).
-    await expect(page.getByTestId('system-status')).toBeVisible()
-    await expect(page.getByTestId('backend')).toHaveText('online')
-    await expect(page.getByTestId('live-mode')).toHaveText('true')
-    await expect(page.getByTestId('pause-state')).toHaveText('active')
+    // Hero (SSR-static).
+    await expect(page.getByRole('heading', { name: 'Jane Doe', level: 1 })).toBeVisible()
+    await expect(page.getByTestId('live-indicator')).toBeVisible()
+
+    // Ticker shows the seeded backlog from the real portal API over SSE —
+    // the new frontend -> backend -> DB round-trip proof. agent_name + the
+    // ◆ proactive marker are live (§24.24), not faked.
+    const ticker = page.getByTestId('live-ticker')
+    await expect(ticker).toContainText('research-company')
+    await expect(ticker).toContainText('[fintech-a]')
+    await expect(page.getByTestId('proactive-marker').first()).toBeVisible()
+
+    // Live push: emit a brand-new event after load; the 1s tail must deliver
+    // it to the open stream and the ticker must append it.
+    const res = await request.post(`${CONTROL_URL}/audit`, {
+      data: {
+        category: 'subagent_progress',
+        agent_name: 'draft-outreach',
+        proactive: 1,
+        summary: 'drafted a follow-up to the recruiter',
+      },
+    })
+    expect(res.ok()).toBe(true)
+    await expect(ticker).toContainText('draft-outreach', { timeout: 8000 })
 
     // Accessibility — recruiter-facing showcase; zero violations on every route.
     const a11y = await new AxeBuilder({ page }).analyze()
     expect(a11y.violations).toEqual([])
 
-    // Correctness gate: nothing logged an error, no request failed.
+    // Correctness gate: nothing logged an error, no (non-teardown) request failed.
     expect(consoleErrors).toEqual([])
     expect(failedRequests).toEqual([])
   })

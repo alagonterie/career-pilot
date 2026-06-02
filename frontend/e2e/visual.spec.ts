@@ -9,7 +9,9 @@ import { expect, test } from '@playwright/test'
 // OS. The semantic + a11y E2E is the cross-platform gate that runs everywhere.
 test('home page matches visual baseline', { tag: '@visual' }, async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByTestId('system-status')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Jane Doe', level: 1 })).toBeVisible()
+  // Wait for the seeded backlog to render so the snapshot is deterministic.
+  await expect(page.getByTestId('live-ticker')).toContainText('research-company')
   await expect(page).toHaveScreenshot('home.png', {
     animations: 'disabled',
     fullPage: true,
