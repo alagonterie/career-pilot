@@ -10,32 +10,42 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as marketingIndexRouteImport } from './routes/(marketing)/index'
+import { Route as marketingWorkRouteImport } from './routes/(marketing)/work'
 
 const marketingIndexRoute = marketingIndexRouteImport.update({
   id: '/(marketing)/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const marketingWorkRoute = marketingWorkRouteImport.update({
+  id: '/(marketing)/work',
+  path: '/work',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
+  '/work': typeof marketingWorkRoute
   '/': typeof marketingIndexRoute
 }
 export interface FileRoutesByTo {
+  '/work': typeof marketingWorkRoute
   '/': typeof marketingIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
+  '/(marketing)/work': typeof marketingWorkRoute
   '/(marketing)/': typeof marketingIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/work' | '/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/(marketing)/'
+  to: '/work' | '/'
+  id: '__root__' | '/(marketing)/work' | '/(marketing)/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
+  marketingWorkRoute: typeof marketingWorkRoute
   marketingIndexRoute: typeof marketingIndexRoute
 }
 
@@ -48,10 +58,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof marketingIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/(marketing)/work': {
+      id: '/(marketing)/work'
+      path: '/work'
+      fullPath: '/work'
+      preLoaderRoute: typeof marketingWorkRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
+  marketingWorkRoute: marketingWorkRoute,
   marketingIndexRoute: marketingIndexRoute,
 }
 export const routeTree = rootRouteImport

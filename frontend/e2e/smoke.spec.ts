@@ -23,7 +23,7 @@ test.describe('landing (/) — hero + live ticker, frontend <-> backend', () => 
     await page.goto('/')
 
     // Hero (SSR-static).
-    await expect(page.getByRole('heading', { name: 'Alexander LaGonterie', level: 1 })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Jane Doe', level: 1 })).toBeVisible()
     await expect(page.getByTestId('live-indicator')).toBeVisible()
 
     // Ticker shows the seeded backlog from the real portal API over SSE —
