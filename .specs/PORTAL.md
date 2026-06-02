@@ -24,7 +24,7 @@ The portal succeeds when **technical hiring managers who see this page conclude,
 
 ---
 
-## 2. Audience model
+## 2. Audience model & visitor journey
 
 | Visitor | Path | Conversion goal |
 |---|---|---|
@@ -35,6 +35,42 @@ The portal succeeds when **technical hiring managers who see this page conclude,
 | **The person being shown the link by the candidate** | Direct deep link to a specific page they're sent | Whatever the conversation calls for |
 
 The first three are the priority. Design every page to read fast for #1, reward dig-in for #3.
+
+### The visitor journey — mouth, hub, spokes, and a single sink
+
+The persona paths above all share one shape: **land → get gripped → deepen on what interests you → convert.** The portal has to make that shape *physical*. Two failure modes to design against — both currently latent in the built surfaces:
+
+1. **The one-shot dead-end.** A visitor clicks the hero's one CTA, lands on a single deep page, and stops. The page impresses but offers no next step, so an interested visitor leaks out the back instead of going deeper or converting.
+2. **No sink.** Every persona path terminates in *contact* — but if there's nowhere obvious to convert at the moment of conviction, the whole funnel is decorative.
+
+The model that prevents both:
+
+```
+   /  — the funnel mouth
+   hero · funnel strip · live ticker · simulator pitch · resume+contact teaser
+        │  (each viewport hands the visitor a directed next step)
+        ▼
+   /live  — the hub / branch point  ◄── the one register-crossing CTA lands here
+        │
+        │   "is this real?"        "prove it on me"        "I'm convinced"
+        ▼                              ▼                         ▼
+   /architecture → repo          /simulator                 /contact
+        │   (depth, skeptic)      (personalized proof,        — THE SINK —
+        │                          pre-fills contact)         every path drains
+        └───────────────┬──────────────┘                     here; carries the
+                        ▼                                      role/company/from
+                     /contact  ◄───────────────────────────── context
+
+   top nav (§8.1) lets a visitor jump to any surface at any time;
+   the connective rail (§8.4) pulls them forward toward /contact.
+```
+
+- **The home is the funnel mouth.** Its five viewports (§5.1) *are* connective tissue: each hands off a directed next step (funnel strip → `/funnel`, live ticker → `/live`, simulator pitch → `/simulator`, resume teaser → `/work` + `/contact`). A fully-built home channels; a hero-only home leaks.
+- **`/live` is the hub.** It's where the one register-crossing CTA lands (§3.5) and where intent forks: the skeptic deepens into `/architecture` + the repo, the "prove-it" visitor pivots to `/simulator`, the convinced visitor converts at `/contact`.
+- **`/contact` is the single sink.** Every surface offers a path to it, and it accepts **carried context** (the role/company a simulator run was about, the surface the visitor came from) so converting is one low-friction step, not a cold form.
+- **Every deep surface offers a next step.** No `/live`, `/funnel`, `/architecture`, `/simulator`, or `/work` is a terminus: each carries the **connective rail** (§8.4) — a constant convert path (→ `/contact`) plus 1-2 contextual deepen/pivot options. The top nav (§8.1) independently supports free "bounce anywhere" movement; the rail adds *directed* pull so an interested visitor is led forward rather than left to find their own way.
+
+This journey is not new scope invented here — it's the persona paths above + the §3.5 register transitions made physical. What it adds is the **connective tissue**: the rail (§8.4), the home build-out (§5.1), and a real `/contact` sink (§5.7) — turning five strong-but-isolated surfaces into a path that deepens and converts. STRATEGY.md §24.30 carries the delivery decomposition (the "conversion spine").
 
 ---
 
@@ -264,6 +300,8 @@ Three-column on desktop, stacked on mobile. The resume content is hand-curated, 
 - Last deploy SHA + link to GitHub repo
 - Link to `/about`
 - "Built with [stack list]" — small grey text
+
+> **Build note (the funnel mouth — STRATEGY §24.30 / Sub-milestone 8.1).** The home is the mouth of the conversion funnel (§2): each viewport hands the visitor a directed next step. Phase 6.1 shipped only the hero (Viewport 1) + the live ticker (Viewport 3), so today the home channels into `/live` and leaks every other path. The conversion-spine work builds the remaining three — the **funnel strip** (Viewport 2, a compact `FunnelStrip` over `/api/funnel` → `/funnel`), the **simulator pitch** (Viewport 4 → `/simulator`), and the **resume+contact teaser** (Viewport 5 → `/work` + `/contact`) — and rewires the hero's "Talk to me →" from its `mailto:` placeholder to `/contact`.
 
 ---
 
@@ -753,6 +791,8 @@ When submitted, the message is relayed to the candidate via Telegram. Sender get
 
 **Spam control:** Cloudflare Turnstile captcha (invisible by default). Rate limit 5 submissions per IP per hour.
 
+> **Build note (the conversion sink — STRATEGY §24.30 / Sub-milestone 8.1).** `/contact` is the single sink every journey path drains toward (§2), so it is pulled forward from Phase 9 into the conversion spine. It ships over the already-built `POST /api/contact` relay (`relayContactSubmission` → owner Telegram) with react-hook-form + Zod (§3.5 rule #5). It reads **carried context** — typed `useSearch` `?company=&role=&from=` prefills the form (the simulator's `[Talk to me]` passes the role/company it just ran; every connective-rail convert link passes `from`) — so a convinced visitor converts in one step, not a cold form. The Turnstile captcha + per-IP rate limit are deploy-phase (§10) and land with Phase 9; until then the relay's own validation stands in.
+
 ---
 
 ### 5.8 `/about` — Methodology / FAQ
@@ -1072,6 +1112,25 @@ Used on `/` and in the footer. A single small dot with `● live` label. Connect
 **Resume cursor:** the stream carries a monotonic `seq` (the `public_audit_trail.seq` column) as the SSE `id:` / `Last-Event-ID`. On reconnect the client resumes with `/api/activity?since=<seq>` (or the stream's `Last-Event-ID` header). The cursor is `seq`, **not** `ts` — wall-clock timestamps tie at millisecond granularity (multiple events in one host tick), so a `since=<ts>` resume either duplicates the boundary (`>=`) or skips same-ms siblings (`>`). A monotonic integer cursor makes reconnects across the Cloudflare Tunnel idle timeout exactly-once with no gaps or dupes.
 
 As of Sub-milestone 6.1 (STRATEGY.md §24.24) the indicator + ticker run on the audit fields that exist — `category`, `agent_name`, and the `proactive` flag (captured host-side from the triggering message kind). Per-event LLM telemetry (model / cache-hit / cost) is a later capture phase; see the §5.1 progressive-rendering note.
+
+### 8.4 Connective rail
+
+The directed "what's next" affordance that makes the journey (§2) physical: **no deep surface is a dead-end.** A slim band at the foot of the page content (distinct from §8.2's metadata footer) presents the contextual next steps for *this* surface — always including the convert path to `/contact`, plus 1-2 deepen/pivot options. Where the top nav (§8.1) lets a visitor jump anywhere, the rail *pulls them forward* along the path their current interest implies — the fix for the "one-shot dead-end" failure mode named in §2.
+
+A single `ConnectiveRail` component fed a per-route config, hosted by the register layouts (the `(ops)` shared layout — finally earning its place — and the marketing layout) rather than hand-placed per page. The convert option is the constant; the rest is per-surface:
+
+| Surface | Convert (constant) | Deepen | Pivot |
+|---|---|---|---|
+| `/` (home) | Talk to me → `/contact` | See it work → `/live` | Try it → `/simulator` |
+| `/live` (the hub) | Talk to me → `/contact` | How it works → `/architecture` | Run it on your role → `/simulator` |
+| `/architecture` | Talk to me → `/contact` | Read the code → GitHub repo | See it run → `/live` |
+| `/funnel` | Talk to me → `/contact` | Watch it live → `/live` | — |
+| `/work` | Talk to me → `/contact` | See the system → `/live` | — |
+| `/simulator` (results) | Talk to me (context-prefilled) → `/contact` | Share results | Try another |
+| `/about` | Talk to me → `/contact` | Read the code → GitHub | See it run → `/live` |
+| `/contact` | — (the sink: no rail; the §5.7 alt-contact paths stand in) | — | — |
+
+Register-aware styling: clean and spacious in the marketing register, dense and monospace in ops. The convert option carries visual primacy (accent-filled) so the path to conversion is always the most prominent next step. Every convert link routes to `/contact` with the originating surface as carried context (`?from=<surface>`); `/live`, as the hub, is the only surface that exposes all three branch directions. Reduced-motion-safe; no auto-animation.
 
 ---
 

@@ -1456,8 +1456,8 @@ Everything that NanoClaw v2 ships: `bin/`, `scripts/` (NanoClaw's own), `setup/`
 | **5. Portal backend** | 6 | HTTP API (native `http`), SSE infra, system modes, portal channel adapter, sandbox agent group. See §24.15 for the Phase 5 decomposition + Sub-milestone 5.1 drill-in. | I can `curl /api/funnel` and get real (sanitized) data. SSE stream emits events. `POST /api/simulator` spawns a sandbox container. |
 | **6. Frontend bootstrap** | 7 | **TanStack Start docs deep-read** + scaffold + landing + /work. See §24.23 for the Phase 6 decomposition + Sub-milestone 6.0 (test-harness bootstrap) drill-in, §24.24 for Sub-milestone 6.1 (landing hero + live SSE ticker + proactive capture), §24.25 for Sub-milestone 6.2 (`/work` shell + read-model placeholders), §24.26 for Sub-milestone 6.3 (dev fixture/demo data harness). | Test harness green (Playwright dual-server + a11y). Hero renders. Live ticker connects to SSE. /work renders with placeholders. `pnpm dev:mock` serves rich, animating data for dynamic-page dev. |
 | **7. Frontend depth** | 8 | /live, /funnel, /architecture pages. See §24.27 (Phase 7 decomposition + 7.1 `/funnel`), §24.28 (7.2 `/architecture`), §24.29 (7.3 `/live`) for the drill-ins. | All three pages render real data. Filter chips work. Funnel race animates. |
-| **8. Simulator end-to-end** | 9 | /simulator interactive sandbox | A visitor can type a company + JD, hit Run, see real streaming output side-by-side. Sandbox session tears down cleanly. |
-| **9. Polish + deploy** | 10 | Cloudflare deploy pipeline, /about content, /contact form, content placeholders | `hire.example.com` resolves to the deployed Worker. /contact submission lands in Telegram. /about reads honestly. |
+| **8. Conversion spine** | 9 | The journey (PORTAL §2) made physical: the connective rail + register layouts + the `/contact` sink + the home funnel build-out (8.1), then `/simulator` (8.2), then `/about` (8.3). See §24.30 for the Phase 8 decomposition + Sub-milestone 8.1 drill-in. | Every surface offers a next step that drains toward `/contact`; a visitor can convert from any page; the home channels through all five viewports; `/simulator` runs and pre-fills `/contact`; sandbox tears down cleanly. |
+| **9. Polish + deploy** | 10 | Cloudflare deploy pipeline; Turnstile + rate-limit on `/contact`; real content population (`candidate_profile`); server-side resume PDF; final hardening. (The `/contact`, `/simulator`, `/about` *pages* now ship in Phase 8 — the conversion spine; Phase 9 is the deploy + real-content + hardening pass over them.) | `hire.example.com` resolves to the deployed Worker. /contact submission lands in Telegram with Turnstile active. Content is real, not placeholder. |
 | **10. Shadow run** | 11 | Deploy with `LIVE_MODE=false`; system runs in shadow for 1-2 weeks | I'm comfortable flipping `LIVE_MODE=true`. All proactive behaviors observed without external side effects. |
 | **11. Go live** | 12 | `LIVE_MODE=true`; real outreach starts | First real recruiter contact submitted via /contact form. First real outreach approved + sent. Portal shares to LinkedIn / wherever. |
 
@@ -3509,7 +3509,7 @@ The catastrophic control. Unlike 5.4a's commands, `/killswitch` **never fires on
 | **6.2** (§24.25) | `/work` (`(marketing)/work.tsx`): page shell — the 8 PORTAL §5.6 sections rendered from a typed placeholder `WorkProfile` + shared `SiteHeader` nav; live `/api/profile` projection + server-side PDF deferred | 6.0 |
 | **6.3** (§24.26) | dev fixture/demo data harness: `src/modules/portal/dev/fixtures.ts` (fat seed + synthetic activity generator + faked Portkey/Docker via inert env seams) + `scripts/portal-dev-server.ts` + `dev:mock`; the dev-facing analog of 6.0, so Phase 7's dynamic pages are built against rich, animating data | 6.0 |
 
-(Phase 7 sub-milestones get their own drill-ins, starting **§24.27** (the Phase 7 decomposition + Sub-milestone 7.1 `/funnel`), then **§24.28** (7.2 `/architecture`) and **§24.29** (7.3 `/live`); Phase 8 when reached. The **dev fixture/demo harness** the dynamic pages need is Sub-milestone 6.3 / §24.26, above. A deliberately *disclosed* deployed "demo mode" remains a separate Phase 9/10 item, gated by the portal's honesty principle and reusing the 6.3 fixtures + seams.)
+(Phase 7 sub-milestones get their own drill-ins, starting **§24.27** (the Phase 7 decomposition + Sub-milestone 7.1 `/funnel`), then **§24.28** (7.2 `/architecture`) and **§24.29** (7.3 `/live`), then **§24.30** (the Phase 8 conversion-spine decomposition + Sub-milestone 8.1); Phase 9+ when reached. The **dev fixture/demo harness** the dynamic pages need is Sub-milestone 6.3 / §24.26, above. A deliberately *disclosed* deployed "demo mode" remains a separate Phase 9/10 item, gated by the portal's honesty principle and reusing the 6.3 fixtures + seams.)
 
 **What lands (6.0):**
 1. **`frontend/`** — TanStack Start v1 scaffold (own pnpm workspace, pinned versions): `vite.config.ts`, `wrangler.jsonc`, `tsconfig.json` (incl. `routeTree.gen.ts`), Tailwind v4 `@theme`. One `src/routes/index.tsx` that reads the portal base from `import.meta.env.VITE_API_BASE` and renders `/api/system-status`.
@@ -3708,6 +3708,39 @@ The shared `SiteHeader` gains a `Live` link, and the landing hero's `See it work
 4. `pnpm --filter @career-pilot/frontend test` (`LogStream` render+filter+progressive lanes; `useTelemetry`/`deriveTelemetryView` available+unavailable+error; the panels incl. `FunnelCompact`) + `test:e2e` (`/live` semantic + a filter narrowing + axe + console/network gate; `/`↔`/live` nav; `smoke`+`work`+`funnel`+`architecture` still green) pass locally and in CI; typecheck + `vite build` clean (`/live` in `routeTree.gen.ts`).
 5. **Zero `src/` change** — `/live` is purely frontend; the host suite + `tsc` + `format:check` are untouched by this sub-milestone.
 6. `live.png` baseline added (volatile numerics masked); `home.png`/`work.png`/`funnel.png`/`architecture.png` re-blessed (the new `Live` nav link changed the shared header) out-of-band (screenshots to the owner). `dev:mock` shows the fully-populated dashboard (mock Portkey + the rich per-row telemetry seed) with the trace stream live-tailing.
+
+---
+
+#### 24.30 Phase 8 decomposition (the conversion spine) + Sub-milestone 8.1 — the journey connective tissue
+
+Phase 7 shipped five strong surfaces; the post-7.3 owner review surfaced that they don't yet compose into a *journey* — a visitor one-shots from the hero into a single deep page and dead-ends, and the conversion endpoint (`/contact`) doesn't exist, so an interested visitor has nowhere to convert. Phase 8 is therefore **reframed from "the simulator" to the conversion spine** (PORTAL §2): the connective tissue (the §8.4 rail + the register layouts) + the `/contact` sink + the home funnel build-out, then the simulator as the highest-grip spoke. The simulator's *backend* already shipped in Phase 5 (`POST /api/simulator`, the per-run SSE stream, results, recent-runs), so it is now mostly a frontend build that reuses 7.3's `LogStream` + SSE client — which is why it folds under this spine rather than standing alone, and why `/contact` is pulled forward from Phase 9 (the spine needs its sink first).
+
+**Phase 8 decomposition** (each its own §24.x drill-in + commit, same cadence):
+
+| Sub | Scope | Depends on |
+|---|---|---|
+| **8.1** (this section) | The journey made physical: the `ConnectiveRail` (PORTAL §8.4) + the register layouts that host it (the deferred `(ops)` shared layout finally lands), the **`/contact` sink** (PORTAL §5.7, over the built `POST /api/contact` relay; carries context), and the **home funnel build-out** (PORTAL §5.1 viewports 2/4/5 — funnel strip, simulator pitch, resume+contact teaser; only hero+ticker ship today). | Phase 7 |
+| **8.2** (§24.31) | `/simulator` (PORTAL §5.3): the input form → the live 2-pane running view (reusing `LogStream` + the SSE client) → the results view with the context-carrying `[Talk to me]` → `/contact`. Mostly frontend (the backend shipped in Phase 5). | 8.1 (the rail + the `/contact` sink) |
+| **8.3** (§24.32) | `/about` (PORTAL §5.8) — the methodology/credibility depth a skeptic reads (the two-tier vault, the fork story, honest limitations). Lower priority (depth, not conversion). | 8.1 |
+
+**Why 8.1 first.** The sink and the connective tissue are load-bearing — without `/contact` and the rail, the simulator's `[Talk to me]` has nowhere to land and the deep pages keep dead-ending. 8.1 makes every *existing* surface convert; 8.2 then adds the grippiest path into that now-complete funnel.
+
+**What ships (8.1).**
+- **`ConnectiveRail`** (PORTAL §8.4): a per-route-configured "what's next" band — the constant convert path (→ `/contact?from=<surface>`) + 1-2 contextual deepen/pivot options, register-aware (clean in marketing, dense in ops), the convert option accent-primary. Reduced-motion-safe.
+- **The register layouts**: `routes/(ops)/_layout.tsx` (the deferred `(ops)` shared layout — the `SiteHeader` + `<main>` shell + the rail, retiring the three hand-rolled ops page shells) and the marketing-layout equivalent for `/` + `/work` + `/contact`. This is the natural home for the rail and removes the per-page header duplication.
+- **`/contact`** (PORTAL §5.7): the form over the built `POST /api/contact` relay (react-hook-form + Zod), the three alt-contact paths, the confirmation + honest error states, and **carried-context prefill** via typed `useSearch` (`?company=&role=&from=`). The hero's "Talk to me →" + every rail convert option route here (retiring the `mailto:` placeholder). (Turnstile + per-IP rate limit are deploy-phase, Phase 9.)
+- **The home funnel build-out** (PORTAL §5.1): viewports 2/4/5 — the compact `FunnelStrip` (→ `/funnel`, over `/api/funnel`), the simulator pitch (→ `/simulator`), the resume+contact teaser (→ `/work` + `/contact`) — so the mouth of the funnel channels instead of leaking into `/live` only.
+
+**Determinism for tests.** `/contact` submit is exercised against the E2E server (a control-plane stub or a relay that no-ops without a configured channel — decided at build); the rail + home build-out are static-seed deterministic like the rest. Visual baselines for `/` (new viewports), the ops pages (now carrying the rail), and the new `/contact` are blessed `@visual`-in-isolation as established.
+
+**Deferred (noted):** the simulator page (8.2, §24.31) and `/about` (8.3, §24.32); Cloudflare deploy + Turnstile + real content population + the server-side resume PDF (Phase 9); the per-turn LLM-telemetry capture (§24.14) + Portkey calibration (§24.17) + the `/api/sanitize-demo` anonymization endpoint (unchanged Phase-7 deferrals).
+
+**Definition of done.**
+1. Every deep surface (`/`, `/live`, `/funnel`, `/architecture`, `/work`) carries the connective rail — a convert path to `/contact` plus its contextual deepen/pivot step(s); no surface is a dead-end.
+2. `/contact` renders + submits through `POST /api/contact` (confirmation on success; honest error state) and prefills from `?company/role/from` carried context.
+3. The home renders all five viewports (PORTAL §5.1); each hands the visitor a directed next step; the hero "Talk to me →" routes to `/contact`.
+4. The `(ops)` shared layout hosts the three ops pages (no behavior change beyond gaining the rail); the marketing layout hosts `/` + `/work` + `/contact`.
+5. Frontend unit + E2E green (the rail's per-surface options; `/contact` submit happy/error + prefill; the home viewports; nav + the new conversion paths; axe + console/network gate) + typecheck + `vite build` clean; visual baselines updated (the rail + home build-out + `/contact`) out-of-band.
 
 ---
 
