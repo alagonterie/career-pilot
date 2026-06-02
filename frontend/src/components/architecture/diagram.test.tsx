@@ -81,7 +81,7 @@ describe('ModeBanner', () => {
   it('shows LIVE + the pause state when live', () => {
     render(<ModeBanner mode={MODE} />)
     expect(screen.getByText('LIVE')).toBeInTheDocument()
-    expect(screen.getByText('active')).toBeInTheDocument()
+    expect(screen.getByText('ACTIVE')).toBeInTheDocument()
   })
 
   it('labels shadow mode honestly', () => {
