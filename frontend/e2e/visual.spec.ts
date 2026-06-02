@@ -17,3 +17,13 @@ test('home page matches visual baseline', { tag: '@visual' }, async ({ page }) =
     fullPage: true,
   })
 })
+
+test('work page matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  await page.goto('/work')
+  await expect(page.getByRole('heading', { name: 'Jane Doe', level: 1 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Experience', level: 2 })).toBeVisible()
+  await expect(page).toHaveScreenshot('work.png', {
+    animations: 'disabled',
+    fullPage: true,
+  })
+})
