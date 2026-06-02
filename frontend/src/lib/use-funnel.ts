@@ -1,4 +1,4 @@
-import * as React from 'react'
+import { usePolledJson, type PollStatus } from './use-polled-json'
 
 /**
  * A row of the public funnel read-model as delivered by `GET /api/funnel`
@@ -26,56 +26,23 @@ export interface FunnelResponse {
   stage_counts: Record<string, number>
 }
 
-export type FunnelStatus = 'loading' | 'ok' | 'error'
+export type FunnelStatus = PollStatus
 
 export interface FunnelState {
   data: FunnelResponse | null
   status: FunnelStatus
 }
 
-const DEFAULT_POLL_MS = 4000
-
 /**
  * Poll `GET /api/funnel` and keep the latest snapshot. `/api/funnel` is plain
  * JSON (not SSE), and the system mutates stages over time (recruiter replies,
  * the dev `maybeAdvanceFunnel` generator), so a short poll surfaces the motion
- * — the board's `motion/react` layout animation does the rest. Client-only:
- * SSR renders the loading shell, the effect fetches + re-polls (mirrors
- * use-activity-stream.ts). A transient fetch blip keeps the last-good data
- * rather than flashing an error (only the cold first failure shows 'error').
+ * — the board's `motion/react` layout animation does the rest. Delegates to the
+ * shared `usePolledJson` primitive (client-only; keeps last-good data on a
+ * transient blip; only a cold first failure shows `'error'`).
  */
-export function useFunnel(baseUrl: string, pollMs = DEFAULT_POLL_MS): FunnelState {
-  const [data, setData] = React.useState<FunnelResponse | null>(null)
-  const [status, setStatus] = React.useState<FunnelStatus>('loading')
-
-  React.useEffect(() => {
-    const ac = new AbortController()
-    const hadData = { current: false }
-    let timer: ReturnType<typeof setTimeout> | undefined
-
-    const tick = async (): Promise<void> => {
-      try {
-        const res = await fetch(`${baseUrl}/api/funnel`, { signal: ac.signal })
-        if (!res.ok) throw new Error(`funnel HTTP ${res.status}`)
-        const json = (await res.json()) as FunnelResponse
-        setData(json)
-        setStatus('ok')
-        hadData.current = true
-      } catch {
-        if (ac.signal.aborted) return
-        if (!hadData.current) setStatus('error') // cold failure; keep last-good otherwise
-      }
-      if (!ac.signal.aborted) timer = setTimeout(() => void tick(), pollMs)
-    }
-
-    void tick()
-    return () => {
-      ac.abort()
-      if (timer) clearTimeout(timer)
-    }
-  }, [baseUrl, pollMs])
-
-  return { data, status }
+export function useFunnel(baseUrl: string, pollMs?: number): FunnelState {
+  return usePolledJson<FunnelResponse>(`${baseUrl}/api/funnel`, pollMs)
 }
 
 export interface StatTile {

@@ -8,8 +8,7 @@ import { Link } from '@tanstack/react-router'
  * deployed site is `hire.<DOMAIN>`); links right.
  */
 export function SiteHeader() {
-  const linkClass =
-    'text-muted-foreground transition-colors hover:text-foreground [&.active]:text-foreground'
+  const linkClass = 'text-muted-foreground transition-colors hover:text-foreground [&.active]:text-foreground'
   return (
     <header className="sticky top-0 z-10 w-full border-b border-border bg-background/80 backdrop-blur">
       <nav aria-label="Primary" className="mx-auto flex h-14 max-w-3xl items-center justify-between px-6">
@@ -22,6 +21,9 @@ export function SiteHeader() {
           </Link>
           <Link to="/funnel" className={linkClass}>
             Funnel
+          </Link>
+          <Link to="/architecture" className={linkClass}>
+            Architecture
           </Link>
         </div>
       </nav>

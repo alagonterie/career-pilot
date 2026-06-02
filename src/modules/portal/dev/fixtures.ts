@@ -426,10 +426,12 @@ function seedSimulatorRuns(db: Database.Database): void {
   }
 }
 
-function seedSessions(db: Database.Database): void {
+export function seedSessions(db: Database.Database): void {
   // /api/architecture reads sessions: active = status 'active'; running =
   // container_status IN ('running','idle'). Seed a parent agent group (FK), then
-  // a couple of live sessions.
+  // a couple of live sessions. Exported for the E2E server (§24.28): the
+  // architecture page needs deterministic non-zero session counts so its node
+  // badges render "active" rather than "idle" in the visual baseline.
   db.prepare(`INSERT INTO agent_groups (id, name, folder, created_at) VALUES (?, ?, ?, ?)`).run(
     'dev-ag-career-pilot',
     'career-pilot',

@@ -43,3 +43,17 @@ test('funnel page matches visual baseline', { tag: '@visual' }, async ({ page })
     mask: [page.getByTestId('funnel-card-age'), page.getByTestId('stat-value')],
   })
 })
+
+test('architecture page matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  await page.goto('/architecture')
+  await expect(page.getByRole('heading', { name: 'Architecture', level: 1 })).toBeVisible()
+  // Wait for the map to render from the seeded endpoints; every value is fixed
+  // (seeded sessions + a fixed container count + seeded modes), so unlike the
+  // funnel there's nothing wall-clock-derived to mask.
+  await expect(page.getByTestId('arch-diagram')).toBeVisible()
+  await expect(page.getByTestId('arch-node-host-router')).toHaveAttribute('data-status', 'healthy')
+  await expect(page).toHaveScreenshot('architecture.png', {
+    animations: 'disabled',
+    fullPage: true,
+  })
+})
