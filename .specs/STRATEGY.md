@@ -3642,6 +3642,39 @@ Phase 7 is the **dynamic core** — the three ops-register "dig-in" pages (PORTA
 
 ---
 
+#### 24.28 Sub-milestone 7.2 — `/architecture`
+
+The second ops-register page (PORTAL §5.5): a **live system map** drawn in SVG, with per-node status badges, a system-mode banner, a node click-through side panel, and an engineer-facing "what you're looking at" panel. It reads the two plain-JSON system endpoints — `GET /api/architecture` (`sessions {active,running}`, `containers {running, capacity_max, memory_mb_each, runtime}`, `backend`) and `GET /api/system-status` (`live_mode`, `pause_state`, `pause_reason`, `backend`) — through the same polling read-hook pattern as 7.1.
+
+**The honesty core (the load-bearing decision).** PORTAL §5.5 imagines "every `●` is a live status badge," but in reality we only have a real signal for a handful of nodes. The rule, consistent with the §24.24 render-if-present honesty principle: **a status badge lights up only for a node backed by a real probe; every other node renders as *structure* with no health claim** (an outline marker, never a fake-green dot). A legend states the distinction (`● live-probed` vs `◇ structural — no live probe`). We never paint a health signal we don't actually have. The probed subset:
+
+| Node(s) | Probe | Status rule |
+|---|---|---|
+| Host (Router / Sweep loop) | `system-status.pause_state` | `active`→healthy (green); `paused`→degraded (yellow); `halted`/`killswitch`→down (red) |
+| Session DB · public_audit_trail · Public API+SSE | `architecture.backend === 'online'` | online→healthy |
+| Container runtime | `architecture.containers.runtime` + `running` | `up` & running>0→healthy; `up` & 0→idle (grey); `down`/null→down (red) |
+| Orchestrator (per session) | `architecture.sessions.running` | running>0→healthy (active); 0→idle (grey) |
+| triggers, channel adapters, tools, subagents, Portkey, Anthropic API, sanitization, tunnel/edge | *none in 7.2* | structural — no health claim |
+
+Above the diagram, a **system-mode banner**: `live_mode` as a labeled mode (`SHADOW` / `LIVE` — a mode, not a health color) and `pause_state` surfaced prominently (a paused/halted system is the single most important thing to show). A small **capacity readout** on the container node: `running / capacity_max` + `memory_mb_each`.
+
+**The page.** A new client-only polling hook reads both endpoints (the generic `usePolledJson<T>` primitive — extracted from 7.1's `useFunnel`, which is refactored to delegate to it; `useArchitecture` calls it twice and merges, worst-of status). A data-driven `ArchDiagram`: a `NODES` array (id, label, region, geometry, probe-source) + `EDGES` array, rendered as a responsive `viewBox` SVG (vertical region bands top→bottom: TRIGGERS → HOST → CONTAINER → PUBLIC → "you are here"); a curated, faithful subset of the §5.5 ASCII (≈12–16 nodes across the three regions), not a pixel-replica. Each interactive node is a `<g role="button" tabIndex={0} aria-label>` with click + Enter/Space activation and a `:focus-visible` ring. A pure, testable `deriveNodeStatus(node, arch, mode)` maps live state → badge. The node **side panel** reuses 7.1's accessible-dialog pattern (labeled, Escape + backdrop close): node name/region/status (or "structural — no live probe"), a one-line description, the live facts for probed nodes (sessions/containers/mode), and a **line-anchored GitHub code link** per node (a static node→source-path map; generic repo-URL placeholder per the generic-persona rule). Below the diagram, the **"WHAT YOU'RE LOOKING AT"** panel: short engineer-facing prose + links to the README / per-component CLAUDE.md / agent definitions + a "fork the repo" CTA. The route introduces the second `(ops)` page; the shared `SiteHeader` gains an `Architecture` link.
+
+**Motion + the cold-start fix.** Architecture's motion is light (a status-dot pulse on healthy/active nodes + the side-panel slide), reduced-motion-safe via `MotionConfig reducedMotion="user"`. This sub-milestone also folds in the one-line dev fix surfaced after 7.1: `motion/react` added to vite `optimizeDeps.include`, so `vite dev` pre-bundles it at boot and the first-request re-optimization+reload (which transiently null-dispatchered React and SSR-errored `/funnel` on a cold `dev:mock` start) no longer happens. (No effect on the built CI/prod path, which already bundles motion.)
+
+**Determinism for tests.** Unlike 7.1's wall-clock day-counts, architecture state can be made fully fixed — so the baseline needs no masking. System-modes are already seeded (`live_mode=true`, `pause_state=active`) by `seedDeterministicBacklog`. The E2E server additionally seeds deterministic sessions (export the existing `seedSessions` → fixed `active`/`running` counts) and sets a fixed `PORTAL_MOCK_CONTAINERS` — the **one** mock-env exception in the E2E server, because the container count has no DB source (it's a `docker ps` call), so a fixed value is the only way to make that badge deterministic without Docker (the server docstring notes this). Every badge color + numeric readout is then deterministic. The semantic E2E asserts the three regions + key node labels + the mode banner + at least one probed status + the legend + node-panel open/close + `/`↔`/architecture` nav + axe + the console/network gate; the live healthy map + the dot-pulse are shown via the dev:mock MCP drive + a blessed screenshot.
+
+**Deferred (noted, not built):** live probes for the structural nodes (a Portkey health read, per-subagent activity, tunnel/worker reachability) — they need the §24.24 telemetry-capture family + a Portkey health endpoint; recent-log-excerpt / recent-per-node-calls in the side panel (same telemetry family). The `(ops)` shared route-group layout stays deferred until 7.3 (`/live` makes three ops pages, alongside `/contact`). The `usePolledJson` primitive + `deriveNodeStatus` + the diagram are built reuse-ready for `/live`'s compact architecture panel (7.3).
+
+**Definition of done.**
+1. `/architecture` renders the SVG system map (three regions) with the system-mode banner + a legend; live-probed nodes show a badge driven by `/api/architecture` + `/api/system-status` via the polling hook; structural nodes render with no health claim.
+2. Clicking or Enter/Space-activating a node opens an accessible side panel (name/region/status/description + live facts for probed nodes + a line-anchored GitHub link); Escape + backdrop close. The "WHAT YOU'RE LOOKING AT" panel renders prose + repo/README/agent-def links + a fork CTA.
+3. `pnpm --filter @career-pilot/frontend test` (`deriveNodeStatus` + node/diagram render + panel + `useArchitecture`/`usePolledJson`) + `test:e2e` (`/architecture` semantic + axe + console/network gate; `/`↔`/architecture` nav; `smoke`+`work`+`funnel` still green) pass locally and in CI; typecheck + `vite build` clean (`/architecture` in `routeTree.gen.ts`).
+4. The only `src/` changes are dev/test-only: `seedSessions` exported + the E2E server seeding sessions and setting a fixed `PORTAL_MOCK_CONTAINERS` (covered by a `fixtures.test.ts` case); host suite + `tsc` + `format:check` clean; no production request-path change. The `motion/react` `optimizeDeps.include` one-liner lands and a cold `dev:mock` start of `/funnel` + `/architecture` is clean (no SSR hook error).
+5. `architecture.png` baseline added (deterministic, no masking); `home.png`/`work.png`/`funnel.png` re-blessed (the new nav link changed the shared header) out-of-band (screenshots to the owner). `dev:mock` shows the healthy live map with the status-dot pulse.
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
