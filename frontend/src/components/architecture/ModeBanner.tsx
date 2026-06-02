@@ -33,7 +33,7 @@ export function ModeBanner({ mode }: { mode: SystemMode | null }) {
   return (
     <div data-testid="arch-mode-banner" className="flex flex-wrap items-center gap-3">
       <Chip label="Mode" value={mode.live_mode ? 'LIVE' : 'SHADOW'} tone={liveTone} />
-      <Chip label="Pause" value={mode.pause_state} tone={pauseTone} />
+      <Chip label="Pause" value={mode.pause_state.toUpperCase()} tone={pauseTone} />
       {mode.pause_reason ? (
         <span className="font-mono text-xs text-muted-foreground">reason: {mode.pause_reason}</span>
       ) : null}

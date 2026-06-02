@@ -13,13 +13,30 @@ function diamond(cx: number, cy: number, r: number): string {
   return `M${cx} ${cy - r} L${cx + r} ${cy} L${cx} ${cy + r} L${cx - r} ${cy} Z`
 }
 
+// Targets fed by more than one cross-row edge (only Router today) fan their
+// incoming arrowheads across the node's top instead of stacking on one point.
+const INCOMING_TOP = EDGES.reduce<Record<string, string[]>>((acc, e) => {
+  const a = nodeById(e.from)
+  const b = nodeById(e.to)
+  if (a && b && a.y !== b.y) (acc[e.to] ??= []).push(e.from)
+  return acc
+}, {})
+
+function entryFraction(from: string, to: string): number {
+  const sibs = INCOMING_TOP[to]
+  if (!sibs || sibs.length <= 1) return 0.5
+  return (sibs.indexOf(from) + 1) / (sibs.length + 1)
+}
+
 /**
  * Edge path between two nodes. Same-row siblings connect side-to-side (a clean
  * horizontal); cross-row/cross-band edges route as an orthogonal elbow
- * (down → across → down) so they read as deliberate flow rather than a diagonal
- * slash. `from` (a) is always the upper-or-same-row node in our EDGES list.
+ * (down → across → down). `from` (a) is always the upper-or-same-row node. The
+ * horizontal leg sits just below the source so it lands in the inter-band gap
+ * (never riding a band border), and `entryFrac` distributes the arrowhead
+ * across the target's top when several edges share a target.
  */
-function edgePath(a: ArchNode, b: ArchNode): string {
+function edgePath(a: ArchNode, b: ArchNode, entryFrac = 0.5): string {
   if (a.y === b.y) {
     const y = a.y + a.h / 2
     const leftToRight = a.x < b.x
@@ -28,11 +45,11 @@ function edgePath(a: ArchNode, b: ArchNode): string {
     return `M${sx} ${y} L${ex} ${y}`
   }
   const sx = a.x + a.w / 2
-  const sy = a.y < b.y ? a.y + a.h : a.y
-  const ex = b.x + b.w / 2
-  const ey = a.y < b.y ? b.y : b.y + b.h
-  const midY = (sy + ey) / 2
-  return `M${sx} ${sy} L${sx} ${midY} L${ex} ${midY} L${ex} ${ey}`
+  const sy = a.y + a.h
+  const ex = b.x + b.w * entryFrac
+  const ey = b.y
+  const legY = sy + 14
+  return `M${sx} ${sy} L${sx} ${legY} L${ex} ${legY} L${ex} ${ey}`
 }
 
 /**
@@ -96,7 +113,7 @@ export function ArchDiagram({
           return (
             <path
               key={`${e.from}-${e.to}`}
-              d={edgePath(a, b)}
+              d={edgePath(a, b, entryFraction(e.from, e.to))}
               fill="none"
               className="stroke-muted-foreground/30"
               markerEnd="url(#arch-arrow)"
@@ -132,11 +149,11 @@ export function ArchDiagram({
                 {n.label}
               </text>
               {structural ? (
-                <path d={diamond(n.x + n.w - 14, n.y + 14, 4)} className="fill-none stroke-muted-foreground/70" />
+                <path d={diamond(n.x + n.w - 16, n.y + n.h / 2, 4)} className="fill-none stroke-muted-foreground/70" />
               ) : (
                 <circle
-                  cx={n.x + n.w - 14}
-                  cy={n.y + 14}
+                  cx={n.x + n.w - 16}
+                  cy={n.y + n.h / 2}
                   r={4.5}
                   className={`${meta.dot} ${meta.pulse ? 'cp-live-pulse' : ''}`}
                 />
