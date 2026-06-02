@@ -71,7 +71,8 @@ describe('run accumulation + finalize', () => {
     recordSimulatorOutput(id!, 'task', { text: 'done' });
     // Second finalize (e.g. the hard-wall firing after completion) is a no-op.
     finalizeSimulatorRun(id!, 'hard-wall');
-    const count = (getDb().prepare('SELECT COUNT(*) AS c FROM simulator_runs WHERE id = ?').get(id!) as { c: number }).c;
+    const count = (getDb().prepare('SELECT COUNT(*) AS c FROM simulator_runs WHERE id = ?').get(id!) as { c: number })
+      .c;
     expect(count).toBe(1);
   });
 

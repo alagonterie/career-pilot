@@ -28,12 +28,7 @@ describe('loadGmailFixture', () => {
   it('loads a multi-message .jsonl fixture as an ordered array', () => {
     const msgs = loadGmailFixture('acme-pipeline-multi', TEST_NOW);
     expect(msgs).toHaveLength(4);
-    expect(msgs.map((m) => m.id)).toEqual([
-      'msg-acme-pl-1',
-      'msg-acme-pl-2',
-      'msg-acme-pl-3',
-      'msg-acme-pl-4',
-    ]);
+    expect(msgs.map((m) => m.id)).toEqual(['msg-acme-pl-1', 'msg-acme-pl-2', 'msg-acme-pl-3', 'msg-acme-pl-4']);
     expect(new Set(msgs.map((m) => m.thread_id)).size).toBe(1);
   });
 

@@ -104,7 +104,10 @@ export async function handleRecordJobLead(
   const source_job_id = p.source_job_id as string | undefined;
 
   if (!source || !VALID_SOURCES.has(source)) {
-    writeResponse(inDb, requestId, { ok: false, error: { code: 'BAD_ARGS', message: `source must be one of: ${[...VALID_SOURCES].join(', ')}` } });
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'BAD_ARGS', message: `source must be one of: ${[...VALID_SOURCES].join(', ')}` },
+    });
     return;
   }
   if (!source_job_id) {
@@ -134,7 +137,10 @@ export async function handleRecordJobLead(
     const db = getDb();
 
     // Load candidate profile for rules-score.
-    const profileRow = db.prepare('SELECT * FROM candidate_profile WHERE id = 1').get() as Record<string, unknown> | null;
+    const profileRow = db.prepare('SELECT * FROM candidate_profile WHERE id = 1').get() as Record<
+      string,
+      unknown
+    > | null;
     const profile = profileFromRow(profileRow);
 
     // Compute fingerprint + rules_score from the cached payload.
@@ -223,10 +229,21 @@ export async function handleRecordJobLead(
     const finalId = row?.id ?? newId;
     const insertedOrUpdated = result.changes === 1 && finalId === newId ? 'inserted' : 'updated';
 
-    log.info('job_lead recorded', { id: finalId, source: fp.source, source_job_id: fp.source_job_id, rules_score: score, action: insertedOrUpdated });
+    log.info('job_lead recorded', {
+      id: finalId,
+      source: fp.source,
+      source_job_id: fp.source_job_id,
+      rules_score: score,
+      action: insertedOrUpdated,
+    });
     writeResponse(inDb, requestId, {
       ok: true,
-      data: { id: finalId, inserted_or_updated: insertedOrUpdated, rules_score: score, content_fingerprint: fingerprint },
+      data: {
+        id: finalId,
+        inserted_or_updated: insertedOrUpdated,
+        rules_score: score,
+        content_fingerprint: fingerprint,
+      },
     });
   } catch (err) {
     log.error('handleRecordJobLead failed', { err });
@@ -303,17 +320,15 @@ export async function handleQueryJobLeads(
       where.push('llm_score IS NULL');
     }
 
-    const orderClause = orderBy === 'rules_score'
-      ? 'rules_score DESC, first_seen_at DESC'
-      : `${orderBy} DESC`;
+    const orderClause = orderBy === 'rules_score' ? 'rules_score DESC, first_seen_at DESC' : `${orderBy} DESC`;
 
     const sql = `SELECT * FROM job_leads WHERE ${where.join(' AND ')} ORDER BY ${orderClause} LIMIT @limit`;
     params.limit = limit;
 
     const leads = db.prepare(sql).all(params) as Array<Record<string, unknown>>;
-    const totalRow = db
-      .prepare(`SELECT COUNT(*) AS n FROM job_leads WHERE ${where.join(' AND ')}`)
-      .get(params) as { n: number };
+    const totalRow = db.prepare(`SELECT COUNT(*) AS n FROM job_leads WHERE ${where.join(' AND ')}`).get(params) as {
+      n: number;
+    };
 
     // Parse JSON columns for the caller's convenience.
     for (const lead of leads) {
@@ -365,7 +380,10 @@ export async function handleUpdateJobLeadStatus(
     const db = getDb();
     const existing = db.prepare('SELECT status FROM job_leads WHERE id = ?').get(id) as { status: string } | undefined;
     if (!existing) {
-      writeResponse(inDb, requestId, { ok: false, error: { code: 'NOT_FOUND', message: `no job_lead with id "${id}"` } });
+      writeResponse(inDb, requestId, {
+        ok: false,
+        error: { code: 'NOT_FOUND', message: `no job_lead with id "${id}"` },
+      });
       return;
     }
 
@@ -376,9 +394,11 @@ export async function handleUpdateJobLeadStatus(
         `UPDATE job_leads SET status = 'archived', status_changed_at = @now, closed_at = @now, closed_reason = @reason WHERE id = @id`,
       ).run({ id, now, reason: reason ?? 'manual' });
     } else {
-      db.prepare(
-        `UPDATE job_leads SET status = @status, status_changed_at = @now WHERE id = @id`,
-      ).run({ id, status, now });
+      db.prepare(`UPDATE job_leads SET status = @status, status_changed_at = @now WHERE id = @id`).run({
+        id,
+        status,
+        now,
+      });
     }
 
     log.info('job_lead status updated', { id, from: existing.status, to: status });
@@ -504,20 +524,18 @@ export async function handleWriteLlmScores(
     });
     return;
   }
-  const valid = scored_leads.every(
-    (item: unknown): item is ScoredLead => {
-      if (!item || typeof item !== 'object') return false;
-      const s = item as Record<string, unknown>;
-      return (
-        typeof s.id === 'string' &&
-        s.id.length > 0 &&
-        typeof s.llm_score === 'number' &&
-        Number.isFinite(s.llm_score) &&
-        s.llm_score >= 0 &&
-        s.llm_score <= 100
-      );
-    },
-  );
+  const valid = scored_leads.every((item: unknown): item is ScoredLead => {
+    if (!item || typeof item !== 'object') return false;
+    const s = item as Record<string, unknown>;
+    return (
+      typeof s.id === 'string' &&
+      s.id.length > 0 &&
+      typeof s.llm_score === 'number' &&
+      Number.isFinite(s.llm_score) &&
+      s.llm_score >= 0 &&
+      s.llm_score <= 100
+    );
+  });
   if (!valid) {
     writeResponse(inDb, requestId, {
       ok: false,
@@ -664,9 +682,9 @@ export async function handleClaimKillerMatches(
       ids.forEach((id, i) => {
         updateParams[`id_${i}`] = id;
       });
-      db.prepare(
-        `UPDATE job_leads SET killer_match_pushed_at = @now WHERE id IN (${updatePlaceholders})`,
-      ).run(updateParams);
+      db.prepare(`UPDATE job_leads SET killer_match_pushed_at = @now WHERE id IN (${updatePlaceholders})`).run(
+        updateParams,
+      );
       for (const row of rows) {
         if (typeof row.rules_score_reasons === 'string') {
           try {
@@ -758,7 +776,8 @@ export async function handleCloseStaleLeads(
 
 // ── discover_ats_board ─────────────────────────────────────────────────────
 
-const GREENHOUSE_URL_RE = /https?:\/\/(?:boards\.greenhouse\.io|boards-api\.greenhouse\.io)\/(?:embed\/job_board\?for=)?([\w-]+)/i;
+const GREENHOUSE_URL_RE =
+  /https?:\/\/(?:boards\.greenhouse\.io|boards-api\.greenhouse\.io)\/(?:embed\/job_board\?for=)?([\w-]+)/i;
 const LEVER_URL_RE = /https?:\/\/jobs\.lever\.co\/([\w-]+)/i;
 
 export async function handleDiscoverAtsBoard(
@@ -862,7 +881,12 @@ export async function handleFetchSource(
     if (targets.length === 0) {
       writeResponse(inDb, requestId, {
         ok: true,
-        data: { summaries: [], boards_scanned: 0, postings_total: 0, note: company ? `no seed entry for company "${company}"` : `no seed entries with priority ${priority}` },
+        data: {
+          summaries: [],
+          boards_scanned: 0,
+          postings_total: 0,
+          note: company ? `no seed entry for company "${company}"` : `no seed entries with priority ${priority}`,
+        },
       });
       return;
     }

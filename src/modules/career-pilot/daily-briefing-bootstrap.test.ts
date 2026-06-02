@@ -94,9 +94,7 @@ function insertSampleTask(opts: { id?: string; status: string; recurrence?: stri
   });
   // insertTask defaults status to 'pending'; override if a test needs another.
   if (opts.status !== 'pending') {
-    inDb
-      .prepare('UPDATE messages_in SET status = ? WHERE id = ?')
-      .run(opts.status, opts.id ?? 'daily-briefing');
+    inDb.prepare('UPDATE messages_in SET status = ? WHERE id = ?').run(opts.status, opts.id ?? 'daily-briefing');
   }
 }
 
@@ -162,9 +160,7 @@ describe('hasLiveDailyBriefingTask', () => {
     insertSampleTask({ id: 'task-clone-1', status: 'pending' });
     // The second insertTask sets series_id=id, so override to simulate
     // the recurrence-handler's behavior.
-    inDb
-      .prepare("UPDATE messages_in SET series_id = 'daily-briefing' WHERE id = 'task-clone-1'")
-      .run();
+    inDb.prepare("UPDATE messages_in SET series_id = 'daily-briefing' WHERE id = 'task-clone-1'").run();
     expect(hasLiveDailyBriefingTask(inDb)).toBe(true);
   });
 
@@ -234,9 +230,7 @@ describe('ensureDailyBriefingTask', () => {
     expect(res2.action).toBe('skipped_exists');
 
     const count = (
-      inDb
-        .prepare("SELECT COUNT(*) AS n FROM messages_in WHERE series_id = 'daily-briefing'")
-        .get() as { n: number }
+      inDb.prepare("SELECT COUNT(*) AS n FROM messages_in WHERE series_id = 'daily-briefing'").get() as { n: number }
     ).n;
     expect(count).toBe(1);
   });
@@ -246,9 +240,7 @@ describe('ensureDailyBriefingTask', () => {
     const res = ensureDailyBriefingTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION);
     expect(res.action).toBe('skipped_disabled');
 
-    const count = (
-      inDb.prepare('SELECT COUNT(*) AS n FROM messages_in').get() as { n: number }
-    ).n;
+    const count = (inDb.prepare('SELECT COUNT(*) AS n FROM messages_in').get() as { n: number }).n;
     expect(count).toBe(0);
   });
 
@@ -258,9 +250,9 @@ describe('ensureDailyBriefingTask', () => {
     expect(res.action).toBe('inserted');
     expect(res.recurrence).toBe('30 7 * * *');
 
-    const row = inDb
-      .prepare("SELECT recurrence FROM messages_in WHERE series_id = 'daily-briefing'")
-      .get() as { recurrence: string };
+    const row = inDb.prepare("SELECT recurrence FROM messages_in WHERE series_id = 'daily-briefing'").get() as {
+      recurrence: string;
+    };
     expect(row.recurrence).toBe('30 7 * * *');
   });
 

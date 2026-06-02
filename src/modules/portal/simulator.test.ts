@@ -50,9 +50,9 @@ describe('buildSimulatorPrompt', () => {
   });
 
   it('adds the company URL only when given', () => {
-    expect(
-      buildSimulatorPrompt({ company: 'Acme', role: 'SWE', jd: null, public_url: 'https://acme.test' }),
-    ).toContain('Company URL: https://acme.test');
+    expect(buildSimulatorPrompt({ company: 'Acme', role: 'SWE', jd: null, public_url: 'https://acme.test' })).toContain(
+      'Company URL: https://acme.test',
+    );
     expect(buildSimulatorPrompt({ company: 'Acme', role: 'SWE', jd: null, public_url: null })).not.toContain(
       'Company URL:',
     );

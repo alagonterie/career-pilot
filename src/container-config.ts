@@ -209,11 +209,7 @@ function applyOllamaTestOverrides(config: ContainerConfig): void {
     ANTHROPIC_DEFAULT_OPUS_MODEL: model,
     ANTHROPIC_DEFAULT_SONNET_MODEL: model,
   };
-  config.blockedHosts = [
-    ...(config.blockedHosts ?? []),
-    'api.anthropic.com',
-    'api.portkey.ai',
-  ];
+  config.blockedHosts = [...(config.blockedHosts ?? []), 'api.anthropic.com', 'api.portkey.ai'];
   config.model = model;
 }
 

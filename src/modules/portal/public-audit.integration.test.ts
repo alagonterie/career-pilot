@@ -85,11 +85,11 @@ describe('mirrorFunnelEvent', () => {
     return db
       .prepare('SELECT application_ref, summary, category, details_json FROM public_audit_trail')
       .all() as Array<{
-        application_ref: string | null;
-        summary: string;
-        category: string;
-        details_json: string | null;
-      }>;
+      application_ref: string | null;
+      summary: string;
+      category: string;
+      details_json: string | null;
+    }>;
   }
 
   it('mirrors a happy-path obfuscated event with PII redacted + company replaced', () => {
@@ -274,9 +274,9 @@ describe('mirrorFunnelEvent', () => {
     const outcome = mirrorFunnelEvent(db, 'fe-1');
     expect(outcome).toBe('inserted');
 
-    const row = db
-      .prepare('SELECT source_funnel_event_id FROM public_audit_trail')
-      .get() as { source_funnel_event_id: string | null };
+    const row = db.prepare('SELECT source_funnel_event_id FROM public_audit_trail').get() as {
+      source_funnel_event_id: string | null;
+    };
     expect(row.source_funnel_event_id).toBe('fe-1');
   });
 

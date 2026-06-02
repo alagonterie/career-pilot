@@ -15,16 +15,12 @@ import { applyPass1, applyPass2, applyPass3, sanitize } from './sanitizer.js';
 describe('sanitizer Pass 1 — regex patterns', () => {
   describe('emails', () => {
     it('redacts a simple email', () => {
-      expect(applyPass1('contact alice@example.com today')).toBe(
-        'contact [EMAIL_REDACTED] today',
-      );
+      expect(applyPass1('contact alice@example.com today')).toBe('contact [EMAIL_REDACTED] today');
     });
 
     it('redacts plus-addressed + cross-TLD emails', () => {
       const t = 'recruiter+job@acme.co.uk and bob@anthropic.org';
-      expect(applyPass1(t)).toBe(
-        '[EMAIL_REDACTED] and [EMAIL_REDACTED]',
-      );
+      expect(applyPass1(t)).toBe('[EMAIL_REDACTED] and [EMAIL_REDACTED]');
     });
 
     it('leaves bare @mention untouched', () => {
@@ -40,9 +36,7 @@ describe('sanitizer Pass 1 — regex patterns', () => {
     });
 
     it('redacts an international number', () => {
-      expect(applyPass1('Sarah at +442012345678 confirmed')).toBe(
-        'Sarah at [PHONE_REDACTED] confirmed',
-      );
+      expect(applyPass1('Sarah at +442012345678 confirmed')).toBe('Sarah at [PHONE_REDACTED] confirmed');
     });
 
     it('leaves year-like sequences untouched', () => {
@@ -52,17 +46,13 @@ describe('sanitizer Pass 1 — regex patterns', () => {
     });
 
     it('leaves room numbers / short hyphenated codes untouched', () => {
-      expect(applyPass1('meet in room 123-A at building B-2')).toBe(
-        'meet in room 123-A at building B-2',
-      );
+      expect(applyPass1('meet in room 123-A at building B-2')).toBe('meet in room 123-A at building B-2');
     });
   });
 
   describe('SSN-like', () => {
     it('redacts the canonical 3-2-4 shape', () => {
-      expect(applyPass1('SSN 123-45-6789 on the form')).toBe(
-        'SSN [SSN_REDACTED] on the form',
-      );
+      expect(applyPass1('SSN 123-45-6789 on the form')).toBe('SSN [SSN_REDACTED] on the form');
     });
 
     it('does not match a 3-3-4 phone shape as SSN', () => {
@@ -73,9 +63,7 @@ describe('sanitizer Pass 1 — regex patterns', () => {
 
   describe('monetary', () => {
     it('redacts comma-grouped amounts', () => {
-      expect(applyPass1('offer is $180,000 base plus equity')).toBe(
-        'offer is [AMOUNT_REDACTED] base plus equity',
-      );
+      expect(applyPass1('offer is $180,000 base plus equity')).toBe('offer is [AMOUNT_REDACTED] base plus equity');
     });
 
     it('redacts K/M suffix amounts', () => {
@@ -91,9 +79,7 @@ describe('sanitizer Pass 1 — regex patterns', () => {
     });
 
     it('leaves bare 100k (no $) and lone $ untouched', () => {
-      expect(applyPass1('scaled to 100k users and the $ symbol')).toBe(
-        'scaled to 100k users and the $ symbol',
-      );
+      expect(applyPass1('scaled to 100k users and the $ symbol')).toBe('scaled to 100k users and the $ symbol');
     });
   });
 
@@ -152,9 +138,7 @@ describe('sanitizer Pass 2 — company name + alias replacement', () => {
 
   it('replaces a single company name', () => {
     seedApp({ id: 'app-1', company_name: 'Anthropic', obfuscated_label: 'ai-infra-a' });
-    expect(applyPass2('met with the Anthropic team', db)).toBe(
-      'met with the [REDACTED:ai-infra-a] team',
-    );
+    expect(applyPass2('met with the Anthropic team', db)).toBe('met with the [REDACTED:ai-infra-a] team');
   });
 
   it('replaces all aliases from the company_aliases JSON array', () => {
@@ -179,16 +163,12 @@ describe('sanitizer Pass 2 — company name + alias replacement', () => {
 
   it('handles company names with regex special chars', () => {
     seedApp({ id: 'app-1', company_name: 'Microsoft (Bing)', obfuscated_label: 'search-a' });
-    expect(applyPass2('the Microsoft (Bing) team', db)).toBe(
-      'the [REDACTED:search-a] team',
-    );
+    expect(applyPass2('the Microsoft (Bing) team', db)).toBe('the [REDACTED:search-a] team');
   });
 
   it('skips applications with public_state=public', () => {
     seedApp({ id: 'app-1', company_name: 'Anthropic', obfuscated_label: 'ai-infra-a', public_state: 'public' });
-    expect(applyPass2('met with the Anthropic team', db)).toBe(
-      'met with the Anthropic team',
-    );
+    expect(applyPass2('met with the Anthropic team', db)).toBe('met with the Anthropic team');
   });
 
   it('skips applications with empty obfuscated_label defensively', () => {
@@ -197,9 +177,7 @@ describe('sanitizer Pass 2 — company name + alias replacement', () => {
       `INSERT INTO applications (id, company_name, company_aliases, obfuscated_label, public_state, role_title, status, created_at)
        VALUES ('app-1', 'Anthropic', NULL, '', 'obfuscated', 'Senior Engineer', 'BOOKMARKED', '2026-05-28T00:00:00Z')`,
     ).run();
-    expect(applyPass2('met with the Anthropic team', db)).toBe(
-      'met with the Anthropic team',
-    );
+    expect(applyPass2('met with the Anthropic team', db)).toBe('met with the Anthropic team');
   });
 
   it('redacts both companies in a multi-application payload', () => {
@@ -218,9 +196,7 @@ describe('sanitizer Pass 2 — company name + alias replacement', () => {
       obfuscated_label: 'ai-infra-a',
     });
     // company_name still replaces; bad alias JSON silently ignored.
-    expect(applyPass2('met with Anthropic', db)).toBe(
-      'met with [REDACTED:ai-infra-a]',
-    );
+    expect(applyPass2('met with Anthropic', db)).toBe('met with [REDACTED:ai-infra-a]');
   });
 });
 
@@ -248,8 +224,7 @@ describe('sanitize() — full pipeline', () => {
       `INSERT INTO applications (id, company_name, company_aliases, obfuscated_label, public_state, role_title, status, created_at)
        VALUES ('app-1', 'Acme Corp', '["AcmeCo"]', 'fintech-a', 'obfuscated', 'Senior Engineer', 'BOOKMARKED', '2026-05-28T00:00:00Z')`,
     ).run();
-    const raw =
-      'Recruiter Jane Doe from Acme Corp emailed at jane@acme.com about the $220k offer';
+    const raw = 'Recruiter Jane Doe from Acme Corp emailed at jane@acme.com about the $220k offer';
     const out = sanitize(raw, { db });
     expect(out).toContain('[REDACTED:fintech-a]');
     expect(out).toContain('[EMAIL_REDACTED]');

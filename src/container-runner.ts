@@ -390,7 +390,11 @@ function buildMounts(
   // identity card.
   const hostFragmentsDir = path.join(groupDir, '.claude-host-fragments');
   if (fs.existsSync(hostFragmentsDir)) {
-    mounts.push({ hostPath: hostFragmentsDir, containerPath: '/workspace/agent/.claude-host-fragments', readonly: true });
+    mounts.push({
+      hostPath: hostFragmentsDir,
+      containerPath: '/workspace/agent/.claude-host-fragments',
+      readonly: true,
+    });
   }
 
   // Global memory directory — always read-only.

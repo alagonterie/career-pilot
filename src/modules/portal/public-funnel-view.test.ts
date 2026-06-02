@@ -23,11 +23,7 @@ import type { Session } from '../../types.js';
 import { handleRecordProgress } from '../career-pilot/actions.js';
 
 import { mirrorFunnelEvent, resanitizeApplicationAuditTrail } from './public-audit.js';
-import {
-  deriveFunnelStage,
-  isKnownApplicationStatus,
-  upsertPublicFunnelView,
-} from './public-funnel-view.js';
+import { deriveFunnelStage, isKnownApplicationStatus, upsertPublicFunnelView } from './public-funnel-view.js';
 
 // ── Fixture ──────────────────────────────────────────────────────────────
 
@@ -159,9 +155,9 @@ interface ViewRow {
 }
 
 function readView(applicationId: string): ViewRow | undefined {
-  return db
-    .prepare('SELECT * FROM public_funnel_view WHERE application_id = ?')
-    .get(applicationId) as ViewRow | undefined;
+  return db.prepare('SELECT * FROM public_funnel_view WHERE application_id = ?').get(applicationId) as
+    | ViewRow
+    | undefined;
 }
 
 function progressContent(payload: Record<string, unknown>): Record<string, unknown> {
@@ -321,9 +317,9 @@ describe('upsertPublicFunnelView', () => {
 
 describe('public_audit_trail.seq', () => {
   function seqs(): number[] {
-    return (
-      db.prepare('SELECT seq FROM public_audit_trail ORDER BY seq ASC').all() as Array<{ seq: number }>
-    ).map((r) => r.seq);
+    return (db.prepare('SELECT seq FROM public_audit_trail ORDER BY seq ASC').all() as Array<{ seq: number }>).map(
+      (r) => r.seq,
+    );
   }
 
   it('assigns strictly increasing seq across mirrorFunnelEvent inserts', () => {
@@ -352,9 +348,10 @@ describe('public_audit_trail.seq', () => {
     ); // seq 2 (subagent_progress)
     expect(mirrorFunnelEvent(db, 'fe-2')).toBe('inserted'); // seq 3 (funnel)
 
-    const rows = db
-      .prepare('SELECT seq, category FROM public_audit_trail ORDER BY seq ASC')
-      .all() as Array<{ seq: number; category: string }>;
+    const rows = db.prepare('SELECT seq, category FROM public_audit_trail ORDER BY seq ASC').all() as Array<{
+      seq: number;
+      category: string;
+    }>;
     expect(rows.map((r) => r.seq)).toEqual([1, 2, 3]);
     expect(rows.map((r) => r.category)).toEqual(['funnel', 'subagent_progress', 'funnel']);
   });
@@ -377,18 +374,14 @@ describe('public_audit_trail.seq', () => {
     expect(mirrorFunnelEvent(db, 'fe-1')).toBe('inserted'); // seq 1
     expect(mirrorFunnelEvent(db, 'fe-2')).toBe('inserted'); // seq 2
     const app2Seq = (
-      db
-        .prepare("SELECT seq FROM public_audit_trail WHERE source_funnel_event_id = 'fe-2'")
-        .get() as { seq: number }
+      db.prepare("SELECT seq FROM public_audit_trail WHERE source_funnel_event_id = 'fe-2'").get() as { seq: number }
     ).seq;
 
     db.prepare("UPDATE applications SET public_state = 'obfuscated' WHERE id = 'app-1'").run();
     expect(resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 1, deleted: 1 });
 
     const app1Seq = (
-      db
-        .prepare("SELECT seq FROM public_audit_trail WHERE source_funnel_event_id = 'fe-1'")
-        .get() as { seq: number }
+      db.prepare("SELECT seq FROM public_audit_trail WHERE source_funnel_event_id = 'fe-1'").get() as { seq: number }
     ).seq;
     expect(app1Seq).toBeGreaterThan(app2Seq);
 
@@ -411,9 +404,7 @@ describe('migration 123 backfill', () => {
         summary   TEXT NOT NULL
       );
     `);
-    const ins = raw.prepare(
-      "INSERT INTO public_audit_trail (id, ts, category, summary) VALUES (?, ?, 'funnel', ?)",
-    );
+    const ins = raw.prepare("INSERT INTO public_audit_trail (id, ts, category, summary) VALUES (?, ?, 'funnel', ?)");
     ins.run('c', '2026-01-03T00:00:00Z', 'c');
     ins.run('a', '2026-01-01T00:00:00Z', 'a');
     ins.run('b', '2026-01-02T00:00:00Z', 'b');

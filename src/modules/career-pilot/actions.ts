@@ -187,9 +187,7 @@ const PROGRESS_PER_SESSION_CAP = 6;
  * context-sensitivity pass is the Phase 3 add-on.
  */
 function sanitizeProgressDetail(raw: string): string {
-  return raw
-    .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '[email]')
-    .replace(/(?:\+?\d[\s.()-]?){9,}/g, '[phone]');
+  return raw.replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '[email]').replace(/(?:\+?\d[\s.()-]?){9,}/g, '[phone]');
 }
 
 export async function handleRecordProgress(
@@ -206,7 +204,10 @@ export async function handleRecordProgress(
   if (!subagent_name || !stage || typeof detail !== 'string' || !detail) {
     writeResponse(inDb, requestId, {
       ok: false,
-      error: { code: 'BAD_ARGS', message: 'subagent_name, stage, and detail are required (detail must be a non-empty string)' },
+      error: {
+        code: 'BAD_ARGS',
+        message: 'subagent_name, stage, and detail are required (detail must be a non-empty string)',
+      },
     });
     return;
   }
@@ -313,7 +314,8 @@ export async function handleCreateGmailDraft(
       ok: false,
       error: {
         code: 'FORBIDDEN',
-        message: 'create_gmail_draft is not available in this agent group (sandbox sessions cannot materialize real Gmail drafts).',
+        message:
+          'create_gmail_draft is not available in this agent group (sandbox sessions cannot materialize real Gmail drafts).',
       },
     });
     return;
@@ -402,12 +404,7 @@ const INSERT_REQUIRED = ['company_name', 'role_title', 'status'] as const;
 // is included for completeness but is immutable via this handler (excluded
 // from the UPDATE set below) — out-of-band changes to it go through the
 // operator script (scripts/resanitize-application.ts).
-const OBFUSCATION_TRIGGER_FIELDS = [
-  'company_name',
-  'company_aliases',
-  'obfuscated_label',
-  'public_state',
-] as const;
+const OBFUSCATION_TRIGGER_FIELDS = ['company_name', 'company_aliases', 'obfuscated_label', 'public_state'] as const;
 
 interface ObfuscationSnapshot {
   obfuscated_label: string;
@@ -416,10 +413,7 @@ interface ObfuscationSnapshot {
   public_state: string | null;
 }
 
-function obfuscationPolicyChanged(
-  before: ObfuscationSnapshot,
-  after: ObfuscationSnapshot,
-): boolean {
+function obfuscationPolicyChanged(before: ObfuscationSnapshot, after: ObfuscationSnapshot): boolean {
   return OBFUSCATION_TRIGGER_FIELDS.some((k) => before[k] !== after[k]);
 }
 
@@ -442,9 +436,7 @@ export async function handleUpdateApplication(
   try {
     const db = getDb();
     const existing = db
-      .prepare(
-        'SELECT obfuscated_label, company_name, company_aliases, public_state FROM applications WHERE id = ?',
-      )
+      .prepare('SELECT obfuscated_label, company_name, company_aliases, public_state FROM applications WHERE id = ?')
       .get(id) as ObfuscationSnapshot | undefined;
 
     const now = new Date().toISOString();
@@ -522,9 +514,7 @@ export async function handleUpdateApplication(
     for (const k of updatable) {
       params[k] = patch[k] ?? null;
     }
-    db.prepare(`UPDATE applications SET ${setClause}, last_activity_at = @last_activity_at WHERE id = @id`).run(
-      params,
-    );
+    db.prepare(`UPDATE applications SET ${setClause}, last_activity_at = @last_activity_at WHERE id = @id`).run(params);
 
     log.info('Application updated', { id, fields: updatable });
     writeResponse(inDb, requestId, {
@@ -541,9 +531,7 @@ export async function handleUpdateApplication(
     // on the operator preference.
     if (getConfig<boolean>(db, 'sanitization_resanitize_on_application_update')) {
       const after = db
-        .prepare(
-          'SELECT obfuscated_label, company_name, company_aliases, public_state FROM applications WHERE id = ?',
-        )
+        .prepare('SELECT obfuscated_label, company_name, company_aliases, public_state FROM applications WHERE id = ?')
         .get(id) as ObfuscationSnapshot | undefined;
       if (after && obfuscationPolicyChanged(existing, after)) {
         try {
@@ -588,11 +576,13 @@ function deriveIndustry(patch: Record<string, unknown>): string {
 }
 
 function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 24) || 'misc';
+  return (
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 24) || 'misc'
+  );
 }
 
 /**
@@ -759,9 +749,7 @@ export async function handleListApplications(
         .all(status, limit) as Array<Record<string, unknown>>;
     } else {
       rows = getDb()
-        .prepare(
-          'SELECT * FROM applications ORDER BY COALESCE(last_activity_at, created_at) DESC LIMIT ?',
-        )
+        .prepare('SELECT * FROM applications ORDER BY COALESCE(last_activity_at, created_at) DESC LIMIT ?')
         .all(limit) as Array<Record<string, unknown>>;
     }
     writeResponse(inDb, requestId, { ok: true, data: { applications: rows } });

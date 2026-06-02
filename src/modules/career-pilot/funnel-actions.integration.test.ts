@@ -116,9 +116,9 @@ interface ResponseFrame<T = Record<string, unknown>> {
 }
 
 function readResponse(requestId: string): ResponseFrame {
-  const row = inDb
-    .prepare('SELECT content FROM messages_in WHERE id = ?')
-    .get(`cp-resp-${requestId}`) as { content: string } | undefined;
+  const row = inDb.prepare('SELECT content FROM messages_in WHERE id = ?').get(`cp-resp-${requestId}`) as
+    | { content: string }
+    | undefined;
   if (!row) throw new Error(`no response written for requestId=${requestId}`);
   return JSON.parse(row.content) as ResponseFrame;
 }
@@ -273,7 +273,10 @@ describe('handleGetCalendarSyncState', () => {
 
   it('returns the stored sync_tokens after persist writes them', async () => {
     await handlePersistFunnelState(
-      actionContent('career_pilot.persist_funnel_state', makeValidPayload({ calendar_sync_tokens: { primary: 't-abc', work: 't-xyz' } })),
+      actionContent(
+        'career_pilot.persist_funnel_state',
+        makeValidPayload({ calendar_sync_tokens: { primary: 't-abc', work: 't-xyz' } }),
+      ),
       OWNER_SESSION,
       inDb,
     );
@@ -368,9 +371,9 @@ describe('handlePersistFunnelState', () => {
     expect(outputRows[0].gmail_history_id).toBe('hist-12345');
     expect(outputRows[0].cheap_out).toBe(0);
 
-    const syncRow = getDb()
-      .prepare("SELECT history_id FROM gmail_sync_state WHERE account_id = 'primary'")
-      .get() as { history_id: string };
+    const syncRow = getDb().prepare("SELECT history_id FROM gmail_sync_state WHERE account_id = 'primary'").get() as {
+      history_id: string;
+    };
     expect(syncRow.history_id).toBe('hist-12345');
 
     const calRow = getDb()
@@ -402,9 +405,9 @@ describe('handlePersistFunnelState', () => {
     );
     await handlePersistFunnelState(c2, OWNER_SESSION, inDb);
 
-    const eventRows = getDb()
-      .prepare('SELECT classification FROM email_events')
-      .all() as Array<{ classification: string }>;
+    const eventRows = getDb().prepare('SELECT classification FROM email_events').all() as Array<{
+      classification: string;
+    }>;
     expect(eventRows).toHaveLength(1);
     expect(eventRows[0].classification).toBe('noise');
   });
@@ -427,9 +430,9 @@ describe('handlePersistFunnelState', () => {
     );
     await handlePersistFunnelState(c, OWNER_SESSION, inDb);
 
-    const row = getDb()
-      .prepare("SELECT evidence_excerpt FROM email_events WHERE gmail_msg_id = 'msg-long'")
-      .get() as { evidence_excerpt: string };
+    const row = getDb().prepare("SELECT evidence_excerpt FROM email_events WHERE gmail_msg_id = 'msg-long'").get() as {
+      evidence_excerpt: string;
+    };
     expect(row.evidence_excerpt.length).toBeLessThanOrEqual(500);
   });
 
@@ -451,12 +454,8 @@ describe('handlePersistFunnelState', () => {
     const res = readResponse(c.requestId);
     expect(res.frame.ok).toBe(false);
 
-    const eventRows = getDb()
-      .prepare('SELECT gmail_msg_id FROM email_events')
-      .all() as Array<{ gmail_msg_id: string }>;
-    const outputRows = getDb()
-      .prepare('SELECT id FROM funnel_curator_output')
-      .all();
+    const eventRows = getDb().prepare('SELECT gmail_msg_id FROM email_events').all() as Array<{ gmail_msg_id: string }>;
+    const outputRows = getDb().prepare('SELECT id FROM funnel_curator_output').all();
     expect(eventRows).toHaveLength(0);
     expect(outputRows).toHaveLength(0);
   });
@@ -479,9 +478,7 @@ describe('handlePersistFunnelState', () => {
     const res = readResponse(c.requestId);
     expect(res.frame.ok).toBe(true);
 
-    const outputRow = getDb()
-      .prepare('SELECT cheap_out FROM funnel_curator_output')
-      .get() as { cheap_out: number };
+    const outputRow = getDb().prepare('SELECT cheap_out FROM funnel_curator_output').get() as { cheap_out: number };
     expect(outputRow.cheap_out).toBe(1);
   });
 });
@@ -558,8 +555,24 @@ function seedLinkedApplicationsAndLeads(): void {
       'new', @now
     )
   `);
-  insertLead.run({ id: 'lead-acme', sjid: 'sj-acme', url: 'https://acme.example/jobs/1', fp: 'fp-acme', title: 'Senior Engineer', company: 'Acme', now });
-  insertLead.run({ id: 'lead-stripe', sjid: 'sj-stripe', url: 'https://stripe.example/jobs/1', fp: 'fp-stripe', title: 'Backend Engineer', company: 'Stripe', now });
+  insertLead.run({
+    id: 'lead-acme',
+    sjid: 'sj-acme',
+    url: 'https://acme.example/jobs/1',
+    fp: 'fp-acme',
+    title: 'Senior Engineer',
+    company: 'Acme',
+    now,
+  });
+  insertLead.run({
+    id: 'lead-stripe',
+    sjid: 'sj-stripe',
+    url: 'https://stripe.example/jobs/1',
+    fp: 'fp-stripe',
+    title: 'Backend Engineer',
+    company: 'Stripe',
+    now,
+  });
 }
 
 describe('handleReadEmailEvents', () => {

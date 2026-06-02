@@ -118,8 +118,7 @@ export async function handleGmailQueryDelta(
     ok: false,
     error: {
       code: 'NOT_IMPLEMENTED',
-      message:
-        'gmail_query_delta is now container-side (§24.9 amendment). This host action is a reserved stub.',
+      message: 'gmail_query_delta is now container-side (§24.9 amendment). This host action is a reserved stub.',
     },
   });
 }
@@ -137,8 +136,7 @@ export async function handleCalendarQueryDelta(
     ok: false,
     error: {
       code: 'NOT_IMPLEMENTED',
-      message:
-        'calendar_query_delta is now container-side (§24.9 amendment). This host action is a reserved stub.',
+      message: 'calendar_query_delta is now container-side (§24.9 amendment). This host action is a reserved stub.',
     },
   });
 }
@@ -230,7 +228,9 @@ export async function handleGetCalendarSyncState(
   try {
     const db = getDb();
     const rows = db
-      .prepare("SELECT calendar_id, sync_token, last_full_sync_at FROM calendar_sync_state WHERE account_id = 'primary'")
+      .prepare(
+        "SELECT calendar_id, sync_token, last_full_sync_at FROM calendar_sync_state WHERE account_id = 'primary'",
+      )
       .all() as Array<{ calendar_id: string; sync_token: string; last_full_sync_at: string }>;
     const sync_tokens: Record<string, string> = {};
     const last_full_sync_at: Record<string, string> = {};
@@ -402,7 +402,8 @@ export async function handlePersistFunnelState(
         });
       }
 
-      db.prepare(`
+      db.prepare(
+        `
         INSERT INTO funnel_curator_output (
           id, run_at, gmail_history_id, calendar_sync_tokens,
           narratives_json, attention_json, suggestions_json,
@@ -412,7 +413,8 @@ export async function handlePersistFunnelState(
           @narratives_json, @attention_json, @suggestions_json,
           @cheap_out, @cost_usd
         )
-      `).run({
+      `,
+      ).run({
         id: runId,
         run_at: nowIso,
         gmail_history_id: p.gmail_history_id ?? null,
@@ -425,13 +427,15 @@ export async function handlePersistFunnelState(
       });
 
       if (p.gmail_history_id) {
-        db.prepare(`
+        db.prepare(
+          `
           INSERT INTO gmail_sync_state (account_id, history_id, last_full_sync_at)
           VALUES ('primary', @history_id, @now)
           ON CONFLICT(account_id) DO UPDATE SET
             history_id = excluded.history_id,
             last_full_sync_at = excluded.last_full_sync_at
-        `).run({ history_id: p.gmail_history_id, now: nowIso });
+        `,
+        ).run({ history_id: p.gmail_history_id, now: nowIso });
       }
 
       if (p.calendar_sync_tokens) {

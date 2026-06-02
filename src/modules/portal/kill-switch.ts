@@ -29,11 +29,7 @@ import type { Session } from '../../types.js';
 // effects (onDeliveryAdapterReady/registerResponseHandler) that we don't want
 // in kill-switch's import graph. The dispatch handler that calls our registered
 // 'killswitch' handler is registered at startup via src/modules/index.js.
-import {
-  registerApprovalHandler,
-  requestApproval,
-  type ApprovalHandlerContext,
-} from '../approvals/primitive.js';
+import { registerApprovalHandler, requestApproval, type ApprovalHandlerContext } from '../approvals/primitive.js';
 import { ensureUserDm } from '../permissions/user-dm.js';
 
 import {
@@ -142,7 +138,10 @@ export function executeControlCommand(
  * `/halt deploying a fix` → "deploying a fix". Returns null when none given.
  */
 export function parseControlReason(text: string): string | null {
-  const rest = text.trim().replace(/^\/\S+\s*/, '').trim();
+  const rest = text
+    .trim()
+    .replace(/^\/\S+\s*/, '')
+    .trim();
   return rest.length > 0 ? rest : null;
 }
 
@@ -226,8 +225,7 @@ async function deliverToApprover(userId: string, text: string): Promise<void> {
  */
 export async function killswitchApprovalHandler(ctx: ApprovalHandlerContext): Promise<void> {
   const reason = typeof ctx.payload.reason === 'string' ? ctx.payload.reason : null;
-  const changedBy =
-    ctx.userId || (typeof ctx.payload.changedBy === 'string' ? ctx.payload.changedBy : null);
+  const changedBy = ctx.userId || (typeof ctx.payload.changedBy === 'string' ? ctx.payload.changedBy : null);
 
   const result = await executeKillswitch(reason, changedBy);
 

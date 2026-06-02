@@ -66,9 +66,7 @@ function computeLocal(): TelemetryLocal {
   const sim = db.prepare('SELECT COUNT(*) AS n FROM simulator_runs').get() as { n: number };
   const evTotal = db.prepare('SELECT COUNT(*) AS n FROM public_audit_trail').get() as { n: number };
   const cutoff = new Date(Date.now() - 86_400_000).toISOString();
-  const ev24 = db
-    .prepare('SELECT COUNT(*) AS n FROM public_audit_trail WHERE ts >= ?')
-    .get(cutoff) as { n: number };
+  const ev24 = db.prepare('SELECT COUNT(*) AS n FROM public_audit_trail WHERE ts >= ?').get(cutoff) as { n: number };
   return {
     simulator_runs_total: sim.n,
     activity_events_total: evTotal.n,

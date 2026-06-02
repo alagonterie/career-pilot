@@ -36,9 +36,7 @@ function generateId(): string {
 
 function readNumberPref(db: Database.Database, key: string, fallback: number): number {
   try {
-    const row = db
-      .prepare('SELECT value FROM preferences WHERE key = ?')
-      .get(key) as { value: string } | undefined;
+    const row = db.prepare('SELECT value FROM preferences WHERE key = ?').get(key) as { value: string } | undefined;
     if (!row) return fallback;
     const parsed = parseInt(row.value, 10);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -49,9 +47,7 @@ function readNumberPref(db: Database.Database, key: string, fallback: number): n
 
 function readBoolPref(db: Database.Database, key: string, fallback: boolean): boolean {
   try {
-    const row = db
-      .prepare('SELECT value FROM preferences WHERE key = ?')
-      .get(key) as { value: string } | undefined;
+    const row = db.prepare('SELECT value FROM preferences WHERE key = ?').get(key) as { value: string } | undefined;
     if (!row) return fallback;
     return row.value === 'true' || row.value === '1';
   } catch {
@@ -124,9 +120,7 @@ export function mirrorFunnelEvent(db: Database.Database, eventId: string): Mirro
   if (dropOnLeak) {
     try {
       const nonPublic = db
-        .prepare(
-          `SELECT company_name FROM applications WHERE public_state != 'public' AND company_name != ''`,
-        )
+        .prepare(`SELECT company_name FROM applications WHERE public_state != 'public' AND company_name != ''`)
         .all() as { company_name: string }[];
       const sanitizedLower = sanitized.toLowerCase();
       for (const { company_name } of nonPublic) {
@@ -146,15 +140,10 @@ export function mirrorFunnelEvent(db: Database.Database, eventId: string): Mirro
     }
   }
 
-  const maxChars = readNumberPref(
-    db,
-    'sanitization_public_summary_max_chars',
-    DEFAULT_PUBLIC_SUMMARY_MAX_CHARS,
-  );
+  const maxChars = readNumberPref(db, 'sanitization_public_summary_max_chars', DEFAULT_PUBLIC_SUMMARY_MAX_CHARS);
   const summary = sanitized.length > maxChars ? sanitized.slice(0, maxChars) : sanitized;
 
-  const applicationRef =
-    row.public_state === 'public' ? row.company_name : row.obfuscated_label ?? '';
+  const applicationRef = row.public_state === 'public' ? row.company_name : (row.obfuscated_label ?? '');
 
   const details = JSON.stringify({
     kind: row.kind,
@@ -214,10 +203,7 @@ export interface ResanitizeResult {
  * Note: legacy audit rows with a NULL source_funnel_event_id (pre-migration
  * 122; none in practice) are NOT matched by the DELETE and are left as-is.
  */
-export function resanitizeApplicationAuditTrail(
-  db: Database.Database,
-  applicationId: string,
-): ResanitizeResult {
+export function resanitizeApplicationAuditTrail(db: Database.Database, applicationId: string): ResanitizeResult {
   const run = db.transaction((): ResanitizeResult => {
     const del = db
       .prepare(

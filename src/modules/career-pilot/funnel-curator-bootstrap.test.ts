@@ -90,9 +90,7 @@ function insertSampleTask(opts: { id?: string; status: string; recurrence?: stri
     content: JSON.stringify({ prompt: '[scheduled trigger: funnel-curator]', script: null }),
   });
   if (opts.status !== 'pending') {
-    inDb
-      .prepare('UPDATE messages_in SET status = ? WHERE id = ?')
-      .run(opts.status, opts.id ?? 'funnel-curator');
+    inDb.prepare('UPDATE messages_in SET status = ? WHERE id = ?').run(opts.status, opts.id ?? 'funnel-curator');
   }
 }
 
@@ -149,9 +147,7 @@ describe('hasLiveFunnelCuratorTask', () => {
   it('matches by series_id, not just id', () => {
     insertSampleTask({ id: 'funnel-curator', status: 'completed' });
     insertSampleTask({ id: 'task-clone-1', status: 'pending' });
-    inDb
-      .prepare("UPDATE messages_in SET series_id = 'funnel-curator' WHERE id = 'task-clone-1'")
-      .run();
+    inDb.prepare("UPDATE messages_in SET series_id = 'funnel-curator' WHERE id = 'task-clone-1'").run();
     expect(hasLiveFunnelCuratorTask(inDb)).toBe(true);
   });
 
@@ -216,9 +212,7 @@ describe('ensureFunnelCuratorTask', () => {
     expect(res2.action).toBe('skipped_exists');
 
     const count = (
-      inDb
-        .prepare("SELECT COUNT(*) AS n FROM messages_in WHERE series_id = 'funnel-curator'")
-        .get() as { n: number }
+      inDb.prepare("SELECT COUNT(*) AS n FROM messages_in WHERE series_id = 'funnel-curator'").get() as { n: number }
     ).n;
     expect(count).toBe(1);
   });
@@ -228,9 +222,7 @@ describe('ensureFunnelCuratorTask', () => {
     const res = ensureFunnelCuratorTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION);
     expect(res.action).toBe('skipped_disabled');
 
-    const count = (
-      inDb.prepare('SELECT COUNT(*) AS n FROM messages_in').get() as { n: number }
-    ).n;
+    const count = (inDb.prepare('SELECT COUNT(*) AS n FROM messages_in').get() as { n: number }).n;
     expect(count).toBe(0);
   });
 
@@ -240,9 +232,9 @@ describe('ensureFunnelCuratorTask', () => {
     expect(res.action).toBe('inserted');
     expect(res.recurrence).toBe('0 */6 * * *');
 
-    const row = inDb
-      .prepare("SELECT recurrence FROM messages_in WHERE series_id = 'funnel-curator'")
-      .get() as { recurrence: string };
+    const row = inDb.prepare("SELECT recurrence FROM messages_in WHERE series_id = 'funnel-curator'").get() as {
+      recurrence: string;
+    };
     expect(row.recurrence).toBe('0 */6 * * *');
   });
 

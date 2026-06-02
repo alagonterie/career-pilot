@@ -42,7 +42,10 @@ export function loadTargets(): TargetEntry[] {
     cached = { entries, loadedAt: Date.now() };
     return entries;
   } catch (err) {
-    log.warn('ats-targets.json failed to load', { path: TARGETS_FILE_PATH, err: err instanceof Error ? err.message : String(err) });
+    log.warn('ats-targets.json failed to load', {
+      path: TARGETS_FILE_PATH,
+      err: err instanceof Error ? err.message : String(err),
+    });
     return [];
   }
 }

@@ -83,7 +83,10 @@ interface ResponseFrame<T = Record<string, unknown>> {
   frame: { ok: true; data: T } | { ok: false; error: { code: string; message: string } };
 }
 
-function actionContent(action: string, payload: Record<string, unknown>): {
+function actionContent(
+  action: string,
+  payload: Record<string, unknown>,
+): {
   action: string;
   requestId: string;
   payload: Record<string, unknown>;
@@ -92,9 +95,9 @@ function actionContent(action: string, payload: Record<string, unknown>): {
 }
 
 function readResponse(requestId: string): ResponseFrame {
-  const row = inDb
-    .prepare("SELECT content FROM messages_in WHERE id = ?")
-    .get(`cp-resp-${requestId}`) as { content: string } | undefined;
+  const row = inDb.prepare('SELECT content FROM messages_in WHERE id = ?').get(`cp-resp-${requestId}`) as
+    | { content: string }
+    | undefined;
   if (!row) throw new Error(`no response written for requestId=${requestId}`);
   return JSON.parse(row.content) as ResponseFrame;
 }
@@ -109,9 +112,10 @@ describe('handleUpdateProfileField', () => {
     const resp1 = readResponse(c1.requestId);
     expect(resp1.frame.ok).toBe(true);
 
-    const row1 = getDb()
-      .prepare('SELECT full_name, target_roles FROM candidate_profile WHERE id = 1')
-      .get() as { full_name: string; target_roles: string | null };
+    const row1 = getDb().prepare('SELECT full_name, target_roles FROM candidate_profile WHERE id = 1').get() as {
+      full_name: string;
+      target_roles: string | null;
+    };
     expect(row1.full_name).toBe('Jane Doe');
     expect(row1.target_roles).toBeNull();
 
@@ -121,9 +125,10 @@ describe('handleUpdateProfileField', () => {
     });
     await handleUpdateProfileField(c2, FAKE_SESSION, inDb);
 
-    const row2 = getDb()
-      .prepare('SELECT full_name, target_roles FROM candidate_profile WHERE id = 1')
-      .get() as { full_name: string; target_roles: string };
+    const row2 = getDb().prepare('SELECT full_name, target_roles FROM candidate_profile WHERE id = 1').get() as {
+      full_name: string;
+      target_roles: string;
+    };
     expect(row2.full_name).toBe('Jane Doe'); // preserved
     expect(row2.target_roles).toBe('["Staff Backend"]'); // updated
   });
@@ -286,9 +291,10 @@ describe('handleUpdateApplication — §24.11 resanitization hook', () => {
   it('fires on a public_state change, rewriting the audit row to the real name', async () => {
     const label = await seedObfuscatedAppWithEvent();
 
-    const before = getDb()
-      .prepare('SELECT application_ref, summary FROM public_audit_trail')
-      .get() as { application_ref: string; summary: string };
+    const before = getDb().prepare('SELECT application_ref, summary FROM public_audit_trail').get() as {
+      application_ref: string;
+      summary: string;
+    };
     expect(before.summary).toContain(`[REDACTED:${label}]`);
     expect(before.summary).not.toContain('Acme Corp');
 
@@ -299,9 +305,10 @@ describe('handleUpdateApplication — §24.11 resanitization hook', () => {
     await handleUpdateApplication(c, FAKE_SESSION, inDb);
     expect(readResponse(c.requestId).frame.ok).toBe(true);
 
-    const rows = getDb()
-      .prepare('SELECT application_ref, summary FROM public_audit_trail')
-      .all() as { application_ref: string; summary: string }[];
+    const rows = getDb().prepare('SELECT application_ref, summary FROM public_audit_trail').all() as {
+      application_ref: string;
+      summary: string;
+    }[];
     expect(rows).toHaveLength(1);
     expect(rows[0].application_ref).toBe('Acme Corp');
     expect(rows[0].summary).toContain('Acme Corp');
@@ -328,9 +335,10 @@ describe('handleUpdateApplication — §24.11 resanitization hook', () => {
 
   it('does NOT fire on a non-trigger field change (status)', async () => {
     const label = await seedObfuscatedAppWithEvent();
-    const before = getDb()
-      .prepare('SELECT id, summary FROM public_audit_trail')
-      .get() as { id: string; summary: string };
+    const before = getDb().prepare('SELECT id, summary FROM public_audit_trail').get() as {
+      id: string;
+      summary: string;
+    };
 
     const c = actionContent('career_pilot.update_application', {
       id: 'app-r',
@@ -339,9 +347,10 @@ describe('handleUpdateApplication — §24.11 resanitization hook', () => {
     await handleUpdateApplication(c, FAKE_SESSION, inDb);
     expect(readResponse(c.requestId).frame.ok).toBe(true);
 
-    const after = getDb()
-      .prepare('SELECT id, summary FROM public_audit_trail')
-      .all() as { id: string; summary: string }[];
+    const after = getDb().prepare('SELECT id, summary FROM public_audit_trail').all() as {
+      id: string;
+      summary: string;
+    }[];
     expect(after).toHaveLength(1);
     expect(after[0].id).toBe(before.id); // same row — no delete+reinsert
     expect(after[0].summary).toBe(before.summary);
@@ -356,9 +365,10 @@ describe('handleUpdateApplication — §24.11 resanitization hook', () => {
          VALUES ('sanitization_resanitize_on_application_update', 'false', '2026-05-28T00:00:00Z')`,
       )
       .run();
-    const before = getDb()
-      .prepare('SELECT id, summary FROM public_audit_trail')
-      .get() as { id: string; summary: string };
+    const before = getDb().prepare('SELECT id, summary FROM public_audit_trail').get() as {
+      id: string;
+      summary: string;
+    };
 
     const c = actionContent('career_pilot.update_application', {
       id: 'app-r',
@@ -368,14 +378,15 @@ describe('handleUpdateApplication — §24.11 resanitization hook', () => {
     expect(readResponse(c.requestId).frame.ok).toBe(true);
 
     // Application IS updated...
-    const app = getDb()
-      .prepare("SELECT public_state FROM applications WHERE id = 'app-r'")
-      .get() as { public_state: string };
+    const app = getDb().prepare("SELECT public_state FROM applications WHERE id = 'app-r'").get() as {
+      public_state: string;
+    };
     expect(app.public_state).toBe('public');
     // ...but the audit row was NOT rewritten.
-    const after = getDb()
-      .prepare('SELECT id, summary FROM public_audit_trail')
-      .all() as { id: string; summary: string }[];
+    const after = getDb().prepare('SELECT id, summary FROM public_audit_trail').all() as {
+      id: string;
+      summary: string;
+    }[];
     expect(after).toHaveLength(1);
     expect(after[0].id).toBe(before.id);
     expect(after[0].summary).toContain(`[REDACTED:${label}]`);
@@ -422,9 +433,7 @@ describe('handleUpdateApplication — §24.11 resanitization hook', () => {
         n: number;
       }
     ).n;
-    const auditCount = (
-      getDb().prepare('SELECT COUNT(*) AS n FROM public_audit_trail').get() as { n: number }
-    ).n;
+    const auditCount = (getDb().prepare('SELECT COUNT(*) AS n FROM public_audit_trail').get() as { n: number }).n;
     expect(eventCount).toBe(2);
     expect(auditCount).toBe(2); // no duplicates, no drops
     const rows = getDb().prepare('SELECT summary FROM public_audit_trail').all() as { summary: string }[];
@@ -445,9 +454,9 @@ describe('handleUpdateApplication — §24.11 resanitization hook', () => {
     await handleUpdateApplication(c, FAKE_SESSION, inDb);
 
     expect(readResponse(c.requestId).frame.ok).toBe(true);
-    const app = getDb()
-      .prepare("SELECT public_state FROM applications WHERE id = 'app-r'")
-      .get() as { public_state: string };
+    const app = getDb().prepare("SELECT public_state FROM applications WHERE id = 'app-r'").get() as {
+      public_state: string;
+    };
     expect(app.public_state).toBe('public');
   });
 
@@ -494,9 +503,10 @@ describe('handleUpdateApplication — §24.11 resanitization hook', () => {
     await handleUpdateApplication(c, FAKE_SESSION, inDb);
     expect(readResponse(c.requestId).frame.ok).toBe(true);
 
-    const after = getDb()
-      .prepare('SELECT application_ref, summary FROM public_audit_trail')
-      .all() as { application_ref: string; summary: string }[];
+    const after = getDb().prepare('SELECT application_ref, summary FROM public_audit_trail').all() as {
+      application_ref: string;
+      summary: string;
+    }[];
     expect(after).toHaveLength(3);
     for (const r of after) {
       expect(r.application_ref).toBe('Acme Corp');
@@ -544,9 +554,10 @@ describe('handleRecordFunnelEvent', () => {
       expect(data.event_id).toMatch(/^fe-/);
     }
 
-    const event = getDb()
-      .prepare('SELECT * FROM funnel_events WHERE application_id = ?')
-      .get('app-funnel') as Record<string, unknown>;
+    const event = getDb().prepare('SELECT * FROM funnel_events WHERE application_id = ?').get('app-funnel') as Record<
+      string,
+      unknown
+    >;
     expect(event.kind).toBe('status_change');
     expect(event.from_status).toBe('BOOKMARKED');
     expect(event.to_status).toBe('APPLIED');
@@ -605,9 +616,9 @@ describe('handleRecordFunnelEvent', () => {
     expect(privateRow!.payload).toContain('$220k');
 
     // Public mirror lands sanitized.
-    const publicRow = getDb()
-      .prepare(`SELECT application_ref, summary, category FROM public_audit_trail`)
-      .get() as { application_ref: string; summary: string; category: string } | undefined;
+    const publicRow = getDb().prepare(`SELECT application_ref, summary, category FROM public_audit_trail`).get() as
+      | { application_ref: string; summary: string; category: string }
+      | undefined;
     expect(publicRow).toBeDefined();
     expect(publicRow!.application_ref).toBe('fintech-a');
     expect(publicRow!.category).toBe('funnel');

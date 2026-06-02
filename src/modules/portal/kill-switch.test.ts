@@ -11,12 +11,7 @@ import { closeDb, initTestDb } from '../../db/connection.js';
 import { runMigrations } from '../../db/migrations/index.js';
 import type { Session } from '../../types.js';
 
-import {
-  clearKillswitch,
-  executeControlCommand,
-  executeKillswitch,
-  parseControlReason,
-} from './kill-switch.js';
+import { clearKillswitch, executeControlCommand, executeKillswitch, parseControlReason } from './kill-switch.js';
 import type { ExternalRevocationResult } from './killswitch-external.js';
 import { getLiveMode, getPauseReason, getPauseState, setLiveMode, setPauseState } from './system-modes.js';
 

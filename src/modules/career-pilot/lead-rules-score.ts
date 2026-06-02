@@ -34,10 +34,7 @@ const SOURCE_MULTIPLIERS: Record<Source, number> = {
   lever: 1.1,
 };
 
-export function computeRulesScore(
-  payload: JobLeadPayload,
-  profile: CandidateProfileForScoring,
-): RulesScoreResult {
+export function computeRulesScore(payload: JobLeadPayload, profile: CandidateProfileForScoring): RulesScoreResult {
   const reasons: Record<string, unknown> = {};
   let score = 0;
 
@@ -67,7 +64,12 @@ export function computeRulesScore(
     }
   }
   const kwScore = Math.min(30, 15 * titleHits + 3 * descHits);
-  reasons.keyword_match = { score: kwScore, title_hits: titleHits, desc_hits: descHits, matched: matchedTerms.slice(0, 10) };
+  reasons.keyword_match = {
+    score: kwScore,
+    title_hits: titleHits,
+    desc_hits: descHits,
+    matched: matchedTerms.slice(0, 10),
+  };
   score += kwScore;
 
   // Compensation floor.

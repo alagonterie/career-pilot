@@ -33,9 +33,7 @@ afterEach(async () => {
 });
 
 function seedSimRun(id: string): void {
-  getDb()
-    .prepare(`INSERT INTO simulator_runs (id, ts) VALUES (?, '2026-05-29T00:00:00Z')`)
-    .run(id);
+  getDb().prepare(`INSERT INTO simulator_runs (id, ts) VALUES (?, '2026-05-29T00:00:00Z')`).run(id);
 }
 
 function seedAudit(seq: number, ts: string): void {

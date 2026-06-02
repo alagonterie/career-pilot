@@ -205,8 +205,7 @@ async function sweepSession(session: Session): Promise<void> {
       // (heartbeat cron / agent system rows). `getPauseState()` defaults to
       // `active` when system_modes is absent, so this is inert for upstream.
       const pauseState = getPauseState();
-      const suppress =
-        pauseState !== 'active' && shouldSuppressColdWake(pauseState, countDueReactiveMessages(inDb));
+      const suppress = pauseState !== 'active' && shouldSuppressColdWake(pauseState, countDueReactiveMessages(inDb));
       if (suppress) {
         log.debug('Suppressing wake under pause state', { sessionId: session.id, pauseState, dueCount });
       } else {

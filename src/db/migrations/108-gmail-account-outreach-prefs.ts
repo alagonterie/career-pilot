@@ -33,9 +33,7 @@ export const migration108: Migration = {
     db.exec(`ALTER TABLE candidate_profile ADD COLUMN gmail_account TEXT;`);
 
     const now = new Date().toISOString();
-    const insertPref = db.prepare(
-      `INSERT OR IGNORE INTO preferences (key, value, updated_at) VALUES (?, ?, ?)`,
-    );
+    const insertPref = db.prepare(`INSERT OR IGNORE INTO preferences (key, value, updated_at) VALUES (?, ?, ?)`);
     insertPref.run('outreach_show_ai_attribution', 'true', now);
     insertPref.run(
       'outreach_attribution_template',

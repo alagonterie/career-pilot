@@ -29,19 +29,19 @@ export interface CandidateProfile {
   full_name: string | null;
   display_name: string | null;
   bio: string | null;
-  target_roles: string | null;       // JSON array as text
-  location_pref: string | null;      // JSON object as text
+  target_roles: string | null; // JSON array as text
+  location_pref: string | null; // JSON object as text
   comp_floor: number | null;
   master_resume: string | null;
-  skills: string | null;             // JSON array as text
+  skills: string | null; // JSON array as text
   github_url: string | null;
   linkedin_url: string | null;
   x_url: string | null;
   website_url: string | null;
-  why_this_exists: string | null;    // excluded from agent context (portal-only)
-  headshot_path: string | null;      // excluded (portal styling)
-  brand_color_hsl: string | null;    // excluded (portal styling)
-  gmail_account: string | null;      // Phase 2.3 (migration 108) — owner's Gmail address; OAuth refresh token lives in OneCLI vault
+  why_this_exists: string | null; // excluded from agent context (portal-only)
+  headshot_path: string | null; // excluded (portal styling)
+  brand_color_hsl: string | null; // excluded (portal styling)
+  gmail_account: string | null; // Phase 2.3 (migration 108) — owner's Gmail address; OAuth refresh token lives in OneCLI vault
   updated_at: string;
 }
 
@@ -223,9 +223,7 @@ export function renderPersonaForGroup(group: AgentGroup): void {
 
 function readCandidateProfile(): CandidateProfile | null {
   try {
-    const row = getDb()
-      .prepare('SELECT * FROM candidate_profile WHERE id = 1')
-      .get() as CandidateProfile | undefined;
+    const row = getDb().prepare('SELECT * FROM candidate_profile WHERE id = 1').get() as CandidateProfile | undefined;
     return row ?? null;
   } catch (err) {
     // The `candidate_profile` table only exists after migration 105 runs.
