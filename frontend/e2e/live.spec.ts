@@ -82,7 +82,8 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
 
   test('the landing hero CTA crosses into /live', async ({ page }) => {
     await page.goto('/')
-    await page.getByRole('link', { name: 'See it work →' }).click()
+    // Scope to the hero (the connective rail also offers a "See it work" deepen).
+    await page.getByRole('main').getByRole('link', { name: 'See it work →' }).click()
     await expect(page).toHaveURL('/live')
     await expect(page.getByRole('heading', { level: 1, name: 'Live' })).toBeVisible()
   })

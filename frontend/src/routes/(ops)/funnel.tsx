@@ -4,7 +4,6 @@ import * as React from 'react'
 import { DetailPanel } from '~/components/funnel/DetailPanel'
 import { FunnelBoard } from '~/components/funnel/FunnelBoard'
 import { StatTiles } from '~/components/funnel/StatTiles'
-import { SiteHeader } from '~/components/SiteHeader'
 import { useFunnel, type FunnelApplication } from '~/lib/use-funnel'
 
 // First page of the ops register (PORTAL §5.4). `(ops)` is a pathless route
@@ -32,7 +31,6 @@ function FunnelPage() {
 
   return (
     <>
-      <SiteHeader />
       <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-8 px-6 py-12">
         <header>
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Funnel</h1>

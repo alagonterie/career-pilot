@@ -9,39 +9,56 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as opsRouteRouteImport } from './routes/(ops)/route'
+import { Route as marketingRouteRouteImport } from './routes/(marketing)/route'
 import { Route as marketingIndexRouteImport } from './routes/(marketing)/index'
 import { Route as opsLiveRouteImport } from './routes/(ops)/live'
 import { Route as opsFunnelRouteImport } from './routes/(ops)/funnel'
 import { Route as opsArchitectureRouteImport } from './routes/(ops)/architecture'
 import { Route as marketingWorkRouteImport } from './routes/(marketing)/work'
+import { Route as marketingContactRouteImport } from './routes/(marketing)/contact'
 
-const marketingIndexRoute = marketingIndexRouteImport.update({
-  id: '/(marketing)/',
-  path: '/',
+const opsRouteRoute = opsRouteRouteImport.update({
+  id: '/(ops)',
   getParentRoute: () => rootRouteImport,
+} as any)
+const marketingRouteRoute = marketingRouteRouteImport.update({
+  id: '/(marketing)',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const marketingIndexRoute = marketingIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => marketingRouteRoute,
 } as any)
 const opsLiveRoute = opsLiveRouteImport.update({
-  id: '/(ops)/live',
+  id: '/live',
   path: '/live',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => opsRouteRoute,
 } as any)
 const opsFunnelRoute = opsFunnelRouteImport.update({
-  id: '/(ops)/funnel',
+  id: '/funnel',
   path: '/funnel',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => opsRouteRoute,
 } as any)
 const opsArchitectureRoute = opsArchitectureRouteImport.update({
-  id: '/(ops)/architecture',
+  id: '/architecture',
   path: '/architecture',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => opsRouteRoute,
 } as any)
 const marketingWorkRoute = marketingWorkRouteImport.update({
-  id: '/(marketing)/work',
+  id: '/work',
   path: '/work',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => marketingRouteRoute,
+} as any)
+const marketingContactRoute = marketingContactRouteImport.update({
+  id: '/contact',
+  path: '/contact',
+  getParentRoute: () => marketingRouteRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
+  '/contact': typeof marketingContactRoute
   '/work': typeof marketingWorkRoute
   '/architecture': typeof opsArchitectureRoute
   '/funnel': typeof opsFunnelRoute
@@ -49,6 +66,7 @@ export interface FileRoutesByFullPath {
   '/': typeof marketingIndexRoute
 }
 export interface FileRoutesByTo {
+  '/contact': typeof marketingContactRoute
   '/work': typeof marketingWorkRoute
   '/architecture': typeof opsArchitectureRoute
   '/funnel': typeof opsFunnelRoute
@@ -57,6 +75,9 @@ export interface FileRoutesByTo {
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
+  '/(marketing)': typeof marketingRouteRouteWithChildren
+  '/(ops)': typeof opsRouteRouteWithChildren
+  '/(marketing)/contact': typeof marketingContactRoute
   '/(marketing)/work': typeof marketingWorkRoute
   '/(ops)/architecture': typeof opsArchitectureRoute
   '/(ops)/funnel': typeof opsFunnelRoute
@@ -65,11 +86,14 @@ export interface FileRoutesById {
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/work' | '/architecture' | '/funnel' | '/live' | '/'
+  fullPaths: '/contact' | '/work' | '/architecture' | '/funnel' | '/live' | '/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/work' | '/architecture' | '/funnel' | '/live' | '/'
+  to: '/contact' | '/work' | '/architecture' | '/funnel' | '/live' | '/'
   id:
     | '__root__'
+    | '/(marketing)'
+    | '/(ops)'
+    | '/(marketing)/contact'
     | '/(marketing)/work'
     | '/(ops)/architecture'
     | '/(ops)/funnel'
@@ -78,59 +102,106 @@ export interface FileRouteTypes {
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  marketingWorkRoute: typeof marketingWorkRoute
-  opsArchitectureRoute: typeof opsArchitectureRoute
-  opsFunnelRoute: typeof opsFunnelRoute
-  opsLiveRoute: typeof opsLiveRoute
-  marketingIndexRoute: typeof marketingIndexRoute
+  marketingRouteRoute: typeof marketingRouteRouteWithChildren
+  opsRouteRoute: typeof opsRouteRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/(ops)': {
+      id: '/(ops)'
+      path: ''
+      fullPath: ''
+      preLoaderRoute: typeof opsRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/(marketing)': {
+      id: '/(marketing)'
+      path: ''
+      fullPath: ''
+      preLoaderRoute: typeof marketingRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/(marketing)/': {
       id: '/(marketing)/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof marketingIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof marketingRouteRoute
     }
     '/(ops)/live': {
       id: '/(ops)/live'
       path: '/live'
       fullPath: '/live'
       preLoaderRoute: typeof opsLiveRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof opsRouteRoute
     }
     '/(ops)/funnel': {
       id: '/(ops)/funnel'
       path: '/funnel'
       fullPath: '/funnel'
       preLoaderRoute: typeof opsFunnelRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof opsRouteRoute
     }
     '/(ops)/architecture': {
       id: '/(ops)/architecture'
       path: '/architecture'
       fullPath: '/architecture'
       preLoaderRoute: typeof opsArchitectureRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof opsRouteRoute
     }
     '/(marketing)/work': {
       id: '/(marketing)/work'
       path: '/work'
       fullPath: '/work'
       preLoaderRoute: typeof marketingWorkRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof marketingRouteRoute
+    }
+    '/(marketing)/contact': {
+      id: '/(marketing)/contact'
+      path: '/contact'
+      fullPath: '/contact'
+      preLoaderRoute: typeof marketingContactRouteImport
+      parentRoute: typeof marketingRouteRoute
     }
   }
 }
 
-const rootRouteChildren: RootRouteChildren = {
+interface marketingRouteRouteChildren {
+  marketingContactRoute: typeof marketingContactRoute
+  marketingWorkRoute: typeof marketingWorkRoute
+  marketingIndexRoute: typeof marketingIndexRoute
+}
+
+const marketingRouteRouteChildren: marketingRouteRouteChildren = {
+  marketingContactRoute: marketingContactRoute,
   marketingWorkRoute: marketingWorkRoute,
+  marketingIndexRoute: marketingIndexRoute,
+}
+
+const marketingRouteRouteWithChildren = marketingRouteRoute._addFileChildren(
+  marketingRouteRouteChildren,
+)
+
+interface opsRouteRouteChildren {
+  opsArchitectureRoute: typeof opsArchitectureRoute
+  opsFunnelRoute: typeof opsFunnelRoute
+  opsLiveRoute: typeof opsLiveRoute
+}
+
+const opsRouteRouteChildren: opsRouteRouteChildren = {
   opsArchitectureRoute: opsArchitectureRoute,
   opsFunnelRoute: opsFunnelRoute,
   opsLiveRoute: opsLiveRoute,
-  marketingIndexRoute: marketingIndexRoute,
+}
+
+const opsRouteRouteWithChildren = opsRouteRoute._addFileChildren(
+  opsRouteRouteChildren,
+)
+
+const rootRouteChildren: RootRouteChildren = {
+  marketingRouteRoute: marketingRouteRouteWithChildren,
+  opsRouteRoute: opsRouteRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

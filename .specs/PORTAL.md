@@ -301,7 +301,7 @@ Three-column on desktop, stacked on mobile. The resume content is hand-curated, 
 - Link to `/about`
 - "Built with [stack list]" — small grey text
 
-> **Build note (the funnel mouth — STRATEGY §24.30 / Sub-milestone 8.1).** The home is the mouth of the conversion funnel (§2): each viewport hands the visitor a directed next step. Phase 6.1 shipped only the hero (Viewport 1) + the live ticker (Viewport 3), so today the home channels into `/live` and leaks every other path. The conversion-spine work builds the remaining three — the **funnel strip** (Viewport 2, a compact `FunnelStrip` over `/api/funnel` → `/funnel`), the **simulator pitch** (Viewport 4 → `/simulator`), and the **resume+contact teaser** (Viewport 5 → `/work` + `/contact`) — and rewires the hero's "Talk to me →" from its `mailto:` placeholder to `/contact`.
+> **Build note (the funnel mouth — STRATEGY §24.30 / Sub-milestone 8.1).** The home is the mouth of the conversion funnel (§2): each viewport hands the visitor a directed next step. Phase 6.1 shipped only the hero (Viewport 1) + the live ticker (Viewport 3), so today the home channels into `/live` and leaks every other path. Sub-milestone 8.1 builds Viewport 2 (the **funnel strip**, a compact `FunnelStrip` over `/api/funnel` → `/funnel`) + Viewport 5 (the **resume+contact teaser** → `/work` + `/contact`) and rewires the hero's "Talk to me →" from its `mailto:` placeholder to `/contact`; the **simulator pitch** (Viewport 4 → `/simulator`) lands in 8.2 with that route.
 
 ---
 
