@@ -17,10 +17,11 @@ function Home() {
   return (
     <main className="mx-auto flex min-h-dvh max-w-3xl flex-col items-center px-6 py-20">
       {/*
-        Hero (SSR-static; PORTAL §5.1 Viewport 1). The name / title / tagline /
-        contact are placeholders per PORTAL §12 (content variables TBD) — wired
-        from candidate_profile in a later sub-milestone. Static markup so the
-        hero renders with JS disabled (PORTAL §10); only the ticker hydrates.
+        Hero (SSR-static; PORTAL §5.1 Viewport 1). Name + title are the owner's
+        real content; the tagline + contact (mailto) remain PORTAL §12
+        placeholders, to be wired dynamically from candidate_profile later.
+        Static markup so the hero renders with JS disabled (PORTAL §10); only
+        the ticker hydrates.
       */}
       <section className="flex w-full max-w-xl flex-col items-center text-center">
         <div className="mb-6 flex items-center gap-4 text-sm">
@@ -29,7 +30,7 @@ function Home() {
         </div>
 
         <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">Jane Doe</h1>
-        <p className="mt-2 text-lg text-muted-foreground">Senior Software Engineer · AI Systems</p>
+        <p className="mt-2 text-lg text-muted-foreground">Senior Software Engineer · AI Systems, DevX</p>
 
         <p className="mt-6 text-balance text-base leading-relaxed text-foreground/90">
           I built this site. Everything moving on this page is the agent system I designed running my actual job search,
