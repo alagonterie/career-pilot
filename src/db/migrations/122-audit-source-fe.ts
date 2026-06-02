@@ -28,15 +28,11 @@ export const migration122: Migration = {
   name: 'career-pilot-audit-source-funnel-event',
   up(db: Database.Database) {
     const cols = new Set(
-      (db.prepare("PRAGMA table_info('public_audit_trail')").all() as Array<{ name: string }>).map(
-        (c) => c.name,
-      ),
+      (db.prepare("PRAGMA table_info('public_audit_trail')").all() as Array<{ name: string }>).map((c) => c.name),
     );
     if (!cols.has('source_funnel_event_id')) {
       db.prepare('ALTER TABLE public_audit_trail ADD COLUMN source_funnel_event_id TEXT').run();
     }
-    db.exec(
-      'CREATE INDEX IF NOT EXISTS idx_audit_source_fe ON public_audit_trail(source_funnel_event_id)',
-    );
+    db.exec('CREATE INDEX IF NOT EXISTS idx_audit_source_fe ON public_audit_trail(source_funnel_event_id)');
   },
 };

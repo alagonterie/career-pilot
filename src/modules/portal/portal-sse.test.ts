@@ -13,12 +13,7 @@ import { closeDb, getDb, initTestDb } from '../../db/connection.js';
 import { runMigrations } from '../../db/migrations/index.js';
 
 import { startPortalApi, stopPortalApi } from './api.js';
-import {
-  _activityClientCount,
-  _isTailRunning,
-  addActivityClient,
-  removeActivityClient,
-} from './sse-broadcaster.js';
+import { _activityClientCount, _isTailRunning, addActivityClient, removeActivityClient } from './sse-broadcaster.js';
 
 let base: string;
 

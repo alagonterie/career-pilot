@@ -16,9 +16,7 @@ import type { Transport } from './transport.js';
 // (Node returns EACCES on listen even with full write perms). Fall back to
 // a Windows named pipe; client and server must agree on the pipe name.
 export const DEFAULT_SOCKET_PATH =
-  process.platform === 'win32'
-    ? '\\\\.\\pipe\\nanoclaw-ncl'
-    : path.join(DATA_DIR, 'ncl.sock');
+  process.platform === 'win32' ? '\\\\.\\pipe\\nanoclaw-ncl' : path.join(DATA_DIR, 'ncl.sock');
 
 export class SocketTransport implements Transport {
   constructor(private readonly socketPath: string = DEFAULT_SOCKET_PATH) {}

@@ -63,7 +63,13 @@ beforeEach(() => {
   const db = initTestDb();
   runMigrations(db);
   const now = '2026-05-29T00:00:00Z';
-  createAgentGroup({ id: 'ag-owner', name: 'Career Pilot', folder: 'career-pilot', agent_provider: null, created_at: now });
+  createAgentGroup({
+    id: 'ag-owner',
+    name: 'Career Pilot',
+    folder: 'career-pilot',
+    agent_provider: null,
+    created_at: now,
+  });
   createAgentGroup({
     id: 'ag-sandbox',
     name: 'Career Pilot (Sandbox)',

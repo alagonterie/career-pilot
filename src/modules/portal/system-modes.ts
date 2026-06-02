@@ -35,18 +35,13 @@ export interface SystemStatus {
   backend: 'online';
 }
 
-const VALID_PAUSE_STATES: ReadonlySet<string> = new Set([
-  'active',
-  'paused',
-  'halted',
-  'killswitch',
-]);
+const VALID_PAUSE_STATES: ReadonlySet<string> = new Set(['active', 'paused', 'halted', 'killswitch']);
 
 function readMode(key: string): string | null {
   try {
-    const row = getDb()
-      .prepare('SELECT value FROM system_modes WHERE key = ?')
-      .get(key) as { value: string } | undefined;
+    const row = getDb().prepare('SELECT value FROM system_modes WHERE key = ?').get(key) as
+      | { value: string }
+      | undefined;
     return row ? row.value : null;
   } catch (err) {
     log.error('system-modes read failed', { key, err });
@@ -116,11 +111,7 @@ function writeMode(key: string, value: unknown, changedBy: string | null): void 
  * hard (the container-runner spawn gate refuses new containers). Recovery from
  * `killswitch` is intentionally manual (RECOVERY.md) — `/resume` does not clear it.
  */
-export function setPauseState(
-  state: PauseState,
-  reason: string | null = null,
-  changedBy: string | null = null,
-): void {
+export function setPauseState(state: PauseState, reason: string | null = null, changedBy: string | null = null): void {
   const tx = getDb().transaction(() => {
     writeMode('pause_state', state, changedBy);
     writeMode('pause_reason', reason, changedBy);

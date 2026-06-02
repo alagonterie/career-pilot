@@ -21,7 +21,8 @@ const LEVER_BASE = 'https://api.lever.co/v0/postings';
 // HTTP header values must be ASCII / ByteString. Any non-Latin-1
 // character (em dash, smart quotes, etc.) causes node fetch to throw
 // "Cannot convert argument to a ByteString". Keep this pure ASCII.
-const USER_AGENT = 'career-pilot/0.1 (+https://github.com/alagonterie/career-pilot - personal job-search agent, contact: alagonterie@gmail.com)';
+const USER_AGENT =
+  'career-pilot/0.1 (+https://github.com/alagonterie/career-pilot - personal job-search agent, contact: alagonterie@gmail.com)';
 const FETCH_TIMEOUT_MS = 15_000;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 const CRAWL_DELAY_MS_LEVER = 1_000; // honor robots.txt Crawl-delay: 1
@@ -172,7 +173,12 @@ function normalizeGreenhouse(j: GreenhouseJob, board_token: string): JobLeadPayl
     description_html,
     description_text,
     source_posted_at: j.updated_at ?? null,
-    raw_payload: { greenhouse_id: j.id, internal_job_id: j.internal_job_id ?? null, departments: j.departments ?? [], offices: j.offices ?? [] },
+    raw_payload: {
+      greenhouse_id: j.id,
+      internal_job_id: j.internal_job_id ?? null,
+      departments: j.departments ?? [],
+      offices: j.offices ?? [],
+    },
   };
 }
 
@@ -183,7 +189,14 @@ interface LeverJob {
   text: string;
   hostedUrl: string;
   applyUrl: string;
-  categories?: { location?: string; commitment?: string; department?: string; level?: string; team?: string; allLocations?: string[] };
+  categories?: {
+    location?: string;
+    commitment?: string;
+    department?: string;
+    level?: string;
+    team?: string;
+    allLocations?: string[];
+  };
   createdAt?: number; // epoch ms
   description?: string; // HTML
   descriptionPlain?: string;
@@ -314,7 +327,11 @@ function stripHtmlEntities(html: string): string {
 function inferRemote(
   location: string | null,
   description: string | null,
-): { is_remote: boolean | null; remote_region: 'US' | 'EU' | 'GLOBAL' | null; workplace_type: 'remote' | 'hybrid' | 'onsite' | null } {
+): {
+  is_remote: boolean | null;
+  remote_region: 'US' | 'EU' | 'GLOBAL' | null;
+  workplace_type: 'remote' | 'hybrid' | 'onsite' | null;
+} {
   if (!location && !description) return { is_remote: null, remote_region: null, workplace_type: null };
   const loc = (location ?? '').toLowerCase();
   const desc = (description ?? '').slice(0, 500).toLowerCase();

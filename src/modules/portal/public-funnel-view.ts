@@ -94,18 +94,12 @@ interface AppRow {
  * (Pass 1 regex + Pass 2 company redaction) so no PII or non-public company
  * name survives, and truncate.
  */
-function buildLearningExcerpt(
-  reflectionsRaw: string,
-  applicationId: string,
-  db: Database.Database,
-): string {
+function buildLearningExcerpt(reflectionsRaw: string, applicationId: string, db: Database.Database): string {
   let text = reflectionsRaw;
   try {
     const parsed = JSON.parse(reflectionsRaw);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      const parts = Object.values(parsed).filter(
-        (v): v is string => typeof v === 'string' && v.length > 0,
-      );
+      const parts = Object.values(parsed).filter((v): v is string => typeof v === 'string' && v.length > 0);
       if (parts.length > 0) text = parts.join(' · ');
     }
   } catch {
@@ -138,15 +132,13 @@ export function upsertPublicFunnelView(db: Database.Database, applicationId: str
       return;
     }
 
-    const applicationRef =
-      app.public_state === 'public' ? app.company_name : app.obfuscated_label;
+    const applicationRef = app.public_state === 'public' ? app.company_name : app.obfuscated_label;
     const stage = deriveFunnelStage(app.status);
 
     // stage_entered_at: when the application last transitioned TO its current
     // status (latest matching funnel_events row); fall back to its activity
     // timestamps if no such event exists.
-    let stageEnteredAt: string | null =
-      app.last_activity_at ?? app.applied_at ?? app.created_at ?? null;
+    let stageEnteredAt: string | null = app.last_activity_at ?? app.applied_at ?? app.created_at ?? null;
     try {
       const fe = db
         .prepare(

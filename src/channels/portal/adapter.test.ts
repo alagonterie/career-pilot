@@ -7,12 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { ChannelSetup, InboundMessage } from '../adapter.js';
 
-import {
-  _resetPortalAdapter,
-  createPortalAdapter,
-  SANDBOX_PLATFORM_ID,
-  submitSimulatorRun,
-} from './adapter.js';
+import { _resetPortalAdapter, createPortalAdapter, SANDBOX_PLATFORM_ID, submitSimulatorRun } from './adapter.js';
 
 type InboundCall = [platformId: string, threadId: string | null, message: InboundMessage];
 
@@ -73,8 +68,6 @@ describe('portal channel adapter', () => {
   it('deliver is a no-op that resolves undefined (SSE push is 5.5b)', async () => {
     const a = createPortalAdapter();
     await a.setup(capturingSetup([]));
-    await expect(
-      a.deliver('sandbox', 'sb-1', { kind: 'chat', content: { text: 'x' } }),
-    ).resolves.toBeUndefined();
+    await expect(a.deliver('sandbox', 'sb-1', { kind: 'chat', content: { text: 'x' } })).resolves.toBeUndefined();
   });
 });

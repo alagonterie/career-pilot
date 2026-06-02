@@ -24,9 +24,7 @@ function setPref(key: string, value: string): void {
 
 beforeEach(() => {
   db = new Database(':memory:');
-  db.exec(
-    'CREATE TABLE preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);',
-  );
+  db.exec('CREATE TABLE preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);');
   _resetDefaultsCache();
 });
 

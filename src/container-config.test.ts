@@ -48,10 +48,7 @@ describe('configFromDb — disallowedTools', () => {
   });
 
   it('parses a populated disallowed_tools array', () => {
-    const cfg = configFromDb(
-      row({ disallowed_tools: '["mcp__nanoclaw__create_gmail_draft","Bash"]' }),
-      TEST_GROUP,
-    );
+    const cfg = configFromDb(row({ disallowed_tools: '["mcp__nanoclaw__create_gmail_draft","Bash"]' }), TEST_GROUP);
     expect(cfg.disallowedTools).toEqual(['mcp__nanoclaw__create_gmail_draft', 'Bash']);
   });
 

@@ -65,9 +65,9 @@ interface ResponseFrame<T = Record<string, unknown>> {
 }
 
 function readResponse(requestId: string): ResponseFrame {
-  const row = inDb
-    .prepare('SELECT content FROM messages_in WHERE id = ?')
-    .get(`cp-resp-${requestId}`) as { content: string } | undefined;
+  const row = inDb.prepare('SELECT content FROM messages_in WHERE id = ?').get(`cp-resp-${requestId}`) as
+    | { content: string }
+    | undefined;
   if (!row) throw new Error(`no response written for requestId=${requestId}`);
   return JSON.parse(row.content) as ResponseFrame;
 }
@@ -144,14 +144,64 @@ async function callClaim(): Promise<ResponseFrame<{ leads: Array<{ id: string }>
 
 describe('handleClaimKillerMatches', () => {
   it('claims eligible leads and ignores ineligible ones', async () => {
-    seedLead({ id: 'eligible-high', company: 'Anthropic', source: 'greenhouse', rules_score: 95, source_posted_at: freshTimestamp(1) });
-    seedLead({ id: 'eligible-lever', company: 'Stripe', source: 'lever', rules_score: 92, source_posted_at: freshTimestamp(2) });
-    seedLead({ id: 'low-score', company: 'Linear', source: 'greenhouse', rules_score: 80, source_posted_at: freshTimestamp(1) });
-    seedLead({ id: 'too-old', company: 'Discord', source: 'greenhouse', rules_score: 96, source_posted_at: freshTimestamp(10) });
-    seedLead({ id: 'null-posted-at', company: 'Vercel', source: 'greenhouse', rules_score: 95, source_posted_at: null });
-    seedLead({ id: 'wrong-source', company: 'Notion', source: 'ashby', rules_score: 95, source_posted_at: freshTimestamp(1) });
-    seedLead({ id: 'already-pushed', company: 'Cloudflare', source: 'greenhouse', rules_score: 99, source_posted_at: freshTimestamp(1), killer_match_pushed_at: freshTimestamp(5) });
-    seedLead({ id: 'closed', company: 'Square', source: 'greenhouse', rules_score: 99, source_posted_at: freshTimestamp(1), closed_at: freshTimestamp(5) });
+    seedLead({
+      id: 'eligible-high',
+      company: 'Anthropic',
+      source: 'greenhouse',
+      rules_score: 95,
+      source_posted_at: freshTimestamp(1),
+    });
+    seedLead({
+      id: 'eligible-lever',
+      company: 'Stripe',
+      source: 'lever',
+      rules_score: 92,
+      source_posted_at: freshTimestamp(2),
+    });
+    seedLead({
+      id: 'low-score',
+      company: 'Linear',
+      source: 'greenhouse',
+      rules_score: 80,
+      source_posted_at: freshTimestamp(1),
+    });
+    seedLead({
+      id: 'too-old',
+      company: 'Discord',
+      source: 'greenhouse',
+      rules_score: 96,
+      source_posted_at: freshTimestamp(10),
+    });
+    seedLead({
+      id: 'null-posted-at',
+      company: 'Vercel',
+      source: 'greenhouse',
+      rules_score: 95,
+      source_posted_at: null,
+    });
+    seedLead({
+      id: 'wrong-source',
+      company: 'Notion',
+      source: 'ashby',
+      rules_score: 95,
+      source_posted_at: freshTimestamp(1),
+    });
+    seedLead({
+      id: 'already-pushed',
+      company: 'Cloudflare',
+      source: 'greenhouse',
+      rules_score: 99,
+      source_posted_at: freshTimestamp(1),
+      killer_match_pushed_at: freshTimestamp(5),
+    });
+    seedLead({
+      id: 'closed',
+      company: 'Square',
+      source: 'greenhouse',
+      rules_score: 99,
+      source_posted_at: freshTimestamp(1),
+      closed_at: freshTimestamp(5),
+    });
 
     const res = await callClaim();
     expect(res.frame.ok).toBe(true);
@@ -162,7 +212,7 @@ describe('handleClaimKillerMatches', () => {
 
     // Verify killer_match_pushed_at was populated on claimed leads only.
     const pushed = getDb()
-      .prepare("SELECT id FROM job_leads WHERE killer_match_pushed_at IS NOT NULL ORDER BY id")
+      .prepare('SELECT id FROM job_leads WHERE killer_match_pushed_at IS NOT NULL ORDER BY id')
       .all() as Array<{ id: string }>;
     const pushedIds = pushed.map((r) => r.id).sort();
     expect(pushedIds).toEqual(['already-pushed', 'eligible-high', 'eligible-lever']);
@@ -191,9 +241,9 @@ describe('handleClaimKillerMatches', () => {
     expect(res.frame.data.leads).toHaveLength(0);
     expect(res.frame.data.reason).toMatch(/source_allow_list.*empty/i);
 
-    const stillUnclaimed = getDb()
-      .prepare('SELECT killer_match_pushed_at FROM job_leads WHERE id = ?')
-      .get('A') as { killer_match_pushed_at: string | null };
+    const stillUnclaimed = getDb().prepare('SELECT killer_match_pushed_at FROM job_leads WHERE id = ?').get('A') as {
+      killer_match_pushed_at: string | null;
+    };
     expect(stillUnclaimed.killer_match_pushed_at).toBeNull();
   });
 
@@ -242,13 +292,19 @@ describe('handleClaimKillerMatches', () => {
 
     // The third eligible lead remains unclaimed and is available on the next tick.
     const stillUnclaimed = getDb()
-      .prepare("SELECT id FROM job_leads WHERE killer_match_pushed_at IS NULL ORDER BY id")
+      .prepare('SELECT id FROM job_leads WHERE killer_match_pushed_at IS NULL ORDER BY id')
       .all() as Array<{ id: string }>;
     expect(stillUnclaimed.map((r) => r.id)).toEqual(['low-eligible']);
   });
 
   it('suppresses leads with any prior email_events linkage (§24.9 funnel-curator integration)', async () => {
-    seedLead({ id: 'engaged', company: 'Acme', source: 'greenhouse', rules_score: 95, source_posted_at: freshTimestamp(1) });
+    seedLead({
+      id: 'engaged',
+      company: 'Acme',
+      source: 'greenhouse',
+      rules_score: 95,
+      source_posted_at: freshTimestamp(1),
+    });
     seedLead({ id: 'fresh', company: 'Stripe', source: 'lever', rules_score: 92, source_posted_at: freshTimestamp(1) });
 
     // Funnel-curator has linked an inbox event to the Acme lead — the
@@ -315,11 +371,7 @@ async function callCloseStaleLeads(): Promise<
   ResponseFrame<{ closed_count: number; threshold_days: number; cutoff: string }>
 > {
   const requestId = `req-${Math.random().toString(36).slice(2, 10)}`;
-  await handleCloseStaleLeads(
-    { action: 'career_pilot.close_stale_leads', requestId, payload: {} },
-    FAKE_SESSION,
-    inDb,
-  );
+  await handleCloseStaleLeads({ action: 'career_pilot.close_stale_leads', requestId, payload: {} }, FAKE_SESSION, inDb);
   return readResponse(requestId) as ResponseFrame<{ closed_count: number; threshold_days: number; cutoff: string }>;
 }
 
@@ -390,7 +442,7 @@ describe('handleCloseStaleLeads', () => {
     expect(res.frame.data.threshold_days).toBe(14);
 
     const closed = getDb()
-      .prepare("SELECT id, closed_reason FROM job_leads WHERE closed_at IS NOT NULL ORDER BY id")
+      .prepare('SELECT id, closed_reason FROM job_leads WHERE closed_at IS NOT NULL ORDER BY id')
       .all() as Array<{ id: string; closed_reason: string }>;
     expect(closed.map((r) => r.id)).toEqual(['stale-1', 'stale-2']);
     expect(closed.every((r) => r.closed_reason === 'stale')).toBe(true);
@@ -399,9 +451,10 @@ describe('handleCloseStaleLeads', () => {
   it('leaves fresh leads untouched', async () => {
     seedJobLeadForClose({ id: 'fresh', last_seen_at: daysAgoIso(3) });
     await callCloseStaleLeads();
-    const row = getDb()
-      .prepare("SELECT closed_at, closed_reason FROM job_leads WHERE id = 'fresh'")
-      .get() as { closed_at: string | null; closed_reason: string | null };
+    const row = getDb().prepare("SELECT closed_at, closed_reason FROM job_leads WHERE id = 'fresh'").get() as {
+      closed_at: string | null;
+      closed_reason: string | null;
+    };
     expect(row.closed_at).toBeNull();
     expect(row.closed_reason).toBeNull();
   });
@@ -415,9 +468,9 @@ describe('handleCloseStaleLeads', () => {
     const res = await callCloseStaleLeads();
     if (!res.frame.ok) throw new Error('unreachable');
     expect(res.frame.data.closed_count).toBe(0);
-    const row = getDb()
-      .prepare("SELECT closed_at FROM job_leads WHERE id = 'promoted'")
-      .get() as { closed_at: string | null };
+    const row = getDb().prepare("SELECT closed_at FROM job_leads WHERE id = 'promoted'").get() as {
+      closed_at: string | null;
+    };
     expect(row.closed_at).toBeNull();
   });
 
@@ -427,9 +480,9 @@ describe('handleCloseStaleLeads', () => {
       last_seen_at: daysAgoIso(30),
       closed_at: daysAgoIso(5),
     });
-    const before = getDb()
-      .prepare("SELECT closed_at FROM job_leads WHERE id = 'already-closed'")
-      .get() as { closed_at: string };
+    const before = getDb().prepare("SELECT closed_at FROM job_leads WHERE id = 'already-closed'").get() as {
+      closed_at: string;
+    };
     await callCloseStaleLeads();
     const after = getDb()
       .prepare("SELECT closed_at, closed_reason FROM job_leads WHERE id = 'already-closed'")
@@ -453,9 +506,7 @@ describe('handleCloseStaleLeads', () => {
     expect(res.frame.data.threshold_days).toBe(7);
     expect(res.frame.data.closed_count).toBe(1);
 
-    const row = getDb()
-      .prepare("SELECT id FROM job_leads WHERE closed_at IS NOT NULL")
-      .get() as { id: string };
+    const row = getDb().prepare('SELECT id FROM job_leads WHERE closed_at IS NOT NULL').get() as { id: string };
     expect(row.id).toBe('borderline');
   });
 

@@ -60,9 +60,7 @@ let keepaliveMs = DEFAULT_KEEPALIVE_MS;
 
 function currentMaxSeq(): number {
   try {
-    const row = getDb()
-      .prepare('SELECT COALESCE(MAX(seq), 0) AS m FROM public_audit_trail')
-      .get() as { m: number };
+    const row = getDb().prepare('SELECT COALESCE(MAX(seq), 0) AS m FROM public_audit_trail').get() as { m: number };
     return row.m ?? 0;
   } catch (err) {
     log.error('sse currentMaxSeq failed', { err });

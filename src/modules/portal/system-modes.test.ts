@@ -32,9 +32,10 @@ describe('system-modes read accessors', () => {
   });
 
   function seedMode(key: string, value: string): void {
-    db.prepare(
-      `INSERT INTO system_modes (key, value, changed_at) VALUES (?, ?, '2026-05-29T00:00:00Z')`,
-    ).run(key, value);
+    db.prepare(`INSERT INTO system_modes (key, value, changed_at) VALUES (?, ?, '2026-05-29T00:00:00Z')`).run(
+      key,
+      value,
+    );
   }
 
   it('returns safe defaults when system_modes is empty', () => {

@@ -38,12 +38,7 @@ import { log } from '../../log.js';
 
 import { relayContactSubmission, type ContactInput } from './contact-relay.js';
 import { getTelemetry } from './portkey-analytics.js';
-import {
-  getRecentSimulatorRuns,
-  getSimulatorResult,
-  startSimulatorRun,
-  type SimulatorInput,
-} from './simulator.js';
+import { getRecentSimulatorRuns, getSimulatorResult, startSimulatorRun, type SimulatorInput } from './simulator.js';
 import {
   addActivityClient,
   addSimulatorClient,
@@ -84,12 +79,7 @@ function corsHeaders(req: http.IncomingMessage): Record<string, string> {
   return {};
 }
 
-function json(
-  res: http.ServerResponse,
-  status: number,
-  body: unknown,
-  cors: Record<string, string>,
-): void {
+function json(res: http.ServerResponse, status: number, body: unknown, cors: Record<string, string>): void {
   res.writeHead(status, { 'Content-Type': 'application/json', ...cors });
   res.end(JSON.stringify(body));
 }
@@ -177,16 +167,11 @@ function handleFunnel(res: http.ServerResponse, cors: Record<string, string>): v
   json(res, 200, { applications, stage_counts }, cors);
 }
 
-function handleActivity(
-  url: URL,
-  res: http.ServerResponse,
-  cors: Record<string, string>,
-): void {
+function handleActivity(url: URL, res: http.ServerResponse, cors: Record<string, string>): void {
   const sinceRaw = url.searchParams.get('since');
   const since = sinceRaw != null && /^\d+$/.test(sinceRaw) ? parseInt(sinceRaw, 10) : 0;
   const limitRaw = url.searchParams.get('limit');
-  let limit =
-    limitRaw != null && /^\d+$/.test(limitRaw) ? parseInt(limitRaw, 10) : ACTIVITY_DEFAULT_LIMIT;
+  let limit = limitRaw != null && /^\d+$/.test(limitRaw) ? parseInt(limitRaw, 10) : ACTIVITY_DEFAULT_LIMIT;
   limit = Math.min(Math.max(1, limit), ACTIVITY_MAX_LIMIT);
 
   const events = getDb()
@@ -397,8 +382,7 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
     }
 
     if (method === 'GET' && path === '/api/funnel') return handleFunnel(res, cors);
-    if (method === 'GET' && path === '/api/activity/stream')
-      return handleActivityStream(req, res, url, cors);
+    if (method === 'GET' && path === '/api/activity/stream') return handleActivityStream(req, res, url, cors);
     if (method === 'GET' && path === '/api/activity') return handleActivity(url, res, cors);
     if (method === 'GET' && path === '/api/telemetry') return await handleTelemetry(res, cors);
     if (method === 'GET' && path === '/api/architecture') return handleArchitecture(res, cors);
@@ -436,7 +420,7 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
 export function startPortalApi(opts: { port?: number; host?: string } = {}): Promise<{ port: number }> {
   if (server) {
     const addr = server.address();
-    const boundPort = typeof addr === 'object' && addr ? addr.port : opts.port ?? DEFAULT_PORT;
+    const boundPort = typeof addr === 'object' && addr ? addr.port : (opts.port ?? DEFAULT_PORT);
     return Promise.resolve({ port: boundPort });
   }
 

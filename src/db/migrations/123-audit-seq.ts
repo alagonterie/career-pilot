@@ -27,9 +27,7 @@ export const migration123: Migration = {
   name: 'career-pilot-audit-seq',
   up(db: Database.Database) {
     const cols = new Set(
-      (db.prepare("PRAGMA table_info('public_audit_trail')").all() as Array<{ name: string }>).map(
-        (c) => c.name,
-      ),
+      (db.prepare("PRAGMA table_info('public_audit_trail')").all() as Array<{ name: string }>).map((c) => c.name),
     );
     if (!cols.has('seq')) {
       db.prepare('ALTER TABLE public_audit_trail ADD COLUMN seq INTEGER').run();

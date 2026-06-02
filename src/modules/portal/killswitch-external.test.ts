@@ -51,8 +51,6 @@ describe('summarizeExternal', () => {
 
   it('reports a wired success vs a wired failure distinctly', () => {
     expect(summarizeExternal([{ name: 'onecli', wired: true, ok: true, detail: '' }])).toContain('onecli: revoked');
-    expect(summarizeExternal([{ name: 'portkey', wired: true, ok: false, detail: '' }])).toContain(
-      'portkey: FAILED',
-    );
+    expect(summarizeExternal([{ name: 'portkey', wired: true, ok: false, detail: '' }])).toContain('portkey: FAILED');
   });
 });

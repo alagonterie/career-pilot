@@ -72,11 +72,7 @@ export function createPortalAdapter(): ChannelAdapter {
       return connected;
     },
 
-    async deliver(
-      platformId: string,
-      threadId: string | null,
-      message: OutboundMessage,
-    ): Promise<string | undefined> {
+    async deliver(platformId: string, threadId: string | null, message: OutboundMessage): Promise<string | undefined> {
       // 5.5b: push the outbound row into the run's SSE stream. The run id is the
       // threadId (per-thread session). The SSE event name is the message kind
       // ('trace' | 'chat' | 'task'); the payload is the parsed content. No-op

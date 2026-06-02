@@ -56,9 +56,7 @@ function lookupDefault(key: string): unknown {
 /** Read the raw (string) preferences-table value for a key, if present. */
 function readPreference(db: Database.Database, key: string): string | undefined {
   try {
-    const row = db.prepare('SELECT value FROM preferences WHERE key = ?').get(key) as
-      | { value: string }
-      | undefined;
+    const row = db.prepare('SELECT value FROM preferences WHERE key = ?').get(key) as { value: string } | undefined;
     return row && row.value != null ? row.value : undefined;
   } catch {
     // preferences table absent (e.g. a bare test DB) — treat as no override.

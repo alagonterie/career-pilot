@@ -7,10 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createAgentGroup } from '../../db/agent-groups.js';
 import { closeDb, initTestDb } from '../../db/connection.js';
-import {
-  createMessagingGroup,
-  createMessagingGroupAgent,
-} from '../../db/messaging-groups.js';
+import { createMessagingGroup, createMessagingGroupAgent } from '../../db/messaging-groups.js';
 import { runMigrations } from '../../db/migrations/index.js';
 import { setDeliveryAdapter } from '../../delivery.js';
 
@@ -38,7 +35,13 @@ afterEach(() => closeDb());
 
 function seedOwnerWithChannel(): void {
   const now = '2026-05-29T00:00:00Z';
-  createAgentGroup({ id: 'ag-owner', name: 'Career Pilot', folder: 'career-pilot', agent_provider: null, created_at: now });
+  createAgentGroup({
+    id: 'ag-owner',
+    name: 'Career Pilot',
+    folder: 'career-pilot',
+    agent_provider: null,
+    created_at: now,
+  });
   createMessagingGroup({
     id: 'mg-tg',
     channel_type: 'telegram',
@@ -103,7 +106,13 @@ describe('relayContactSubmission', () => {
   });
 
   it('UNAVAILABLE when the owner group has no wired channel', async () => {
-    createAgentGroup({ id: 'ag-owner', name: 'CP', folder: 'career-pilot', agent_provider: null, created_at: '2026-05-29T00:00:00Z' });
+    createAgentGroup({
+      id: 'ag-owner',
+      name: 'CP',
+      folder: 'career-pilot',
+      agent_provider: null,
+      created_at: '2026-05-29T00:00:00Z',
+    });
     const r = await relayContactSubmission({ name: 'A', email: 'a@b.co', message: 'hi' });
     expect(r.ok).toBe(false);
     expect(r.error?.code).toBe('UNAVAILABLE');

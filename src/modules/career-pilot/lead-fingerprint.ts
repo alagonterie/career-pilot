@@ -116,10 +116,10 @@ function murmur3_32(key: string, seed: number): number {
       (key.charCodeAt(i * 4 + 2) << 16) |
       (key.charCodeAt(i * 4 + 3) << 24);
     k = Math.imul(k, c1) | 0;
-    k = ((k << 15) | (k >>> 17)) | 0;
+    k = (k << 15) | (k >>> 17) | 0;
     k = Math.imul(k, c2) | 0;
     h ^= k;
-    h = ((h << 13) | (h >>> 19)) | 0;
+    h = (h << 13) | (h >>> 19) | 0;
     h = (Math.imul(h, 5) + 0xe6546b64) | 0;
   }
 
@@ -132,7 +132,7 @@ function murmur3_32(key: string, seed: number): number {
   if (tailLength >= 1) {
     k ^= key.charCodeAt(tailIndex);
     k = Math.imul(k, c1) | 0;
-    k = ((k << 15) | (k >>> 17)) | 0;
+    k = (k << 15) | (k >>> 17) | 0;
     k = Math.imul(k, c2) | 0;
     h ^= k;
   }
