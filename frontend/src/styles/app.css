@@ -21,7 +21,10 @@
   --secondary: hsl(220 14% 13%);
   --secondary-foreground: hsl(0 0% 96%);
   --muted: hsl(220 14% 13%);
-  --muted-foreground: hsl(220 10% 64%);
+  /* PORTAL §3 swatch is 220 10% 64%, but small muted text on the near-black
+     card surface needs ~80% lightness to clear WCAG AA 4.5:1 (a11y is a
+     credibility signal for this recruiter-facing showcase, PORTAL §1). */
+  --muted-foreground: hsl(220 12% 80%);
   --accent: hsl(220 14% 15%);
   --accent-foreground: hsl(0 0% 96%);
   --destructive: hsl(0 75% 60%);
