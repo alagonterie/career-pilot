@@ -63,6 +63,7 @@ interface JoinedRow {
   from_status: string | null;
   to_status: string | null;
   payload: string;
+  proactive: number;
   // applications (LEFT JOINed; null if missing)
   company_name: string | null;
   obfuscated_label: string | null;
@@ -82,7 +83,7 @@ export function mirrorFunnelEvent(db: Database.Database, eventId: string): Mirro
   try {
     row = db
       .prepare(
-        `SELECT fe.id, fe.application_id, fe.kind, fe.from_status, fe.to_status, fe.payload,
+        `SELECT fe.id, fe.application_id, fe.kind, fe.from_status, fe.to_status, fe.payload, fe.proactive,
                 a.company_name, a.obfuscated_label, a.public_state
            FROM funnel_events fe
            LEFT JOIN applications a ON fe.application_id = a.id
@@ -155,13 +156,14 @@ export function mirrorFunnelEvent(db: Database.Database, eventId: string): Mirro
   try {
     db.prepare(
       `INSERT INTO public_audit_trail
-         (id, seq, ts, category, application_ref, summary, details_json, source_funnel_event_id)
+         (id, seq, ts, category, proactive, application_ref, summary, details_json, source_funnel_event_id)
        VALUES (@id, (SELECT COALESCE(MAX(seq), 0) + 1 FROM public_audit_trail),
-               @ts, @category, @application_ref, @summary, @details_json, @source_funnel_event_id)`,
+               @ts, @category, @proactive, @application_ref, @summary, @details_json, @source_funnel_event_id)`,
     ).run({
       id: generateId(),
       ts: new Date().toISOString(),
       category: 'funnel',
+      proactive: row.proactive ? 1 : 0,
       application_ref: applicationRef,
       summary,
       details_json: details,

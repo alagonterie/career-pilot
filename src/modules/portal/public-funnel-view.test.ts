@@ -107,15 +107,17 @@ function seedEvent(opts: {
   to_status?: string | null;
   payload?: string;
   ts?: string;
+  proactive?: 0 | 1;
 }): void {
   db.prepare(
-    `INSERT INTO funnel_events (id, application_id, kind, from_status, to_status, payload, source, ts)
-     VALUES (@id, @application_id, 'status_change', NULL, @to_status, @payload, 'agent', @ts)`,
+    `INSERT INTO funnel_events (id, application_id, kind, from_status, to_status, payload, source, proactive, ts)
+     VALUES (@id, @application_id, 'status_change', NULL, @to_status, @payload, 'agent', @proactive, @ts)`,
   ).run({
     id: opts.id,
     application_id: opts.application_id,
     to_status: opts.to_status ?? null,
     payload: opts.payload ?? '{}',
+    proactive: opts.proactive ?? 0,
     ts: opts.ts ?? '2026-05-10T00:00:00Z',
   });
 }
@@ -310,6 +312,53 @@ describe('upsertPublicFunnelView', () => {
   it('is a no-op (no throw, no row) when the application does not exist', () => {
     expect(() => upsertPublicFunnelView(db, 'missing')).not.toThrow();
     expect(readView('missing')).toBeUndefined();
+  });
+});
+
+// ── public_audit_trail.proactive (§24.24) ────────────────────────────────
+
+describe('public_audit_trail.proactive', () => {
+  it('mirrorFunnelEvent copies funnel_events.proactive onto the public row', () => {
+    seedApp({ id: 'app-1', company_name: 'Acme', obfuscated_label: 'fintech-a' });
+    seedEvent({ id: 'fe-1', application_id: 'app-1', payload: JSON.stringify({ note: 'auto' }), proactive: 1 });
+    seedEvent({ id: 'fe-2', application_id: 'app-1', payload: JSON.stringify({ note: 'manual' }), proactive: 0 });
+
+    expect(mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
+    expect(mirrorFunnelEvent(db, 'fe-2')).toBe('inserted');
+
+    const p1 = db.prepare(`SELECT proactive FROM public_audit_trail WHERE source_funnel_event_id = 'fe-1'`).get() as {
+      proactive: number;
+    };
+    const p2 = db.prepare(`SELECT proactive FROM public_audit_trail WHERE source_funnel_event_id = 'fe-2'`).get() as {
+      proactive: number;
+    };
+    expect(p1.proactive).toBe(1);
+    expect(p2.proactive).toBe(0);
+  });
+
+  it('preserves proactive across a resanitize re-mirror (reproduced from funnel_events truth)', () => {
+    seedApp({ id: 'app-1', company_name: 'Acme', obfuscated_label: 'fintech-a' });
+    seedEvent({ id: 'fe-1', application_id: 'app-1', payload: JSON.stringify({ note: 'auto-advance' }), proactive: 1 });
+
+    expect(mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
+    expect(
+      (
+        db.prepare(`SELECT proactive FROM public_audit_trail WHERE source_funnel_event_id = 'fe-1'`).get() as {
+          proactive: number;
+        }
+      ).proactive,
+    ).toBe(1);
+
+    // A policy change triggers delete + re-mirror with no session context;
+    // proactive must come back from funnel_events truth, not get lost.
+    resanitizeApplicationAuditTrail(db, 'app-1');
+
+    const after = db
+      .prepare(`SELECT proactive FROM public_audit_trail WHERE source_funnel_event_id = 'fe-1'`)
+      .get() as {
+      proactive: number;
+    };
+    expect(after.proactive).toBe(1);
   });
 });
 
