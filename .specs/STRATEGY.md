@@ -3504,7 +3504,7 @@ The catastrophic control. Unlike 5.4a's commands, `/killswitch` **never fires on
 
 | Sub | Scope | Depends on |
 |---|---|---|
-| **6.0 (this)** | Test-harness bootstrap: `frontend/` scaffold + minimal `/` route reading `/api/system-status`; Playwright dual-server fixture (seeded portal API + frontend); axe a11y; visual-snapshot config (animations disabled); trace-replay seam; one green smoke E2E; browser MCPs in `.mcp.json`; hosted CI job | Phase 5 portal API |
+| **6.0 (this)** | Test-harness bootstrap: `frontend/` scaffold + minimal `/` route reading `/api/system-status`; Playwright dual-server fixture (seeded portal API + frontend); axe a11y; visual-snapshot config (animations disabled); one green smoke E2E; browser MCPs in `.mcp.json`; hosted CI job | Phase 5 portal API |
 | 6.1 | Landing (`(marketing)/index.tsx`): hero + live SSE ticker | 6.0 |
 | 6.2 | `/work`: page shell + read-model placeholders | 6.0 |
 
@@ -3513,7 +3513,7 @@ The catastrophic control. Unlike 5.4a's commands, `/killswitch` **never fires on
 **What lands (6.0):**
 1. **`frontend/`** — TanStack Start v1 scaffold (own pnpm workspace, pinned versions): `vite.config.ts`, `wrangler.jsonc`, `tsconfig.json` (incl. `routeTree.gen.ts`), Tailwind v4 `@theme`. One `src/routes/index.tsx` that reads the portal base from `import.meta.env.VITE_API_BASE` and renders `/api/system-status`.
 2. **`frontend/e2e/`** — Playwright config with an **array `webServer`**: (a) a tiny node entry that creates a temp seeded DB (`initTestDb` + `runMigrations` + the public-table seeders reused from `portal-api.test.ts`) and `startPortalApi` against it on a fixed test port; (b) `vite preview` of the built frontend with `VITE_API_BASE` → that port. A base fixture that **fails on any `console.error` or failed request**. `@axe-core/playwright` helper. `toHaveScreenshot` with `animations:'disabled'` + a `prefers-reduced-motion` / test-mode motion kill.
-3. **`frontend/e2e/fixtures/trace-*.json`** + a replay util — a recorded `kind:'trace'` sequence pushed through the broadcaster / adapter output-sink, so the simulator-stream UI (Phase 8) is testable deterministically and free; the live `--flow=simulator` path stays Tier-4.
+3. *(Deferred to Phase 8.)* The **trace-replay seam** — a recorded `kind:'trace'` fixture pushed through the broadcaster / adapter output-sink so the simulator-stream UI is testable deterministically and free — moves to Phase 8, where the simulator-stream UI that consumes it is actually built. There is no trace renderer to test against in 6.0, so building the seam now would be infrastructure without a consumer. Recorded here so the seam isn't forgotten; the live `--flow=simulator` path stays Tier-4 regardless.
 4. **One smoke E2E** — load `/` → assert system-status renders from the real seeded API → axe clean → first screenshot baseline (blessed via an out-of-band screenshot).
 5. **`.mcp.json`** — Playwright MCP (`@playwright/mcp`) + `chrome-devtools-mcp` for interactive driving/debugging.
 6. **CI** — a hosted `frontend-e2e` job (Playwright browser install + build + test); no Docker, no LLM.
@@ -3523,7 +3523,7 @@ The catastrophic control. Unlike 5.4a's commands, `/killswitch` **never fires on
 1. `pnpm --filter frontend test:e2e` is green locally and in CI; the smoke test exercises real frontend → real portal API → assertion against a seeded DB (no Docker, no LLM).
 2. axe reports zero violations on `/`; the base fixture fails on console/network errors; one visual baseline committed (animations disabled).
 3. Playwright MCP + `chrome-devtools-mcp` are wired in `.mcp.json` and usable from a session.
-4. Frontend typecheck (`tsc`) + the host suite stay clean; the trace-replay util has a unit test proving a recorded sequence renders deterministically.
+4. Frontend typecheck (`tsc`) + the host suite stay clean.
 5. No remaining "RC" / "Express" / "browse manually" references for the frontend in the spec layer.
 
 ---

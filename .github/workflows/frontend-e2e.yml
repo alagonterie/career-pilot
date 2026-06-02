@@ -1,0 +1,40 @@
+name: frontend-e2e
+
+# Full-stack frontend E2E (STRATEGY.md §24.23, Sub-milestone 6.0). Boots the
+# real native-http portal API against a seeded in-memory DB + the built
+# frontend, and drives headless Chromium against the pair. No Docker, no LLM ->
+# deterministic + free. The @visual pixel-regression spec is skipped here:
+# screenshot baselines are OS-specific and committed on the dev OS; the semantic
+# + a11y E2E is the cross-platform gate.
+on:
+  push:
+    paths:
+      - 'frontend/**'
+      - 'scripts/portal-e2e-server.ts'
+      - 'src/modules/portal/**'
+      - 'pnpm-workspace.yaml'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/frontend-e2e.yml'
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - 'scripts/portal-e2e-server.ts'
+      - 'src/modules/portal/**'
+
+jobs:
+  frontend-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck frontend
+        run: pnpm --filter @career-pilot/frontend typecheck
+      - name: Install Playwright Chromium
+        run: pnpm --filter @career-pilot/frontend exec playwright install --with-deps chromium
+      - name: Frontend E2E (semantic + a11y)
+        run: pnpm --filter @career-pilot/frontend exec playwright test --grep-invert @visual
