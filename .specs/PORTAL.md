@@ -695,6 +695,8 @@ Below the diagram: a panel labeled `WHAT YOU'RE LOOKING AT`:
 - Links to the README, the per-component CLAUDE.md files, the agent definitions
 - A "fork the repo" CTA
 
+> **Build note (Sub-milestone 7.2, STRATEGY §24.28).** **Ships now:** the SVG system map (three regions, a curated faithful subset of the diagram above), a system-mode banner (`live_mode` SHADOW/LIVE + `pause_state`), per-node status badges, the node click-through side panel, and the "what you're looking at" prose+links panel — all from `GET /api/architecture` + `GET /api/system-status` via a polling hook. **The honesty rule:** a status badge lights up only for a node we actually probe (host pause-state, `backend` online, container runtime, active sessions); every other node (the external triggers, Portkey, the Anthropic API, sanitization, the tunnel/edge) renders as **structure with no health claim** — an outline marker, never a fake-green dot — with a legend stating the distinction. This is the same render-if-present discipline as the trace-telemetry lanes (§24.24). **Deferred:** live probes for the structural nodes (a Portkey health read, per-subagent activity, tunnel/worker reachability) and the per-node "recent log excerpts / recent calls" in the side panel — both need the §24.24 telemetry-capture family; until then the side panel shows the node's description + the live facts we do have + a line-anchored code link.
+
 ---
 
 ### 5.6 `/work` — Resume / portfolio
