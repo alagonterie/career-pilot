@@ -659,7 +659,7 @@ TRIGGERS ────────────────────►  │  H
                                 │  [public_audit_trail DB]               │  │
                                 │       │                                │  │
                                 │       ▼                                │  │
-                                │  [Express API ●]  ─► REST + SSE        │  │
+                                │  [Public API ●]   ─► REST + SSE        │  │
                                 │       │                                │  │
                                 │       ▼                                │  │
                                 │  [Cloudflare Tunnel ●]                 │  │
