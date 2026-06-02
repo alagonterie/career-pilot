@@ -14,6 +14,28 @@ function diamond(cx: number, cy: number, r: number): string {
 }
 
 /**
+ * Edge path between two nodes. Same-row siblings connect side-to-side (a clean
+ * horizontal); cross-row/cross-band edges route as an orthogonal elbow
+ * (down → across → down) so they read as deliberate flow rather than a diagonal
+ * slash. `from` (a) is always the upper-or-same-row node in our EDGES list.
+ */
+function edgePath(a: ArchNode, b: ArchNode): string {
+  if (a.y === b.y) {
+    const y = a.y + a.h / 2
+    const leftToRight = a.x < b.x
+    const sx = leftToRight ? a.x + a.w : a.x
+    const ex = leftToRight ? b.x : b.x + b.w
+    return `M${sx} ${y} L${ex} ${y}`
+  }
+  const sx = a.x + a.w / 2
+  const sy = a.y < b.y ? a.y + a.h : a.y
+  const ex = b.x + b.w / 2
+  const ey = a.y < b.y ? b.y : b.y + b.h
+  const midY = (sy + ey) / 2
+  return `M${sx} ${sy} L${sx} ${midY} L${ex} ${midY} L${ex} ${ey}`
+}
+
+/**
  * The live system map (PORTAL §5.5). The SVG is purely visual (`aria-hidden`);
  * interaction rides on a transparent HTML `<button>` overlay positioned over
  * each node by percentage of the fixed viewBox — so every node is a real
@@ -72,12 +94,10 @@ export function ArchDiagram({
           const b = nodeById(e.to)
           if (!a || !b) return null
           return (
-            <line
+            <path
               key={`${e.from}-${e.to}`}
-              x1={a.x + a.w / 2}
-              y1={a.y + a.h}
-              x2={b.x + b.w / 2}
-              y2={b.y}
+              d={edgePath(a, b)}
+              fill="none"
               className="stroke-muted-foreground/30"
               markerEnd="url(#arch-arrow)"
             />
