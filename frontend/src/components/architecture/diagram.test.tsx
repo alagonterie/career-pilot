@@ -75,6 +75,13 @@ describe('ArchDiagram', () => {
     fireEvent.click(screen.getByTestId('arch-node-cont-orch'))
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'cont-orch' }))
   })
+
+  it('renders the owner as an actor — no status suffix in its accessible name', () => {
+    render(<ArchDiagram arch={ARCH} mode={MODE} selectedId={null} onSelect={() => {}} />)
+    const owner = screen.getByTestId('arch-node-owner')
+    expect(owner).toHaveAttribute('data-status', 'actor')
+    expect(owner).toHaveAccessibleName('Jane Doe')
+  })
 })
 
 describe('ModeBanner', () => {
@@ -126,6 +133,14 @@ describe('NodePanel', () => {
   it('shows the no-probe note for a structural node', () => {
     render(<NodePanel node={byId('cont-portkey')} status="structural" arch={ARCH} mode={MODE} onClose={() => {}} />)
     expect(screen.getByText(/deferred until the telemetry-capture work/i)).toBeInTheDocument()
+  })
+
+  it('shows an external doc link for a third-party node', () => {
+    render(<NodePanel node={byId('cont-portkey')} status="structural" arch={ARCH} mode={MODE} onClose={() => {}} />)
+    expect(screen.getByRole('link', { name: /Portkey Model Catalog/ })).toHaveAttribute(
+      'href',
+      expect.stringContaining('portkey.ai'),
+    )
   })
 
   it('closes on the close button and Escape', () => {

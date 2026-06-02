@@ -6,6 +6,7 @@ import type { ArchitectureData, SystemMode } from '~/lib/use-architecture'
 import { STATUS_META, type ArchNode, type NodeStatus } from './nodes'
 
 const REGION_LABEL: Record<ArchNode['region'], string> = {
+  owner: 'Owner',
   triggers: 'Triggers',
   host: 'Host · Node',
   container: 'Container · Bun',
@@ -120,17 +121,19 @@ export function NodePanel({
             <p className="mt-1 font-mono text-[11px] uppercase tracking-widest text-muted-foreground">
               {REGION_LABEL[node.region]}
             </p>
-            <p className="mt-2 flex items-center gap-2 font-mono text-xs">
-              {structural ? (
-                <span aria-hidden="true">◇</span>
-              ) : (
-                <span
-                  aria-hidden="true"
-                  className={`inline-block h-2.5 w-2.5 rounded-full ${meta.dot.replace('fill-', 'bg-')}`}
-                />
-              )}
-              <span className={structural ? 'text-muted-foreground' : 'text-foreground'}>{meta.label}</span>
-            </p>
+            {node.actor ? null : (
+              <p className="mt-2 flex items-center gap-2 font-mono text-xs">
+                {structural ? (
+                  <span aria-hidden="true">◇</span>
+                ) : (
+                  <span
+                    aria-hidden="true"
+                    className={`inline-block h-2.5 w-2.5 rounded-full ${meta.dot.replace('fill-', 'bg-')}`}
+                  />
+                )}
+                <span className={structural ? 'text-muted-foreground' : 'text-foreground'}>{meta.label}</span>
+              </p>
+            )}
           </div>
           <button
             type="button"
@@ -150,29 +153,45 @@ export function NodePanel({
               <Fact key={f.label} label={f.label} value={f.value} />
             ))}
           </dl>
-        ) : structural ? (
+        ) : structural && !node.actor ? (
           <p className="text-[11px] leading-relaxed text-muted-foreground">
             Drawn as structure — this node has no live health probe yet. Adding one (a Portkey health read, per-subagent
             activity, edge reachability) is deferred until the telemetry-capture work.
           </p>
         ) : null}
 
-        {node.source ? (
-          <a
-            href={repoBlob(node.source, node.sourceLine)}
-            target="_blank"
-            rel="noreferrer"
-            className="font-mono text-xs text-accent-cool hover:underline"
-          >
-            {node.source}
-            {node.sourceLine != null ? `:${node.sourceLine}` : ''} ↗
-          </a>
+        {node.link || node.source ? (
+          <div className="flex flex-col items-start gap-2">
+            {node.link ? (
+              <a
+                href={node.link}
+                target="_blank"
+                rel="noreferrer"
+                className="font-mono text-xs text-accent-cool hover:underline"
+              >
+                {node.linkLabel ?? node.link} ↗
+              </a>
+            ) : null}
+            {node.source ? (
+              <a
+                href={repoBlob(node.source, node.sourceLine)}
+                target="_blank"
+                rel="noreferrer"
+                className="font-mono text-xs text-accent-cool hover:underline"
+              >
+                {node.source}
+                {node.sourceLine != null ? `:${node.sourceLine}` : ''} ↗
+              </a>
+            ) : null}
+          </div>
         ) : null}
 
-        <p className="mt-auto text-[11px] leading-relaxed text-muted-foreground">
-          Status badges light up only for nodes backed by a real probe; everything else is drawn as structure with no
-          health claim.
-        </p>
+        {node.actor ? null : (
+          <p className="mt-auto text-[11px] leading-relaxed text-muted-foreground">
+            Status badges light up only for nodes backed by a real probe; everything else is drawn as structure with no
+            health claim.
+          </p>
+        )}
       </aside>
     </div>
   )

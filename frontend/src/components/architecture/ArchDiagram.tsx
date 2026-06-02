@@ -3,7 +3,7 @@ import type { ArchitectureData, SystemMode } from '~/lib/use-architecture'
 import { EDGES, NODES, REGION_BANDS, STATUS_META, deriveNodeStatus, type ArchNode } from './nodes'
 
 const VIEW_W = 760
-const VIEW_H = 660
+const VIEW_H = 736
 
 function nodeById(id: string): ArchNode | undefined {
   return NODES.find((n) => n.id === id)
@@ -120,6 +120,7 @@ export function ArchDiagram({
                 d={edgePath(a, b, entryFraction(e.from, e.to))}
                 fill="none"
                 className="stroke-muted-foreground"
+                markerStart={e.bidirectional ? 'url(#arch-arrow)' : undefined}
                 markerEnd="url(#arch-arrow)"
               />
             )
@@ -129,6 +130,7 @@ export function ArchDiagram({
         {NODES.map((n) => {
           const status = deriveNodeStatus(n, arch, mode)
           const meta = STATUS_META[status]
+          const actor = n.actor === true
           const structural = status === 'structural'
           return (
             <g key={n.id}>
@@ -137,11 +139,11 @@ export function ArchDiagram({
                 y={n.y}
                 width={n.w}
                 height={n.h}
-                rx={6}
+                rx={actor ? n.h / 2 : 6}
                 strokeWidth={1.5}
-                strokeDasharray={structural ? '4 3' : undefined}
+                strokeDasharray={structural && !actor ? '4 3' : undefined}
                 className={[
-                  structural ? 'fill-card/30' : 'fill-card',
+                  actor ? 'fill-secondary' : structural ? 'fill-card/30' : 'fill-card',
                   selectedId === n.id ? 'stroke-primary' : 'stroke-border',
                 ].join(' ')}
               />
@@ -149,11 +151,12 @@ export function ArchDiagram({
                 x={n.x + n.w / 2}
                 y={n.y + n.h / 2 + 4}
                 textAnchor="middle"
-                className={`font-mono text-[12px] ${structural ? 'fill-muted-foreground' : 'fill-foreground'}`}
+                className={`font-mono text-[12px] ${structural && !actor ? 'fill-muted-foreground' : 'fill-foreground'}`}
               >
                 {n.label}
               </text>
-              {structural ? (
+              {/* Actor (the human) gets no status marker; probed nodes a colored dot; structural a hollow diamond. */}
+              {actor ? null : structural ? (
                 <path d={diamond(n.x + n.w - 16, n.y + n.h / 2, 4)} className="fill-none stroke-muted-foreground/70" />
               ) : (
                 <circle
@@ -167,7 +170,7 @@ export function ArchDiagram({
           )
         })}
 
-        <text x={VIEW_W / 2} y={622} textAnchor="middle" className="fill-muted-foreground font-mono text-[11px]">
+        <text x={VIEW_W / 2} y={VIEW_H - 38} textAnchor="middle" className="fill-muted-foreground font-mono text-[11px]">
           ▼ this page is served from the Cloudflare edge — you are here
         </text>
       </svg>
@@ -179,8 +182,8 @@ export function ArchDiagram({
             key={n.id}
             type="button"
             data-testid={`arch-node-${n.id}`}
-            data-status={status}
-            aria-label={`${n.label} — ${STATUS_META[status].label}`}
+            data-status={n.actor ? 'actor' : status}
+            aria-label={n.actor ? n.label : `${n.label} — ${STATUS_META[status].label}`}
             onClick={() => onSelect(n)}
             className="absolute rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             style={{

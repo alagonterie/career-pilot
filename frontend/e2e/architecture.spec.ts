@@ -37,6 +37,9 @@ test.describe('/architecture — live system map, frontend <-> backend', () => {
     // The honesty legend distinguishes probed from structural.
     await expect(page.getByTestId('arch-legend')).toContainText('Structural — no live probe')
 
+    // The owner actor (the human in the loop) is part of the map.
+    await expect(page.getByTestId('arch-node-owner')).toBeVisible()
+
     // Probed nodes light up (seeded sessions + fixed container count + active);
     // structural nodes carry no health claim.
     await expect(page.getByTestId('arch-node-host-router')).toHaveAttribute('data-status', 'healthy')
