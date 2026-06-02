@@ -1,10 +1,12 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 
+import { FunnelCompact } from '~/components/live/FunnelCompact'
 import { LiveIndicator } from '~/components/LiveIndicator'
 import { LiveTicker } from '~/components/LiveTicker'
-import { SiteHeader } from '~/components/SiteHeader'
 import { Button } from '~/components/ui/button'
 import { useActivityStream } from '~/lib/use-activity-stream'
+import { useFunnel } from '~/lib/use-funnel'
+import { workProfile } from '~/lib/work-profile'
 
 export const Route = createFileRoute('/(marketing)/')({
   component: Home,
@@ -14,46 +16,103 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
 
 function Home() {
   const { events, status, count } = useActivityStream(API_BASE)
+  const { data: funnel } = useFunnel(API_BASE)
+  const apps = funnel?.applications ?? []
 
   return (
-    <>
-      <SiteHeader />
-      <main className="mx-auto flex min-h-dvh max-w-3xl flex-col items-center px-6 py-20">
-        {/*
-          Hero (SSR-static; PORTAL §5.1 Viewport 1). Content is the generic
-          placeholder persona (Jane Doe) — no real personal details in the public
-          repo; real content arrives later via the candidate_profile read-model.
-          Static markup so the hero renders with JS disabled (PORTAL §10); only
-          the ticker hydrates.
-        */}
-        <section className="flex w-full max-w-xl flex-col items-center text-center">
-          <div className="mb-6 flex items-center gap-4 text-sm">
-            <span className="inline-flex items-center gap-1.5 text-foreground">🟢 Open to offers</span>
-            <LiveIndicator status={status} count={count} />
+    <main className="mx-auto flex min-h-dvh max-w-3xl flex-col items-center px-6 py-20">
+      {/*
+        Viewport 1 — hero (SSR-static; PORTAL §5.1). Generic placeholder persona
+        (Jane Doe); real content arrives via candidate_profile later. The two
+        CTAs: "See it work" crosses into the ops register (/live, the hub);
+        "Talk to me" goes to the conversion sink (/contact).
+      */}
+      <section className="flex w-full max-w-xl flex-col items-center text-center">
+        <div className="mb-6 flex items-center gap-4 text-sm">
+          <span className="inline-flex items-center gap-1.5 text-foreground">🟢 Open to offers</span>
+          <LiveIndicator status={status} count={count} />
+        </div>
+
+        <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">Jane Doe</h1>
+        <p className="mt-2 text-lg text-muted-foreground">Senior Software Engineer · AI Systems, DevX</p>
+
+        <p className="mt-6 text-balance text-base leading-relaxed text-foreground/90">
+          I built this site. Everything moving on this page is the agent system I designed running my actual job search,
+          right now.
+        </p>
+
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+          <Button asChild>
+            {/* The one cross-register CTA (PORTAL §3.5): opens the /live dashboard. */}
+            <Link to="/live">See it work →</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link to="/contact" search={{ from: 'home' }}>
+              Talk to me →
+            </Link>
+          </Button>
+        </div>
+      </section>
+
+      {/* Viewport 2 — funnel strip (PORTAL §5.1): the search as a live pipeline,
+          reusing the compact funnel; clicking through opens /funnel. */}
+      {apps.length > 0 ? (
+        <section aria-labelledby="home-funnel-heading" className="mt-24 w-full">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 id="home-funnel-heading" className="text-sm font-semibold text-muted-foreground">
+              The search, live
+            </h2>
+            <Link to="/funnel" className="font-mono text-xs text-accent-cool hover:underline">
+              see the funnel →
+            </Link>
           </div>
-
-          <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">Jane Doe</h1>
-          <p className="mt-2 text-lg text-muted-foreground">Senior Software Engineer · AI Systems, DevX</p>
-
-          <p className="mt-6 text-balance text-base leading-relaxed text-foreground/90">
-            I built this site. Everything moving on this page is the agent system I designed running my actual job
-            search, right now.
+          <FunnelCompact apps={apps} />
+          <p className="mt-3 text-[11px] text-muted-foreground">
+            Companies are obfuscated until each process closes — a deliberate privacy choice.
           </p>
-
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <Button asChild>
-              {/* The one cross-register CTA (PORTAL §3.5): opens the /live dashboard. */}
-              <Link to="/live">See it work →</Link>
-            </Button>
-            <Button asChild variant="outline">
-              {/* Rewired to /contact when that route lands (Phase 6.x). */}
-              <a href="mailto:hello@example.com">Talk to me →</a>
-            </Button>
-          </div>
         </section>
+      ) : null}
 
-        <LiveTicker events={events} status={status} />
-      </main>
-    </>
+      {/* Viewport 3 — live activity hook. */}
+      <LiveTicker events={events} status={status} />
+
+      {/* Viewport 5 — resume + contact teaser (PORTAL §5.1). The simulator pitch
+          (Viewport 4) lands in 8.2 with the /simulator route. */}
+      <section aria-labelledby="home-teaser-heading" className="mt-24 grid w-full gap-10 sm:grid-cols-3">
+        <h2 id="home-teaser-heading" className="sr-only">
+          More about me
+        </h2>
+        <div className="flex flex-col gap-2">
+          <h3 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Skills</h3>
+          <ul className="flex flex-col gap-1 text-sm text-foreground/90">
+            {workProfile.skills.slice(0, 5).map((s) => (
+              <li key={s}>{s}</li>
+            ))}
+          </ul>
+        </div>
+        <div className="flex flex-col gap-2">
+          <h3 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Recent work</h3>
+          <ul className="flex flex-col gap-1 text-sm text-foreground/90">
+            {workProfile.projects.slice(0, 2).map((p) => (
+              <li key={p.name} className="truncate">
+                {p.name}
+              </li>
+            ))}
+          </ul>
+          <Link to="/work" className="mt-1 font-mono text-xs text-accent-cool hover:underline">
+            see all →
+          </Link>
+        </div>
+        <div className="flex flex-col gap-2">
+          <h3 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Talk to me</h3>
+          <Link to="/contact" search={{ from: 'home' }} className="text-sm text-accent-cool hover:underline">
+            Contact form →
+          </Link>
+          <a href="mailto:hello@example.com" className="text-sm text-accent-cool hover:underline">
+            hello@example.com
+          </a>
+        </div>
+      </section>
+    </main>
   )
 }

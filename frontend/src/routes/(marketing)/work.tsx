@@ -1,6 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
 
-import { SiteHeader } from '~/components/SiteHeader'
 import { WorkSections } from '~/components/work/sections'
 import { workProfile } from '~/lib/work-profile'
 
@@ -22,7 +21,6 @@ function Work() {
   // `workProfile` placeholder; a future `/api/profile` returns the same shape.
   return (
     <>
-      <SiteHeader />
       <main className="mx-auto flex min-h-dvh max-w-3xl flex-col items-start px-6 py-16">
         <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{workProfile.name}</h1>
         <p className="mt-2 text-lg text-muted-foreground">{workProfile.title}</p>

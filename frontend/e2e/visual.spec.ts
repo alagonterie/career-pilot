@@ -10,8 +10,10 @@ import { expect, test } from '@playwright/test'
 test('home page matches visual baseline', { tag: '@visual' }, async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Jane Doe', level: 1 })).toBeVisible()
-  // Wait for the seeded backlog to render so the snapshot is deterministic.
+  // Wait for the seeded backlog (ticker) + the funnel strip (the public OFFER)
+  // to render so the snapshot is deterministic.
   await expect(page.getByTestId('live-ticker')).toContainText('research-company')
+  await expect(page.getByText('Wayne Enterprises')).toBeVisible()
   await expect(page).toHaveScreenshot('home.png', {
     animations: 'disabled',
     fullPage: true,
@@ -74,5 +76,16 @@ test('live page matches visual baseline', { tag: '@visual' }, async ({ page }) =
     // parallel spec pushed an audit row); the layout is the regression guard,
     // the numbers are covered by the unit + semantic tests.
     mask: [page.getByTestId('live-volatile')],
+  })
+})
+
+test('contact page matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  await page.goto('/contact')
+  await expect(page.getByRole('heading', { name: 'Talk to me', level: 1 })).toBeVisible()
+  // The empty form (default state) — fully static, nothing wall-clock-derived.
+  await expect(page.getByTestId('contact-form')).toBeVisible()
+  await expect(page).toHaveScreenshot('contact.png', {
+    animations: 'disabled',
+    fullPage: true,
   })
 })

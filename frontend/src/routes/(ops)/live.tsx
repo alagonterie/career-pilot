@@ -11,7 +11,6 @@ import {
   SystemStatusPanel,
   TelemetryPanel,
 } from '~/components/live/panels'
-import { SiteHeader } from '~/components/SiteHeader'
 import { useActivityStream } from '~/lib/use-activity-stream'
 import { useArchitecture } from '~/lib/use-architecture'
 import { useFunnel } from '~/lib/use-funnel'
@@ -49,7 +48,6 @@ function LivePage() {
 
   return (
     <>
-      <SiteHeader />
       <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-6 px-6 py-12">
         <header>
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Live</h1>

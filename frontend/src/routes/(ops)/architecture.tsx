@@ -5,7 +5,6 @@ import { ArchDiagram } from '~/components/architecture/ArchDiagram'
 import { Legend, ModeBanner } from '~/components/architecture/ModeBanner'
 import { NodePanel } from '~/components/architecture/NodePanel'
 import { deriveNodeStatus, type ArchNode } from '~/components/architecture/nodes'
-import { SiteHeader } from '~/components/SiteHeader'
 import { REPO_URL, repoBlob } from '~/lib/site'
 import { useArchitecture } from '~/lib/use-architecture'
 
@@ -33,7 +32,6 @@ function ArchitecturePage() {
 
   return (
     <>
-      <SiteHeader />
       <main className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col gap-8 px-6 py-12">
         <header className="flex flex-col gap-4">
           <div>
