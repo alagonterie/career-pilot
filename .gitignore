@@ -120,6 +120,10 @@ agents-sdk-docs
 coverage/
 .vitest-cache/
 
+# Browser-MCP scratch (Playwright MCP / chrome-devtools-mcp write here at cwd)
+.playwright-mcp/
+.chrome-devtools-mcp/
+
 # Frontend build output (TanStack Start on Cloudflare Workers, Phase 5+)
 .wrangler/
 frontend/.output/
