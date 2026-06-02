@@ -47,4 +47,15 @@ describe('ContactForm (PORTAL §5.7)', () => {
     fireEvent.click(screen.getByRole('button', { name: /send/i }))
     expect(await screen.findByTestId('contact-error')).toBeInTheDocument()
   })
+
+  it('relays the originating surface as `source` when `from` is provided', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+    render(<ContactForm from="live" />)
+    fillValid()
+    fireEvent.click(screen.getByRole('button', { name: /send/i }))
+    await screen.findByTestId('contact-sent')
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
+    expect(body.source).toBe('live')
+  })
 })

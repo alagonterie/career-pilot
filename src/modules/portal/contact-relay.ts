@@ -30,6 +30,7 @@ const MAX_NAME = 200;
 const MAX_EMAIL = 320;
 const MAX_COMPANY = 200;
 const MAX_ROLE = 200;
+const MAX_SOURCE = 80;
 const DEFAULT_MESSAGE_MAX = 4000;
 
 export interface ContactInput {
@@ -37,6 +38,8 @@ export interface ContactInput {
   email?: unknown;
   company?: unknown;
   role?: unknown;
+  /** The portal surface the visitor converted from (the connective rail's `?from`) — context only. */
+  source?: unknown;
   message?: unknown;
 }
 
@@ -58,11 +61,13 @@ export function buildContactNotification(c: {
   email: string;
   company: string | null;
   role: string | null;
+  source?: string | null;
   message: string;
 }): string {
   const lines = ['📬 New contact via the portal', '', `From: ${c.name} <${c.email}>`];
   if (c.company) lines.push(`Company: ${c.company}`);
   if (c.role) lines.push(`Role: ${c.role}`);
+  if (c.source) lines.push(`Came from: ${c.source}`);
   lines.push('', c.message);
   return lines.join('\n');
 }
@@ -89,7 +94,8 @@ export async function relayContactSubmission(input: ContactInput): Promise<Conta
   }
   const company = field(input.company, MAX_COMPANY);
   const role = field(input.role, MAX_ROLE);
-  const text = buildContactNotification({ name, email, company, role, message });
+  const source = field(input.source, MAX_SOURCE);
+  const text = buildContactNotification({ name, email, company, role, source, message });
 
   const ag = getAgentGroupByFolder(OWNER_FOLDER);
   if (!ag) {

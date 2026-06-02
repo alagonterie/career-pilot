@@ -37,7 +37,7 @@ function ContactPage() {
         </p>
       </header>
 
-      <ContactForm company={company} role={role} />
+      <ContactForm company={company} role={role} from={from} />
 
       <section aria-labelledby="direct-heading" className="mt-12 border-t border-border pt-6">
         <h2 id="direct-heading" className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
