@@ -202,6 +202,11 @@ async function handleTelemetry(res: http.ServerResponse, cors: Record<string, st
 let dockerCache: { at: number; value: number | null } | null = null;
 
 function countRunningContainersCached(): number | null {
+  // Dev/demo seam (§24.26): the fixture/demo server injects a count so the
+  // /architecture container widget renders "up". Checked before the cache +
+  // `docker ps`. Inert in prod (the env is never set there).
+  const mock = process.env.PORTAL_MOCK_CONTAINERS;
+  if (mock != null && /^\d+$/.test(mock)) return parseInt(mock, 10);
   let ttl = 5000;
   try {
     ttl = getConfig<number>(getDb(), 'portal_architecture_cache_ms', 5000);

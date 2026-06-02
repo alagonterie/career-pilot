@@ -46,6 +46,17 @@ let cache: { at: number; value: Telemetry } | null = null;
 
 export async function getPortkeyAnalytics(): Promise<PortkeyResult> {
   if (process.env.PORTKEY_BYPASS === 'true') return { available: false, reason: 'bypass' };
+  // Dev/demo seam (§24.26): the fixture/demo server injects a fake summary so the
+  // /telemetry Portkey panel renders populated without a live key. Inert in prod
+  // (the env is never set there). See src/modules/portal/dev/fixtures.ts.
+  const mock = process.env.PORTAL_MOCK_PORTKEY;
+  if (mock) {
+    try {
+      return { available: true, summary: JSON.parse(mock) };
+    } catch {
+      return { available: false, reason: 'mock_parse_error' };
+    }
+  }
   const key = process.env.PORTKEY_API_KEY;
   if (!key) return { available: false, reason: 'no_key' };
   try {
