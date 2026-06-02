@@ -20,7 +20,7 @@ import Database from 'better-sqlite3';
 
 import { closeDb, getDb, initTestDb } from '../../db/connection.js';
 import { runMigrations } from '../../db/migrations/index.js';
-import { ensureSchema, openInboundDb } from '../../db/session-db.js';
+import { ensureSchema, insertMessage, openInboundDb } from '../../db/session-db.js';
 import type { Session } from '../../types.js';
 import { createAgentGroup } from '../../db/agent-groups.js';
 import {
@@ -28,6 +28,7 @@ import {
   handleGetApplication,
   handleListApplications,
   handleRecordFunnelEvent,
+  handleRecordProgress,
   handleUpdateApplication,
   handleUpdateProfileField,
 } from './actions.js';
@@ -100,6 +101,26 @@ function readResponse(requestId: string): ResponseFrame {
     | undefined;
   if (!row) throw new Error(`no response written for requestId=${requestId}`);
   return JSON.parse(row.content) as ResponseFrame;
+}
+
+/**
+ * Seed a wake (`trigger=1`) message of the given kind into the session
+ * inbound DB so `deriveProactive(inDb)` classifies the current turn (§24.24).
+ * `chat`/`chat-sdk` → reactive; `task`/`webhook`/`system` → proactive.
+ */
+function seedWake(kind: string): void {
+  insertMessage(inDb, {
+    id: `wake-${Math.random().toString(36).slice(2, 8)}`,
+    kind,
+    timestamp: new Date().toISOString(),
+    platformId: null,
+    channelType: null,
+    threadId: null,
+    content: '{}',
+    processAfter: null,
+    recurrence: null,
+    trigger: 1,
+  });
 }
 
 // ── update_profile_field ───────────────────────────────────────────────────
@@ -628,6 +649,91 @@ describe('handleRecordFunnelEvent', () => {
     expect(publicRow!.summary).not.toContain('Acme Corp');
     expect(publicRow!.summary).not.toContain('jane@acme.com');
     expect(publicRow!.summary).not.toContain('$220k');
+  });
+});
+
+// ── proactive trace-capture (§24.24) ────────────────────────────────────────
+
+describe('proactive trace-capture (§24.24)', () => {
+  beforeEach(async () => {
+    await handleUpdateApplication(
+      actionContent('career_pilot.update_application', {
+        id: 'app-pro',
+        patch: { company_name: 'Acme', role_title: 'Backend', status: 'APPLIED' },
+      }),
+      FAKE_SESSION,
+      inDb,
+    );
+  });
+
+  it('record_funnel_event → proactive=1 on a scheduled-task wake (funnel_events + public mirror)', async () => {
+    seedWake('task');
+    const c = actionContent('career_pilot.record_funnel_event', {
+      application_id: 'app-pro',
+      kind: 'status_change',
+      to_status: 'SCREENING',
+      payload: { summary: 'auto-advanced after recruiter email' },
+    });
+    await handleRecordFunnelEvent(c, FAKE_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+
+    const fe = getDb().prepare(`SELECT proactive FROM funnel_events WHERE application_id = 'app-pro'`).get() as {
+      proactive: number;
+    };
+    expect(fe.proactive).toBe(1);
+    const pub = getDb().prepare(`SELECT proactive FROM public_audit_trail WHERE category = 'funnel'`).get() as {
+      proactive: number;
+    };
+    expect(pub.proactive).toBe(1);
+  });
+
+  it('record_funnel_event → proactive=0 on a direct chat wake', async () => {
+    seedWake('chat');
+    const c = actionContent('career_pilot.record_funnel_event', {
+      application_id: 'app-pro',
+      kind: 'status_change',
+      to_status: 'SCREENING',
+      payload: { summary: 'logged after the candidate asked me to' },
+    });
+    await handleRecordFunnelEvent(c, FAKE_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+
+    const fe = getDb().prepare(`SELECT proactive FROM funnel_events WHERE application_id = 'app-pro'`).get() as {
+      proactive: number;
+    };
+    expect(fe.proactive).toBe(0);
+  });
+
+  it('record_progress → proactive from the wake message kind (agent_name already real)', async () => {
+    seedWake('webhook');
+    const c = {
+      requestId: `req-${Math.random().toString(36).slice(2, 8)}`,
+      payload: { subagent_name: 'research-company', stage: 'start', detail: 'digging into the company' },
+    };
+    await handleRecordProgress(c, FAKE_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+
+    const pub = getDb()
+      .prepare(`SELECT agent_name, proactive FROM public_audit_trail WHERE category = 'subagent_progress'`)
+      .get() as { agent_name: string; proactive: number };
+    expect(pub.agent_name).toBe('research-company');
+    expect(pub.proactive).toBe(1);
+  });
+
+  it('defaults to reactive (proactive=0) when no wake message is present', async () => {
+    // No seedWake — only the beforeEach's trigger=0 response row exists.
+    const c = actionContent('career_pilot.record_funnel_event', {
+      application_id: 'app-pro',
+      kind: 'note',
+      payload: { summary: 'no wake row in the inbound db' },
+    });
+    await handleRecordFunnelEvent(c, FAKE_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+
+    const fe = getDb().prepare(`SELECT proactive FROM funnel_events WHERE application_id = 'app-pro'`).get() as {
+      proactive: number;
+    };
+    expect(fe.proactive).toBe(0);
   });
 });
 

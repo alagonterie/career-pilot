@@ -173,6 +173,29 @@ export async function handleUpdateProfileField(
   }
 }
 
+// ── proactive classification (STRATEGY.md §24.24) ───────────────────────────
+//
+// Was the turn that triggered this write proactive (the agent woke itself:
+// a scheduled `task`, a `webhook`, or an agent `system` message) or reactive
+// (a direct `chat`/`chat-sdk` message)? Mirrors the §24.18 pause-gate
+// convention in `countDueReactiveMessages`: reactive == kind IN
+// ('chat','chat-sdk'). Read from the most-recent wake (`trigger = 1`) row in
+// the session's inbound DB. Defaults to reactive (false) when no wake row is
+// present — conservative; the ◆ marker never over-claims autonomy.
+const REACTIVE_KINDS = new Set(['chat', 'chat-sdk']);
+
+export function deriveProactive(inDb: Database.Database): boolean {
+  try {
+    const row = inDb.prepare('SELECT kind FROM messages_in WHERE trigger = 1 ORDER BY seq DESC LIMIT 1').get() as
+      | { kind: string }
+      | undefined;
+    if (!row) return false;
+    return !REACTIVE_KINDS.has(row.kind);
+  } catch {
+    return false;
+  }
+}
+
 // ── record_progress ────────────────────────────────────────────────────────
 
 const PROGRESS_DETAIL_CAP = 200;
@@ -247,14 +270,15 @@ export async function handleRecordProgress(
     const id = generateId('prog');
     const now = new Date().toISOString();
     db.prepare(
-      `INSERT INTO public_audit_trail (id, seq, ts, category, agent_name, summary, details_json)
+      `INSERT INTO public_audit_trail (id, seq, ts, category, agent_name, proactive, summary, details_json)
        VALUES (@id, (SELECT COALESCE(MAX(seq), 0) + 1 FROM public_audit_trail),
-               @ts, @category, @agent_name, @summary, @details_json)`,
+               @ts, @category, @agent_name, @proactive, @summary, @details_json)`,
     ).run({
       id,
       ts: now,
       category: 'subagent_progress',
       agent_name: subagent_name,
+      proactive: deriveProactive(inDb) ? 1 : 0,
       summary,
       details_json: JSON.stringify({ stage, session_id: session.id }),
     });
@@ -655,8 +679,8 @@ export async function handleRecordFunnelEvent(
     const now = new Date().toISOString();
     db.prepare(
       `INSERT INTO funnel_events
-         (id, application_id, kind, from_status, to_status, payload, source, ts)
-       VALUES (@id, @application_id, @kind, @from_status, @to_status, @payload, 'agent', @ts)`,
+         (id, application_id, kind, from_status, to_status, payload, source, proactive, ts)
+       VALUES (@id, @application_id, @kind, @from_status, @to_status, @payload, 'agent', @proactive, @ts)`,
     ).run({
       id: event_id,
       application_id,
@@ -664,6 +688,7 @@ export async function handleRecordFunnelEvent(
       from_status,
       to_status,
       payload: JSON.stringify(payloadJson),
+      proactive: deriveProactive(inDb) ? 1 : 0,
       ts: now,
     });
     // Bump the application's last_activity_at to match.
