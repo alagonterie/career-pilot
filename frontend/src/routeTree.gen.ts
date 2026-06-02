@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as marketingIndexRouteImport } from './routes/(marketing)/index'
 import { Route as opsFunnelRouteImport } from './routes/(ops)/funnel'
+import { Route as opsArchitectureRouteImport } from './routes/(ops)/architecture'
 import { Route as marketingWorkRouteImport } from './routes/(marketing)/work'
 
 const marketingIndexRoute = marketingIndexRouteImport.update({
@@ -23,6 +24,11 @@ const opsFunnelRoute = opsFunnelRouteImport.update({
   path: '/funnel',
   getParentRoute: () => rootRouteImport,
 } as any)
+const opsArchitectureRoute = opsArchitectureRouteImport.update({
+  id: '/(ops)/architecture',
+  path: '/architecture',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const marketingWorkRoute = marketingWorkRouteImport.update({
   id: '/(marketing)/work',
   path: '/work',
@@ -31,30 +37,39 @@ const marketingWorkRoute = marketingWorkRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/work': typeof marketingWorkRoute
+  '/architecture': typeof opsArchitectureRoute
   '/funnel': typeof opsFunnelRoute
   '/': typeof marketingIndexRoute
 }
 export interface FileRoutesByTo {
   '/work': typeof marketingWorkRoute
+  '/architecture': typeof opsArchitectureRoute
   '/funnel': typeof opsFunnelRoute
   '/': typeof marketingIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/(marketing)/work': typeof marketingWorkRoute
+  '/(ops)/architecture': typeof opsArchitectureRoute
   '/(ops)/funnel': typeof opsFunnelRoute
   '/(marketing)/': typeof marketingIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/work' | '/funnel' | '/'
+  fullPaths: '/work' | '/architecture' | '/funnel' | '/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/work' | '/funnel' | '/'
-  id: '__root__' | '/(marketing)/work' | '/(ops)/funnel' | '/(marketing)/'
+  to: '/work' | '/architecture' | '/funnel' | '/'
+  id:
+    | '__root__'
+    | '/(marketing)/work'
+    | '/(ops)/architecture'
+    | '/(ops)/funnel'
+    | '/(marketing)/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   marketingWorkRoute: typeof marketingWorkRoute
+  opsArchitectureRoute: typeof opsArchitectureRoute
   opsFunnelRoute: typeof opsFunnelRoute
   marketingIndexRoute: typeof marketingIndexRoute
 }
@@ -75,6 +90,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof opsFunnelRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/(ops)/architecture': {
+      id: '/(ops)/architecture'
+      path: '/architecture'
+      fullPath: '/architecture'
+      preLoaderRoute: typeof opsArchitectureRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/(marketing)/work': {
       id: '/(marketing)/work'
       path: '/work'
@@ -87,6 +109,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   marketingWorkRoute: marketingWorkRoute,
+  opsArchitectureRoute: opsArchitectureRoute,
   opsFunnelRoute: opsFunnelRoute,
   marketingIndexRoute: marketingIndexRoute,
 }

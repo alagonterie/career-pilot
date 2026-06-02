@@ -14,9 +14,15 @@
  * The control server is harness-only — it lets the live-push E2E insert an
  * audit row after page load so the test can prove the SSE tail delivers a NEW
  * event through the fetch-reader. Production `src/modules/portal/api.ts` has no
- * such endpoint. This server does NOT set the §24.26 mock envs or run the
- * synthetic generator — that's the dev server (scripts/portal-dev-server.ts);
- * here the data stays fixed so the visual snapshots are stable.
+ * such endpoint. This server does NOT run the synthetic generator — that's the
+ * dev server (scripts/portal-dev-server.ts); here the data stays fixed so the
+ * visual snapshots are stable.
+ *
+ * The one mock-env it does set is PORTAL_MOCK_CONTAINERS (§24.28): the
+ * /api/architecture container count comes from a `docker ps` call with no DB
+ * source, so a fixed value is the only way to make that node's status badge
+ * deterministic without Docker (which CI doesn't have). Everything else the
+ * architecture page reads (sessions, system modes) is seeded in the DB.
  */
 import http from 'http';
 
@@ -27,6 +33,7 @@ import {
   nextAuditSeq,
   seedDeterministicBacklog,
   seedDeterministicFunnel,
+  seedSessions,
   type AuditSeed,
 } from '../src/modules/portal/dev/fixtures.js';
 import { startPortalApi, stopPortalApi } from '../src/modules/portal/api.js';
@@ -73,11 +80,16 @@ function startControlServer(): http.Server {
 }
 
 async function main(): Promise<void> {
+  // Fixed container count (no DB source — see file header) so /api/architecture
+  // is deterministic without Docker. Set before the API starts serving.
+  process.env.PORTAL_MOCK_CONTAINERS = process.env.PORTAL_MOCK_CONTAINERS ?? '2';
+
   const db = initTestDb();
   runMigrations(db);
 
   seedDeterministicBacklog(db);
   seedDeterministicFunnel(db);
+  seedSessions(db);
 
   const { port } = await startPortalApi({ host: '127.0.0.1', port: PORT });
   const control = startControlServer();

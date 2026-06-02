@@ -22,6 +22,7 @@ import {
   seedDeterministicBacklog,
   seedDeterministicFunnel,
   seedRichFixture,
+  seedSessions,
 } from './fixtures.js';
 
 let db: Database.Database;
@@ -162,6 +163,26 @@ describe('seedDeterministicFunnel', () => {
     }).not.toThrow();
     expect(count('public_funnel_view')).toBe(5);
     expect(count('public_audit_trail')).toBe(3);
+  });
+});
+
+describe('seedSessions (architecture feed — §24.28)', () => {
+  it('seeds non-zero active + running session counts for /api/architecture', () => {
+    seedSessions(db);
+    expect(getActiveSessions().length).toBeGreaterThan(0);
+    expect(getRunningSessions().length).toBeGreaterThan(0);
+  });
+
+  it('composes with the E2E backlog + funnel seeds without conflict', () => {
+    // The E2E server (scripts/portal-e2e-server.ts) calls all three so the
+    // architecture page renders deterministic, non-idle node badges.
+    expect(() => {
+      seedDeterministicBacklog(db);
+      seedDeterministicFunnel(db);
+      seedSessions(db);
+    }).not.toThrow();
+    expect(getActiveSessions().length).toBeGreaterThan(0);
+    expect(count('public_funnel_view')).toBe(5);
   });
 });
 
