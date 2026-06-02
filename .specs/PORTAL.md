@@ -711,6 +711,8 @@ Below the diagram: a panel labeled `WHAT YOU'RE LOOKING AT`:
 
 A `Download PDF` button at top + bottom — generated server-side from the structured content, NOT a static PDF. (Why: signals "I version-control my resume.")
 
+> **Build note (as of STRATEGY §24.25 / Sub-milestone 6.2):** the page first ships as a **shell rendered against a typed `WorkProfile` placeholder** — its content lives in the private `candidate_profile` (§5.8), which is not yet populated, so the live `GET /api/profile` projection is deferred to a later increment (the placeholder shape is its contract). Optional sections (writing/talks) render only when present — no invented data. The **server-side PDF** is its own backend increment; until it lands the Download-PDF button is omitted rather than rendered dead.
+
 ---
 
 ### 5.7 `/contact` — Recruiter contact
@@ -1038,17 +1040,17 @@ Both are required for a real send: `LIVE_MODE=true` AND owner approves the speci
 
 Minimal. Logo / wordmark left, links right:
 ```
-  janedoe.dev    /live    /simulator    /funnel    /work    /contact
+  Jane Doe    /live    /simulator    /funnel    /work    /contact
 ```
 
-Sticky on scroll. On mobile, collapses to hamburger.
+The wordmark is the persona name, **not a domain** — the deployed site is `hire.<DOMAIN>` (`hire.example.com` placeholder) per the locked domain pattern; the earlier `janedoe.dev` here was a stray placeholder, reconciled in STRATEGY §24.25. Sticky on scroll. On mobile, collapses to hamburger.
 
 ### 8.2 Footer
 
 Identical on every page:
 ```
   ───────────────────────────────────────────────────────────────────────
-  janedoe.dev          ● SYSTEM STATUS: ONLINE          last deploy: a3f4c1
+  Jane Doe             ● SYSTEM STATUS: ONLINE          last deploy: a3f4c1
                          · 91% cache · $0.84/day
                          
   GitHub · LinkedIn · X · /about · /privacy

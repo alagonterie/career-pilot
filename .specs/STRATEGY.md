@@ -1454,7 +1454,7 @@ Everything that NanoClaw v2 ships: `bin/`, `scripts/` (NanoClaw's own), `setup/`
 | **3. Heartbeat — daily briefing + cron** | 4 | Host-side cron primitive + orchestrator-notify intake + daily-briefing flow + LLM rank-at-draw-time. See §24.6 for the sub-milestone drill-in. | At the scheduled morning time, the orchestrator wakes, queries `job_leads`, LLM-ranks the top-N against the candidate brief, and emits a Telegram briefing — OR skips cleanly per quiet-hours / frequency-cap / no-news rules. Cron schedules survive host restart. |
 | **4. Sanitization + public_audit_trail** | 5 | `src/modules/portal/sanitizer.ts`, post-write hooks, sanitized mirror to `public_audit_trail`. See §24.10 for Sub-milestone 4.1 (Pass 1 regex + Pass 2 company replacement) and §24.11 for Sub-milestone 4.3 (retroactive resanitization on `applications` UPDATE). Pass 3 LLM review (Sub-milestone 4.2) architecture decided in §24.12 (container batch); build deferred until the first non-funnel category is mirrored. | Every funnel_event has a matching sanitized row in public_audit_trail; flipping `public_state` rewrites past audit rows to match. Spot check: real company name nowhere in public table even after the candidate edits an application's obfuscation policy. |
 | **5. Portal backend** | 6 | HTTP API (native `http`), SSE infra, system modes, portal channel adapter, sandbox agent group. See §24.15 for the Phase 5 decomposition + Sub-milestone 5.1 drill-in. | I can `curl /api/funnel` and get real (sanitized) data. SSE stream emits events. `POST /api/simulator` spawns a sandbox container. |
-| **6. Frontend bootstrap** | 7 | **TanStack Start docs deep-read** + scaffold + landing + /work. See §24.23 for the Phase 6 decomposition + Sub-milestone 6.0 (test-harness bootstrap) drill-in, §24.24 for Sub-milestone 6.1 (landing hero + live SSE ticker + proactive capture). | Test harness green (Playwright dual-server + a11y). Hero renders. Live ticker connects to SSE. /work renders with placeholders. |
+| **6. Frontend bootstrap** | 7 | **TanStack Start docs deep-read** + scaffold + landing + /work. See §24.23 for the Phase 6 decomposition + Sub-milestone 6.0 (test-harness bootstrap) drill-in, §24.24 for Sub-milestone 6.1 (landing hero + live SSE ticker + proactive capture), §24.25 for Sub-milestone 6.2 (`/work` shell + read-model placeholders). | Test harness green (Playwright dual-server + a11y). Hero renders. Live ticker connects to SSE. /work renders with placeholders. |
 | **7. Frontend depth** | 8 | /live, /funnel, /architecture pages | All three pages render real data. Filter chips work. Funnel race animates. |
 | **8. Simulator end-to-end** | 9 | /simulator interactive sandbox | A visitor can type a company + JD, hit Run, see real streaming output side-by-side. Sandbox session tears down cleanly. |
 | **9. Polish + deploy** | 10 | Cloudflare deploy pipeline, /about content, /contact form, content placeholders | `hire.example.com` resolves to the deployed Worker. /contact submission lands in Telegram. /about reads honestly. |
@@ -3506,9 +3506,9 @@ The catastrophic control. Unlike 5.4a's commands, `/killswitch` **never fires on
 |---|---|---|
 | **6.0** ✅ | Test-harness bootstrap: `frontend/` scaffold + minimal `/` route reading `/api/system-status`; Playwright dual-server fixture (seeded portal API + frontend); axe a11y; visual-snapshot config (animations disabled); one green smoke E2E; browser MCPs in `.mcp.json`; hosted CI job | Phase 5 portal API |
 | **6.1** (§24.24) | Landing (`(marketing)/index.tsx`): hero + live SSE ticker + proactive trace-capture (agent_name/category already real; LLM telemetry deferred) | 6.0 |
-| 6.2 | `/work`: page shell + read-model placeholders | 6.0 |
+| **6.2** (§24.25) | `/work` (`(marketing)/work.tsx`): page shell — the 8 PORTAL §5.6 sections rendered from a typed placeholder `WorkProfile` + shared `SiteHeader` nav; live `/api/profile` projection + server-side PDF deferred | 6.0 |
 
-(Phase 7-8 sub-milestones get their own drill-ins when reached.)
+(Phase 7-8 sub-milestones get their own drill-ins when reached. A **dev fixture/demo harness** — the dev-facing analog of 6.0, extending the seeded `portal-e2e-server.ts` with a fat seed + a synthetic event-generator + a `dev:mock` entry so the dynamic pages are built and tuned against rich, animating data — lands as its own sub-milestone immediately before Phase 7, where `/live` / `/funnel` need it. A deliberately *disclosed* deployed "demo mode" is a separate Phase 9/10 item, gated by the portal's honesty principle.)
 
 **What lands (6.0):**
 1. **`frontend/`** — TanStack Start v1 scaffold (own pnpm workspace, pinned versions): `vite.config.ts`, `wrangler.jsonc`, `tsconfig.json` (incl. `routeTree.gen.ts`), Tailwind v4 `@theme`. One `src/routes/index.tsx` that reads the portal base from `import.meta.env.VITE_API_BASE` and renders `/api/system-status`.
@@ -3556,6 +3556,29 @@ The ◆ proactive marker is PORTAL's "cleanest hint this isn't a chatbot," so it
 3. `pnpm --filter @career-pilot/frontend test` (sse parser + LiveTicker) + `test:e2e` (semantic + axe + console/network gate) green locally and in CI; typecheck clean.
 4. shadcn/ui + motion installed (aliases → `~`); shadcn + Context7 MCPs wired in `.mcp.json`.
 5. Visual baseline re-blessed out-of-band (screenshot to the owner). No invented ticker data — telemetry lanes stay absent until their capture phase.
+
+---
+
+#### 24.25 Sub-milestone 6.2 — `/work` (resume/portfolio shell + read-model placeholders)
+
+The second marketing-register page (PORTAL §5.6): `/work`, the resume/portfolio. Built on the 6.0 harness so it is born test-backed. Unlike 6.1 this is **frontend-only** — no backend/host change — because the page is intentionally a *shell rendered against placeholder data*, not a live feed.
+
+**Why no read-model endpoint yet.** `/work`'s content is the candidate's resume, which is **private host-side data** (`candidate_profile` / master resume in SQLite, never in the public repo — PORTAL §5.8) and is **not yet populated** (the Telegram onboarding flow that fills it is unbuilt). A public `GET /api/profile` projection would therefore return empty today, and it needs its own design (which profile fields are public, sanitization). So 6.2 ships the page against a **typed `WorkProfile` placeholder** — the durable artifact is the *shape*, which a future `/api/profile` returns verbatim (drop-in). This mirrors how the 6.1 hero hardcodes its content until the profile read-model lands.
+
+**Generic register (owner decision).** All committed marketing-register content uses the generic placeholder persona (Jane Doe; `example.com`/placeholder links; generic employers), flavored toward the owner's real interests (senior software engineer · AI Systems · DevX) so the page reads like a finished product without committing personal details to the public repo. This **reverts the landing hero's real name** (6.1d) to the generic persona so `/` and `/work` share one coherent identity under a shared header. Real content arrives later via the private profile read-model.
+
+**What lands.** A typed `WorkProfile` (`frontend/src/lib/work-profile.ts`) covering the eight PORTAL §5.6 sections (bio; what-I'm-looking-for; experience; projects incl. this portal; optional writing/talks; skills; education/certs; links), with a placeholder export. A shared `SiteHeader` (brand wordmark → `/`, link → `/work`) imported by both marketing pages — a shared component for now, deferring a route-group layout until `/contact` lands. The `/work` route renders the sections SSR-static (JS-disabled-safe, PORTAL §10) from the placeholder, with optional sections rendered only when present (no invented data — the §24.24 honesty rule). shadcn `card` + `badge` join the design system (skills tag-cloud + project/experience cards).
+
+**Deferred (noted, not built):** the live `GET /api/profile` projection + dynamic content wiring; server-side **PDF generation** (the PORTAL §5.6 Download-PDF button — omitted from the shell rather than rendered dead); the headshot block (Part VI Q#8); the `(marketing)` route-group layout refactor; `/contact` + `/about` + the footer status badge.
+
+**Test surfaces.** The Vitest jsdom harness gets a section-rendering component test (required sections present; an omitted optional section is absent). The Playwright E2E gets a `/work` spec (all section headings render; `/`↔`/work` nav round-trips; axe zero violations; console/network gate) — static, so no SSE/live-push. The landing `home.png` baseline is re-blessed (the shared header now sits above the hero) and a new `work.png` baseline is added.
+
+**Definition of done.**
+1. `/work` renders the eight PORTAL §5.6 sections from the typed `WorkProfile` placeholder, SSR-static (JS-disabled-safe); optional sections render only when present.
+2. The shared `SiteHeader` links `/` ↔ `/work` both ways; the landing hero name is the generic persona (no real personal details committed).
+3. `pnpm --filter @career-pilot/frontend test` (section rendering) + `test:e2e` (`/work` semantic + axe + console/network gate; `/` smoke still green) pass locally and in CI; typecheck + build clean (`/work` in `routeTree.gen.ts`).
+4. shadcn `card` + `badge` added (new-york, aliases → `~`).
+5. `work.png` baseline added + `home.png` re-blessed out-of-band (screenshots to the owner). No backend/host files changed.
 
 ---
 
