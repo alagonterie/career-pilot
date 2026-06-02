@@ -44,11 +44,11 @@ The agent fills out job application forms autonomously and submits. Tempting, bu
 
 ---
 
-## 5. TanStack Start 1.0 migration
+## 5. TanStack Start version upkeep
 
-We pinned an RC. If TanStack Start ships 1.0 during the build or post-launch, evaluate upgrade.
+~~We pinned an RC.~~ **Resolved:** v1.0 shipped (2026-03); Phase 6 scaffolds directly on v1 (STRATEGY.md §24.23). Remaining item is ongoing version upkeep, not a migration.
 
-**Reactivate when:** TanStack Start hits stable 1.0 and CHANGELOG shows the gap is small.
+**Reactivate when:** a later v1 minor/major lands with features we want; re-evaluate the pin at end of Phase 7 per Open Question §3.
 
 ---
 

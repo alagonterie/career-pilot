@@ -93,10 +93,10 @@ Motion: limited. The only auto-animating element on `/` is a single pulsing "●
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Framework | **TanStack Start** (latest RC) | Vite-native, type-safe routing end-to-end, server-functions RPC model. Cloudflare Workers is an official partner integration. |
+| Framework | **TanStack Start** (v1, stable since 2026-03) | Vite-native, type-safe routing end-to-end, server-functions RPC model. Cloudflare Workers is an official partner integration (deploy via `@cloudflare/vite-plugin`). |
 | Routing | **TanStack Router** (bundled with Start) | File-based or code-based; full type inference for params, search params, loader returns; deep-link safety enforced by the compiler. |
 | Build tool | **Vite** | Fast HMR, mature plugin ecosystem (Vitest, vite-plugin-*). |
-| Cloudflare deploy | **Cloudflare Workers** (official adapter) | Single `wrangler.toml` + adapter; output binary is the Worker bundle. |
+| Cloudflare deploy | **Cloudflare Workers** (`@cloudflare/vite-plugin`) | `wrangler.jsonc` + the CF Vite plugin (`main: '@tanstack/react-start/server-entry'`); `vite build` → `wrangler deploy`. |
 | Worker runtime | **`nodejs_compat`** flag enabled | Required for several shadcn deps and `crypto`/`Buffer` use; SSE works fine. |
 | Styling | **Tailwind v4** | `@theme` directive, OKLCH color tokens, layered registers via CSS variables. |
 | UI primitives | **shadcn/ui (new-york)** on Radix UI | Framework-agnostic; works identically under TanStack Start. |
@@ -114,7 +114,7 @@ Motion: limited. The only auto-animating element on `/` is a single pulsing "●
 - **Smaller framework footprint** → easier to stay under the 3 MiB Cloudflare Worker compressed bundle cap (free tier).
 - **Engineering-taste signal.** The audience for this portal includes engineering hiring managers and senior peers — they recognize TanStack Start as a thoughtful 2026 choice. Next.js is universally recognized but uninteresting.
 
-**Trade-off accepted:** TanStack Start is RC (not 1.0 yet). APIs can shift. Cloudflare's official partner integration reduces this risk meaningfully, and the app code (React + shadcn + business logic) is ~95% framework-agnostic — fallback to Next.js mid-project is a one-day port if catastrophic happens.
+**Trade-off accepted:** TanStack Start reached v1.0 (stable, 2026-03) — the RC churn risk is gone; we pin a v1 minor and upgrade deliberately, not automatically. The app code (React + shadcn + business logic) is ~95% framework-agnostic, so a Next.js fallback remains a ~one-day port if ever needed.
 
 **Architectural rules:**
 
@@ -122,10 +122,10 @@ Motion: limited. The only auto-animating element on `/` is a single pulsing "●
 2. **No global client instantiation in server functions or route loaders.** Required by the Worker runtime — `I/O streams cannot cross request handlers`. HTTP clients, SSE readers, etc. live inside the handler body.
 3. **3 MiB compressed Worker budget on Cloudflare's free tier.** Audit any dep addition. TanStack Start ships less framework code than Next.js, giving more headroom.
 4. **SSE consumers** prefer `fetch`-with-stream-reader over `EventSource` so we can set custom headers (e.g., auth) — and to multiplex over HTTP/2 (Cloudflare default), sidestepping the browser 6-connection HTTP/1.1 cap on `EventSource`.
-5. **Server functions for forms.** `/contact` submission flows through a TanStack Start server function (typed RPC) that calls the Express backend via Cloudflare Tunnel. No client-side API key handling.
+5. **Server functions for forms.** `/contact` submission flows through a TanStack Start server function (typed RPC) that calls the native-`http` backend via Cloudflare Tunnel. No client-side API key handling.
 6. **Search params as first-class state.** Filter chips on `/live`, reveal toggles on `/funnel`, and pagination on `/simulator/results` use TanStack Router's typed `useSearch()` instead of ad-hoc URL parsing — deep-linkable, type-safe, refresh-safe.
 
-**Implementation discipline:** Before any frontend code lands, we do a focused TanStack Start docs pass (latest RC release notes, Cloudflare Workers adapter docs, server-functions API, search-param typing patterns) and capture canonical patterns for our specific needs (SSE streaming, server-function error handling, route prefetching). See STRATEGY.md milestone "Frontend bootstrap."
+**Implementation discipline:** Before any frontend code lands, we do a focused TanStack Start docs pass (v1 changelog, the `@cloudflare/vite-plugin` deploy path, server-functions API, search-param typing patterns) and capture canonical patterns for our specific needs (SSE streaming, server-function error handling, route prefetching). Done — captured in STRATEGY.md §24.23.
 
 **Alternative considered:** Next.js 15 App Router on `@opennextjs/cloudflare`. It's the safer/universally-recognized pick — production-locked, larger community, more recipes for SSE-on-Workers patterns. We're trading some of that recognition for type-safety wins, smaller bundles, and the taste signal. If TanStack Start ever feels like it's costing us more than it's giving us, the fallback is a one-day port.
 

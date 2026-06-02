@@ -121,7 +121,8 @@ career-pilot/                         (this repo, public)
 │   │   └── about.tsx
 │   ├── components/                   (shadcn + custom)
 │   ├── lib/                          (sse, api client, etc.)
-│   ├── wrangler.toml
+│   ├── e2e/                          (Playwright dual-server harness + fixtures)
+│   ├── wrangler.jsonc
 │   ├── vite.config.ts
 │   └── package.json                  (separate pnpm workspace from host)
 │
@@ -895,17 +896,17 @@ VM has no public HTTP ports open. SSH (`tcp/22`) is the only public port, locked
 
 ### 14. Frontend stack (refers to PORTAL.md §3.5)
 
-See PORTAL.md §3.5 for the locked frontend stack (TanStack Start RC + Cloudflare Workers + Tailwind v4 + shadcn). Repeating the discipline rule here for emphasis:
+See PORTAL.md §3.5 for the locked frontend stack (TanStack Start **v1** + Cloudflare Workers + Tailwind v4 + shadcn). Repeating the discipline rule here for emphasis:
 
 **Before any frontend code lands:** do a focused TanStack Start docs read. Specifically:
-- Latest RC release notes (API churn risk)
-- Cloudflare Workers adapter docs (deploy pipeline + `wrangler.toml` shape)
+- v1 changelog (pin a minor; no auto-update)
+- The `@cloudflare/vite-plugin` deploy path (`wrangler.jsonc` shape + `vite build`/`wrangler deploy`)
 - Server functions API (typed RPC pattern)
 - Route loaders + `useSearch()` (typed search params)
 - SSE-from-loader patterns (or fetch-stream-reader from client)
 - Tailwind v4 `@theme` directive integration
 
-This is a milestone (see §17), not a "do it later" — it's the gate to writing the frontend.
+This is a milestone (see §17), not a "do it later" — it's the gate to writing the frontend. **Completed** — the canonical v1 stack + testing setup are captured in §24.23.
 
 ### 15. CI/CD
 
@@ -993,9 +994,11 @@ Re-run any time — safe.
 | One MCP tool | `pnpm test:tool update_application` (unit test against the dev DB) |
 | One subagent prompt | `pnpm test:subagent tailor-resume --jd-file=fixtures/jd-example.md` (runs the subagent in isolation, returns output; uses `LLM_PROVIDER` whichever you've set) |
 | Sanitization pipeline | `pnpm test:sanitize` (regex + DB lookup + LLM review pass on a fixture set) |
-| Portal API | `pnpm test:api` (Vitest against Express, mocks the agent subsystem) |
-| Frontend component | `pnpm --filter frontend test` (Vitest + Testing Library) |
-| Frontend visual | `pnpm --filter frontend dev` + browse manually |
+| Portal API | `pnpm test` (Vitest against the native-`http` portal API + seeded public tables; part of the host suite) |
+| Frontend component | `pnpm --filter frontend test` (Vitest jsdom + Testing Library + `@tanstack/router-plugin/vite`; test router from the real `routeTree` + `createMemoryHistory`) |
+| Frontend + backend E2E | `pnpm --filter frontend test:e2e` (Playwright dual-server: seeded portal API + frontend; semantic assertions + `@axe-core/playwright` + a console/network error gate). Free — no Docker, no LLM. See §24.23. |
+| Frontend visual regression | `pnpm --filter frontend test:e2e` snapshots (`toHaveScreenshot`, animations disabled); a new/changed baseline is blessed out-of-band (screenshot pushed to the owner) since a baseline can't self-verify a first render. |
+| Live simulator E2E | `pnpm test:e2e --flow=simulator` (real container + real LLM, Tier-4, local-only) — Phase 8. |
 | Full E2E plumbing | Send a message to the dev Telegram bot — see what happens. Uses Ollama, $0. |
 | Full E2E with real LLM | `LLM_PROVIDER=claude_test pnpm dev` — uses Claude with the $2/day cap |
 
@@ -1222,7 +1225,7 @@ The host has a runtime helper `getConfig(key, fallback?)` that reads from the ri
 | Budgets | Owner daily LLM budget USD | $5 | preferences |
 | Budgets | Sandbox daily USD cap (global) | $5 | preferences |
 | Budgets | Sandbox per-IP daily run cap | 10 | preferences |
-| Rate limits | Workers RL burst window | 60s | wrangler.toml (binding) |
+| Rate limits | Workers RL burst window | 60s | wrangler.jsonc (binding) |
 | Container | Memory limit per session | 512MB | preferences |
 | Container | CPU limit per session | 1.0 | preferences |
 | Container | Idle timeout | 30 min | preferences |
@@ -1373,7 +1376,7 @@ frontend/postcss.config.mjs
 frontend/public/                       # static assets (review individually first)
 frontend/README.md
 frontend/tsconfig.json
-frontend/wrangler.toml
+frontend/wrangler.jsonc
 frontend/node_modules/
 SETUP.md                               # superseded by nanoclaw.sh + scripts/setup-local.ts
 ```
@@ -1451,7 +1454,7 @@ Everything that NanoClaw v2 ships: `bin/`, `scripts/` (NanoClaw's own), `setup/`
 | **3. Heartbeat — daily briefing + cron** | 4 | Host-side cron primitive + orchestrator-notify intake + daily-briefing flow + LLM rank-at-draw-time. See §24.6 for the sub-milestone drill-in. | At the scheduled morning time, the orchestrator wakes, queries `job_leads`, LLM-ranks the top-N against the candidate brief, and emits a Telegram briefing — OR skips cleanly per quiet-hours / frequency-cap / no-news rules. Cron schedules survive host restart. |
 | **4. Sanitization + public_audit_trail** | 5 | `src/modules/portal/sanitizer.ts`, post-write hooks, sanitized mirror to `public_audit_trail`. See §24.10 for Sub-milestone 4.1 (Pass 1 regex + Pass 2 company replacement) and §24.11 for Sub-milestone 4.3 (retroactive resanitization on `applications` UPDATE). Pass 3 LLM review (Sub-milestone 4.2) architecture decided in §24.12 (container batch); build deferred until the first non-funnel category is mirrored. | Every funnel_event has a matching sanitized row in public_audit_trail; flipping `public_state` rewrites past audit rows to match. Spot check: real company name nowhere in public table even after the candidate edits an application's obfuscation policy. |
 | **5. Portal backend** | 6 | HTTP API (native `http`), SSE infra, system modes, portal channel adapter, sandbox agent group. See §24.15 for the Phase 5 decomposition + Sub-milestone 5.1 drill-in. | I can `curl /api/funnel` and get real (sanitized) data. SSE stream emits events. `POST /api/simulator` spawns a sandbox container. |
-| **6. Frontend bootstrap** | 7 | **TanStack Start docs deep-read** + scaffold + landing + /work | Hero renders. Live ticker connects to SSE. /work renders with placeholders. |
+| **6. Frontend bootstrap** | 7 | **TanStack Start docs deep-read** + scaffold + landing + /work. See §24.23 for the Phase 6 decomposition + Sub-milestone 6.0 (test-harness bootstrap) drill-in. | Test harness green (Playwright dual-server + a11y). Hero renders. Live ticker connects to SSE. /work renders with placeholders. |
 | **7. Frontend depth** | 8 | /live, /funnel, /architecture pages | All three pages render real data. Filter chips work. Funnel race animates. |
 | **8. Simulator end-to-end** | 9 | /simulator interactive sandbox | A visitor can type a company + JD, hit Run, see real streaming output side-by-side. Sandbox session tears down cleanly. |
 | **9. Polish + deploy** | 10 | Cloudflare deploy pipeline, /about content, /contact form, content placeholders | `hire.example.com` resolves to the deployed Worker. /contact submission lands in Telegram. /about reads honestly. |
@@ -3485,13 +3488,53 @@ The catastrophic control. Unlike 5.4a's commands, `/killswitch` **never fires on
 
 ---
 
+#### 24.23 Phase 6 decomposition + Sub-milestone 6.0 — frontend test-harness bootstrap
+
+**Deep-read complete (the §14 gate).** TanStack Start reached **v1.0 (stable, 2026-03)** — the RC churn risk is retired; we pin a v1 minor and upgrade deliberately. The current Cloudflare deploy path is the **`@cloudflare/vite-plugin`** (Vite-native, in-process workerd), *not* the older Nitro `cloudflare-module` preset. Canonical stack captured for the build (primary sources: Cloudflare framework guide + TanStack Router how-to docs):
+
+- **Scaffold:** `npm create cloudflare@latest -- frontend --framework=tanstack-start`. Package: `@tanstack/react-start`.
+- **`vite.config.ts`:** `cloudflare({ viteEnvironment: { name: 'ssr' } })` + `tanstackStart()` (`@tanstack/react-start/plugin/vite`) + `react()`.
+- **`wrangler.jsonc`:** `main: '@tanstack/react-start/server-entry'`, `compatibility_flags: ['nodejs_compat']`. Scripts: `vite dev` / `vite build` / `vite preview` / `wrangler deploy`.
+- **Routing:** file-based `src/routes/` → generated `src/routeTree.gen.ts` (add to `tsconfig` `include`).
+- **Component tests:** Vitest (jsdom) + `@tanstack/router-plugin/vite` `tanstackRouter()` *before* `react()`; build a test router from the real `routeTree` + `createMemoryHistory`; Testing Library + `@testing-library/jest-dom`. **E2E:** Playwright (the harness below).
+
+**Why harness-first.** The owner works the frontend phases remotely (phone), so Claude must self-verify the UI with no manual desktop check. 6.0 stands up the full-stack E2E harness + the first green smoke test *before* any real page, so every Phase 6/7 page is born test-backed. Correctness rests on **semantic assertions + a11y + a console/network error gate** — never on pixels: a screenshot baseline cannot distinguish a broken first render from a good one, so pixel snapshots are a *regression* guard only, and a new/changed baseline is blessed out-of-band (screenshot pushed to the owner). `chrome-devtools-mcp` lets Claude debug failures itself.
+
+**Phase 6 decomposition** (each its own §24.x drill-in + commit):
+
+| Sub | Scope | Depends on |
+|---|---|---|
+| **6.0 (this)** | Test-harness bootstrap: `frontend/` scaffold + minimal `/` route reading `/api/system-status`; Playwright dual-server fixture (seeded portal API + frontend); axe a11y; visual-snapshot config (animations disabled); trace-replay seam; one green smoke E2E; browser MCPs in `.mcp.json`; hosted CI job | Phase 5 portal API |
+| 6.1 | Landing (`(marketing)/index.tsx`): hero + live SSE ticker | 6.0 |
+| 6.2 | `/work`: page shell + read-model placeholders | 6.0 |
+
+(Phase 7-8 sub-milestones get their own drill-ins when reached.)
+
+**What lands (6.0):**
+1. **`frontend/`** — TanStack Start v1 scaffold (own pnpm workspace, pinned versions): `vite.config.ts`, `wrangler.jsonc`, `tsconfig.json` (incl. `routeTree.gen.ts`), Tailwind v4 `@theme`. One `src/routes/index.tsx` that reads the portal base from `import.meta.env.VITE_API_BASE` and renders `/api/system-status`.
+2. **`frontend/e2e/`** — Playwright config with an **array `webServer`**: (a) a tiny node entry that creates a temp seeded DB (`initTestDb` + `runMigrations` + the public-table seeders reused from `portal-api.test.ts`) and `startPortalApi` against it on a fixed test port; (b) `vite preview` of the built frontend with `VITE_API_BASE` → that port. A base fixture that **fails on any `console.error` or failed request**. `@axe-core/playwright` helper. `toHaveScreenshot` with `animations:'disabled'` + a `prefers-reduced-motion` / test-mode motion kill.
+3. **`frontend/e2e/fixtures/trace-*.json`** + a replay util — a recorded `kind:'trace'` sequence pushed through the broadcaster / adapter output-sink, so the simulator-stream UI (Phase 8) is testable deterministically and free; the live `--flow=simulator` path stays Tier-4.
+4. **One smoke E2E** — load `/` → assert system-status renders from the real seeded API → axe clean → first screenshot baseline (blessed via an out-of-band screenshot).
+5. **`.mcp.json`** — Playwright MCP (`@playwright/mcp`) + `chrome-devtools-mcp` for interactive driving/debugging.
+6. **CI** — a hosted `frontend-e2e` job (Playwright browser install + build + test); no Docker, no LLM.
+7. **Spec reconciliation** — §14 / §16.4 / PORTAL §3.5 to v1 + native-`http` API + browser-driving test tiers (done in this commit).
+
+**Definition of done.**
+1. `pnpm --filter frontend test:e2e` is green locally and in CI; the smoke test exercises real frontend → real portal API → assertion against a seeded DB (no Docker, no LLM).
+2. axe reports zero violations on `/`; the base fixture fails on console/network errors; one visual baseline committed (animations disabled).
+3. Playwright MCP + `chrome-devtools-mcp` are wired in `.mcp.json` and usable from a session.
+4. Frontend typecheck (`tsc`) + the host suite stay clean; the trace-replay util has a unit test proving a recorded sequence renders deterministically.
+5. No remaining "RC" / "Express" / "browse manually" references for the frontend in the spec layer.
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4.
 
-3. **TanStack Start RC churn risk:** Pin the exact RC version we start with. Don't auto-update. Re-evaluate at end of Phase 7 whether to upgrade. If 1.0 ships during our build, evaluate the upgrade then.
+3. **TanStack Start version pin:** ~~RC churn risk~~ — **resolved:** v1.0 shipped (2026-03). Pin the exact v1 minor we scaffold with; don't auto-update; re-evaluate upgrades at end of Phase 7. (Canonical stack captured in §24.23.)
 
 4. **Portkey free tier ceiling:** 10k req/mo. Each agent turn = ~3-5 LLM calls (orchestrator + 1-3 subagents). 100 turns/day = 12-15k/mo. We'll likely need Portkey Pro within weeks. Budget $99/mo or stick with free until we hit the wall — start free, upgrade reactively.
 
