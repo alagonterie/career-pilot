@@ -1454,7 +1454,7 @@ Everything that NanoClaw v2 ships: `bin/`, `scripts/` (NanoClaw's own), `setup/`
 | **3. Heartbeat — daily briefing + cron** | 4 | Host-side cron primitive + orchestrator-notify intake + daily-briefing flow + LLM rank-at-draw-time. See §24.6 for the sub-milestone drill-in. | At the scheduled morning time, the orchestrator wakes, queries `job_leads`, LLM-ranks the top-N against the candidate brief, and emits a Telegram briefing — OR skips cleanly per quiet-hours / frequency-cap / no-news rules. Cron schedules survive host restart. |
 | **4. Sanitization + public_audit_trail** | 5 | `src/modules/portal/sanitizer.ts`, post-write hooks, sanitized mirror to `public_audit_trail`. See §24.10 for Sub-milestone 4.1 (Pass 1 regex + Pass 2 company replacement) and §24.11 for Sub-milestone 4.3 (retroactive resanitization on `applications` UPDATE). Pass 3 LLM review (Sub-milestone 4.2) architecture decided in §24.12 (container batch); build deferred until the first non-funnel category is mirrored. | Every funnel_event has a matching sanitized row in public_audit_trail; flipping `public_state` rewrites past audit rows to match. Spot check: real company name nowhere in public table even after the candidate edits an application's obfuscation policy. |
 | **5. Portal backend** | 6 | HTTP API (native `http`), SSE infra, system modes, portal channel adapter, sandbox agent group. See §24.15 for the Phase 5 decomposition + Sub-milestone 5.1 drill-in. | I can `curl /api/funnel` and get real (sanitized) data. SSE stream emits events. `POST /api/simulator` spawns a sandbox container. |
-| **6. Frontend bootstrap** | 7 | **TanStack Start docs deep-read** + scaffold + landing + /work. See §24.23 for the Phase 6 decomposition + Sub-milestone 6.0 (test-harness bootstrap) drill-in. | Test harness green (Playwright dual-server + a11y). Hero renders. Live ticker connects to SSE. /work renders with placeholders. |
+| **6. Frontend bootstrap** | 7 | **TanStack Start docs deep-read** + scaffold + landing + /work. See §24.23 for the Phase 6 decomposition + Sub-milestone 6.0 (test-harness bootstrap) drill-in, §24.24 for Sub-milestone 6.1 (landing hero + live SSE ticker + proactive capture). | Test harness green (Playwright dual-server + a11y). Hero renders. Live ticker connects to SSE. /work renders with placeholders. |
 | **7. Frontend depth** | 8 | /live, /funnel, /architecture pages | All three pages render real data. Filter chips work. Funnel race animates. |
 | **8. Simulator end-to-end** | 9 | /simulator interactive sandbox | A visitor can type a company + JD, hit Run, see real streaming output side-by-side. Sandbox session tears down cleanly. |
 | **9. Polish + deploy** | 10 | Cloudflare deploy pipeline, /about content, /contact form, content placeholders | `hire.example.com` resolves to the deployed Worker. /contact submission lands in Telegram. /about reads honestly. |
@@ -3504,8 +3504,8 @@ The catastrophic control. Unlike 5.4a's commands, `/killswitch` **never fires on
 
 | Sub | Scope | Depends on |
 |---|---|---|
-| **6.0 (this)** | Test-harness bootstrap: `frontend/` scaffold + minimal `/` route reading `/api/system-status`; Playwright dual-server fixture (seeded portal API + frontend); axe a11y; visual-snapshot config (animations disabled); one green smoke E2E; browser MCPs in `.mcp.json`; hosted CI job | Phase 5 portal API |
-| 6.1 | Landing (`(marketing)/index.tsx`): hero + live SSE ticker | 6.0 |
+| **6.0** ✅ | Test-harness bootstrap: `frontend/` scaffold + minimal `/` route reading `/api/system-status`; Playwright dual-server fixture (seeded portal API + frontend); axe a11y; visual-snapshot config (animations disabled); one green smoke E2E; browser MCPs in `.mcp.json`; hosted CI job | Phase 5 portal API |
+| **6.1** (§24.24) | Landing (`(marketing)/index.tsx`): hero + live SSE ticker + proactive trace-capture (agent_name/category already real; LLM telemetry deferred) | 6.0 |
 | 6.2 | `/work`: page shell + read-model placeholders | 6.0 |
 
 (Phase 7-8 sub-milestones get their own drill-ins when reached.)
@@ -3525,6 +3525,37 @@ The catastrophic control. Unlike 5.4a's commands, `/killswitch` **never fires on
 3. Playwright MCP + `chrome-devtools-mcp` are wired in `.mcp.json` and usable from a session.
 4. Frontend typecheck (`tsc`) + the host suite stay clean.
 5. No remaining "RC" / "Express" / "browse manually" references for the frontend in the spec layer.
+
+---
+
+#### 24.24 Sub-milestone 6.1 — Landing (hero + live SSE ticker) + proactive trace-capture
+
+The first real portal page: the landing `/` (PORTAL §5.1 Viewports 1 & 3 + §8.3 live indicator), built on the 6.0 harness so it is born test-backed. Two threads land together — the **frontend** (design system + hero + live ticker) and a focused **backend capture** that makes the ticker's data real rather than rendered-empty.
+
+**Trace-capture is tiered.** The PORTAL §5.1 ticker mockup shows, per row, agent name + a ◆ proactive marker + model + cache-hit. Reading the audit write path (`mirrorFunnelEvent`, `handleRecordProgress`) shows these are not one feature but three cost tiers:
+
+| Field(s) | State today | 6.1 |
+|---|---|---|
+| `category`, `agent_name` | **Real** — `handleRecordProgress` writes `agent_name`=subagent + category `subagent_progress`; `mirrorFunnelEvent` writes category `funnel` | Render |
+| `proactive` (◆ marker) | Default-0, never written; derivable from the triggering `MessageIn.kind` | **Capture + render** |
+| `model_used`, `tokens`, `cost_cents`, `cache_hit`, `latency_ms` | Captured **nowhere** per-event (no SDK-usage capture in `container-runner.ts`; `/api/telemetry` is Portkey aggregates) | **Deferred** to a dedicated telemetry-capture sub-milestone; ticker renders these lanes progressively (render-if-present) |
+
+The ◆ proactive marker is PORTAL's "cleanest hint this isn't a chatbot," so it earns the moderate host-side capture; per-event LLM telemetry is a larger, riskier change to the container→host result path with its own attribution design, so it gets its own increment.
+
+**Proactive capture (backend).** The audit trail is a reproducible projection of `funnel_events` truth (§24.14), and `mirrorFunnelEvent` is re-run by `resanitizeApplicationAuditTrail` with no session context — so `proactive` is persisted on `funnel_events` at record time (migration 124), not derived only at mirror time. A `deriveProactive(session)` helper classifies the triggering `MessageIn.kind` (`webhook`/`task`/`system` ⇒ proactive; `chat`/`chat-sdk` ⇒ reactive). `handleRecordFunnelEvent` stamps it; `mirrorFunnelEvent` copies `funnel_events.proactive` onto the public row (resanitize reproduces it for free); `handleRecordProgress` sets it directly from its session.
+
+**Frontend.** Initialize the locked design system — shadcn/ui (new-york) on Tailwind v4 + `motion/react` (the single ●live pulse is CSS, animations-disabled-safe; motion is reserved for Phase 7). The landing `/` moves into the `(marketing)` route group. The **hero** is SSR-static (works JS-disabled, PORTAL §10): name/title/tagline, "🟢 Open to offers" StatusPill, the ●live indicator, two CTAs. The **LiveTicker** consumes `/api/activity/stream` via a `fetch`-stream-reader SSE client (PORTAL §3.5 rule #4 — not `EventSource`), keeps a last-5 ring buffer, renders time · category · agent · ◆proactive · ref · summary with telemetry lanes rendered only when present, resumes by `seq` (PORTAL §8.3), and degrades to friendly empty/offline states (PORTAL §10).
+
+**Test surfaces.** A Vitest jsdom component harness joins the 6.0 E2E harness: a pure unit test for the SSE frame parser, a LiveTicker component test (rich + telemetry-null rows), and the rewritten dual-server E2E (hero + seeded ticker rows + a live-push assertion via a harness-only control endpoint), plus axe + the console/network gate. The `frontend-e2e` CI job covers it (no Docker, no LLM).
+
+**Two browser MCPs join shadcn + Context7** in `.mcp.json` so component work and current-docs lookups are first-class during this phase.
+
+**Definition of done.**
+1. `proactive` is captured end-to-end: a webhook/scheduled-triggered funnel event and a `record_progress` call both produce `public_audit_trail` rows with `proactive=1`; a chat-triggered one is `0`; resanitize preserves the value. Host suite green + tsc clean.
+2. The landing `/` renders the hero (SSR, JS-disabled-safe) + a live ticker showing seeded audit rows with agent_name + ◆ proactive; a row emitted after load appears live.
+3. `pnpm --filter @career-pilot/frontend test` (sse parser + LiveTicker) + `test:e2e` (semantic + axe + console/network gate) green locally and in CI; typecheck clean.
+4. shadcn/ui + motion installed (aliases → `~`); shadcn + Context7 MCPs wired in `.mcp.json`.
+5. Visual baseline re-blessed out-of-band (screenshot to the owner). No invented ticker data — telemetry lanes stay absent until their capture phase.
 
 ---
 
