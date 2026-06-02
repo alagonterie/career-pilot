@@ -5,8 +5,9 @@
  * harness (Sub-milestones 6.0b / 6.1). No Docker, no LLM — fully free +
  * deterministic, so it runs in hosted CI on every push.
  *
- * Playwright's `webServer` launches this; it seeds the deterministic backlog
- * (now shared from src/modules/portal/dev/fixtures.ts — §24.26), starts the API
+ * Playwright's `webServer` launches this; it seeds the deterministic backlog +
+ * funnel rows (shared from src/modules/portal/dev/fixtures.ts — §24.26/§24.27),
+ * starts the API
  * on PORTAL_E2E_PORT (default 3099), starts a tiny test-only CONTROL server on
  * PORTAL_E2E_CONTROL_PORT (default 3098), and stays up until SIGTERM/SIGINT.
  *
@@ -25,6 +26,7 @@ import {
   insertAuditRow,
   nextAuditSeq,
   seedDeterministicBacklog,
+  seedDeterministicFunnel,
   type AuditSeed,
 } from '../src/modules/portal/dev/fixtures.js';
 import { startPortalApi, stopPortalApi } from '../src/modules/portal/api.js';
@@ -75,6 +77,7 @@ async function main(): Promise<void> {
   runMigrations(db);
 
   seedDeterministicBacklog(db);
+  seedDeterministicFunnel(db);
 
   const { port } = await startPortalApi({ host: '127.0.0.1', port: PORT });
   const control = startControlServer();

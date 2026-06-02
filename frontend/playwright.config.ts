@@ -23,6 +23,13 @@ export default defineConfig({
     baseURL: `http://localhost:${FRONTEND_PORT}`,
     trace: 'on-first-retry',
   },
+  // Note on motion determinism: the funnel board's `motion/react` `layout`
+  // animations only fire when a card changes column, which needs the seed to
+  // mutate. The E2E server serves a *static* deterministic seed (never runs the
+  // generator), so cards never move during a test → no layout animation → the
+  // visual baseline is deterministic, and `animations:'disabled'` in the
+  // snapshot freezes CSS. Reduced-motion for real users is handled in-component
+  // via `MotionConfig reducedMotion="user"` (the real media query).
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: [
     {
