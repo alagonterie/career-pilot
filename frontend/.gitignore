@@ -6,3 +6,9 @@ dist
 .vite
 *.local
 .dev.vars
+
+# Playwright
+test-results
+playwright-report
+blob-report
+.playwright
