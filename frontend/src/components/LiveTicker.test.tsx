@@ -13,7 +13,10 @@ function ev(partial: Partial<AuditEvent> & { seq: number }): AuditEvent {
     proactive: 0,
     application_ref: null,
     model_used: null,
+    tokens: null,
+    cost_cents: null,
     cache_hit: null,
+    latency_ms: null,
     summary: 'an event',
     ...partial,
   }

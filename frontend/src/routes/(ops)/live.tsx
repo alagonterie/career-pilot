@@ -1,0 +1,91 @@
+import { createFileRoute } from '@tanstack/react-router'
+
+import { FunnelCompact } from '~/components/live/FunnelCompact'
+import { LogStream } from '~/components/live/LogStream'
+import {
+  ContainerPoolPanel,
+  CostCachePanel,
+  Panel,
+  RecentOutcomesPanel,
+  SessionsPanel,
+  SystemStatusPanel,
+  TelemetryPanel,
+} from '~/components/live/panels'
+import { SiteHeader } from '~/components/SiteHeader'
+import { useActivityStream } from '~/lib/use-activity-stream'
+import { useArchitecture } from '~/lib/use-architecture'
+import { useFunnel } from '~/lib/use-funnel'
+import { deriveTelemetryView, useTelemetry } from '~/lib/use-telemetry'
+
+// Third page of the ops register (PORTAL §5.2). `(ops)` is pathless → the URL is
+// still `/live`. The aggregate dashboard: it composes the 7.1 funnel + 7.2
+// architecture pieces + the SSE trace + the telemetry endpoint — no new backend
+// (§24.29). The `(ops)` shared layout stays deferred (a follow-up now that three
+// ops pages exist).
+export const Route = createFileRoute('/(ops)/live')({
+  component: LivePage,
+  head: () => ({
+    meta: [
+      { title: 'Live — Jane Doe' },
+      {
+        name: 'description',
+        content:
+          'Real-time ops dashboard — the agent system running the job search, live: sessions, containers, cost, and the agent trace stream.',
+      },
+    ],
+  }),
+})
+
+const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
+
+function LivePage() {
+  const { arch, mode } = useArchitecture(API_BASE)
+  const { data: funnel } = useFunnel(API_BASE)
+  const { events, status, count } = useActivityStream(API_BASE, 60)
+  const { data: telemetry } = useTelemetry(API_BASE)
+
+  const view = deriveTelemetryView(telemetry)
+  const apps = funnel?.applications ?? []
+
+  return (
+    <>
+      <SiteHeader />
+      <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-6 px-6 py-12">
+        <header>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Live</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            The agent system running the job search, in real time — sessions, containers, cost, and every sanitized
+            action as it happens.
+          </p>
+        </header>
+
+        {/* top stat row */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <SystemStatusPanel mode={mode} arch={arch} />
+          <SessionsPanel arch={arch} />
+          <ContainerPoolPanel arch={arch} />
+          <TelemetryPanel view={view} />
+        </div>
+
+        {/* centerpiece (trace) + right rail */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            <LogStream events={events} status={status} count={count} />
+          </div>
+          <div className="flex flex-col gap-4">
+            <Panel title="Funnel">
+              <FunnelCompact apps={apps} />
+            </Panel>
+            <CostCachePanel view={view} />
+            <RecentOutcomesPanel apps={apps} />
+          </div>
+        </div>
+
+        <footer className="border-t border-border pt-6 text-[11px] leading-relaxed text-muted-foreground">
+          Every line is sanitized public data — companies obfuscated by default, no PII. Per-line LLM telemetry (model,
+          tokens, cost, cache) renders as it&apos;s captured; absent fields are simply not shown, never faked.
+        </footer>
+      </main>
+    </>
+  )
+}

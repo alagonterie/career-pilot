@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 
 import { LiveIndicator } from '~/components/LiveIndicator'
 import { LiveTicker } from '~/components/LiveTicker'
@@ -42,7 +42,8 @@ function Home() {
 
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Button asChild>
-              <a href="#live-ticker">See it work →</a>
+              {/* The one cross-register CTA (PORTAL §3.5): opens the /live dashboard. */}
+              <Link to="/live">See it work →</Link>
             </Button>
             <Button asChild variant="outline">
               {/* Rewired to /contact when that route lands (Phase 6.x). */}

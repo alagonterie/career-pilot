@@ -4,8 +4,9 @@ import { connectActivityStream, type StreamStatus } from './sse'
 
 /**
  * A sanitized public_audit_trail row as delivered over /api/activity[/stream].
- * Telemetry fields are nullable — populated by a later capture phase (§24.24);
- * the ticker renders them only when present (progressive enhancement).
+ * The telemetry lanes (model/tokens/cost/cache/latency) are nullable — populated
+ * by a later capture phase (§24.24); the compact ticker shows model+cache, the
+ * /live LogStream shows them all, each rendered only when present (progressive).
  */
 export interface AuditEvent {
   seq: number
@@ -15,7 +16,10 @@ export interface AuditEvent {
   proactive: number
   application_ref: string | null
   model_used: string | null
+  tokens: number | null
+  cost_cents: number | null
   cache_hit: number | null
+  latency_ms: number | null
   summary: string
 }
 

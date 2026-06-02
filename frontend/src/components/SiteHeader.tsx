@@ -2,10 +2,10 @@ import { Link } from '@tanstack/react-router'
 
 /**
  * Slim site nav (PORTAL §8.1), shared by the marketing pages (`/`, `/work`) and
- * the ops pages (`/funnel`, with `/live` + `/architecture` to follow). A plain
- * shared component for now; promote to route-group layouts when `/contact` +
- * more ops pages land. Brand wordmark = the persona name (not a domain — the
- * deployed site is `hire.<DOMAIN>`); links right.
+ * the ops pages (`/funnel`, `/architecture`, `/live`). A plain shared component
+ * for now; promote to route-group layouts when `/contact` + an `(ops)` shared
+ * layout land. Brand wordmark = the persona name (not a domain — the deployed
+ * site is `hire.<DOMAIN>`); links right.
  */
 export function SiteHeader() {
   const linkClass = 'text-muted-foreground transition-colors hover:text-foreground [&.active]:text-foreground'
@@ -24,6 +24,9 @@ export function SiteHeader() {
           </Link>
           <Link to="/architecture" className={linkClass}>
             Architecture
+          </Link>
+          <Link to="/live" className={linkClass}>
+            Live
           </Link>
         </div>
       </nav>
