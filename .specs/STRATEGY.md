@@ -1455,7 +1455,7 @@ Everything that NanoClaw v2 ships: `bin/`, `scripts/` (NanoClaw's own), `setup/`
 | **4. Sanitization + public_audit_trail** | 5 | `src/modules/portal/sanitizer.ts`, post-write hooks, sanitized mirror to `public_audit_trail`. See §24.10 for Sub-milestone 4.1 (Pass 1 regex + Pass 2 company replacement) and §24.11 for Sub-milestone 4.3 (retroactive resanitization on `applications` UPDATE). Pass 3 LLM review (Sub-milestone 4.2) architecture decided in §24.12 (container batch); build deferred until the first non-funnel category is mirrored. | Every funnel_event has a matching sanitized row in public_audit_trail; flipping `public_state` rewrites past audit rows to match. Spot check: real company name nowhere in public table even after the candidate edits an application's obfuscation policy. |
 | **5. Portal backend** | 6 | HTTP API (native `http`), SSE infra, system modes, portal channel adapter, sandbox agent group. See §24.15 for the Phase 5 decomposition + Sub-milestone 5.1 drill-in. | I can `curl /api/funnel` and get real (sanitized) data. SSE stream emits events. `POST /api/simulator` spawns a sandbox container. |
 | **6. Frontend bootstrap** | 7 | **TanStack Start docs deep-read** + scaffold + landing + /work. See §24.23 for the Phase 6 decomposition + Sub-milestone 6.0 (test-harness bootstrap) drill-in, §24.24 for Sub-milestone 6.1 (landing hero + live SSE ticker + proactive capture), §24.25 for Sub-milestone 6.2 (`/work` shell + read-model placeholders), §24.26 for Sub-milestone 6.3 (dev fixture/demo data harness). | Test harness green (Playwright dual-server + a11y). Hero renders. Live ticker connects to SSE. /work renders with placeholders. `pnpm dev:mock` serves rich, animating data for dynamic-page dev. |
-| **7. Frontend depth** | 8 | /live, /funnel, /architecture pages | All three pages render real data. Filter chips work. Funnel race animates. |
+| **7. Frontend depth** | 8 | /live, /funnel, /architecture pages. See §24.27 for the Phase 7 decomposition + Sub-milestone 7.1 (`/funnel`) drill-in. | All three pages render real data. Filter chips work. Funnel race animates. |
 | **8. Simulator end-to-end** | 9 | /simulator interactive sandbox | A visitor can type a company + JD, hit Run, see real streaming output side-by-side. Sandbox session tears down cleanly. |
 | **9. Polish + deploy** | 10 | Cloudflare deploy pipeline, /about content, /contact form, content placeholders | `hire.example.com` resolves to the deployed Worker. /contact submission lands in Telegram. /about reads honestly. |
 | **10. Shadow run** | 11 | Deploy with `LIVE_MODE=false`; system runs in shadow for 1-2 weeks | I'm comfortable flipping `LIVE_MODE=true`. All proactive behaviors observed without external side effects. |
@@ -3509,7 +3509,7 @@ The catastrophic control. Unlike 5.4a's commands, `/killswitch` **never fires on
 | **6.2** (§24.25) | `/work` (`(marketing)/work.tsx`): page shell — the 8 PORTAL §5.6 sections rendered from a typed placeholder `WorkProfile` + shared `SiteHeader` nav; live `/api/profile` projection + server-side PDF deferred | 6.0 |
 | **6.3** (§24.26) | dev fixture/demo data harness: `src/modules/portal/dev/fixtures.ts` (fat seed + synthetic activity generator + faked Portkey/Docker via inert env seams) + `scripts/portal-dev-server.ts` + `dev:mock`; the dev-facing analog of 6.0, so Phase 7's dynamic pages are built against rich, animating data | 6.0 |
 
-(Phase 7-8 sub-milestones get their own drill-ins when reached. The **dev fixture/demo harness** the dynamic pages need is Sub-milestone 6.3 / §24.26, above. A deliberately *disclosed* deployed "demo mode" remains a separate Phase 9/10 item, gated by the portal's honesty principle and reusing the 6.3 fixtures + seams.)
+(Phase 7 sub-milestones get their own drill-ins, starting **§24.27** (the Phase 7 decomposition + Sub-milestone 7.1 `/funnel`); Phase 8 when reached. The **dev fixture/demo harness** the dynamic pages need is Sub-milestone 6.3 / §24.26, above. A deliberately *disclosed* deployed "demo mode" remains a separate Phase 9/10 item, gated by the portal's honesty principle and reusing the 6.3 fixtures + seams.)
 
 **What lands (6.0):**
 1. **`frontend/`** — TanStack Start v1 scaffold (own pnpm workspace, pinned versions): `vite.config.ts`, `wrangler.jsonc`, `tsconfig.json` (incl. `routeTree.gen.ts`), Tailwind v4 `@theme`. One `src/routes/index.tsx` that reads the portal base from `import.meta.env.VITE_API_BASE` and renders `/api/system-status`.
@@ -3610,6 +3610,35 @@ The two surfaces that call external services in prod (Portkey via `fetch`, the D
 3. The env seams are inert when unset: the existing Playwright E2E (`smoke` + `work`) + visual baselines stay green locally + in CI; the host suite + `tsc` stay clean.
 4. `fixtures.ts` is pure + unit-tested (`fixtures.test.ts`): the rich seed populates the four tables; the generator emits a valid row + bumps `seq`; env seams return the mock when set / the existing path when unset.
 5. No production request path is changed; the dev module is imported only by dev/test scripts.
+
+---
+
+#### 24.27 Phase 7 decomposition + Sub-milestone 7.1 — `/funnel`
+
+Phase 7 is the **dynamic core** — the three ops-register "dig-in" pages (PORTAL §5.2 `/live`, §5.4 `/funnel`, §5.5 `/architecture`). Phase 6 left them buildable: their read endpoints are live (`/api/funnel`, `/api/telemetry`, `/api/architecture`, the `/api/activity` SSE), and the 6.3 `dev:mock` harness seeds + animates all of them so the pages are built against rich, flowing data with no live agent. Build order (owner-chosen): **Funnel → Architecture → Live** — the two data-feeding pages first, then `/live` as the aggregate dashboard that *composes* their panels rather than rebuilding them.
+
+**Phase 7 decomposition** (each its own §24.x drill-in + commit, same 6.x cadence):
+
+| Sub | Scope | Depends on |
+|---|---|---|
+| **7.1** (this section) | `/funnel`: the funnel-race board + 4 stat tiles + a card detail panel; the first `motion/react` use + the `(ops)` route group; a polling read-hook for the non-SSE JSON endpoints. Reads the built `/api/funnel`. | Phase 6 + the 6.3 `dev:mock` harness |
+| **7.2** (§24.28) | `/architecture`: SVG system map + per-node live status badges + node side-panels; reads `/api/architecture` (+ `/api/system-status`). | 7.1 (ops register) |
+| **7.3** (§24.29) | `/live`: the aggregate ops dashboard — composes the funnel-compact (7.1), container-pool + sessions (7.2), the LLM-telemetry + cost/cache panels, and the `LiveTicker`→fuller trace stream. Per-line trace metrics render **progressively** (model/tokens/cost/cache/latency absent until populated); the per-line LLM-telemetry *capture* is a separate deferred backend increment, decided when 7.3 is reached. | 7.1 + 7.2 |
+
+**Why `/funnel` first.** `GET /api/funnel` is fully built (`public_funnel_view` + read-time `days_in_stage`/`days_in_pipeline` + `stage_counts`), and `dev:mock` seeds it across all stages and advances a stage every few ticks (`maybeAdvanceFunnel`) — so the gamified horse-race board (PORTAL §5.4) is built against realistically moving data. It is also the natural first home for `motion/react` (the card that slides columns when a stage advances) and the `(ops)` register (app.css already reserves the ops tokens for a route group).
+
+**What ships (7.1).** A pure-frontend page — no production-path change. The page reads `/api/funnel` through a new **client-only polling hook** (`use-funnel.ts`; the JSON endpoints aren't SSE, and `dev:mock` mutates stages over time, so polling surfaces the motion). Components: a `FunnelBoard` (columns `applied · screening · tech · final · offer`; `bookmarked` and the closed `rejected`/`withdrawn` states handled gracefully, never dropped) with `motion` `layout` cards; a `FunnelCard` (obfuscated label, or the real company + `◆ public` when `public_state==='public'`; role; days-in-stage; a stage-progress bar); four `StatTiles` (Applications YTD · Interviews this month · Offers received · Avg days-in-funnel) derived client-side from the rows (no new endpoint), rough ones labeled heuristics; a `DetailPanel` opened on card-click rendering the anonymized facts + `win_confidence` (labeled a heuristic) + `published_learning` when present (render-if-present — the §24.24 honesty rule). The route introduces the `(ops)` route group; the shared `SiteHeader` gains a `Funnel` link.
+
+**Determinism for tests.** `motion/react` is frozen for the visual baselines + E2E via `reducedMotion: 'reduce'` (Playwright `use`) + the components honoring it. A new dev/test-only `seedDeterministicFunnel` (in `src/modules/portal/dev/fixtures.ts`, beside `seedDeterministicBacklog` which stays byte-identical) gives the E2E server fixed funnel rows incl. one public OFFER, so the `/funnel` semantic E2E + `funnel.png` baseline are stable. The live stage-advance motion is dev-only (verified via the Playwright MCP + a blessed screenshot), never asserted in CI.
+
+**Deferred (noted, not built):** the per-application `funnel_events` timeline endpoint + the funnel-curator narrative panel content — the latter stays Pass-3-gated per the existing PORTAL §5.4 note; the detail panel renders from `/api/funnel`'s fields until then. The `(ops)` shared layout/header is deferred until 7.2/7.3 add more ops pages (mirrors the deferred marketing-group layout). The funnel components are built reuse-ready for `/live`'s compact panel (7.3).
+
+**Definition of done.**
+1. `/funnel` renders the stage board + 4 stat tiles + a card detail panel from `/api/funnel` via the polling hook; an obfuscated card shows its label, the public OFFER shows the real company name; optional fields render only when present.
+2. `motion/react` powers the board (a card animates when its stage changes); it is reduced-motion-safe (frozen under `reducedMotion: 'reduce'`), so the visual baselines are deterministic.
+3. `pnpm --filter @career-pilot/frontend test` (funnel components + `use-funnel` + `deriveStatTiles`) + `test:e2e` (`/funnel` semantic + axe + console/network gate; `/`↔`/funnel` nav; `smoke`+`work` still green) pass locally and in CI; typecheck + `vite build` clean (`/funnel` in `routeTree.gen.ts`).
+4. The only `src/` change is the dev/test-only `seedDeterministicFunnel` (covered by a `fixtures.test.ts` case); host suite + `tsc` + `format:check` stay clean; no production request path changes.
+5. `funnel.png` baseline added + `home.png`/`work.png` re-blessed (the new nav link changed the shared header) out-of-band (screenshots to the owner). `dev:mock` shows the board advancing a card live.
 
 ---
 

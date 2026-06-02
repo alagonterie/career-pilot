@@ -593,6 +593,8 @@ Above the board, four stat tiles:
 Footer: A short methodology block:
 > *"State changes are detected from Gmail (recruiter replies, scheduling emails) and Google Calendar (interview events). All companies obfuscated by default; revealed only post-close with the company's awareness."*
 
+> **Build note (as of STRATEGY §24.27 / Sub-milestone 7.1).** The page ships against the built `GET /api/funnel` (`public_funnel_view` + read-time `days_in_stage`/`days_in_pipeline` + `stage_counts`), read through a client-side polling hook. The board (stage columns with `motion/react` cards), the reveal tier (obfuscated label by default; real name + `◆ public` when `public_state==='public'`), the four stat tiles (derived client-side from the rows — no new endpoint), and the methodology footer all ship now. The **card detail panel** renders from the funnel-view fields available today — anonymized state/role/stage facts, days-in-stage/pipeline, the `win_confidence` % (labeled a low-rigor heuristic), and `published_learning` when present. The richer **per-application timeline** (a `funnel_events` projection endpoint) and the **funnel-curator narrative** content are deferred: the narrative stays gated on the Pass-3 LLM sanitization review (the existing backend note above); the structured timeline is its own later read-model increment. Nothing on the board is invented — optional fields render only when present (PORTAL §10).
+
 ---
 
 ### 5.5 `/architecture` — Live system map
