@@ -66,17 +66,19 @@ function seedOwnerWithChannel(): void {
 }
 
 describe('buildContactNotification', () => {
-  it('includes name/email/message; company + role only when present', () => {
+  it('includes name/email/message; company + role + source only when present', () => {
     const full = buildContactNotification({
       name: 'Jane Doe',
       email: 'jane@example.com',
       company: 'Acme',
       role: 'EM',
+      source: 'live',
       message: 'Loved the simulator.',
     });
     expect(full).toContain('Jane Doe <jane@example.com>');
     expect(full).toContain('Company: Acme');
     expect(full).toContain('Role: EM');
+    expect(full).toContain('Came from: live');
     expect(full).toContain('Loved the simulator.');
 
     const minimal = buildContactNotification({
@@ -88,6 +90,7 @@ describe('buildContactNotification', () => {
     });
     expect(minimal).not.toContain('Company:');
     expect(minimal).not.toContain('Role:');
+    expect(minimal).not.toContain('Came from:');
   });
 });
 

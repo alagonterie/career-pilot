@@ -33,9 +33,11 @@ const inputClass =
  * The contact form (PORTAL §5.7) — prop-driven so it's unit-testable without a
  * router context. Posts to the built `POST /api/contact` relay; shows a "Sent"
  * confirmation on success and an honest, direct-contact-pointing error otherwise.
- * `company`/`role` prefill from the page's carried context.
+ * `company`/`role` prefill from the page's carried context; `from` (the
+ * originating surface) is relayed as `source` so the owner sees where a lead
+ * engaged — it's context only, never shown back to the visitor.
  */
-export function ContactForm({ company, role }: { company?: string; role?: string }) {
+export function ContactForm({ company, role, from }: { company?: string; role?: string; from?: string }) {
   const [sent, setSent] = React.useState(false)
   const [submitError, setSubmitError] = React.useState<string | null>(null)
 
@@ -54,7 +56,7 @@ export function ContactForm({ company, role }: { company?: string; role?: string
       const res = await fetch(`${API_BASE}/api/contact`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, source: from }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       setSent(true)
