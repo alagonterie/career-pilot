@@ -3805,6 +3805,8 @@ A Phase-7 deferral picked up between 8.2 and 8.3 (not part of the conversion spi
 4. Host suite (+ the new `sanitize-demo` builder + route cases) + tsc + format:check green; frontend unit (the hook + panel) + tsc + `vite build` green; E2E (`/live` shows the panel; a sample's known redactions present; axe; console/network gate) green; the `live.png` baseline re-blessed with the panel.
 5. Spec deltas: this §24.33, PORTAL §5.2 build-note (the panel now ships; the faithfulness/synthetic-only rules), §10 route-list += `POST /api/sanitize-demo`.
 
+**Relocated (§24.35 Pass B).** The panel itself later moved off `/live` into the `/architecture` `pub-sanitize` node's modal (lazy-fetched on open) — a placement change only; the endpoint, the synthetic-only rule, and the faithful-real-sanitizer contract are unchanged. DoD #3/#4 above describe its original `/live` landing (historical); its current home is the sanitizer-node modal.
+
 ---
 
 #### 24.34 Backend increment — per-turn LLM-telemetry capture (lighting up the real trace lanes)
@@ -3886,6 +3888,26 @@ The PORTAL §8.2 "identical metadata footer" (status string + deploy hash + soci
 4. `LiveTicker` + `Panel` stay unit-testable without a router (the `action` slot is page-supplied); existing unit tests stay green.
 5. Frontend unit + tsc + `vite build` green; functional E2E green (incl. a ticker→`/live` nav assertion); the affected `@visual` baselines (those whose full-page height shifts on short pages, plus home/live for the links) re-blessed and validated in isolation.
 6. Spec deltas: this §24.35 (opener + Pass A); PORTAL §8.4 reachability build-note, §8.2 footer reconciliation, §5.1 Viewport 3 "watch live →" now-built note.
+
+**Pass B — `/architecture` node modal + the anonymization-demo relocation (#6 + #3).** These interlock on the same modal, so they ship together.
+
+*#6 — node click → grow-into-centered-modal.* Today `NodePanel` is a right-side slide-in drawer. The owner wants the clicked node to *grow* into a centered modal as the detail content appears. `motion/react` (already a dep — `FunnelBoard` uses `layout`/`layoutId`/`MotionConfig`) does this with **shared-layout animation**: each node overlay becomes a `motion.button` carrying `layoutId="arch-node-<id>"`, and the modal — wrapped in `AnimatePresence` — renders a centered `motion.div` with the *same* `layoutId`, so motion tweens the element from the node's measured box to the centered modal (the canonical "expand card → modal"); the detail content fades in. `MotionConfig reducedMotion="user"` collapses the grow to an instant centered modal under prefers-reduced-motion. The modal keeps the drawer's accessible-dialog contract **unchanged** — `role="dialog"`, `aria-modal`, `aria-labelledby`=the node label, Escape + backdrop + a `Close panel` button (the `architecture.spec.ts` dialog assertions stay green). `/funnel`'s `DetailPanel` keeps its side-drawer — intentional divergence (scanning the board beside the detail is the better interaction there).
+
+*Fallback (noted).* If the `layoutId` shared element proves janky over the absolutely-positioned SVG overlays, fall back to a centered modal that scales+fades in (`scale` ~0.9→1 + opacity) — still a clear upgrade over the drawer, still reduced-motion-safe. The grow is the goal; a tasteful scale-in is the acceptable floor.
+
+*#3 — the anonymization demo moves off `/live` into the `pub-sanitize` node's modal.* §24.33 shipped the demo as a full-width `/live` panel; the owner found it out of place there (a synthetic explainer interrupting the live-now narrative). It belongs where it proves something: the `pub-sanitize` node ("Sanitization", sourced to `sanitizer.ts`) is exactly the pipeline the demo demonstrates. So: `nodes.ts` gives `pub-sanitize` a `demo: 'sanitizer'` flag; the modal, for that node, renders a `<SanitizerDemo>` below the facts — a thin component that calls `useSanitizeDemo()` so the `POST /api/sanitize-demo` fires **lazily, only when this modal opens** — upgrading a `structural` node (the apologetic "no live probe") into the one node with genuine live interactive payload (still inside the §24.24 honesty rule: a behavioral proof, not a faked health probe). **Discoverability cue:** in the diagram the `pub-sanitize` node shows a distinct **interactive marker** (a small `▶`) instead of the generic hollow `◇`, and the `/architecture` "what you're looking at" explainer gains a **"see the sanitizer run →"** control that opens the `pub-sanitize` modal directly — so the privacy flex isn't buried behind a guess. `/live` drops the `AnonymizationDemo` panel + its `useSanitizeDemo` call (also eases §5.2 density); `POST /api/sanitize-demo` is otherwise unchanged.
+
+**Component shape.** `AnonymizationDemo` is refactored to a Panel-free, prop-driven **body** (label + two-pane + redaction count + "show another") so it renders inside the modal; `SanitizerDemo` = `useSanitizeDemo()` + `<AnonymizationDemo state>` (the lazy fetch lives here). No backend change. `playwright.config.ts` gains `use.reducedMotion: 'reduce'` so the modal is deterministic in `@visual` (instant, no grow) — the grow itself is verified manually via the Playwright MCP, mirroring how the funnel-board motion is handled.
+
+**What ships (Pass B).** `NodePanel.tsx` (centered modal, motion grow, renders `<SanitizerDemo>` for the `demo` node, dialog a11y preserved); `ArchDiagram.tsx` (node overlays → `motion.button` w/ `layoutId`; the `▶` marker on the `demo` node); `nodes.ts` (`demo?: 'sanitizer'` on `pub-sanitize`); `architecture.tsx` (`AnimatePresence`/`MotionConfig` around the modal + the "see the sanitizer run →" control); `SanitizerDemo.tsx` (NEW — lazy hook + body); `AnonymizationDemo.tsx` (Panel-free body); `live.tsx` (drop the panel + hook); `playwright.config.ts` (`reducedMotion`).
+
+**Definition of done.**
+1. Clicking an `/architecture` node opens a **centered modal** that grows from the node (motion `layoutId`); reduced-motion → instant centered modal; `role="dialog"` + label + Escape/backdrop/Close preserved (the `architecture.spec.ts` dialog assertions pass unchanged).
+2. The `pub-sanitize` node's modal renders the **real** anonymization demo (lazy `POST /api/sanitize-demo` on open), with the `▶` interactive marker in the diagram + a "see the sanitizer run →" explainer control that opens it.
+3. `/live` no longer renders the anonymization panel; `POST /api/sanitize-demo` is otherwise unchanged.
+4. `/funnel`'s `DetailPanel` is untouched (intentional side-drawer divergence).
+5. Frontend unit + tsc + build green; E2E green (architecture: demo-in-modal + explainer + the existing `cont-runtime` dialog open/close; live: anon assertions removed); `@visual` re-blessed in isolation (`live.png` shorter, `architecture.png` `▶` marker, new `architecture-sanitizer-modal.png`).
+6. Spec deltas: this Pass B; PORTAL §5.5 (node interaction = grow-into-modal; the sanitizer node hosts the live demo) + §5.2 (the demo relocated off `/live`) + §24.33 reconciliation (the demo's home is now the `pub-sanitize` modal).
 
 ---
 
