@@ -4094,6 +4094,8 @@ Mobile was promoted out of the §24.35 batch (Pass E) as its own spec-first pass
 7. Frontend unit + tsc + `vite build` green; host suite untouched (frontend-only pass).
 8. Spec deltas: this §24.37; **PORTAL §13** (NEW "Responsive & mobile" section) with the §13→§14 / §14→§15 / §15→§16 renumber, the §8.5 + 36.2-DoD `§13`→`§14` cross-ref bump, and the §14 open-question #6 (`/live` mobile) marked resolved.
 
+**Follow-up (owner call, post-build).** The agent-trace lines read poorly on a phone: each line is a single desktop terminal row (`time · agent · ◆ · [ref] · summary`), so the metadata prefix eats the narrow column and the `flex-1` summary wrapped into a ragged thin right-gutter column. Fix: the summary span gets `w-full ... sm:w-auto sm:flex-1` so on a phone it drops to its **own full-width line** (metadata row above, the sentence below) and the single-row terminal layout is restored at `sm+` (desktop `live.png` unchanged). The home `LiveTicker` got the same treatment — it previously `truncate`d the summary on mobile (lost text); now `w-full ... sm:truncate` shows the full text stacked on a phone, truncating only on the desktop single-row. Re-blessed `mobile-home.png` + `mobile-live.png`; desktop baselines unchanged.
+
 ---
 
 ## Part VI: Open questions
