@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 
 import { LiveCursor, StateNote } from '~/components/states'
 import type { StreamStatus } from '~/lib/sse'
-import type { AuditEvent } from '~/lib/use-activity-stream'
+import { eventSourceLabel, type AuditEvent } from '~/lib/use-activity-stream'
 
 function hhmm(ts: string): string {
   const d = new Date(ts)
@@ -64,7 +64,7 @@ export function LiveTicker({
           {shown.map((e) => (
             <li key={e.seq} data-testid="ticker-row" className="flex flex-wrap items-center gap-x-2">
               <span className="tabular-nums text-muted-foreground">{hhmm(e.ts)}</span>
-              <span className="text-accent-cool">{e.agent_name ?? e.category}</span>
+              <span className="text-accent-cool">{eventSourceLabel(e)}</span>
               {e.proactive ? (
                 <span
                   data-testid="proactive-marker"

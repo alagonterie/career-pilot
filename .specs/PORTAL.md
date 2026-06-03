@@ -311,6 +311,8 @@ Three-column on desktop, stacked on mobile. The resume content is hand-curated, 
 
 ### 5.2 `/live` — Real-time ops dashboard
 
+> **Source-label aliasing (owner call, 2026-06-03).** The activity feed (ticker + trace) shows each event's source — `agent_name`, else `category`. Two internal source ids contain "funnel" (`category='funnel'`, `agent_name='funnel-curator'`); they're **aliased for display** to `momentum` / `momentum-curator` so nothing reads "funnel" on the public surface (the §8.1 rule). Surface-only: the audit vocabulary + filter chips still key on the real internal ids.
+
 **Purpose:** This is the "dig in" page. The technical visitor sees real-time, real-data, real-system signals that prove the architecture isn't smoke.
 
 **The whole page is in ops register.** Dark, dense, monospace-leaning, multi-panel. Visitor lands and within 2 seconds sees several streams of live data updating.

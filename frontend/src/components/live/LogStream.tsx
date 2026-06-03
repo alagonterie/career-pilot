@@ -4,7 +4,7 @@ import * as React from 'react'
 import { LiveIndicator } from '~/components/LiveIndicator'
 import { LiveCursor, StateNote } from '~/components/states'
 import type { StreamStatus } from '~/lib/sse'
-import type { AuditEvent } from '~/lib/use-activity-stream'
+import { eventSourceLabel, type AuditEvent } from '~/lib/use-activity-stream'
 
 function clock(ts: string): string {
   const d = new Date(ts)
@@ -197,7 +197,7 @@ export function LogStream({
               ) : (
                 <li key={e.seq} data-testid="trace-line" className="flex flex-wrap items-baseline gap-x-2 py-0.5">
                   <span className="tabular-nums text-muted-foreground">{clock(e.ts)}</span>
-                  <span className="text-accent-cool">{e.agent_name ?? e.category}</span>
+                  <span className="text-accent-cool">{eventSourceLabel(e)}</span>
                   {e.proactive ? (
                     <span
                       data-testid="trace-proactive"
