@@ -60,6 +60,23 @@ test('architecture page matches visual baseline', { tag: '@visual' }, async ({ p
   })
 })
 
+test('architecture sanitizer-node modal matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  // reduced-motion makes the grow instant, so the modal is in its final centered
+  // state for the snapshot (the grow itself is verified manually via the MCP).
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto('/architecture')
+  await expect(page.getByTestId('arch-diagram')).toBeVisible()
+  // Open the pub-sanitize node modal; reducedMotion (config) makes the grow
+  // instant, so the modal is in its final centered state for the snapshot.
+  await page.getByTestId('arch-node-pub-sanitize').click()
+  const modal = page.getByRole('dialog', { name: 'Sanitization' })
+  await expect(modal.getByTestId('anon-sanitized')).toContainText('[EMAIL_REDACTED]')
+  await expect(page).toHaveScreenshot('architecture-sanitizer-modal.png', {
+    animations: 'disabled',
+    fullPage: true,
+  })
+})
+
 test('live page matches visual baseline', { tag: '@visual' }, async ({ page }) => {
   await page.goto('/live')
   await expect(page.getByRole('heading', { name: 'Live', level: 1 })).toBeVisible()
@@ -69,10 +86,10 @@ test('live page matches visual baseline', { tag: '@visual' }, async ({ page }) =
   // Portkey is unmocked here so telemetry/cost render the honest empty state.
   await expect(page.getByTestId('trace-stream')).toBeVisible()
   await expect(page.getByTestId('trace-stream').getByText('research-company')).toBeVisible()
-  // Wait for the async anonymization-demo POST to resolve so the panel is in its
-  // loaded state (not "Running the pipeline…") before the snapshot — otherwise
-  // the panel races the screenshot and the baseline is non-deterministic.
-  await expect(page.getByTestId('anon-sanitized')).toContainText('[EMAIL_REDACTED]')
+  // Wait for the funnel poll so the right-rail compact funnel + recent outcomes
+  // are populated before the snapshot (the anon demo moved to /architecture's
+  // sanitizer-node modal in §24.35 Pass B).
+  await expect(page.getByTestId('funnel-compact-reveal')).toContainText('Wayne Enterprises')
   await expect(page).toHaveScreenshot('live.png', {
     animations: 'disabled',
     fullPage: true,

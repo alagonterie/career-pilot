@@ -13,8 +13,7 @@ function ignorable(url: string): boolean {
     url.includes('/api/system-status') ||
     url.includes('/api/funnel') ||
     url.includes('/api/telemetry') ||
-    url.includes('/api/activity/stream') ||
-    url.includes('/api/sanitize-demo')
+    url.includes('/api/activity/stream')
   )
 }
 
@@ -55,14 +54,8 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
     // tier — a public application's ref is the company, not the obfuscated label).
     await expect(page.getByTestId('funnel-compact-reveal')).toContainText('Wayne Enterprises')
 
-    // The anonymization "wow-finish" runs the REAL sanitizer over a synthetic
-    // sample (§24.33): the raw pane carries synthetic PII; the sanitized pane
-    // shows the pipeline's markers and redacts the synthetic company.
-    const anonSanitized = page.getByTestId('anon-sanitized')
-    await expect(anonSanitized).toContainText('[EMAIL_REDACTED]')
-    await expect(anonSanitized).toContainText('[REDACTED:saas-demo]')
-    await expect(page.getByTestId('anon-raw')).toContainText('Globex')
-    await expect(anonSanitized).not.toContainText('Globex')
+    // §24.35 Pass B: the anonymization demo moved off /live into the
+    // /architecture pub-sanitize node modal — covered by architecture.spec.ts.
 
     // §24.34: the seeded per-turn telemetry row (category='turn') lights up the
     // trace stream's lanes — the model chip renders from the row's model_used.

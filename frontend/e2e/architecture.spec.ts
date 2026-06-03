@@ -7,10 +7,22 @@ import { expect, test } from '@playwright/test'
 // badge is deterministic (§24.28). Correctness rests on semantic assertions +
 // a11y + the console/network gate; the dot-pulse is dev-only.
 function ignorable(url: string): boolean {
-  return url.includes('/api/architecture') || url.includes('/api/system-status') || url.includes('/api/activity/stream')
+  return (
+    url.includes('/api/architecture') ||
+    url.includes('/api/system-status') ||
+    url.includes('/api/activity/stream') ||
+    url.includes('/api/sanitize-demo')
+  )
 }
 
 test.describe('/architecture — live system map, frontend <-> backend', () => {
+  // Freeze motion's reduced-motion branch so the node grow-into-modal is instant
+  // and deterministic (§24.35 Pass B); the grow is verified manually via the MCP.
+  test.beforeEach(async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+  })
+
+
   test('renders the map + honest status badges + the node panel from the seeded API', async ({ page }) => {
     const consoleErrors: string[] = []
     page.on('console', (msg) => {
@@ -62,6 +74,32 @@ test.describe('/architecture — live system map, frontend <-> backend', () => {
 
     expect(consoleErrors).toEqual([])
     expect(failedRequests).toEqual([])
+  })
+
+  test('the pub-sanitize node opens a modal with the live anonymization demo (§24.35 Pass B)', async ({ page }) => {
+    await page.goto('/architecture')
+    await page.getByTestId('arch-node-pub-sanitize').click()
+    const modal = page.getByRole('dialog', { name: 'Sanitization' })
+    await expect(modal).toBeVisible()
+    // The real sanitizer over a synthetic sample: markers present, synthetic company redacted.
+    await expect(modal.getByTestId('anon-sanitized')).toContainText('[EMAIL_REDACTED]')
+    await expect(modal.getByTestId('anon-sanitized')).toContainText('[REDACTED:saas-demo]')
+    await expect(modal.getByTestId('anon-raw')).toContainText('Globex')
+    await expect(modal.getByTestId('anon-sanitized')).not.toContainText('Globex')
+
+    const a11y = await new AxeBuilder({ page }).analyze()
+    expect(a11y.violations).toEqual([])
+
+    await page.getByRole('button', { name: 'Close panel' }).click()
+    await expect(modal).toBeHidden()
+  })
+
+  test('the "see the sanitizer run" explainer control opens the sanitizer modal', async ({ page }) => {
+    await page.goto('/architecture')
+    await page.getByRole('button', { name: /see the sanitizer run/i }).click()
+    const modal = page.getByRole('dialog', { name: 'Sanitization' })
+    await expect(modal).toBeVisible()
+    await expect(modal.getByTestId('anon-sanitized')).toContainText('[EMAIL_REDACTED]')
   })
 
   test('the shared header nav reaches /architecture and back', async ({ page }) => {

@@ -151,4 +151,25 @@ describe('NodePanel', () => {
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(onClose).toHaveBeenCalledTimes(2)
   })
+
+  it('renders the live sanitizer demo for the demo node (§24.35 Pass B)', async () => {
+    // The pub-sanitize node carries demo:'sanitizer' → its modal hosts the live
+    // demo (lazy fetch). Mock the POST so the body renders without a backend.
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        raw: 'Email a@b.com',
+        sanitized: 'Email [EMAIL_REDACTED]',
+        redactions: 1,
+        sample: 0,
+        total: 3,
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<NodePanel node={byId('pub-sanitize')} status="structural" arch={ARCH} mode={MODE} onClose={() => {}} />)
+    expect(await screen.findByTestId('anon-sanitized')).toHaveTextContent('[EMAIL_REDACTED]')
+    // the demo replaces the structural "no live probe" note on this node
+    expect(screen.queryByText(/no live health probe yet/i)).not.toBeInTheDocument()
+    vi.unstubAllGlobals()
+  })
 })
