@@ -85,9 +85,8 @@
 }
 
 /*
- * The single auto-animating element on `/` (PORTAL §3): the ●live pulse.
- * CSS-only so it stays deterministic under Playwright's `animations:'disabled'`
- * and respects reduced-motion. motion/react is reserved for Phase 7.
+ * The ●live pulse (PORTAL §3 / §8.3). CSS-only so it stays deterministic under
+ * Playwright's `animations:'disabled'`.
  */
 @keyframes cp-pulse {
   0%,
@@ -101,8 +100,26 @@
 .cp-live-pulse {
   animation: cp-pulse 2s ease-in-out infinite;
 }
+
+/*
+ * Reduced-motion — the global guarantee (STRATEGY §24.36 36.4). Neutralizes
+ * every looping/decorative CSS *animation* (the ●live pulse, Tailwind's
+ * `animate-pulse` on the loading skeletons + the stream `LiveCursor`, and any
+ * future one) plus smooth-scroll, for visitors who ask for it. We scope this to
+ * animations (the vestibular concern), NOT a blanket `transition-duration`
+ * reset — short interaction transitions (hover colors) aren't "motion" and the
+ * standard reduced-motion interpretation keeps them; a blanket transition reset
+ * also perturbs the fixed-modal fullPage visual capture. The complementary
+ * mechanism is the root `MotionConfig reducedMotion="user"`
+ * (src/routes/__root.tsx), which governs motion/react's JS/WAAPI animations —
+ * this CSS reset only governs CSS.
+ */
 @media (prefers-reduced-motion: reduce) {
-  .cp-live-pulse {
-    animation: none;
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
   }
 }
