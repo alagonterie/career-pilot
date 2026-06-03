@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest'
 
 import { deriveTelemetryView, type Telemetry } from './use-telemetry'
 
-const LOCAL = { simulator_runs_total: 3, activity_events_total: 42, activity_events_24h: 12 }
+const LOCAL = {
+  simulator_runs_total: 3,
+  activity_events_total: 42,
+  activity_events_24h: 12,
+  turns_total: 8,
+  turn_cost_cents_total: 37,
+  turn_cost_cents_24h: 12,
+}
 
 describe('deriveTelemetryView (telemetry view-model)', () => {
   it('is unavailable with a null reason before the first payload', () => {

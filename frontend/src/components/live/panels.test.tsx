@@ -21,7 +21,14 @@ const ARCH: ArchitectureData = {
   backend: 'online',
 }
 const MODE: SystemMode = { live_mode: true, pause_state: 'active', pause_reason: null, backend: 'online' }
-const LOCAL = { simulator_runs_total: 0, activity_events_total: 3, activity_events_24h: 1 }
+const LOCAL = {
+  simulator_runs_total: 0,
+  activity_events_total: 3,
+  activity_events_24h: 1,
+  turns_total: 2,
+  turn_cost_cents_total: 10,
+  turn_cost_cents_24h: 4,
+}
 
 function app(p: Partial<FunnelApplication> & { application_ref: string; stage: string }): FunnelApplication {
   return {
@@ -117,6 +124,14 @@ describe('CostCachePanel', () => {
     const view: TelemetryView = { available: false, reason: 'bypass', summary: null, local: null }
     render(<CostCachePanel view={view} />)
     expect(screen.getByTestId('cost-unavailable')).toBeInTheDocument()
+  })
+
+  it('shows the always-real local spend estimate even when Portkey is unavailable (§24.34)', () => {
+    const view: TelemetryView = { available: false, reason: 'no Portkey key configured', summary: null, local: LOCAL }
+    render(<CostCachePanel view={view} />)
+    expect(screen.getByTestId('cost-unavailable')).toBeInTheDocument()
+    expect(screen.getByTestId('local-spend')).toHaveTextContent('$0.10 est') // 10 cents
+    expect(screen.getByText('2 turns')).toBeInTheDocument()
   })
 })
 

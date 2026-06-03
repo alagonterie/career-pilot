@@ -64,6 +64,13 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
     await expect(page.getByTestId('anon-raw')).toContainText('Globex')
     await expect(anonSanitized).not.toContainText('Globex')
 
+    // §24.34: the seeded per-turn telemetry row (category='turn') lights up the
+    // trace stream's lanes — the model chip renders from the row's model_used.
+    await expect(trace.getByText('opus-4-8')).toBeVisible()
+    // COST & CACHE shows the always-real local spend estimate (Portkey is
+    // unavailable in E2E, so this local sum over the turn rows is the number).
+    await expect(page.getByTestId('local-spend')).toHaveText('$0.06 est')
+
     // A filter chip narrows the stream: System = non-subagent events only, so the
     // single research-company line disappears.
     await expect(page.getByTestId('trace-line').filter({ hasText: 'research-company' })).toHaveCount(1)

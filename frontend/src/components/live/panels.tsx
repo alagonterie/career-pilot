@@ -70,7 +70,10 @@ export function ContainerPoolPanel({ arch }: { arch: ArchitectureData | null }) 
   const memUsed = c && running != null ? running * c.memory_mb_each : null
   return (
     <Panel title="Container pool">
-      <Metric value={!down && running != null && cap != null ? `${running} / ${cap}` : down ? 'down' : '—'} label="running / max" />
+      <Metric
+        value={!down && running != null && cap != null ? `${running} / ${cap}` : down ? 'down' : '—'}
+        label="running / max"
+      />
       {c && !down ? (
         <div className="flex flex-col gap-1">
           <div className="h-1.5 overflow-hidden rounded-full bg-secondary" aria-hidden="true">
@@ -94,7 +97,9 @@ export function TelemetryPanel({ view }: { view: TelemetryView }) {
       {view.available && s ? (
         <>
           <div className="grid grid-cols-3 gap-3">
-            {s.cache_hit_rate != null ? <Metric value={`${Math.round(s.cache_hit_rate * 100)}%`} label="cache hit" /> : null}
+            {s.cache_hit_rate != null ? (
+              <Metric value={`${Math.round(s.cache_hit_rate * 100)}%`} label="cache hit" />
+            ) : null}
             {s.total_requests != null ? <Metric value={s.total_requests.toLocaleString()} label="req 24h" /> : null}
             {s.p50_latency_ms != null ? <Metric value={`${s.p50_latency_ms}ms`} label="p50" /> : null}
           </div>
@@ -131,6 +136,7 @@ export function TelemetryPanel({ view }: { view: TelemetryView }) {
  * state (the "~$X/day" tagline renders only with a real number — §24.29). */
 export function CostCachePanel({ view }: { view: TelemetryView }) {
   const s = view.summary
+  const local = view.local
   return (
     <Panel title="Cost & cache">
       {view.available && s && s.total_cost_usd != null ? (
@@ -144,10 +150,26 @@ export function CostCachePanel({ view }: { view: TelemetryView }) {
         </>
       ) : (
         <p data-testid="cost-unavailable" className="font-mono text-xs text-muted-foreground">
-          Cost telemetry not connected{view.reason ? ` — ${view.reason}` : ''}. Real per-day spend lands with the capture
-          phase.
+          Portkey cost analytics not connected{view.reason ? ` — ${view.reason}` : ''}. The local estimate below is
+          summed from captured per-turn SDK usage.
         </p>
       )}
+      {local ? (
+        // Always-real local spend, summed over the per-turn telemetry rows
+        // (§24.34) — present even when Portkey is unavailable. cost_cents is an
+        // SDK estimate (not billing; Portkey is the calibrated source when
+        // connected). Wall-clock-windowed → `live-volatile` so the visual
+        // baseline masks it; the value is covered by the unit + E2E tests.
+        <div
+          data-testid="live-volatile"
+          className="flex flex-wrap gap-x-4 gap-y-1 border-t border-border pt-2 font-mono text-[11px] text-muted-foreground"
+        >
+          <span data-testid="local-spend">${(local.turn_cost_cents_total / 100).toFixed(2)} est</span>
+          <span>
+            {local.turns_total} turn{local.turns_total === 1 ? '' : 's'}
+          </span>
+        </div>
+      ) : null}
     </Panel>
   )
 }
@@ -172,7 +194,9 @@ export function RecentOutcomesPanel({ apps }: { apps: FunnelApplication[] }) {
             const isPublic = a.public_state === 'public'
             return (
               <li key={a.application_ref} className="flex items-center justify-between gap-2">
-                <span className="truncate text-foreground">{isPublic ? a.application_ref : `[${a.application_ref}]`}</span>
+                <span className="truncate text-foreground">
+                  {isPublic ? a.application_ref : `[${a.application_ref}]`}
+                </span>
                 <span className="flex items-center gap-2">
                   <span className="uppercase tracking-wider text-muted-foreground">{a.stage}</span>
                   {isPublic ? <span className="text-primary">◆</span> : null}

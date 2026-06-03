@@ -45,6 +45,15 @@ function seedAudit(seq: number, ts: string): void {
     .run(`pat-${seq}`, seq, ts);
 }
 
+function seedTurn(seq: number, ts: string, costCents: number): void {
+  getDb()
+    .prepare(
+      `INSERT INTO public_audit_trail (id, seq, ts, category, cost_cents, summary)
+       VALUES (?, ?, ?, 'turn', ?, 'turn complete')`,
+    )
+    .run(`pat-turn-${seq}`, seq, ts, costCents);
+}
+
 function seedSession(id: string, status: string, containerStatus: string): void {
   getDb()
     .prepare(
@@ -81,6 +90,20 @@ describe('GET /api/telemetry', () => {
     expect(body.local.simulator_runs_total).toBe(2);
     expect(body.local.activity_events_total).toBe(3);
     expect(body.local.activity_events_24h).toBe(2);
+  });
+
+  it('sums per-turn cost into the local aggregate (§24.34)', async () => {
+    seedTurn(10, nowIso(), 6);
+    seedTurn(11, nowIso(), 4);
+    seedTurn(12, daysAgoIso(2), 9); // outside the 24h window
+    seedAudit(13, nowIso()); // a funnel row contributes nothing to turn cost
+
+    const body = (await (await fetch(`${base}/api/telemetry`)).json()) as {
+      local: { turns_total: number; turn_cost_cents_total: number; turn_cost_cents_24h: number };
+    };
+    expect(body.local.turns_total).toBe(3);
+    expect(body.local.turn_cost_cents_total).toBe(19); // 6 + 4 + 9
+    expect(body.local.turn_cost_cents_24h).toBe(10); // 6 + 4 (the 9 is > 24h)
   });
 
   it('caches the response for the configured window', async () => {
