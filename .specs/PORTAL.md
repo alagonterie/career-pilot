@@ -266,7 +266,7 @@ The `◆ proactive` marker calls out events the agent initiated on its own — t
 
 Compact, dense, monospace. This is the bridge from landing register to ops register. The visitor who clicks `Watch live →` is self-selecting into the deep view.
 
-> **Rendering is progressive (implementation note).** The ticker renders the audit fields that actually exist on each row. As of Sub-milestone 6.1 (STRATEGY.md §24.24), `category`, `agent_name`, and the `◆ proactive` marker are live; per-event LLM telemetry (model, cache-hit, cost) is captured in a later dedicated phase and those lanes render only once populated. The ticker never shows invented data — a missing field is simply absent, not faked.
+> **Rendering is progressive (implementation note).** The ticker renders the audit fields that actually exist on each row. As of Sub-milestone 6.1 (STRATEGY.md §24.24), `category`, `agent_name`, and the `◆ proactive` marker are live. LLM telemetry (model, tokens, cost, cache-hit, latency) lands in STRATEGY.md §24.34 — captured **per-turn** (the SDK only resolves cost per `query()`-call, never per-event), so a dedicated `category='turn'` summary row carries those lanes populated, while funnel/progress rows leave them absent. The ticker never shows invented data — a missing field is simply absent, not faked, and a per-event cost split (which the SDK can't derive) is never fabricated.
 
 **Viewport 4: Simulator pitch**
 
@@ -1115,7 +1115,7 @@ Used on `/` and in the footer. A single small dot with `● live` label. Connect
 
 **Resume cursor:** the stream carries a monotonic `seq` (the `public_audit_trail.seq` column) as the SSE `id:` / `Last-Event-ID`. On reconnect the client resumes with `/api/activity?since=<seq>` (or the stream's `Last-Event-ID` header). The cursor is `seq`, **not** `ts` — wall-clock timestamps tie at millisecond granularity (multiple events in one host tick), so a `since=<ts>` resume either duplicates the boundary (`>=`) or skips same-ms siblings (`>`). A monotonic integer cursor makes reconnects across the Cloudflare Tunnel idle timeout exactly-once with no gaps or dupes.
 
-As of Sub-milestone 6.1 (STRATEGY.md §24.24) the indicator + ticker run on the audit fields that exist — `category`, `agent_name`, and the `proactive` flag (captured host-side from the triggering message kind). Per-event LLM telemetry (model / cache-hit / cost) is a later capture phase; see the §5.1 progressive-rendering note.
+As of Sub-milestone 6.1 (STRATEGY.md §24.24) the indicator + ticker run on the audit fields that exist — `category`, `agent_name`, and the `proactive` flag (captured host-side from the triggering message kind). LLM telemetry (model / tokens / cost / cache-hit / latency) is captured **per-turn** in STRATEGY.md §24.34 on a `category='turn'` summary row (the SDK resolves cost only per `query()`-call, so per-turn is the honest unit); see the §5.1 progressive-rendering note.
 
 ### 8.4 Connective rail
 

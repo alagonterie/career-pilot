@@ -227,12 +227,12 @@ CREATE TABLE public_audit_trail (
                                                  -- MAX(seq)+1 at insert (host single-writer). The
                                                  -- /api/activity[/stream] cursor — NOT ts. See PORTAL §8.3.
   ts                  TEXT NOT NULL,
-  category            TEXT NOT NULL,             -- shipped: 'funnel' | 'subagent_progress'
+  category            TEXT NOT NULL,             -- shipped: 'funnel' | 'subagent_progress' | 'turn' (§24.34)
                                                  -- (future: 'research' | 'outreach' | 'system')
-  agent_name          TEXT,                      -- subagent name, if applicable
+  agent_name          TEXT,                      -- subagent name, if applicable; NULL on 'turn' rows
   proactive           INTEGER DEFAULT 0,         -- 0/1 — the ◆ marker (capture path: §24.14, Phase 5)
   application_ref     TEXT,                      -- obfuscated_label, or company_name when public
-  model_used          TEXT,                      -- trace telemetry (capture path: §24.14, Phase 5)
+  model_used          TEXT,                      -- per-turn LLM telemetry, populated on 'turn' rows (§24.34)
   tokens              INTEGER,
   cost_cents          INTEGER,
   cache_hit           INTEGER DEFAULT 0,
@@ -3540,9 +3540,9 @@ The first real portal page: the landing `/` (PORTAL §5.1 Viewports 1 & 3 + §8.
 |---|---|---|
 | `category`, `agent_name` | **Real** — `handleRecordProgress` writes `agent_name`=subagent + category `subagent_progress`; `mirrorFunnelEvent` writes category `funnel` | Render |
 | `proactive` (◆ marker) | Default-0, never written; derivable from the triggering `MessageIn.kind` | **Capture + render** |
-| `model_used`, `tokens`, `cost_cents`, `cache_hit`, `latency_ms` | Captured **nowhere** per-event (no SDK-usage capture in `container-runner.ts`; `/api/telemetry` is Portkey aggregates) | **Deferred** to a dedicated telemetry-capture sub-milestone; ticker renders these lanes progressively (render-if-present) |
+| `model_used`, `tokens`, `cost_cents`, `cache_hit`, `latency_ms` | Captured **nowhere** per-event (no SDK-usage capture in `container-runner.ts`; `/api/telemetry` is Portkey aggregates) | **Deferred** at 6.1 to a dedicated telemetry-capture sub-milestone — now **landed in §24.34** (captured **per-turn**, not per-event, as a `category='turn'` summary row; the SDK only resolves cost per-`query()`-call); ticker renders these lanes progressively (render-if-present) |
 
-The ◆ proactive marker is PORTAL's "cleanest hint this isn't a chatbot," so it earns the moderate host-side capture; per-event LLM telemetry is a larger, riskier change to the container→host result path with its own attribution design, so it gets its own increment.
+The ◆ proactive marker is PORTAL's "cleanest hint this isn't a chatbot," so it earns the moderate host-side capture; per-event LLM telemetry is a larger, riskier change to the container→host result path with its own attribution design, so it gets its own increment (§24.34 — which found per-event cost is not SDK-derivable and settled on per-turn attribution).
 
 **Proactive capture (backend).** The audit trail is a reproducible projection of `funnel_events` truth (§24.14), and `mirrorFunnelEvent` is re-run by `resanitizeApplicationAuditTrail` with no session context — so `proactive` is persisted on `funnel_events` at record time (migration 124), not derived only at mirror time. A `deriveProactive(session)` helper classifies the triggering `MessageIn.kind` (`webhook`/`task`/`system` ⇒ proactive; `chat`/`chat-sdk` ⇒ reactive). `handleRecordFunnelEvent` stamps it; `mirrorFunnelEvent` copies `funnel_events.proactive` onto the public row (resanitize reproduces it for free); `handleRecordProgress` sets it directly from its session.
 
@@ -3804,6 +3804,48 @@ A Phase-7 deferral picked up between 8.2 and 8.3 (not part of the conversion spi
 3. The `/live` `ANONYMIZATION DEMO` panel renders the two-pane raw↔sanitized from the endpoint, labeled synthetic-only, with the redaction count + a "show another" control; no real `applications` data is ever read by the demo path.
 4. Host suite (+ the new `sanitize-demo` builder + route cases) + tsc + format:check green; frontend unit (the hook + panel) + tsc + `vite build` green; E2E (`/live` shows the panel; a sample's known redactions present; axe; console/network gate) green; the `live.png` baseline re-blessed with the panel.
 5. Spec deltas: this §24.33, PORTAL §5.2 build-note (the panel now ships; the faithfulness/synthetic-only rules), §10 route-list += `POST /api/sanitize-demo`.
+
+---
+
+#### 24.34 Backend increment — per-turn LLM-telemetry capture (lighting up the real trace lanes)
+
+The last of the three deferred backend increments, and the one §24.24 named explicitly: the `model_used` / `tokens` / `cost_cents` / `cache_hit` / `latency_ms` columns on `public_audit_trail` are captured **nowhere** today, so the `/` ticker, `/live` `LogStream`, and simulator `SimActivity` render those lanes empty (the §24.24 "render-if-present" honesty rule). This increment captures the data so those already-built lanes light up with **real** numbers — **zero frontend change** (the SSE broadcaster already SELECTs all five columns; the components already render them when present).
+
+**The crux — telemetry is a per-*turn* fact, not a per-event fact (verified against the SDK docs, not inferred).** The Agent SDK resolves a turn's economics only at the `result` message — the *last* message of each `query()` call. Two hard facts fall out, both confirmed against the authoritative [cost-tracking guide](https://code.claude.com/docs/en/agent-sdk/cost-tracking) + [TypeScript reference](https://code.claude.com/docs/en/agent-sdk/typescript):
+1. **Timing.** By the time `result` arrives, every `record_funnel_event` / `record_progress` call of that turn has already round-tripped to the host and written its `public_audit_trail` row. There is nothing to stamp at row-write time — the cost doesn't exist yet.
+2. **Granularity.** `total_cost_usd` is **one cumulative number for the whole turn** (orchestrator + every subagent + every tool). The SDK gives a per-*model* split (`modelUsage` → `costUSD`) and per-*step* token usage (`message.message.usage`, dedup by `message.id`) — but **no per-subagent or per-tool-call cost**: *"subagent usage rolls up into the parent session's `SDKResultMessage`, not into a separate task output type."* A per-event cost split would be fabricated.
+
+So the honest unit is the **turn** (one container wake = one `query()` = one `result`). `total_cost_usd` / `costUSD` are also explicitly **client-side estimates** ("do not bill on these") — Portkey (`/api/telemetry`, §24.17) stays the authoritative aggregate; this capture is the *honest-estimate* per-turn lane.
+
+**Attribution model — the turn-summary row.** Each portal-worthy turn writes **one** `public_audit_trail` row, `category='turn'`, with the five telemetry columns **populated**:
+- `model_used` — the primary (highest-`costUSD`) model name; the full per-model breakdown goes in `details_json.modelUsage`.
+- `tokens` — `input_tokens + output_tokens` (billable volume); cache + per-type counts in `details_json`.
+- `cost_cents` — `round(total_cost_usd * 100)` (see the fidelity note below).
+- `cache_hit` — `1` if any model's `cacheReadInputTokens > 0`, else `0`.
+- `latency_ms` — the turn's `duration_ms` (user-perceived wall-clock; `duration_api_ms` in `details_json`).
+- `agent_name` = `null` (a turn is not one subagent — `category='turn'` is the discriminator; it reads as a "system" event under the `/live` System filter chip), `proactive` from the session's existing `deriveProactive`, `summary` a fixed `"turn complete"`, `details_json` = `{ num_turns, duration_api_ms, modelUsage, record_calls }`.
+
+This is the honest, low-risk choice: turn-level data on a turn-level row (semantics match the data); the existing `mirrorFunnelEvent` / `handleRecordProgress` writers are **untouched** (zero regression surface); the per-row lanes light up because *this* row carries them; and `/live` gains a real local cost aggregate (SUM `cost_cents` over `category='turn'` rows — no double-count, since every other category is NULL). The funnel/progress rows themselves stay telemetry-NULL — correct, because the cost belongs to the turn, not the individual event. (Backfilling all of a turn's rows was rejected: it implies a per-event economics the SDK can't break down, needs a correlation key + a double-count guard on the existing writers, for no honesty gain. A separate aggregate-only table was rejected: the per-row lanes would stay empty forever, wasting the wiring + breaking the §24.24 promise.)
+
+**The container→host path (additive; the `kind:'trace'` row at `poll-loop.ts:499` is the precedent).**
+- **Provider (`container/agent-runner/src/providers/claude.ts`).** A pure `sdkResultToTurnTelemetry(message)` derives the `TurnTelemetry` struct from the `result` message (`total_cost_usd`, `modelUsage`, `usage`, `duration_ms`/`duration_api_ms`, `num_turns`) — unit-testable without an SDK mock, mirroring the existing `sdkMessageToTraceEvents`. Across the turn's assistant messages the provider also counts `tool_use` blocks whose name matches `/__record_(funnel_event|progress)$/` (`record_calls`) — the **portal-worthy** signal (the turn did portal-relevant work). This runs **always-on for the owner path** (independent of the sandbox-only `emitTrace`); the `result` `ProviderEvent` gains an optional `telemetry?: TurnTelemetry` field (additive — owner stream otherwise byte-identical).
+- **Poll-loop.** At the `result` event, if `telemetry.record_calls > 0`, emit a **fire-and-forget** `career_pilot.record_turn_telemetry` system-action (a no-wait variant of `sendAction` — telemetry must never block turn teardown or need a response). No new outbound `kind`; reuses the system-action bus.
+- **Host (`src/modules/career-pilot/`).** `handleRecordTurnTelemetry` is registered **owner-only** (`registerOwnerOnly`, exactly like `record_funnel_event` / `record_progress`) — so the public-simulator sandbox's emissions are rejected by the existing security perimeter and never reach `public_audit_trail`; **no group-detection needed in the container**. The handler reads a `telemetry_capture` preference (default `true`); when off it acks without writing (a kill switch). It writes the `category='turn'` row using the same `MAX(seq)+1` cursor as the other writers. The row carries no free text (numbers + a fixed summary) → **no sanitization needed** and it is exempt from the §4.3 funnel-only resanitization hooks.
+
+**`cost_cents` fidelity.** The column is `INTEGER`; sub-cent turns round to `$0.00`. The **portal-worthy gate largely sidesteps this** — only turns that made a `record_*` call emit, and those did substantive work (research / drafting / a stage change), so they rarely cost under a cent. v1 rounds to the nearest cent and accepts the rare `$0.00`; a `cost_micros` column widening is a **noted follow-up** only if live data shows sub-cent emitted turns. (Keeps the existing column contract + frontend unchanged.)
+
+**Determinism / testing.** The pure `sdkResultToTurnTelemetry` + the `record_calls` matcher are unit-tested in the container (fixed SDK-result fixtures → expected struct; the dedup-by-`message.id` rule). Host vitest covers the write shape (the five columns populated, `category='turn'`, the `details_json`), the toggle-off path (no row), the cost rounding, and the owner-only gate (a sandbox emission writes nothing). The existing frontend lanes are confirmed to render the new row with **no code change** — `dev:mock` can seed a `category='turn'` row (extending the §24.24 backlog seed) so the fully-populated ticker/`LogStream` is visible locally; CI's leaner seed keeps the honest sparse state. The simulator path is unaffected (it already shows per-run cost via its trace `result` event; `TurnTelemetry` on the result `ProviderEvent` is orthogonal and gated owner-only host-side).
+
+**Deferred (noted, not built).** Per-row **model + cache-hit** enrichment on the funnel/progress rows themselves (the original §24.24 mockup intent): these *are* real per-step facts (`message.message.model`, `cache_read_input_tokens`), but attributing them to a specific `record_*` row needs a fragile `tool_use_id`↔MCP-handler correlation the SDK doesn't hand over cleanly — high fragility for a chip the turn row already conveys (its model-mix + cache). Possible future increment, not now. Portkey calibration (§24.17) stays a manual ops task gated on live traffic. The `cost_micros` widening above.
+
+**Definition of done.**
+1. A portal-worthy owner turn writes exactly one `public_audit_trail` row with `category='turn'` and all five telemetry columns populated from the SDK `result` message; a turn with no `record_*` call writes none; `telemetry_capture=false` writes none.
+2. `sdkResultToTurnTelemetry` is a pure, unit-tested function (no SDK mock); the `record_calls` matcher counts `__record_(funnel_event|progress)` tool_use dispatches, deduping by `message.id`.
+3. `career_pilot.record_turn_telemetry` is **owner-only** — a sandbox emission writes nothing to `public_audit_trail` (verified by test).
+4. The emission is fire-and-forget (no response poll; never blocks turn teardown); the existing `mirrorFunnelEvent` / `handleRecordProgress` writers are byte-unchanged.
+5. The `/` ticker + `/live` `LogStream` render the new row's model/tokens/cost/cache/latency lanes with **no frontend code change** (confirmed against a seeded `category='turn'` row); `/live`'s local cost aggregate sums `cost_cents` over `category='turn'` rows.
+6. Container build + host suite (+ the new container + host cases) + tsc + format:check green; frontend unchanged → frontend suites stay green.
+7. Spec deltas: this §24.34; §24.24 tier-table "Deferred" cell repointed here (capture now lands); §3 schema `category` vocab += `'turn'`; PORTAL §5.1 (line ~269) + §8.3 progressive-render notes repointed from "a later dedicated phase" → §24.34 (turn-level attribution clarified).
 
 ---
 
