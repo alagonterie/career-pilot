@@ -76,4 +76,18 @@ describe('LiveTicker', () => {
     render(<LiveTicker events={[]} status="open" action={<a href="/live">watch live →</a>} />)
     expect(screen.getByRole('link', { name: /watch live/i })).toHaveAttribute('href', '/live')
   })
+
+  it('drops category=turn rows — those are the /live cost story (§24.35 Pass C)', () => {
+    render(
+      <LiveTicker
+        status="open"
+        events={[
+          ev({ seq: 1, category: 'funnel', summary: 'advanced to screening' }),
+          ev({ seq: 2, category: 'turn', summary: 'turn complete', model_used: 'opus-4-8' }),
+        ]}
+      />,
+    )
+    expect(screen.getAllByTestId('ticker-row')).toHaveLength(1)
+    expect(screen.queryByText('turn complete')).not.toBeInTheDocument()
+  })
 })

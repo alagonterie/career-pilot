@@ -57,9 +57,10 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
     // §24.35 Pass B: the anonymization demo moved off /live into the
     // /architecture pub-sanitize node modal — covered by architecture.spec.ts.
 
-    // §24.34: the seeded per-turn telemetry row (category='turn') lights up the
-    // trace stream's lanes — the model chip renders from the row's model_used.
-    await expect(trace.getByText('opus-4-8')).toBeVisible()
+    // §24.34/§24.35 Pass C: the per-turn (category='turn') row renders as a
+    // batch-sealing separator carrying the real metrics (model from model_used),
+    // not a peer action line.
+    await expect(trace.getByTestId('trace-turn')).toContainText('opus-4-8')
     // COST & CACHE shows the always-real local spend estimate (Portkey is
     // unavailable in E2E, so this local sum over the turn rows is the number).
     await expect(page.getByTestId('local-spend')).toHaveText('$0.06 est')
