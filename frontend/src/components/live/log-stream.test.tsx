@@ -66,8 +66,9 @@ describe('LogStream', () => {
     expect(screen.getByText('[fintech-a]')).toBeInTheDocument()
     expect(screen.queryByText('cache✓')).not.toBeInTheDocument()
     expect(screen.queryByTestId('trace-proactive')).not.toBeInTheDocument()
-    // category is the fallback label when agent_name is null
-    expect(screen.getByText('funnel')).toBeInTheDocument()
+    // category is the fallback source label when agent_name is null, aliased for
+    // display (the 'funnel' category renders as 'momentum' — §5.2 / §8.1)
+    expect(screen.getByText('momentum')).toBeInTheDocument()
   })
 
   it('filters to proactive events on the Proactive chip', () => {
