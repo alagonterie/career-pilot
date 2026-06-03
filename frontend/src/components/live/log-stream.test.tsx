@@ -90,4 +90,24 @@ describe('LogStream', () => {
     fireEvent.click(screen.getByTestId('trace-chip-proactive'))
     expect(screen.getByTestId('trace-empty')).toHaveTextContent(/no events match/i)
   })
+
+  it('renders a category=turn row as a batch-sealing separator, not an action line (§24.35 Pass C)', () => {
+    const turn = ev({
+      seq: 9,
+      category: 'turn',
+      summary: 'turn complete',
+      model_used: 'opus-4-8',
+      tokens: 18400,
+      cost_cents: 6,
+      cache_hit: 1,
+      latency_ms: 2100,
+    })
+    render(<LogStream events={[EVENTS[0], turn]} status="open" count={2} />)
+    const seal = screen.getByTestId('trace-turn')
+    expect(seal).toHaveTextContent('opus-4-8')
+    expect(seal).toHaveTextContent('18,400 tok')
+    expect(seal).toHaveTextContent('cache✓')
+    // the turn row is the seal — NOT one of the action lines
+    expect(screen.getAllByTestId('trace-line')).toHaveLength(1)
+  })
 })

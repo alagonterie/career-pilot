@@ -25,6 +25,10 @@ export function LiveTicker({
   status: StreamStatus | 'idle'
   action?: ReactNode
 }) {
+  // Drop per-turn cost-summary rows (§24.35 Pass C): they're the /live trace
+  // stream's story (rendered there as a batch-sealing separator); on this
+  // 5-line teaser they're noise. The ticker shows the action events.
+  const shown = events.filter((e) => e.category !== 'turn')
   return (
     <section
       id="live-ticker"
@@ -38,7 +42,7 @@ export function LiveTicker({
         </h2>
         {action}
       </div>
-      {events.length === 0 ? (
+      {shown.length === 0 ? (
         <p data-testid="ticker-empty" className="font-mono text-sm text-muted-foreground">
           {status === 'reconnecting' ? 'Activity stream offline — reconnecting…' : 'Agents warming up…'}
         </p>
@@ -47,7 +51,7 @@ export function LiveTicker({
           {/* No opacity-fade for older lines: opacity blending drops text below
               WCAG AA on the near-black card (axe-verified). Newest row sits at
               the bottom — that ordering is the hierarchy. */}
-          {events.map((e) => (
+          {shown.map((e) => (
             <li key={e.seq} data-testid="ticker-row" className="flex flex-wrap items-center gap-x-2">
               <span className="tabular-nums text-muted-foreground">{hhmm(e.ts)}</span>
               <span className="text-accent-cool">{e.agent_name ?? e.category}</span>
