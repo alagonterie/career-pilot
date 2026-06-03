@@ -20,6 +20,7 @@ describe('AnonymizationDemo (PORTAL §5.2)', () => {
     expect(screen.getByTestId('anon-raw')).toHaveTextContent('a@b.com')
     expect(screen.getByTestId('anon-sanitized')).toHaveTextContent('[EMAIL_REDACTED]')
     expect(screen.getByTestId('anon-count')).toHaveTextContent('1 redaction')
+    expect(screen.getByTestId('anon-index')).toHaveTextContent('1 / 3')
     expect(screen.getByText(/synthetic only/i)).toBeInTheDocument()
   })
 
