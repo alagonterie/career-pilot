@@ -44,7 +44,7 @@ function SimulatorPage() {
   const wide = showRun // ops register once the run starts (§5.3)
 
   return (
-    <main className={`mx-auto flex min-h-dvh w-full flex-col px-6 py-16 ${wide ? 'max-w-6xl' : 'max-w-2xl'}`}>
+    <main className={`mx-auto flex w-full flex-col px-6 py-16 ${wide ? 'max-w-6xl' : 'max-w-2xl'}`}>
       <header className="text-center">
         <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Try it on your own role</h1>
         <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">

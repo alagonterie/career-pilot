@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 
 import { AnonymizationDemo } from '~/components/live/AnonymizationDemo'
 import { FunnelCompact } from '~/components/live/FunnelCompact'
@@ -51,7 +51,7 @@ function LivePage() {
 
   return (
     <>
-      <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-6 px-6 py-12">
+      <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-12">
         <header>
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Live</h1>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -74,7 +74,14 @@ function LivePage() {
             <LogStream events={events} status={status} count={count} />
           </div>
           <div className="flex flex-col gap-4">
-            <Panel title="Funnel">
+            <Panel
+              title="Funnel"
+              action={
+                <Link to="/funnel" className="font-mono text-[11px] text-accent-cool hover:underline">
+                  open →
+                </Link>
+              }
+            >
               <FunnelCompact apps={apps} />
             </Panel>
             <CostCachePanel view={view} />

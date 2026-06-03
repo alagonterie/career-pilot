@@ -27,7 +27,7 @@ export const Route = createFileRoute('/(marketing)/contact')({
 function ContactPage() {
   const { company, role, from } = Route.useSearch()
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-xl flex-col px-6 py-16">
+    <main className="mx-auto flex w-full max-w-xl flex-col px-6 py-16">
       <header>
         <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Talk to me</h1>
         <p className="mt-2 text-sm text-muted-foreground">

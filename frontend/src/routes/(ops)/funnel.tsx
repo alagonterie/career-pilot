@@ -31,7 +31,7 @@ function FunnelPage() {
 
   return (
     <>
-      <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-8 px-6 py-12">
+      <main className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-12">
         <header>
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Funnel</h1>
           <p className="mt-2 text-sm text-muted-foreground">

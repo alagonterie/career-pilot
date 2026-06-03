@@ -14,10 +14,12 @@ export const Route = createFileRoute('/(ops)')({
 
 function OpsLayout() {
   return (
-    <>
+    <div className="flex min-h-dvh flex-col">
       <SiteHeader />
-      <Outlet />
+      <div className="flex-1">
+        <Outlet />
+      </div>
       <ConnectiveRail />
-    </>
+    </div>
   )
 }
