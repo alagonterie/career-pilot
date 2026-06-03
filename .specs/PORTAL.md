@@ -1166,6 +1166,25 @@ Register-aware styling: clean and spacious in the marketing register, dense and 
 
 ---
 
+### 8.5 Dialogs (modal/drawer) — focus & a11y contract
+
+Two surfaces open as a modal overlay: the `/momentum` card drawer (a right-edge `DetailPanel`) and the `/architecture` node modal (a centered `NodePanel` that grows from its diagram node). They look different on purpose — a drawer vs. a `layoutId` modal — but they owe the visitor the **same modal behavior**, so it lives in one shared `useDialog` hook rather than being re-derived per surface (where the next dialog inherits whatever the last one missed).
+
+The contract, when a dialog is open:
+
+| Behavior | Why |
+|---|---|
+| **Focus moves into the panel** on open | The visitor's keyboard/AT context follows the thing that just appeared, not the page underneath. |
+| **Tab / Shift+Tab are trapped** inside the panel (wrap at both ends) | The WAI-ARIA APG modal pattern — focus cannot wander to the page behind a modal. |
+| **Focus restores to the trigger** on close (the card / node that opened it) | Closing returns the visitor exactly where they were, not to the top of the document. |
+| **Escape** closes; the **backdrop** closes | Two conventional dismissals; the backdrop is a labeled button so it's pointer- and AT-clean. |
+| **The rest of the page is `inert`** while open | AT + pointer can't reach backdrop content the visitor isn't supposed to be in. Applied by marking off-path siblings from the overlay up to `<body>` — **no portal**, so the modal's grow-from-node `motion` transition is preserved. |
+| `role="dialog"` + `aria-modal="true"` + `aria-labelledby` (+ `aria-describedby` where there's a description) | The dialog announces itself correctly; the title/description are the accessible name/description. |
+
+This is the load-bearing answer to the §13 accessibility open-question for overlays (keyboard navigation + focus management), closed for dialogs in STRATEGY §24.36 36.2. New overlay surfaces consume `useDialog` rather than re-implementing it.
+
+---
+
 ## 9. Anonymization model
 
 This is a separate, important section because it touches multiple pages and shapes the database.
@@ -1348,7 +1367,7 @@ The required 5 are enforced (the `LIVE_MODE` flip command refuses if they're not
 
 7. **Anonymous analytics for the portal:** Cloudflare Web Analytics or none? Recommendation: Cloudflare, since it's privacy-respecting and free with the Workers deployment.
 
-8. **Accessibility:** WCAG AA target. The dense ops register needs careful attention to contrast ratios + ARIA labels for the live stream + keyboard navigation through filter chips. Recommendation: explicit pass during implementation; not a blocker for v1.
+8. **Accessibility:** WCAG AA target. The dense ops register needs careful attention to contrast ratios + ARIA labels for the live stream + keyboard navigation through filter chips. Recommendation: explicit pass during implementation; not a blocker for v1. *(Partially closed: every route is axe-zero-violation in E2E; modal/drawer focus-trapping + dialog a11y landed in STRATEGY §24.36 36.2 — see §8.5.)*
 
 ---
 
