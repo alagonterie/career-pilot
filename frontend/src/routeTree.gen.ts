@@ -14,6 +14,7 @@ import { Route as marketingRouteRouteImport } from './routes/(marketing)/route'
 import { Route as marketingIndexRouteImport } from './routes/(marketing)/index'
 import { Route as opsMomentumRouteImport } from './routes/(ops)/momentum'
 import { Route as opsLiveRouteImport } from './routes/(ops)/live'
+import { Route as opsCrashRouteImport } from './routes/(ops)/crash'
 import { Route as opsArchitectureRouteImport } from './routes/(ops)/architecture'
 import { Route as marketingWorkRouteImport } from './routes/(marketing)/work'
 import { Route as marketingContactRouteImport } from './routes/(marketing)/contact'
@@ -41,6 +42,11 @@ const opsMomentumRoute = opsMomentumRouteImport.update({
 const opsLiveRoute = opsLiveRouteImport.update({
   id: '/live',
   path: '/live',
+  getParentRoute: () => opsRouteRoute,
+} as any)
+const opsCrashRoute = opsCrashRouteImport.update({
+  id: '/crash',
+  path: '/crash',
   getParentRoute: () => opsRouteRoute,
 } as any)
 const opsArchitectureRoute = opsArchitectureRouteImport.update({
@@ -74,6 +80,7 @@ export interface FileRoutesByFullPath {
   '/contact': typeof marketingContactRoute
   '/work': typeof marketingWorkRoute
   '/architecture': typeof opsArchitectureRoute
+  '/crash': typeof opsCrashRoute
   '/live': typeof opsLiveRoute
   '/momentum': typeof opsMomentumRoute
   '/': typeof marketingIndexRoute
@@ -84,6 +91,7 @@ export interface FileRoutesByTo {
   '/contact': typeof marketingContactRoute
   '/work': typeof marketingWorkRoute
   '/architecture': typeof opsArchitectureRoute
+  '/crash': typeof opsCrashRoute
   '/live': typeof opsLiveRoute
   '/momentum': typeof opsMomentumRoute
   '/': typeof marketingIndexRoute
@@ -97,6 +105,7 @@ export interface FileRoutesById {
   '/(marketing)/contact': typeof marketingContactRoute
   '/(marketing)/work': typeof marketingWorkRoute
   '/(ops)/architecture': typeof opsArchitectureRoute
+  '/(ops)/crash': typeof opsCrashRoute
   '/(ops)/live': typeof opsLiveRoute
   '/(ops)/momentum': typeof opsMomentumRoute
   '/(marketing)/': typeof marketingIndexRoute
@@ -109,6 +118,7 @@ export interface FileRouteTypes {
     | '/contact'
     | '/work'
     | '/architecture'
+    | '/crash'
     | '/live'
     | '/momentum'
     | '/'
@@ -119,6 +129,7 @@ export interface FileRouteTypes {
     | '/contact'
     | '/work'
     | '/architecture'
+    | '/crash'
     | '/live'
     | '/momentum'
     | '/'
@@ -131,6 +142,7 @@ export interface FileRouteTypes {
     | '/(marketing)/contact'
     | '/(marketing)/work'
     | '/(ops)/architecture'
+    | '/(ops)/crash'
     | '/(ops)/live'
     | '/(ops)/momentum'
     | '/(marketing)/'
@@ -178,6 +190,13 @@ declare module '@tanstack/react-router' {
       path: '/live'
       fullPath: '/live'
       preLoaderRoute: typeof opsLiveRouteImport
+      parentRoute: typeof opsRouteRoute
+    }
+    '/(ops)/crash': {
+      id: '/(ops)/crash'
+      path: '/crash'
+      fullPath: '/crash'
+      preLoaderRoute: typeof opsCrashRouteImport
       parentRoute: typeof opsRouteRoute
     }
     '/(ops)/architecture': {
@@ -240,12 +259,14 @@ const marketingRouteRouteWithChildren = marketingRouteRoute._addFileChildren(
 
 interface opsRouteRouteChildren {
   opsArchitectureRoute: typeof opsArchitectureRoute
+  opsCrashRoute: typeof opsCrashRoute
   opsLiveRoute: typeof opsLiveRoute
   opsMomentumRoute: typeof opsMomentumRoute
 }
 
 const opsRouteRouteChildren: opsRouteRouteChildren = {
   opsArchitectureRoute: opsArchitectureRoute,
+  opsCrashRoute: opsCrashRoute,
   opsLiveRoute: opsLiveRoute,
   opsMomentumRoute: opsMomentumRoute,
 }

@@ -134,6 +134,32 @@ test.describe('/architecture — live system map, frontend <-> backend', () => {
     await expect(trigger).toBeFocused()
   })
 
+  test('an unexpected render error degrades to a recoverable boundary inside the shell (§24.36 36.3)', async ({
+    page,
+  }) => {
+    // The mock-only /crash route throws during render (VITE_MOCK_SEAM is armed in
+    // the E2E build). React logs the caught error to the console by design, so
+    // this test deliberately uses no console gate.
+    await page.goto('/crash')
+
+    const boundary = page.getByTestId('route-error')
+    await expect(boundary).toBeVisible()
+    await expect(boundary.getByText(/ran into a problem/i)).toBeVisible()
+    await expect(boundary.getByTestId('route-error-retry')).toBeVisible()
+    await expect(boundary.getByRole('link', { name: /go home/i })).toHaveAttribute('href', '/')
+
+    // The boundary renders inside the ops layout `<Outlet/>` — the header
+    // persists, so a crash is never a chromeless dead-end (the visitor can still
+    // navigate away). The connective rail is correctly absent (an unmapped route).
+    await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible()
+
+    // No raw stack is shown to visitors (the production build hides the detail).
+    await expect(page.getByTestId('route-error-detail')).toHaveCount(0)
+
+    const a11y = await new AxeBuilder({ page }).analyze()
+    expect(a11y.violations).toEqual([])
+  })
+
   test('the shared header nav reaches /architecture and back', async ({ page }) => {
     await page.goto('/')
     const nav = page.getByRole('navigation', { name: 'Primary' })
