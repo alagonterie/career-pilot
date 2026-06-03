@@ -3928,6 +3928,23 @@ The PORTAL §8.2 "identical metadata footer" (status string + deploy hash + soci
 4. Frontend unit + tsc + build green; functional E2E green (the `/live` turn seal asserted; the §24.34 model-chip + local-spend assertions still pass); `@visual` re-blessed in isolation (`home.png`, `live.png`).
 5. Spec deltas: this Pass C; PORTAL §5.2 (turn seal) + §5.1 (ticker drops turns); a §24.34 reconciliation note (turn rows now render as a seal, not a peer line).
 
+**Pass D — funnel card bar → win-confidence + funnel/simulator resize stability (#8 + #7).** Observed live on `dev:mock` via the Playwright MCP before deciding.
+
+*#8 — the card progress bar restated the lane.* `FunnelCard`'s bar was `(stageIdx+1)/5` — purely the card's stage position, which the column it's already filed under conveys. Repoint it to **`win_confidence`** (the heuristic from `public_funnel_view`): the bar now carries glanceable per-card info, with a muted `~N%` label and the honest "low-rigor heuristic" framing. Graceful when `win_confidence` is null (no bar). The `DetailPanel` keeps its fuller labeled win-confidence section.
+
+*#7 — the funnel board height jumped as cards piled.* Observed (MCP, dev:mock): the board is a `grid lg:grid-cols-5` of `flex-col` lanes; grid `align-items: stretch` made every lane match the **tallest**, so (a) sparse/empty lanes ballooned (the empty `APPLIED` lane stretched to the tallest's 255px), and (b) as the generator advanced cards into a lane (six piled into `OFFER` → 763px), the whole board — and the footer/rail below it — jumped. Fix: `items-start` on the grid (lanes hug content, no balloon) **plus a fixed lane height with internal scroll** (`h-[16rem] overflow-y-auto` on each lane's card list). The board is then a stable ~constant-height rectangle regardless of distribution; a piled lane scrolls internally instead of growing the board (the same fixed-height-scroll stabilizer as the Pass B sanitizer panes). Verified live: with six cards in `OFFER`, all lanes held the fixed height and the lane scrolled. Tradeoff: a lane with more cards than fit scrolls (rare in a balanced funnel; stability is the win).
+
+*#7 — the simulator resize is by design (left as-is).* Observed: running the simulator widens `main` from `max-w-2xl` (672px) to `max-w-6xl` (1152px) and reveals the two panes — the deliberate Apple→ops **register switch** on Run (§5.3 / §24.31), a one-time intentional transition (the panes are height-bounded, no in-run jitter). Unlike the funnel's content-jitter this is intended, so it's unchanged.
+
+**What ships (Pass D).** `FunnelCard.tsx` (bar → `win_confidence`, `~N%` label, graceful null; drop the stage-position math); `FunnelBoard.tsx` (`items-start` + fixed-height scrolling lanes); the funnel unit tests (win bar value + graceful null); re-bless `funnel.png`.
+
+**Definition of done.**
+1. The funnel card bar reflects `win_confidence` (not stage position), with a `~N%` label; null `win_confidence` → no bar; the `DetailPanel`'s win-confidence section is unchanged.
+2. The funnel board holds a stable height regardless of per-lane card counts: lanes are a fixed height with internal scroll (`items-start`, no balloon); a piled lane scrolls rather than growing the board.
+3. The simulator is unchanged (its input→run widening is the intentional register switch, documented here).
+4. Frontend unit + tsc + build green; funnel E2E green; `@visual` `funnel.png` re-blessed in isolation.
+5. Spec deltas: this Pass D; PORTAL §5.4 (card bar = win-confidence heuristic; board = stable fixed-height scrolling lanes) + §5.3 note (the simulator run-widening is the intentional register switch).
+
 ---
 
 ## Part VI: Open questions
