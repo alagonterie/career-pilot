@@ -3779,6 +3779,33 @@ The grippiest spoke of the conversion spine (§24.30): proof-by-demonstration (P
 
 ---
 
+#### 24.33 Backend increment — the anonymization demo (`/api/sanitize-demo` + the `/live` wow-finish)
+
+A Phase-7 deferral picked up between 8.2 and 8.3 (not part of the conversion spine): the `ANONYMIZATION DEMO` panel PORTAL §5.2 calls the "wow-finish" — a two-pane raw↔sanitized display that lets a privacy-minded hiring manager *watch the real sanitization pipeline run*. §24.29 deferred it deliberately: done faithfully it must run the **real** `src/modules/portal/sanitizer.ts` over synthetic input via a small endpoint, never a frontend re-implementation that could drift from the pipeline actually protecting the candidate's data. This increment builds that endpoint + the panel.
+
+**The faithfulness constraint (why this is backend, not frontend).** The credibility of the panel is that it's the *actual* sanitizer — the same `applyPass1` regex + Pass-2 company redaction that gate every public row. So the transformation runs server-side over the real code; the frontend only renders `{ raw, sanitized }`. Two safety rules: (1) **synthetic input only** — the endpoint serves a fixed set of server-authored synthetic samples (fake emails / phones / $ / URLs + a *synthetic* company), never arbitrary visitor input (no free-sanitizer-as-a-service, and the "synthetic, never real" labeling stays true); (2) **no real data** — company obfuscation is demonstrated against a *synthetic* application mapping, never the real `applications` table (which holds private company names).
+
+**The Pass-2 wrinkle + the clean extraction.** `applyPass2(text, db)` reads `applications WHERE public_state != 'public'` — real private data. To show company obfuscation on synthetic input faithfully (same algorithm, no real data), extract the pure redaction core: `redactCompanies(text, apps: CompanyRedaction[])` (the existing word-boundary-lookaround alias loop), and have `applyPass2` load from the DB then delegate to it. Behavior-preserving (the Pass-2 tests stay byte-identical); the demo calls the *same* `redactCompanies` with a synthetic `[{ company_name:'Globex', company_aliases, obfuscated_label:'saas-demo' }]`.
+
+**What ships.**
+- **`sanitizer.ts` refactor**: extract `redactCompanies(text, apps)` + the `CompanyRedaction` type; `applyPass2` delegates to it. No behavior change (covered by the existing `sanitizer.test.ts`).
+- **`src/modules/portal/sanitize-demo.ts`** (NEW, production — synthetic-only data): a small fixed `SAMPLES` array (each = a synthetic raw event string + its synthetic company mapping) + `buildSanitizeDemo(index?)` → `{ raw, sanitized, redactions, sample, total }`, running the **real** `applyPass1` + `redactCompanies` over the chosen sample and counting redaction markers. Pure, no DB, no throws.
+- **`POST /api/sanitize-demo`** in `api.ts`: body `{ sample?: number }` (or `?sample=`), returns the `buildSanitizeDemo` result; CORS + error-safety like the other routes; effect-free (no DB write). Added to §10's route list. Arbitrary-input sanitization is explicitly **out** (synthetic samples only).
+- **The `/live` panel (frontend)**: a `useSanitizeDemo` client hook (POST on mount + on "show another") + the `AnonymizationDemo` component — the two-pane raw↔sanitized (PORTAL §5.2), the "Demo data — synthetic only" label, the redaction count, the "show another" control. Slots into the existing `/live` grid (the panel `/live` left deferred in §24.29). Reduced-motion-safe.
+
+**Determinism for tests.** The samples are fixed + server-authored, so the panel renders deterministically; the E2E pins `sample=0` and asserts a known redaction (e.g. `[EMAIL_REDACTED]` + `[REDACTED:saas-demo]` present, the synthetic company string absent in the sanitized pane). The `/live` visual baseline re-blesses with the panel populated (synthetic, no wall-clock content → no masking). Host tests: the `sanitize-demo` builder (each sample's raw → expected markers; the count) + the route (200 shape, `?sample` selection, out-of-range clamps); `sanitizer.test.ts` confirms the extraction is behavior-preserving.
+
+**Deferred (noted):** arbitrary visitor-supplied input + its rate-limiting (Phase 9 hardening, if ever — synthetic-only is the on-message choice); Pass-3 (the §24.10 LLM review) stays a no-op, so the demo shows the Pass-1+Pass-2 reality (honest — it's what runs today). The other two backend increments stay deferred: the per-turn LLM-telemetry capture (its own attribution-design sub-milestone) + Portkey calibration (manual, gated on live traffic).
+
+**Definition of done.**
+1. `POST /api/sanitize-demo` returns `{ raw, sanitized, redactions, sample, total }` for a synthetic sample, running the real `applyPass1` + `redactCompanies`; `?sample`/body selects; out-of-range is clamped; never throws.
+2. `redactCompanies` is extracted + `applyPass2` delegates to it with **zero** behavior change (`sanitizer.test.ts` green, unmodified).
+3. The `/live` `ANONYMIZATION DEMO` panel renders the two-pane raw↔sanitized from the endpoint, labeled synthetic-only, with the redaction count + a "show another" control; no real `applications` data is ever read by the demo path.
+4. Host suite (+ the new `sanitize-demo` builder + route cases) + tsc + format:check green; frontend unit (the hook + panel) + tsc + `vite build` green; E2E (`/live` shows the panel; a sample's known redactions present; axe; console/network gate) green; the `live.png` baseline re-blessed with the panel.
+5. Spec deltas: this §24.33, PORTAL §5.2 build-note (the panel now ships; the faithfulness/synthetic-only rules), §10 route-list += `POST /api/sanitize-demo`.
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
