@@ -165,7 +165,51 @@ describe('seedDeterministicFunnel', () => {
       seedDeterministicFunnel(db);
     }).not.toThrow();
     expect(count('public_funnel_view')).toBe(5);
-    expect(count('public_audit_trail')).toBe(3);
+    expect(count('public_audit_trail')).toBe(4); // 3 funnel/progress + 1 turn row (§24.34)
+  });
+});
+
+describe('telemetry lives on category=turn rows (§24.34 shape)', () => {
+  it('seedDeterministicBacklog: the turn row carries the lanes; funnel/progress rows are NULL', () => {
+    seedDeterministicBacklog(db);
+    const turn = db
+      .prepare(
+        `SELECT model_used, tokens, cost_cents, cache_hit, latency_ms FROM public_audit_trail WHERE category = 'turn'`,
+      )
+      .get() as { model_used: string; tokens: number; cost_cents: number; cache_hit: number; latency_ms: number };
+    expect(turn.model_used).toBe('opus-4-8');
+    expect(turn.cost_cents).toBeGreaterThan(0);
+    expect(turn.cache_hit).toBe(1);
+    // No telemetry ever leaks onto a non-turn row (the real §24.34 shape).
+    const leak = (
+      db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM public_audit_trail
+            WHERE category != 'turn' AND (model_used IS NOT NULL OR cost_cents IS NOT NULL)`,
+        )
+        .get() as { n: number }
+    ).n;
+    expect(leak).toBe(0);
+  });
+
+  it('seedRichFixture: every telemetry-bearing row is category=turn', () => {
+    seedRichFixture(db);
+    const leak = (
+      db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM public_audit_trail
+            WHERE category != 'turn'
+              AND (model_used IS NOT NULL OR tokens IS NOT NULL OR cost_cents IS NOT NULL OR latency_ms IS NOT NULL)`,
+        )
+        .get() as { n: number }
+    ).n;
+    expect(leak).toBe(0);
+    const turns = (
+      db
+        .prepare(`SELECT COUNT(*) AS n FROM public_audit_trail WHERE category = 'turn' AND model_used IS NOT NULL`)
+        .get() as { n: number }
+    ).n;
+    expect(turns).toBeGreaterThan(0);
   });
 });
 

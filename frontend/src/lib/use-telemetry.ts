@@ -20,6 +20,12 @@ export interface TelemetryLocal {
   simulator_runs_total: number
   activity_events_total: number
   activity_events_24h: number
+  // Real local spend, summed over the per-turn telemetry rows (§24.34) — the
+  // honest counterpart to the Portkey aggregate, present even when Portkey is
+  // unavailable. cost_cents is an SDK estimate, labeled as such in the panel.
+  turns_total: number
+  turn_cost_cents_total: number
+  turn_cost_cents_24h: number
 }
 
 /** The `GET /api/telemetry` payload (src/modules/portal/portkey-analytics.ts). */

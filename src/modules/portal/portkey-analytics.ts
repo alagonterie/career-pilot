@@ -35,6 +35,12 @@ export interface TelemetryLocal {
   simulator_runs_total: number;
   activity_events_total: number;
   activity_events_24h: number;
+  // Real local spend, summed over the per-turn telemetry rows (§24.34). This
+  // is the honest, always-real counterpart to the Portkey aggregate (which may
+  // be unavailable); cost_cents is an SDK estimate, labeled as such in the UI.
+  turns_total: number;
+  turn_cost_cents_total: number;
+  turn_cost_cents_24h: number;
 }
 
 export interface Telemetry {
@@ -78,10 +84,19 @@ function computeLocal(): TelemetryLocal {
   const evTotal = db.prepare('SELECT COUNT(*) AS n FROM public_audit_trail').get() as { n: number };
   const cutoff = new Date(Date.now() - 86_400_000).toISOString();
   const ev24 = db.prepare('SELECT COUNT(*) AS n FROM public_audit_trail WHERE ts >= ?').get(cutoff) as { n: number };
+  const turns = db
+    .prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(cost_cents), 0) AS c FROM public_audit_trail WHERE category = 'turn'`)
+    .get() as { n: number; c: number };
+  const turns24 = db
+    .prepare(`SELECT COALESCE(SUM(cost_cents), 0) AS c FROM public_audit_trail WHERE category = 'turn' AND ts >= ?`)
+    .get(cutoff) as { c: number };
   return {
     simulator_runs_total: sim.n,
     activity_events_total: evTotal.n,
     activity_events_24h: ev24.n,
+    turns_total: turns.n,
+    turn_cost_cents_total: turns.c,
+    turn_cost_cents_24h: turns24.c,
   };
 }
 

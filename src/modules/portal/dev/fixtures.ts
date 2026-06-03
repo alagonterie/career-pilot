@@ -104,8 +104,6 @@ export function seedDeterministicBacklog(db: Database.Database): void {
     category: 'subagent_progress',
     agent_name: 'research-company',
     proactive: 1,
-    model_used: 'opus-4-7',
-    cache_hit: 1,
     summary: 'mapped the engineering org',
   });
   insertAuditRow(db, {
@@ -115,6 +113,23 @@ export function seedDeterministicBacklog(db: Database.Database): void {
     proactive: 0,
     application_ref: 'ai-infra-b',
     summary: 'logged a recruiter reply',
+  });
+  // A per-turn telemetry row (§24.34). The LLM economics live HERE — on a
+  // category='turn' summary row — never on the funnel/progress rows above
+  // (those carry no per-event cost; the SDK resolves cost only per turn).
+  // This is the seeded row the ticker + /live LogStream light their
+  // model/tokens/cost/cache/latency lanes from.
+  insertAuditRow(db, {
+    seq: 4,
+    ts: '2026-06-02T16:45:00Z',
+    category: 'turn',
+    proactive: 1,
+    model_used: 'opus-4-8',
+    tokens: 18400,
+    cost_cents: 6,
+    cache_hit: 1,
+    latency_ms: 2100,
+    summary: 'turn complete',
   });
 }
 
@@ -406,21 +421,35 @@ function seedAuditBacklog(db: Database.Database): void {
     const seq = i + 1;
     // Spread over the last ~6 hours, oldest first (ascending seq).
     const ts = new Date(Date.now() - (total - i) * 8 * 60_000).toISOString();
+
+    // Every 5th row is a per-turn telemetry row (§24.34) — the LLM economics
+    // live ONLY on category='turn' rows (the SDK resolves cost per turn, not
+    // per event). Funnel/progress rows leave the telemetry lanes NULL: that is
+    // the real shape, so the seeded demo never misrepresents it.
+    if (i % 5 === 0) {
+      insertAuditRow(db, {
+        seq,
+        ts,
+        category: 'turn',
+        proactive: i % 4 === 0 ? 0 : 1,
+        model_used: MODELS[i % MODELS.length],
+        tokens: 8000 + ((i * 137) % 30000),
+        cost_cents: 3 + (i % 12),
+        cache_hit: i % 2 === 0 ? 1 : 0,
+        latency_ms: 1200 + ((i * 53) % 4000),
+        summary: 'turn complete',
+      });
+      continue;
+    }
+
     const isSubagent = i % 3 !== 0;
-    const agent = isSubagent ? AGENTS[i % AGENTS.length] : null;
-    const withTelemetry = isSubagent && i % 2 === 0;
     insertAuditRow(db, {
       seq,
       ts,
       category: isSubagent ? 'subagent_progress' : 'funnel',
-      agent_name: agent,
+      agent_name: isSubagent ? AGENTS[i % AGENTS.length] : null,
       proactive: i % 4 === 0 ? 0 : 1,
       application_ref: labels[i % labels.length],
-      model_used: withTelemetry ? MODELS[i % MODELS.length] : null,
-      tokens: withTelemetry ? 1200 + ((i * 137) % 4000) : null,
-      cost_cents: withTelemetry ? 2 + (i % 9) : null,
-      cache_hit: withTelemetry && i % 3 === 0 ? 1 : 0,
-      latency_ms: withTelemetry ? 400 + ((i * 53) % 2600) : null,
       summary: SUMMARY_POOL[i % SUMMARY_POOL.length],
     });
   }
@@ -525,18 +554,29 @@ export function newGeneratorState(): GeneratorState {
  */
 export function buildSyntheticEvent(state: GeneratorState): Omit<AuditSeed, 'seq' | 'ts'> {
   const t = state.tick;
+  // Every 5th tick emits a per-turn telemetry row (§24.34) carrying the LLM
+  // lanes; all other ticks are funnel/progress rows with the lanes NULL — the
+  // real shape (cost is a per-turn fact, never a per-event one).
+  if (t % 5 === 0) {
+    return {
+      category: 'turn',
+      agent_name: null,
+      proactive: t % 4 === 0 ? 0 : 1,
+      application_ref: null,
+      model_used: MODELS[t % MODELS.length],
+      tokens: 9000 + ((t * 211) % 28000),
+      cost_cents: 3 + (t % 10),
+      cache_hit: t % 2 === 0 ? 1 : 0,
+      latency_ms: 1300 + ((t * 67) % 3800),
+      summary: 'turn complete',
+    };
+  }
   const isSubagent = t % 3 !== 0;
-  const withTelemetry = isSubagent && t % 2 === 0;
   return {
     category: isSubagent ? 'subagent_progress' : 'funnel',
     agent_name: isSubagent ? AGENTS[t % AGENTS.length] : null,
     proactive: t % 4 === 0 ? 0 : 1,
     application_ref: state.labels[t % state.labels.length],
-    model_used: withTelemetry ? MODELS[t % MODELS.length] : null,
-    tokens: withTelemetry ? 1500 + ((t * 211) % 3500) : null,
-    cost_cents: withTelemetry ? 2 + (t % 8) : null,
-    cache_hit: withTelemetry && t % 3 === 0 ? 1 : 0,
-    latency_ms: withTelemetry ? 450 + ((t * 67) % 2400) : null,
     summary: SUMMARY_POOL[t % SUMMARY_POOL.length],
   };
 }
