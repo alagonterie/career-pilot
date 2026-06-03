@@ -30,7 +30,14 @@ export default defineConfig({
   // visual baseline is deterministic, and `animations:'disabled'` in the
   // snapshot freezes CSS. Reduced-motion for real users is handled in-component
   // via `MotionConfig reducedMotion="user"` (the real media query).
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  // Two projects: the desktop suite (everything except the mobile spec) and the
+  // mobile suite (§24.37 + PORTAL §13) — a Pixel-5-class ~393px viewport running
+  // ONLY e2e/mobile.spec.ts. Both use the chromium engine (CI installs only
+  // chromium; `devices['Pixel 5']` is a viewport/touch preset, not a new browser).
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: /mobile\.spec\.ts/ },
+    { name: 'mobile-chromium', use: { ...devices['Pixel 5'] }, testMatch: /mobile\.spec\.ts/ },
+  ],
   webServer: [
     {
       command: 'pnpm exec tsx scripts/portal-e2e-server.ts',

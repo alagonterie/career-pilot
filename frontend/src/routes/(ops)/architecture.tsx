@@ -39,7 +39,8 @@ function ArchitecturePage() {
             <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Architecture</h1>
             <p className="mt-2 text-sm text-muted-foreground">
               The real running system — triggers, the host, the per-session container, and the sanitized path that feeds
-              this page. Click any node for detail.
+              this page. <span className="sm:hidden">Tap</span>
+              <span className="hidden sm:inline">Click</span> any node for detail.
             </p>
           </div>
           <ModeBanner mode={mode} />

@@ -203,7 +203,12 @@ export function ArchDiagram({
             data-status={n.actor ? 'actor' : status}
             aria-label={n.actor ? n.label : `${n.label} — ${STATUS_META[status].label}`}
             onClick={() => onSelect(n)}
-            className="absolute rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            // On a phone the diagram scales down to ~45%, so a node box is only
+            // ~21px tall — below a comfortable tap target (§13). Float each
+            // (invisible) overlay button to a ≥44px hit area, roughly centered on
+            // its node via a negative margin (not a transform — that would clash
+            // with motion's `layoutId` grow). Desktop is exact (`sm:` resets).
+            className="absolute -mt-3 min-h-[44px] rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:mt-0 sm:min-h-0"
             style={{
               left: `${(n.x / VIEW_W) * 100}%`,
               top: `${(n.y / VIEW_H) * 100}%`,

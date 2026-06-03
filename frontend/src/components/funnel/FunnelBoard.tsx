@@ -52,7 +52,17 @@ export function FunnelBoard({
                 </h2>
                 <span className="font-mono text-xs tabular-nums text-muted-foreground">{items.length}</span>
               </header>
-              <div className="flex h-[16rem] flex-col gap-2 overflow-y-auto">
+              {/* Desktop keeps a fixed-height scrolling lane (uniform lanes, board
+                  stability — §24.35 Pass D). On a phone the board is a vertical
+                  stack, so lanes are content-height and an empty stage collapses
+                  to just its header row (no full-height void — §13). */}
+              <div
+                className={
+                  items.length === 0
+                    ? 'hidden flex-col gap-2 sm:flex sm:h-[16rem] sm:overflow-y-auto'
+                    : 'flex flex-col gap-2 sm:h-[16rem] sm:overflow-y-auto'
+                }
+              >
                 {items.map((a) => (
                   <motion.div key={a.application_ref} layout layoutId={a.application_ref}>
                     <FunnelCard app={a} onSelect={() => onSelect(a)} />
@@ -102,7 +112,7 @@ export function FunnelBoardSkeleton() {
               {col.title}
             </h2>
           </header>
-          <div className="flex h-[16rem] flex-col gap-2">
+          <div className="flex flex-col gap-2 sm:h-[16rem]">
             {Array.from({ length: ((i * 2) % 3) + 1 }).map((_, j) => (
               <Skeleton key={j} className="h-16 w-full" />
             ))}

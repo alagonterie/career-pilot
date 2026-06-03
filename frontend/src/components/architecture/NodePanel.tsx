@@ -95,7 +95,7 @@ export function NodePanel({
   const facts = nodeFacts(node, arch, mode)
 
   return (
-    <div ref={overlayRef} className="fixed inset-0 z-30 flex items-center justify-center p-4">
+    <div ref={overlayRef} className="fixed inset-0 z-30 flex items-end justify-center p-0 sm:items-center sm:p-4">
       <motion.button
         type="button"
         aria-label="Close details"
@@ -116,7 +116,10 @@ export function NodePanel({
         aria-describedby="arch-node-desc"
         data-testid="arch-node-panel"
         transition={{ layout: { duration: 0.2, ease: 'easeOut' } }}
-        className="relative z-10 max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-lg border border-border bg-card p-6 shadow-xl focus:outline-none"
+        // A bottom-sheet on phones (full-width, rounded top, flush to the bottom
+        // edge — §13); the centered max-w-lg card returns at `sm:` (desktop
+        // baseline unchanged). The `layoutId` grow still animates from the node.
+        className="relative z-10 max-h-[85vh] w-full overflow-y-auto rounded-t-2xl border border-border bg-card p-6 shadow-xl focus:outline-none sm:max-w-lg sm:rounded-lg"
       >
         <motion.div
           initial={{ opacity: 0 }}
