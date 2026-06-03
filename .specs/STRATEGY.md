@@ -3865,7 +3865,9 @@ After §24.34 the owner exercised the live portal and surfaced eight UX observat
 | **B** | #6 arch node modal · #3 anon-demo relocation | `/architecture` node click → grow-into-centered-modal (motion `layoutId`); the §24.33 anonymization demo moves off `/live` into the `pub-sanitize` node's modal (lazy-fetched) with a discoverability cue |
 | **C** | #4 trace auto-scroll · #5 turn-row redesign | Fix the `LogStream` ring-buffer auto-scroll bug; redesign `category='turn'` rows as a batch-sealing summary separator (not a peer event line) |
 | **D** | #8 card progress bar · #7 content resize | Funnel card bar → `win_confidence` heuristic (not a restated lane); funnel/simulator resize stability (observed live first) |
-| **E** | mobile | A dedicated mobile-layout spec: header collapse, per-page responsive strategy, a Playwright mobile-viewport project |
+| **E** | mobile | **Promoted out of this batch** (owner call, 2026-06-03): mobile is a whole responsive strategy, not a refinement → its own dedicated **PORTAL §13 + STRATEGY §24.37**, built *after* the §24.36 polish pass. |
+
+**Status (2026-06-03): Passes A–D shipped + pushed (`560dea7..0473be0`).** Pass E (mobile) was promoted to its own spec (above). A new infra/consistency pass — **§24.36 UI polish & hardening** — was inserted before mobile (owner call: shift from creative/feature passes to hardening the UI's foundations). Sequence from here: **§24.36 (polish) → §24.37 + PORTAL §13 (mobile).**
 
 **Pass A — navigation & layout reachability.**
 
@@ -3944,6 +3946,43 @@ The PORTAL §8.2 "identical metadata footer" (status string + deploy hash + soci
 3. The simulator is unchanged (its input→run widening is the intentional register switch, documented here).
 4. Frontend unit + tsc + build green; funnel E2E green; `@visual` `funnel.png` re-blessed in isolation.
 5. Spec deltas: this Pass D; PORTAL §5.4 (card bar = win-confidence heuristic; board = stable fixed-height scrolling lanes) + §5.3 note (the simulator run-widening is the intentional register switch).
+
+---
+
+#### 24.36 UI polish & hardening — async-state consistency, a dev state-switcher, and infra polish
+
+After the §24.35 creative passes (A–D), the owner called the shift: stop adding surface/features and **harden the UI's foundations** — the states and consistency that make it feel finished and trustworthy — before the mobile work (§24.37). All infra/consistency, no new features.
+
+**Decomposition (each sub-pass = a drill-in then a build, the §24.35 cadence).**
+
+| Sub | Scope |
+|---|---|
+| **36.1** (centerpiece) | **Async-state consistency** (loading / empty / error) across every surface + a **mock-only state-override seam** + a **dev state-switcher** to drive it live; the states become E2E-assertable + `@visual`-snapshottable |
+| **36.2** | Modal/drawer **focus-trapping + dialog a11y** (the arch modal + funnel drawer trap focus; `role="dialog"` tightened) |
+| **36.3** | **Error boundaries + the backend-down fallback** (PORTAL §10 made real + tested; pairs with 36.1's error seam) |
+| **36.4** | **Reduced-motion + SSE-reconnect UX audit** (every animation respects reduced-motion; reconnect states consistent across streams) |
+| **36.5** | **Meta / OG images / favicon / 404 polish** (social-share previews — esp. the simulator share page; favicon; `NotFound` styling) |
+
+**Sub-pass 36.1 — async-state consistency + the dev state-switcher.**
+
+*The problem.* Loading / empty / error states are handled ad-hoc: `SimOutput` has a real skeleton, but `/funnel`, `/architecture`, the trace stream, etc. show plain text ("Loading the pipeline…", "Reading system status…"). No shared visual language, and — because the E2E/dev DB is always seeded + instant — these states are **unreachable in tests** (never asserted, never snapshotted), so they can silently rot.
+
+*The state-override seam (the testability infra).* A **mock-only request override** makes any endpoint serve a chosen state on demand: the frontend attaches `?__state=loading|empty|error` (from a dev-controls store; absent in production), and the dev/E2E portal API honors it — `loading` = an artificial delay/hang, `empty` = a valid-but-empty payload, `error` = a 500. **Gated to mock mode** (the `dev:mock` + E2E servers / `PORTAL_MOCK_*`); the production API never reads `__state`, so production behavior is unchanged and the seam can't leak. One mechanism, two consumers: the dev state-switcher (below) and the E2E/`@visual` tests (which set the override directly to snapshot each state).
+
+*The dev state-switcher (the owner's ask — "easily control which edge case to view, no manual setup").* In mock/dev mode only, a small floating control panel flips each surface's state — `normal | loading | empty | error` — live, with no env edits or restarts. It writes the override the hooks attach. Rendered only when a dev flag is set (the `dev:mock` server sets it); never bundled into the production path.
+
+*The consistent state language.* A shared skeleton primitive (`<Skeleton>`) + standard patterns: **skeletons** for content-shaped areas (funnel cards, `/live` panels, `/work` sections), the existing honest **"not connected / offline"** treatment for degraded external dependencies (Portkey, backend), and concise inline copy for the streams (the terminal "warming up…"). Every async surface gets a defined loading + empty + error state from this language; nothing renders a bare blank or an un-themed spinner.
+
+*Production toggle (deferred — the owner mused on it).* Exposing a state-preview toggle on the **live** site is **not** done here and is recommended against: a production site serving fake loading/error states undercuts the "everything here is real, right now" credibility the architecture/sanitizer surfaces build, and it's an unusual visitor affordance. The seam stays mock-gated. A purely client-side "preview states" mode (faking the UI without the server) is the only prod-safe shape if ever wanted — parked in V2_IDEAS, not built.
+
+**Definition of done (36.1).**
+1. A mock-only `__state` request override (`loading`/`empty`/`error`) is honored by the dev + E2E portal API and ignored by production; the frontend hooks attach it from a dev-controls store (absent → normal).
+2. A dev state-switcher panel (mock/dev only, never in the production bundle) flips each surface's state live.
+3. A shared skeleton primitive + a consistent loading/empty/error treatment across the async surfaces (funnel, `/live` panels, architecture, work, simulator, home ticker/strip); no bare-blank or un-themed states.
+4. `@visual` loading/empty/error baselines for the key surfaces (driven by `__state`), validated in isolation; E2E asserts each state renders (not a blank); frontend unit + tsc + build green.
+5. Spec deltas: this §24.36 (opener + 36.1); PORTAL §10 (the async-state language + the mock-only state-override seam + the dev switcher; the prod-toggle deferral); V2_IDEAS (the deferred prod state-preview).
+
+**36.2–36.5** are drilled in when reached (the §24.35 pattern): focus-trapping/dialog-a11y, error-boundary + backend-down fallback, reduced-motion + reconnect audit, meta/OG/favicon/404 — each a drill-in + build with its own DoD.
 
 ---
 

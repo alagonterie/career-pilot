@@ -1227,6 +1227,8 @@ When an application's obfuscation policy changes (`public_state` flip, label/nam
 | **Sanitization failed** | Event dropped silently. Logged to host-side admin Telegram for review. Portal continues. |
 | **JS disabled** | Static rendered hero + funnel snapshot + contact form work. No live ticker, no simulator. |
 
+> **Build note (STRATEGY §24.36 / Sub-milestone 36.1).** These states get a **consistent visual language** (a shared skeleton primitive for content-shaped areas; the honest "not connected / offline" treatment for degraded externals; concise inline copy for streams) instead of the current ad-hoc per-page handling. Because the seeded E2E/dev DB is always instant + populated, the loading/empty/error states are otherwise unreachable in tests — so a **mock-only request override** (`?__state=loading|empty|error`, honored only by the dev/E2E API, never production) makes each state reachable for `@visual` snapshots, driven live in dev by a small **state-switcher** panel. A production-facing state-preview toggle is deferred (V2_IDEAS #16) — a live site serving fake loading/error states would undercut the "everything here is real" credibility.
+
 ---
 
 ## 11. Backend surfaces required (bridge to STRATEGY.md)
