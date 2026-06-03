@@ -13,7 +13,8 @@ function ignorable(url: string): boolean {
     url.includes('/api/system-status') ||
     url.includes('/api/funnel') ||
     url.includes('/api/telemetry') ||
-    url.includes('/api/activity/stream')
+    url.includes('/api/activity/stream') ||
+    url.includes('/api/sanitize-demo')
   )
 }
 
@@ -53,6 +54,15 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
     // The compact funnel reveals the public OFFER by its real name (the reveal
     // tier — a public application's ref is the company, not the obfuscated label).
     await expect(page.getByTestId('funnel-compact-reveal')).toContainText('Wayne Enterprises')
+
+    // The anonymization "wow-finish" runs the REAL sanitizer over a synthetic
+    // sample (§24.33): the raw pane carries synthetic PII; the sanitized pane
+    // shows the pipeline's markers and redacts the synthetic company.
+    const anonSanitized = page.getByTestId('anon-sanitized')
+    await expect(anonSanitized).toContainText('[EMAIL_REDACTED]')
+    await expect(anonSanitized).toContainText('[REDACTED:saas-demo]')
+    await expect(page.getByTestId('anon-raw')).toContainText('Globex')
+    await expect(anonSanitized).not.toContainText('Globex')
 
     // A filter chip narrows the stream: System = non-subagent events only, so the
     // single research-company line disappears.

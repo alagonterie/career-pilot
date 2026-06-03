@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 
+import { AnonymizationDemo } from '~/components/live/AnonymizationDemo'
 import { FunnelCompact } from '~/components/live/FunnelCompact'
 import { LogStream } from '~/components/live/LogStream'
 import {
@@ -14,6 +15,7 @@ import {
 import { useActivityStream } from '~/lib/use-activity-stream'
 import { useArchitecture } from '~/lib/use-architecture'
 import { useFunnel } from '~/lib/use-funnel'
+import { useSanitizeDemo } from '~/lib/use-sanitize-demo'
 import { deriveTelemetryView, useTelemetry } from '~/lib/use-telemetry'
 
 // Third page of the ops register (PORTAL §5.2). `(ops)` is pathless → the URL is
@@ -42,6 +44,7 @@ function LivePage() {
   const { data: funnel } = useFunnel(API_BASE)
   const { events, status, count } = useActivityStream(API_BASE, 60)
   const { data: telemetry } = useTelemetry(API_BASE)
+  const anon = useSanitizeDemo(API_BASE)
 
   const view = deriveTelemetryView(telemetry)
   const apps = funnel?.applications ?? []
@@ -78,6 +81,9 @@ function LivePage() {
             <RecentOutcomesPanel apps={apps} />
           </div>
         </div>
+
+        {/* the privacy "wow-finish" — the real sanitizer over synthetic input (§24.33) */}
+        <AnonymizationDemo state={anon} />
 
         <footer className="border-t border-border pt-6 text-[11px] leading-relaxed text-muted-foreground">
           Every line is sanitized public data — companies obfuscated by default, no PII. Per-line LLM telemetry (model,

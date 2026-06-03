@@ -87,21 +87,21 @@ interface ApplicationForRedaction {
   public_state: string;
 }
 
-export function applyPass2(text: string, db: Database.Database): string {
-  let apps: ApplicationForRedaction[];
-  try {
-    apps = db
-      .prepare(
-        `SELECT id, company_name, company_aliases, obfuscated_label, public_state
-           FROM applications
-          WHERE public_state != 'public'`,
-      )
-      .all() as ApplicationForRedaction[];
-  } catch (err) {
-    log.error('sanitize Pass 2: failed to load applications', { err });
-    return text;
-  }
+/** The fields the company-redaction core needs (a structural subset of an
+ * `applications` row). */
+export interface CompanyRedaction {
+  company_name: string;
+  company_aliases: string | null;
+  obfuscated_label: string;
+}
 
+/**
+ * Pure: replace each company's name + JSON aliases with `[REDACTED:<label>]`
+ * (case-insensitive, word-boundary-lookaround). Extracted from `applyPass2` so
+ * the anonymization demo (§24.33) can run the EXACT same algorithm over
+ * synthetic input — without ever touching the real `applications` table.
+ */
+export function redactCompanies(text: string, apps: CompanyRedaction[]): string {
   let t = text;
   for (const app of apps) {
     if (!app.obfuscated_label) continue;
@@ -134,6 +134,23 @@ export function applyPass2(text: string, db: Database.Database): string {
     }
   }
   return t;
+}
+
+export function applyPass2(text: string, db: Database.Database): string {
+  let apps: ApplicationForRedaction[];
+  try {
+    apps = db
+      .prepare(
+        `SELECT id, company_name, company_aliases, obfuscated_label, public_state
+           FROM applications
+          WHERE public_state != 'public'`,
+      )
+      .all() as ApplicationForRedaction[];
+  } catch (err) {
+    log.error('sanitize Pass 2: failed to load applications', { err });
+    return text;
+  }
+  return redactCompanies(text, apps);
 }
 
 // ── Pass 3 stub ───────────────────────────────────────────────────────────
