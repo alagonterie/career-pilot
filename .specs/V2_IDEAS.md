@@ -138,3 +138,13 @@ Surface the orchestrator's *judgment* publicly: a `/live` feed of why a discover
 **Why deferred:** No PORTAL.md panel specs it (charter brainstorm, not a spec'd surface). More consequentially, it has an **unspecced anonymization gap**: §9's privacy model is per-*application* (`public_state` / `obfuscated_label` live on `applications`); `job_leads` has no obfuscation columns at all. A public lead-signals feed needs a fresh privacy decision — most leads are companies the candidate never engaged, and "agent found a 94 match at &lt;Company&gt;" publishes a match the candidate didn't choose to surface. Building backend before that product/privacy question is answered is speculative.
 
 **Reactivate when:** the portal is live and there's a decision that a signals feed earns a PORTAL panel — at which point spec the lead-anonymization model first (obfuscation for unengaged leads), then add a sanitized projection + best-effort hook (the same pattern as `public_funnel_view`). The raw data is already captured, so it's a small add on the established pattern, not a big backend change.
+
+---
+
+## 16. Production state-preview toggle (loading / empty / error)
+
+§24.36 (sub-pass 36.1) builds a **mock-only** state-override seam + a dev state-switcher so the loading/empty/error UIs are reachable in dev and snapshottable in `@visual`. The owner mused on exposing a state-preview toggle on the **live** site so visitors could see those states.
+
+**Why deferred:** a production site serving *fake* loading/error states undercuts the "everything here is real, right now" credibility the architecture + sanitizer surfaces build, and it's an unusual visitor affordance. The §24.36 seam is intentionally mock-gated (the production API never honors `__state`), so this is explicitly not wired in.
+
+**Reactivate when:** there's a clear reason to let visitors explore states — and then only as a **purely client-side** "preview states" mode (the frontend faking the UI without the server serving fake data), clearly labeled, so production never returns an untrue response.
