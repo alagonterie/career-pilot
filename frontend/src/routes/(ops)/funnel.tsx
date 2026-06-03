@@ -42,18 +42,24 @@ function FunnelPage() {
 
         <StatTiles apps={apps} loading={status === 'loading'} />
 
-        {/* The three async states share one visual language (§24.36 36.1):
-            a shaped skeleton while loading, a themed note for empty / offline. */}
+        {/* The three async states share one visual language (§24.36 36.1) with a
+            stable footprint (Tier-2): a shaped skeleton (board-height) while
+            loading, and empty/error centered in a reserved region the same height
+            as the board lanes — so flipping states never collapses the page. */}
         {status === 'loading' ? (
           <FunnelBoardSkeleton />
         ) : status === 'error' ? (
-          <StateNote data-testid="funnel-error" tone="error">
-            Funnel data is offline — retrying…
-          </StateNote>
+          <div className="flex min-h-[16rem] items-center justify-center">
+            <StateNote data-testid="funnel-error" tone="error">
+              Funnel data is offline — retrying…
+            </StateNote>
+          </div>
         ) : apps.length === 0 ? (
-          <StateNote data-testid="funnel-empty">
-            No applications in the pipeline yet — the first agents are warming up.
-          </StateNote>
+          <div className="flex min-h-[16rem] items-center justify-center">
+            <StateNote data-testid="funnel-empty">
+              No applications in the pipeline yet — the first agents are warming up.
+            </StateNote>
+          </div>
         ) : (
           <FunnelBoard apps={apps} onSelect={setSelected} />
         )}

@@ -3980,7 +3980,8 @@ After the §24.35 creative passes (A–D), the owner called the shift: stop addi
 2. A dev state-switcher panel (mock/dev only, never in the production bundle) flips each surface's state live.
 3. A shared skeleton primitive + a consistent loading/empty/error treatment across the async surfaces (funnel, `/live` panels, architecture, work, simulator, home ticker/strip); no bare-blank or un-themed states.
 4. `@visual` loading/empty/error baselines for the key surfaces (driven by `__state`), validated in isolation; E2E asserts each state renders (not a blank); frontend unit + tsc + build green.
-5. Spec deltas: this §24.36 (opener + 36.1); PORTAL §10 (the async-state language + the mock-only state-override seam + the dev switcher; the prod-toggle deferral); V2_IDEAS (the deferred prod state-preview).
+5. Spec deltas: this §24.36 (opener + 36.1); PORTAL §10 (the async-state language + the mock-only state-override seam + the dev switcher; the prod-toggle deferral; the Tier-2 dimensional-stability standard); V2_IDEAS (the deferred prod state-preview).
+6. **Dimensional stability (Tier 2 — owner call, the standard for all async surfaces here + going forward; see PORTAL §10).** Each surface holds a stable footprint across states: the loading skeleton reserves the ok-state layout (≈zero CLS on the load transition); empty/error center within a reserved region (never a bare-line collapse, never a full-height void). `/live` panels are grid-row-stabilized; `/funnel` + `/architecture` reserve their region explicitly (the arch loading skeleton matches the diagram's aspect ratio, not an arbitrary height).
 
 **36.2–36.5** are drilled in when reached (the §24.35 pattern): focus-trapping/dialog-a11y, error-boundary + backend-down fallback, reduced-motion + reconnect audit, meta/OG/favicon/404 — each a drill-in + build with its own DoD.
 

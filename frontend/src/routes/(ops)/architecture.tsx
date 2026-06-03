@@ -49,17 +49,25 @@ function ArchitecturePage() {
         </header>
 
         {status === 'loading' ? (
-          // Loading twin of the diagram (§24.36 36.1) — a shaped placeholder so
-          // the page holds its height while the system endpoints are polled.
-          <Skeleton data-testid="arch-skeleton" className="h-[22rem] w-full rounded-lg" />
+          // Loading twin of the diagram (§24.36 36.1, Tier-2 stability) — the
+          // skeleton matches the diagram's aspect ratio (ArchDiagram uses the
+          // same 760×736 box), so it reserves the exact footprint and loading→ok
+          // is ≈zero layout shift.
+          <Skeleton data-testid="arch-skeleton" className="aspect-[760/736] w-full rounded-lg" />
         ) : status === 'error' ? (
-          <StateNote data-testid="arch-empty" tone="error">
-            System status is offline — retrying…
-          </StateNote>
+          // Reserved region (not a bare-line collapse), but not the diagram's full
+          // ~900px height (that would be a large void) — a comfortable framed area.
+          <div className="flex min-h-[16rem] items-center justify-center">
+            <StateNote data-testid="arch-empty" tone="error">
+              System status is offline — retrying…
+            </StateNote>
+          </div>
         ) : arch ? (
           <ArchDiagram arch={arch} mode={mode} selectedId={selected?.id ?? null} onSelect={setSelected} />
         ) : (
-          <StateNote data-testid="arch-empty">Reading system status…</StateNote>
+          <div className="flex min-h-[16rem] items-center justify-center">
+            <StateNote data-testid="arch-empty">Reading system status…</StateNote>
+          </div>
         )}
 
         <section
