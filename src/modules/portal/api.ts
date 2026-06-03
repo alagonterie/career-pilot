@@ -38,6 +38,7 @@ import { log } from '../../log.js';
 
 import { relayContactSubmission, type ContactInput } from './contact-relay.js';
 import { getTelemetry } from './portkey-analytics.js';
+import { buildSanitizeDemo } from './sanitize-demo.js';
 import { getRecentSimulatorRuns, getSimulatorResult, startSimulatorRun, type SimulatorInput } from './simulator.js';
 import {
   addActivityClient,
@@ -295,6 +296,27 @@ async function handleContact(
   json(res, status, { error: result.error?.code ?? 'error', message: result.error?.message }, cors);
 }
 
+/**
+ * Anonymization demo (§24.33) — POST /api/sanitize-demo. Runs the REAL sanitizer
+ * (applyPass1 + redactCompanies) over a server-authored SYNTHETIC sample so the
+ * /live wow-finish can't drift from the real pipeline. Effect-free; body
+ * `{ sample?: number }` selects (clamped). Lenient on an empty/invalid body.
+ */
+async function handleSanitizeDemo(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  cors: Record<string, string>,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch {
+    body = {};
+  }
+  const sample = body && typeof body === 'object' ? (body as { sample?: unknown }).sample : undefined;
+  json(res, 200, buildSanitizeDemo(typeof sample === 'number' ? sample : 0), cors);
+}
+
 /** Shareable cached run for /simulator/results/:id (5.5c). 404 when absent/expired. */
 function handleSimulatorResult(res: http.ServerResponse, runId: string, cors: Record<string, string>): void {
   const row = getSimulatorResult(runId);
@@ -393,6 +415,7 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
     if (method === 'GET' && path === '/api/architecture') return handleArchitecture(res, cors);
     if (method === 'GET' && path === '/api/system-status') return handleSystemStatus(res, cors);
     if (method === 'POST' && path === '/api/contact') return await handleContact(req, res, cors);
+    if (method === 'POST' && path === '/api/sanitize-demo') return await handleSanitizeDemo(req, res, cors);
     if (method === 'POST' && path === '/api/simulator') return await handleSimulatorStart(req, res, cors);
     if (method === 'GET' && path === '/api/simulator/recent') return handleSimulatorRecent(res, cors);
     if (method === 'GET' && path.startsWith('/api/simulator/results/')) {

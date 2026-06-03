@@ -327,6 +327,38 @@ describe('POST /api/contact', () => {
   });
 });
 
+// ── POST /api/sanitize-demo (§24.33) ────────────────────────────────────────
+
+describe('POST /api/sanitize-demo', () => {
+  it('returns a synthetic raw↔sanitized pair from the real pipeline', async () => {
+    const res = await fetch(`${base}/api/sanitize-demo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sample: 0 }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { raw: string; sanitized: string; redactions: number; sample: number };
+    expect(body.sample).toBe(0);
+    expect(body.sanitized).toContain('[EMAIL_REDACTED]');
+    expect(body.sanitized).not.toMatch(/Globex/i);
+    expect(body.redactions).toBeGreaterThan(0);
+  });
+
+  it('defaults to sample 0 on an empty body and clamps an out-of-range index', async () => {
+    const empty = await fetch(`${base}/api/sanitize-demo`, { method: 'POST' });
+    expect(empty.status).toBe(200);
+    expect(((await empty.json()) as { sample: number }).sample).toBe(0);
+
+    const high = await fetch(`${base}/api/sanitize-demo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sample: 99 }),
+    });
+    const body = (await high.json()) as { sample: number; total: number };
+    expect(body.sample).toBe(body.total - 1);
+  });
+});
+
 // ── CORS + routing + error-safety ──────────────────────────────────────────
 
 describe('CORS + routing', () => {

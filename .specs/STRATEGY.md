@@ -762,7 +762,7 @@ A native-`http` server (NOT Express), lives in `src/modules/portal/api.ts`. Star
 | Hostname | Served by | Routes |
 |---|---|---|
 | `hire.example.com` | Cloudflare Worker (TanStack Start) | All marketing/ops pages, `POST /api/contact`, `POST /api/sandbox/*` (Turnstile-protected) |
-| `api.hire.example.com` | Cloudflare Tunnel → Express | `GET /api/funnel`, `GET /api/activity`, `GET /api/activity/stream` (SSE), `GET /api/telemetry`, `GET /api/architecture`, `GET /api/simulator/:id/stream` (SSE), `GET /api/simulator/results/:id`, `GET /api/system-status` |
+| `api.hire.example.com` | Cloudflare Tunnel → Express | `GET /api/funnel`, `GET /api/activity`, `GET /api/activity/stream` (SSE), `GET /api/telemetry`, `GET /api/architecture`, `GET /api/simulator/:id/stream` (SSE), `GET /api/simulator/results/:id`, `GET /api/system-status`, `POST /api/sanitize-demo` |
 
 **Why the split:** Worker absorbs short-lived requests and applies edge protection (Turnstile, WAF, rate limits via Workers RL + Durable Objects). SSE streams go direct to `api.hire.*` for efficiency — no Worker subrequest quota burn, lower latency. Cloudflare Workers DO support SSE (no fixed duration, only CPU time is metered, and `fetch()` waits don't count) — we use the direct path as an optimization, not a workaround.
 
@@ -780,6 +780,7 @@ Tunnel routes (api.hire.example.com):
   GET  /api/simulator/:id/stream   ← SSE: sandbox session output
   GET  /api/simulator/results/:id  ← 30d-TTL cached run output
   GET  /api/system-status     ← LIVE_MODE / pause / health
+  POST /api/sanitize-demo     ← real sanitizer over synthetic input (the /live wow-finish, §24.33)
 ```
 
 **CORS:** explicit allow-list (`hire.example.com` + dev origins). No `*`.

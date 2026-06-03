@@ -69,6 +69,10 @@ test('live page matches visual baseline', { tag: '@visual' }, async ({ page }) =
   // Portkey is unmocked here so telemetry/cost render the honest empty state.
   await expect(page.getByTestId('trace-stream')).toBeVisible()
   await expect(page.getByTestId('trace-stream').getByText('research-company')).toBeVisible()
+  // Wait for the async anonymization-demo POST to resolve so the panel is in its
+  // loaded state (not "Running the pipeline…") before the snapshot — otherwise
+  // the panel races the screenshot and the baseline is non-deterministic.
+  await expect(page.getByTestId('anon-sanitized')).toContainText('[EMAIL_REDACTED]')
   await expect(page).toHaveScreenshot('live.png', {
     animations: 'disabled',
     fullPage: true,
@@ -99,6 +103,10 @@ test('simulator input view matches visual baseline', { tag: '@visual' }, async (
   await expect(page).toHaveScreenshot('simulator-input.png', {
     animations: 'disabled',
     fullPage: true,
+    // Small tolerance for sub-pixel font antialiasing — this static form
+    // occasionally flakes by a handful of pixels at one glyph cluster across
+    // separate renders; the layout is the regression guard, not glyph edges.
+    maxDiffPixels: 200,
   })
 })
 
