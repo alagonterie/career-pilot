@@ -139,12 +139,12 @@ describe('CostCachePanel', () => {
 describe('Panel', () => {
   it('renders a page-supplied header action (the open-link slot — §24.35 Pass A)', () => {
     render(
-      <Panel title="Funnel" action={<a href="/funnel">open →</a>}>
+      <Panel title="Momentum" action={<a href="/momentum">open →</a>}>
         <p>body</p>
       </Panel>,
     )
-    expect(screen.getByRole('heading', { name: 'Funnel' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /open/i })).toHaveAttribute('href', '/funnel')
+    expect(screen.getByRole('heading', { name: 'Momentum' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /open/i })).toHaveAttribute('href', '/momentum')
   })
 })
 

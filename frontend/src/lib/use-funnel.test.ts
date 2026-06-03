@@ -50,20 +50,23 @@ describe('deriveStatTiles', () => {
     expect(byLabel['Applications YTD']).toBe('2') // a + b this year; c is 2024
     expect(byLabel['Interviews this month']).toBe('1') // b entered screening this month
     expect(byLabel['Offers']).toBe('1') // a
-    expect(byLabel['Avg days in funnel']).toBe('15') // (20 + 10) / 2; closed c excluded
+    expect(byLabel['Avg days active']).toBe('15') // (20 + 10) / 2; closed c excluded
   })
 
   it('returns zeroed tiles for an empty funnel (no crash)', () => {
     const byLabel = Object.fromEntries(deriveStatTiles([]).map((t) => [t.label, t.value]))
     expect(byLabel['Offers']).toBe('0')
-    expect(byLabel['Avg days in funnel']).toBe('0')
+    expect(byLabel['Avg days active']).toBe('0')
   })
 })
 
 describe('useFunnel', () => {
   it('fetches and exposes the funnel snapshot', async () => {
     const body: FunnelResponse = { applications: [app()], stage_counts: { applied: 1 } }
-    vi.stubGlobal('fetch', vi.fn(async () => res(body)))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => res(body)),
+    )
 
     const { result, unmount } = renderHook(() => useFunnel('http://x', 10_000))
     await waitFor(() => expect(result.current.status).toBe('ok'))

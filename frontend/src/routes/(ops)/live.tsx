@@ -78,12 +78,12 @@ function LivePage() {
           </div>
           <div className="flex flex-col gap-4">
             <Panel
-              title="Funnel"
+              title="Momentum"
               // min-h reserves the loaded footprint so loading→ok doesn't shift
               // the rail (§24.36 Tier-2; the value is the measured loaded height).
               className="min-h-[152px]"
               action={
-                <Link to="/funnel" className="font-mono text-[11px] text-accent-cool hover:underline">
+                <Link to="/momentum" className="font-mono text-[11px] text-accent-cool hover:underline">
                   open →
                 </Link>
               }

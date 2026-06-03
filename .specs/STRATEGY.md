@@ -3985,6 +3985,8 @@ After the §24.35 creative passes (A–D), the owner called the shift: stop addi
 
 **36.2–36.5** are drilled in when reached (the §24.35 pattern): focus-trapping/dialog-a11y, error-boundary + backend-down fallback, reduced-motion + reconnect audit, meta/OG/favicon/404 — each a drill-in + build with its own DoD.
 
+**Nav IA + naming polish (owner call, 2026-06-03; folded into §24.36 as UI polish).** Two refinements to the shared top nav (PORTAL §8.1): (1) **reorder** to lead with the wow and cluster ops-then-personal — `Live · Momentum · Architecture · Simulator · Work · Contact` (the built header had drifted to lead with `Work`; the old spec order was a different interleave); (2) **rename the funnel page's visitor-facing label + route to "Momentum" / `/momentum`** (the gamified horse-race framing reads better than the sales-jargon "Funnel" and contrasts the technical `Architecture`/`Live`). **All internal naming stays "funnel"** (`/api/funnel`, `public_funnel_view`, `Funnel*` components, `funnel_events`, `funnel-curator`) — public surface = Momentum, internal domain = funnel. `/about` is confirmed a **footer** link (§8.2), not a header item (the header carries the journey; the footer carries background/utility). Every `@visual` baseline re-blessed (the shared header changed on all pages).
+
 ---
 
 ## Part VI: Open questions

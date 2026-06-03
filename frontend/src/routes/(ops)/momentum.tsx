@@ -7,17 +7,18 @@ import { StatTiles } from '~/components/funnel/StatTiles'
 import { StateNote } from '~/components/states'
 import { useFunnel, type FunnelApplication } from '~/lib/use-funnel'
 
-// First page of the ops register (PORTAL §5.4). `(ops)` is a pathless route
-// group → the URL is still `/funnel`. A shared ops layout/header is deferred
-// until more ops pages land (mirrors the deferred marketing-group layout).
-export const Route = createFileRoute('/(ops)/funnel')({
-  component: FunnelPage,
+// The funnel race detail (PORTAL §5.4). Visitor-facing name = "Momentum" / the
+// `/momentum` route (the gamified horse-race framing); everything internal stays
+// "funnel" (the `Funnel*` components, `useFunnel`, `/api/funnel`). `(ops)` is a
+// pathless group → the URL is `/momentum`.
+export const Route = createFileRoute('/(ops)/momentum')({
+  component: MomentumPage,
   head: () => ({
     meta: [
-      { title: 'Funnel — Jane Doe' },
+      { title: 'Momentum — Jane Doe' },
       {
         name: 'description',
-        content: 'Live job-search pipeline — every application, obfuscated by default, tracked stage by stage.',
+        content: 'The job search in motion — every application, obfuscated by default, tracked stage by stage.',
       },
     ],
   }),
@@ -25,7 +26,7 @@ export const Route = createFileRoute('/(ops)/funnel')({
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
 
-function FunnelPage() {
+function MomentumPage() {
   const { data, status } = useFunnel(API_BASE)
   const [selected, setSelected] = React.useState<FunnelApplication | null>(null)
   const apps = data?.applications ?? []
@@ -34,9 +35,9 @@ function FunnelPage() {
     <>
       <main className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-12">
         <header>
-          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Funnel</h1>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Momentum</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            The job search as a live pipeline — every application, obfuscated by default.
+            The job search in motion — every application moving stage by stage toward an offer, obfuscated by default.
           </p>
         </header>
 
@@ -51,13 +52,13 @@ function FunnelPage() {
         ) : status === 'error' ? (
           <div className="flex min-h-[16rem] items-center justify-center">
             <StateNote data-testid="funnel-error" tone="error">
-              Funnel data is offline — retrying…
+              The board is offline — retrying…
             </StateNote>
           </div>
         ) : apps.length === 0 ? (
           <div className="flex min-h-[16rem] items-center justify-center">
             <StateNote data-testid="funnel-empty">
-              No applications in the pipeline yet — the first agents are warming up.
+              No applications in the search yet — the first agents are warming up.
             </StateNote>
           </div>
         ) : (
