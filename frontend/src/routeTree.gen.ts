@@ -17,6 +17,8 @@ import { Route as opsFunnelRouteImport } from './routes/(ops)/funnel'
 import { Route as opsArchitectureRouteImport } from './routes/(ops)/architecture'
 import { Route as marketingWorkRouteImport } from './routes/(marketing)/work'
 import { Route as marketingContactRouteImport } from './routes/(marketing)/contact'
+import { Route as marketingSimulatorIndexRouteImport } from './routes/(marketing)/simulator.index'
+import { Route as marketingSimulatorResultsIdRouteImport } from './routes/(marketing)/simulator.results.$id'
 
 const opsRouteRoute = opsRouteRouteImport.update({
   id: '/(ops)',
@@ -56,6 +58,17 @@ const marketingContactRoute = marketingContactRouteImport.update({
   path: '/contact',
   getParentRoute: () => marketingRouteRoute,
 } as any)
+const marketingSimulatorIndexRoute = marketingSimulatorIndexRouteImport.update({
+  id: '/simulator/',
+  path: '/simulator/',
+  getParentRoute: () => marketingRouteRoute,
+} as any)
+const marketingSimulatorResultsIdRoute =
+  marketingSimulatorResultsIdRouteImport.update({
+    id: '/simulator/results/$id',
+    path: '/simulator/results/$id',
+    getParentRoute: () => marketingRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/contact': typeof marketingContactRoute
@@ -64,6 +77,8 @@ export interface FileRoutesByFullPath {
   '/funnel': typeof opsFunnelRoute
   '/live': typeof opsLiveRoute
   '/': typeof marketingIndexRoute
+  '/simulator/': typeof marketingSimulatorIndexRoute
+  '/simulator/results/$id': typeof marketingSimulatorResultsIdRoute
 }
 export interface FileRoutesByTo {
   '/contact': typeof marketingContactRoute
@@ -72,6 +87,8 @@ export interface FileRoutesByTo {
   '/funnel': typeof opsFunnelRoute
   '/live': typeof opsLiveRoute
   '/': typeof marketingIndexRoute
+  '/simulator': typeof marketingSimulatorIndexRoute
+  '/simulator/results/$id': typeof marketingSimulatorResultsIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -83,12 +100,30 @@ export interface FileRoutesById {
   '/(ops)/funnel': typeof opsFunnelRoute
   '/(ops)/live': typeof opsLiveRoute
   '/(marketing)/': typeof marketingIndexRoute
+  '/(marketing)/simulator/': typeof marketingSimulatorIndexRoute
+  '/(marketing)/simulator/results/$id': typeof marketingSimulatorResultsIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/contact' | '/work' | '/architecture' | '/funnel' | '/live' | '/'
+  fullPaths:
+    | '/contact'
+    | '/work'
+    | '/architecture'
+    | '/funnel'
+    | '/live'
+    | '/'
+    | '/simulator/'
+    | '/simulator/results/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/contact' | '/work' | '/architecture' | '/funnel' | '/live' | '/'
+  to:
+    | '/contact'
+    | '/work'
+    | '/architecture'
+    | '/funnel'
+    | '/live'
+    | '/'
+    | '/simulator'
+    | '/simulator/results/$id'
   id:
     | '__root__'
     | '/(marketing)'
@@ -99,6 +134,8 @@ export interface FileRouteTypes {
     | '/(ops)/funnel'
     | '/(ops)/live'
     | '/(marketing)/'
+    | '/(marketing)/simulator/'
+    | '/(marketing)/simulator/results/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -164,6 +201,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof marketingContactRouteImport
       parentRoute: typeof marketingRouteRoute
     }
+    '/(marketing)/simulator/': {
+      id: '/(marketing)/simulator/'
+      path: '/simulator'
+      fullPath: '/simulator/'
+      preLoaderRoute: typeof marketingSimulatorIndexRouteImport
+      parentRoute: typeof marketingRouteRoute
+    }
+    '/(marketing)/simulator/results/$id': {
+      id: '/(marketing)/simulator/results/$id'
+      path: '/simulator/results/$id'
+      fullPath: '/simulator/results/$id'
+      preLoaderRoute: typeof marketingSimulatorResultsIdRouteImport
+      parentRoute: typeof marketingRouteRoute
+    }
   }
 }
 
@@ -171,12 +222,16 @@ interface marketingRouteRouteChildren {
   marketingContactRoute: typeof marketingContactRoute
   marketingWorkRoute: typeof marketingWorkRoute
   marketingIndexRoute: typeof marketingIndexRoute
+  marketingSimulatorIndexRoute: typeof marketingSimulatorIndexRoute
+  marketingSimulatorResultsIdRoute: typeof marketingSimulatorResultsIdRoute
 }
 
 const marketingRouteRouteChildren: marketingRouteRouteChildren = {
   marketingContactRoute: marketingContactRoute,
   marketingWorkRoute: marketingWorkRoute,
   marketingIndexRoute: marketingIndexRoute,
+  marketingSimulatorIndexRoute: marketingSimulatorIndexRoute,
+  marketingSimulatorResultsIdRoute: marketingSimulatorResultsIdRoute,
 }
 
 const marketingRouteRouteWithChildren = marketingRouteRoute._addFileChildren(

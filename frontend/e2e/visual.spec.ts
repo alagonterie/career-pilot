@@ -89,3 +89,26 @@ test('contact page matches visual baseline', { tag: '@visual' }, async ({ page }
     fullPage: true,
   })
 })
+
+test('simulator input view matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  await page.goto('/simulator')
+  await expect(page.getByRole('heading', { name: /try it on your own role/i, level: 1 })).toBeVisible()
+  // The pre-run Apple-register input view — fully static (the timing-dependent
+  // mid-run streaming view is covered by the semantic E2E, not a snapshot).
+  await expect(page.getByTestId('sim-input-form')).toBeVisible()
+  await expect(page).toHaveScreenshot('simulator-input.png', {
+    animations: 'disabled',
+    fullPage: true,
+  })
+})
+
+test('simulator share results matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  await page.goto('/simulator/results/det-sim-1')
+  // The seeded, far-future-expiry shareable run — deterministic (no streaming).
+  await expect(page.getByRole('heading', { name: /Principal Engineer @ Wayne Enterprises/i, level: 1 })).toBeVisible()
+  await expect(page.getByTestId('sim-output-body')).toBeVisible()
+  await expect(page).toHaveScreenshot('simulator-results.png', {
+    animations: 'disabled',
+    fullPage: true,
+  })
+})

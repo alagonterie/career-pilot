@@ -76,8 +76,24 @@ function Home() {
       {/* Viewport 3 — live activity hook. */}
       <LiveTicker events={events} status={status} />
 
-      {/* Viewport 5 — resume + contact teaser (PORTAL §5.1). The simulator pitch
-          (Viewport 4) lands in 8.2 with the /simulator route. */}
+      {/* Viewport 4 — simulator pitch (PORTAL §5.1): a single high-intent CTA into
+          the grippiest spoke. No form here — the form lives on /simulator. */}
+      <section aria-labelledby="home-sim-heading" className="mt-24 w-full text-center">
+        <h2 id="home-sim-heading" className="text-2xl font-bold tracking-tight">
+          See it work on your role
+        </h2>
+        <p className="mx-auto mt-3 max-w-xl text-balance text-sm leading-relaxed text-muted-foreground">
+          Type your company and a role. The same agent stack runs live in your browser — researching, tailoring a
+          resume, and drafting outreach in ~30 seconds. Nothing is saved.
+        </p>
+        <div className="mt-6 flex justify-center">
+          <Button asChild size="lg">
+            <Link to="/simulator">Try the simulator →</Link>
+          </Button>
+        </div>
+      </section>
+
+      {/* Viewport 5 — resume + contact teaser (PORTAL §5.1). */}
       <section aria-labelledby="home-teaser-heading" className="mt-24 grid w-full gap-10 sm:grid-cols-3">
         <h2 id="home-teaser-heading" className="sr-only">
           More about me

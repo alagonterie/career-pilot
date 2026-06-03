@@ -136,6 +136,20 @@ export function startSimulatorRun(input: SimulatorInput): SimulatorStartResult {
   if (typeof acc.hardWall.unref === 'function') acc.hardWall.unref();
   runs.set(simulationId, acc);
 
+  // dev/test seam (§24.31): a scripted, container-free run for `dev:mock` + the
+  // E2E harness. Loaded lazily so the dev module never enters a production
+  // bundle/request path; mirrors the §24.26 PORTAL_MOCK_* seams (prod-inert).
+  if (process.env.PORTAL_MOCK_SIMULATOR === '1' || process.env.PORTAL_MOCK_SIMULATOR === 'true') {
+    void import('./dev/mock-simulator.js')
+      .then((m) => m.runMockSimulator(simulationId, company, role))
+      .catch((err) => {
+        log.error('startSimulatorRun: mock seam failed', { simulationId, err });
+        finalizeSimulatorRun(simulationId, 'mock-error');
+      });
+    log.info('Simulator run started (mock)', { simulationId, company });
+    return { ok: true, simulation_id: simulationId };
+  }
+
   try {
     submitSimulatorRun(simulationId, prompt);
   } catch (err) {
