@@ -1,10 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { AnimatePresence, MotionConfig } from 'motion/react'
 import * as React from 'react'
 
 import { ArchDiagram } from '~/components/architecture/ArchDiagram'
 import { Legend, ModeBanner } from '~/components/architecture/ModeBanner'
 import { NodePanel } from '~/components/architecture/NodePanel'
-import { deriveNodeStatus, type ArchNode } from '~/components/architecture/nodes'
+import { deriveNodeStatus, NODES, type ArchNode } from '~/components/architecture/nodes'
 import { REPO_URL, repoBlob } from '~/lib/site'
 import { useArchitecture } from '~/lib/use-architecture'
 
@@ -31,7 +32,7 @@ function ArchitecturePage() {
   const [selected, setSelected] = React.useState<ArchNode | null>(null)
 
   return (
-    <>
+    <MotionConfig reducedMotion="user">
       <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-12">
         <header className="flex flex-col gap-4">
           <div>
@@ -67,6 +68,13 @@ function ArchitecturePage() {
             something real is probed; the rest is drawn as structure.
           </p>
           <div className="flex flex-wrap gap-x-5 gap-y-2 font-mono text-xs text-accent-cool">
+            <button
+              type="button"
+              onClick={() => setSelected(NODES.find((n) => n.id === 'pub-sanitize') ?? null)}
+              className="text-accent-cool hover:underline"
+            >
+              see the sanitizer run →
+            </button>
             <a href={repoBlob('README.md')} target="_blank" rel="noreferrer" className="hover:underline">
               README ↗
             </a>
@@ -88,13 +96,17 @@ function ArchitecturePage() {
         </section>
       </main>
 
-      <NodePanel
-        node={selected}
-        status={selected ? deriveNodeStatus(selected, arch, mode) : 'structural'}
-        arch={arch}
-        mode={mode}
-        onClose={() => setSelected(null)}
-      />
-    </>
+      <AnimatePresence>
+        {selected ? (
+          <NodePanel
+            node={selected}
+            status={deriveNodeStatus(selected, arch, mode)}
+            arch={arch}
+            mode={mode}
+            onClose={() => setSelected(null)}
+          />
+        ) : null}
+      </AnimatePresence>
+    </MotionConfig>
   )
 }

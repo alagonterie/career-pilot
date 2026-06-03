@@ -27,6 +27,9 @@ export interface ArchNode {
   linkLabel?: string
   /** A human/external actor (e.g. the owner) — rendered with no status badge. */
   actor?: boolean
+  /** Hosts a live interactive demo in its modal (a behavioral proof, NOT a health
+   * probe — §24.35 Pass B). Drives the diagram's interactive marker. */
+  demo?: 'sanitizer'
   x: number
   y: number
   w: number
@@ -230,6 +233,7 @@ export const NODES: ArchNode[] = [
     probe: 'structural',
     description: 'Strips PII and obfuscates companies before anything reaches the public tables.',
     source: 'src/modules/portal/sanitizer.ts',
+    demo: 'sanitizer',
     x: 58,
     y: 546,
     w: 188,

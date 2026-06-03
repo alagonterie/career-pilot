@@ -1,3 +1,5 @@
+import { motion } from 'motion/react'
+
 import type { ArchitectureData, SystemMode } from '~/lib/use-architecture'
 
 import { EDGES, NODES, REGION_BANDS, STATUS_META, deriveNodeStatus, type ArchNode } from './nodes'
@@ -155,8 +157,18 @@ export function ArchDiagram({
               >
                 {n.label}
               </text>
-              {/* Actor (the human) gets no status marker; probed nodes a colored dot; structural a hollow diamond. */}
-              {actor ? null : structural ? (
+              {/* Demo nodes get an interactive ▶ (a behavioral proof, not a health probe — §24.35 Pass B);
+                  actor (the human) no marker; probed nodes a colored dot; structural a hollow diamond. */}
+              {n.demo ? (
+                <text
+                  x={n.x + n.w - 16}
+                  y={n.y + n.h / 2 + 3.5}
+                  textAnchor="middle"
+                  className="fill-accent-cool text-[10px]"
+                >
+                  ▶
+                </text>
+              ) : actor ? null : structural ? (
                 <path d={diamond(n.x + n.w - 16, n.y + n.h / 2, 4)} className="fill-none stroke-muted-foreground/70" />
               ) : (
                 <circle
@@ -170,7 +182,12 @@ export function ArchDiagram({
           )
         })}
 
-        <text x={VIEW_W / 2} y={VIEW_H - 38} textAnchor="middle" className="fill-muted-foreground font-mono text-[11px]">
+        <text
+          x={VIEW_W / 2}
+          y={VIEW_H - 38}
+          textAnchor="middle"
+          className="fill-muted-foreground font-mono text-[11px]"
+        >
           ▼ this page is served from the Cloudflare edge — you are here
         </text>
       </svg>
@@ -178,9 +195,10 @@ export function ArchDiagram({
       {NODES.map((n) => {
         const status = deriveNodeStatus(n, arch, mode)
         return (
-          <button
+          <motion.button
             key={n.id}
             type="button"
+            layoutId={`arch-node-${n.id}`}
             data-testid={`arch-node-${n.id}`}
             data-status={n.actor ? 'actor' : status}
             aria-label={n.actor ? n.label : `${n.label} — ${STATUS_META[status].label}`}

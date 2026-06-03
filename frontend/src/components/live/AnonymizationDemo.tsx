@@ -1,19 +1,20 @@
-import { Panel } from '~/components/live/panels'
 import type { SanitizeDemoState } from '~/lib/use-sanitize-demo'
 
 /**
- * The `/live` ANONYMIZATION DEMO panel (PORTAL §5.2, the "wow-finish"). A
- * two-pane raw↔sanitized display proving the public side is privacy-aware. The
+ * The anonymization demo body (PORTAL §5.2, the "wow-finish") — a two-pane
+ * raw↔sanitized display proving the public side is privacy-aware. The
  * transformation is the REAL sanitizer run server-side (§24.33) over a
  * server-authored **synthetic** sample — labeled as such, never real data.
- * Prop-driven so it's unit-testable without a fetch.
+ * Prop-driven so it's unit-testable without a fetch. Panel-free body so it
+ * renders inside the `/architecture` `pub-sanitize` node modal (§24.35 Pass B,
+ * its current home — relocated off `/live`); `SanitizerDemo` supplies the state.
  */
 export function AnonymizationDemo({ state }: { state: SanitizeDemoState }) {
   const { data, status, showAnother } = state
 
   return (
-    <Panel title="Anonymization demo" className="lg:col-span-3">
-      <p className="-mt-1 font-mono text-[11px] text-muted-foreground">
+    <div className="flex flex-col gap-3">
+      <p className="font-mono text-[11px] text-muted-foreground">
         The real sanitizer, live. <span className="text-foreground/80">Demo data — synthetic only.</span>
       </p>
 
@@ -68,6 +69,6 @@ export function AnonymizationDemo({ state }: { state: SanitizeDemoState }) {
           Running the pipeline…
         </p>
       )}
-    </Panel>
+    </div>
   )
 }
