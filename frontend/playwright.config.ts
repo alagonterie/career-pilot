@@ -45,7 +45,9 @@ export default defineConfig({
     {
       command: `pnpm exec vite build && pnpm exec vite preview --port ${FRONTEND_PORT} --strictPort`,
       url: `http://localhost:${FRONTEND_PORT}`,
-      env: { VITE_API_BASE: `http://127.0.0.1:${PORTAL_PORT}` },
+      // VITE_MOCK_SEAM arms the client-side mock seams (the /crash synthetic-crash
+      // route — §24.36 36.3) in this production-mode build; real prod omits it.
+      env: { VITE_API_BASE: `http://127.0.0.1:${PORTAL_PORT}`, VITE_MOCK_SEAM: '1' },
       timeout: 120_000,
       reuseExistingServer: !process.env.CI,
       stdout: 'pipe',

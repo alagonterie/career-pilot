@@ -135,6 +135,15 @@ test('live loading state matches visual baseline', { tag: '@visual' }, async ({ 
   await expect(page).toHaveScreenshot('live-loading.png', { animations: 'disabled', fullPage: true })
 })
 
+// §24.36 36.3 — the recoverable error boundary, reached via the mock-only
+// /crash synthetic-crash route (armed by VITE_MOCK_SEAM in the E2E build). The
+// raw error detail is dev-only, so this prod-build render is deterministic.
+test('route error boundary matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  await page.goto('/crash')
+  await expect(page.getByTestId('route-error')).toBeVisible()
+  await expect(page).toHaveScreenshot('error-boundary.png', { animations: 'disabled', fullPage: true })
+})
+
 test('contact page matches visual baseline', { tag: '@visual' }, async ({ page }) => {
   await page.goto('/contact')
   await expect(page.getByRole('heading', { name: 'Talk to me', level: 1 })).toBeVisible()

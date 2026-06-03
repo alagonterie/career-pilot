@@ -1,9 +1,9 @@
 import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
 import * as React from 'react'
 
-import { DefaultCatchBoundary } from '~/components/DefaultCatchBoundary'
 import { DevStateSwitcher } from '~/components/dev/DevStateSwitcher'
 import { NotFound } from '~/components/NotFound'
+import { RouteErrorBoundary } from '~/components/RouteErrorBoundary'
 import appCss from '~/styles/app.css?url'
 
 export const Route = createRootRoute({
@@ -15,7 +15,7 @@ export const Route = createRootRoute({
     ],
     links: [{ rel: 'stylesheet', href: appCss }],
   }),
-  errorComponent: DefaultCatchBoundary,
+  errorComponent: RouteErrorBoundary,
   notFoundComponent: () => <NotFound />,
   shellComponent: RootDocument,
 })
