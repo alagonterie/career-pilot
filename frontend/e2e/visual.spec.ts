@@ -144,6 +144,13 @@ test('route error boundary matches visual baseline', { tag: '@visual' }, async (
   await expect(page).toHaveScreenshot('error-boundary.png', { animations: 'disabled', fullPage: true })
 })
 
+// §24.36 36.5 — the styled 404 (the on-brand sibling of the error boundary).
+test('404 page matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  await page.goto('/this-route-does-not-exist')
+  await expect(page.getByTestId('not-found')).toBeVisible()
+  await expect(page).toHaveScreenshot('not-found.png', { animations: 'disabled', fullPage: true })
+})
+
 test('contact page matches visual baseline', { tag: '@visual' }, async ({ page }) => {
   await page.goto('/contact')
   await expect(page.getByRole('heading', { name: 'Talk to me', level: 1 })).toBeVisible()

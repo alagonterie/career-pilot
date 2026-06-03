@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 
 import { ContactForm } from '~/components/ContactForm'
+import { seo } from '~/lib/seo'
 
 // The conversion sink (PORTAL §5.7 / §2). Marketing register; the shared layout
 // supplies the header (and renders no connective rail here — this IS the rail's
@@ -13,15 +14,12 @@ export const Route = createFileRoute('/(marketing)/contact')({
     role: typeof search.role === 'string' ? search.role : undefined,
     from: typeof search.from === 'string' ? search.from : undefined,
   }),
-  head: () => ({
-    meta: [
-      { title: 'Contact — Jane Doe' },
-      {
-        name: 'description',
-        content: 'Reach out — a recruiter contact form that relays straight to me, plus direct paths.',
-      },
-    ],
-  }),
+  head: () =>
+    seo({
+      title: 'Contact — Jane Doe',
+      description: 'Reach out — a recruiter contact form that relays straight to me, plus direct paths.',
+      path: '/contact',
+    }),
 })
 
 function ContactPage() {

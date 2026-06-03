@@ -5,6 +5,7 @@ import { DetailPanel } from '~/components/funnel/DetailPanel'
 import { FunnelBoard, FunnelBoardSkeleton } from '~/components/funnel/FunnelBoard'
 import { StatTiles } from '~/components/funnel/StatTiles'
 import { StateNote } from '~/components/states'
+import { seo } from '~/lib/seo'
 import { useFunnel, type FunnelApplication } from '~/lib/use-funnel'
 
 // The funnel race detail (PORTAL §5.4). Visitor-facing name = "Momentum" / the
@@ -13,15 +14,12 @@ import { useFunnel, type FunnelApplication } from '~/lib/use-funnel'
 // pathless group → the URL is `/momentum`.
 export const Route = createFileRoute('/(ops)/momentum')({
   component: MomentumPage,
-  head: () => ({
-    meta: [
-      { title: 'Momentum — Jane Doe' },
-      {
-        name: 'description',
-        content: 'The job search in motion — every application, obfuscated by default, tracked stage by stage.',
-      },
-    ],
-  }),
+  head: () =>
+    seo({
+      title: 'Momentum — Jane Doe',
+      description: 'The job search in motion — every application, obfuscated by default, tracked stage by stage.',
+      path: '/momentum',
+    }),
 })
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'

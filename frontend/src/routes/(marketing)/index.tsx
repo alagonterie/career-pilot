@@ -4,12 +4,14 @@ import { FunnelCompact } from '~/components/live/FunnelCompact'
 import { LiveIndicator } from '~/components/LiveIndicator'
 import { LiveTicker } from '~/components/LiveTicker'
 import { Button } from '~/components/ui/button'
+import { seo } from '~/lib/seo'
 import { useActivityStream } from '~/lib/use-activity-stream'
 import { useFunnel } from '~/lib/use-funnel'
 import { workProfile } from '~/lib/work-profile'
 
 export const Route = createFileRoute('/(marketing)/')({
   component: Home,
+  head: () => seo({ title: 'Jane Doe — an AI agent runs my job search, live' }),
 })
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'

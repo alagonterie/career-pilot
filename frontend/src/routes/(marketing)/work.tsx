@@ -1,20 +1,18 @@
 import { createFileRoute } from '@tanstack/react-router'
 
 import { WorkSections } from '~/components/work/sections'
+import { seo } from '~/lib/seo'
 import { workProfile } from '~/lib/work-profile'
 
 export const Route = createFileRoute('/(marketing)/work')({
   component: Work,
-  head: () => ({
-    meta: [
-      { title: 'Work — Jane Doe' },
-      {
-        name: 'description',
-        content:
-          'Resume, experience, and projects — a senior software engineer working in AI Systems and developer experience.',
-      },
-    ],
-  }),
+  head: () =>
+    seo({
+      title: 'Work — Jane Doe',
+      description:
+        'Resume, experience, and projects — a senior software engineer working in AI Systems and developer experience.',
+      path: '/work',
+    }),
 })
 
 function Work() {

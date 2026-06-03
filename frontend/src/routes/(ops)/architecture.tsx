@@ -8,6 +8,7 @@ import { NodePanel } from '~/components/architecture/NodePanel'
 import { deriveNodeStatus, NODES, type ArchNode } from '~/components/architecture/nodes'
 import { StateNote } from '~/components/states'
 import { Skeleton } from '~/components/ui/skeleton'
+import { seo } from '~/lib/seo'
 import { REPO_URL, repoBlob } from '~/lib/site'
 import { useArchitecture } from '~/lib/use-architecture'
 
@@ -16,15 +17,12 @@ import { useArchitecture } from '~/lib/use-architecture'
 // `/live` (7.3) makes a third ops page.
 export const Route = createFileRoute('/(ops)/architecture')({
   component: ArchitecturePage,
-  head: () => ({
-    meta: [
-      { title: 'Architecture — Jane Doe' },
-      {
-        name: 'description',
-        content: 'Live system map of the agent — host, container, and the sanitized public path, with real status.',
-      },
-    ],
-  }),
+  head: () =>
+    seo({
+      title: 'Architecture — Jane Doe',
+      description: 'Live system map of the agent — host, container, and the sanitized public path, with real status.',
+      path: '/architecture',
+    }),
 })
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
