@@ -13,6 +13,7 @@ import {
 } from '~/components/live/panels'
 import { StateNote } from '~/components/states'
 import { Skeleton } from '~/components/ui/skeleton'
+import { seo } from '~/lib/seo'
 import { useActivityStream } from '~/lib/use-activity-stream'
 import { useArchitecture } from '~/lib/use-architecture'
 import { useFunnel } from '~/lib/use-funnel'
@@ -25,16 +26,13 @@ import { deriveTelemetryView, useTelemetry } from '~/lib/use-telemetry'
 // ops pages exist).
 export const Route = createFileRoute('/(ops)/live')({
   component: LivePage,
-  head: () => ({
-    meta: [
-      { title: 'Live — Jane Doe' },
-      {
-        name: 'description',
-        content:
-          'Real-time ops dashboard — the agent system running the job search, live: sessions, containers, cost, and the agent trace stream.',
-      },
-    ],
-  }),
+  head: () =>
+    seo({
+      title: 'Live — Jane Doe',
+      description:
+        'Real-time ops dashboard — the agent system running the job search, live: sessions, containers, cost, and the agent trace stream.',
+      path: '/live',
+    }),
 })
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'

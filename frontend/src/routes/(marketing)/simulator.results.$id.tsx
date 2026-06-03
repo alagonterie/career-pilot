@@ -3,6 +3,7 @@ import * as React from 'react'
 
 import { SimOutput } from '~/components/simulator/SimOutput'
 import { Button } from '~/components/ui/button'
+import { seo } from '~/lib/seo'
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
 
@@ -12,9 +13,16 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
 // handled honestly. No ConnectiveRail here — its own CTAs are the next step.
 export const Route = createFileRoute('/(marketing)/simulator/results/$id')({
   component: ShareResults,
-  head: () => ({
-    meta: [{ title: 'Simulator result — Jane Doe' }],
-  }),
+  // Static share meta. The dynamic per-run preview (the run's company/role in
+  // og:title + a per-run og:image) needs a route loader + a Worker dynamic-OG
+  // endpoint — deferred to the Phase 9/10 deploy (STRATEGY §24.36 36.5).
+  head: () =>
+    seo({
+      title: 'Simulator result — Jane Doe',
+      description:
+        'A recruiter-simulator run — the job-search agent tailoring a resume and drafting outreach for a role, live.',
+      path: '/simulator',
+    }),
 })
 
 interface SimRunRow {

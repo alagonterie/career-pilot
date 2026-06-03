@@ -5,6 +5,7 @@ import { SimFallback } from '~/components/simulator/SimFallback'
 import { SimInput } from '~/components/simulator/SimInput'
 import { SimOutput } from '~/components/simulator/SimOutput'
 import { Button } from '~/components/ui/button'
+import { seo } from '~/lib/seo'
 import { useSimulatorRun } from '~/lib/use-simulator-run'
 
 // The Recruiter Simulator (PORTAL §5.3 / §24.31) — the grippiest spoke of the
@@ -14,15 +15,12 @@ import { useSimulatorRun } from '~/lib/use-simulator-run'
 // nothing here). The backend shipped in Phase 5; this is the frontend over it.
 export const Route = createFileRoute('/(marketing)/simulator/')({
   component: SimulatorPage,
-  head: () => ({
-    meta: [
-      { title: 'Recruiter Simulator — Jane Doe' },
-      {
-        name: 'description',
-        content: 'Run the real agent stack on your own role and watch it tailor a resume + draft outreach, live.',
-      },
-    ],
-  }),
+  head: () =>
+    seo({
+      title: 'Recruiter Simulator — Jane Doe',
+      description: 'Run the real agent stack on your own role and watch it tailor a resume + draft outreach, live.',
+      path: '/simulator',
+    }),
 })
 
 function downloadMarkdown(filename: string, text: string): void {
