@@ -266,6 +266,8 @@ The `◆ proactive` marker calls out events the agent initiated on its own — t
 
 Compact, dense, monospace. This is the bridge from landing register to ops register. The visitor who clicks `Watch live →` is self-selecting into the deep view.
 
+> **Build note (STRATEGY §24.35 Pass A).** The ticker's `watch live →` link to `/live` (mockup above) was specified but unbuilt through 8.x — the shipped `LiveTicker` rendered no link, dead-ending Viewport 3 (the only path on was the top nav). §24.35 Pass A builds it as a page-supplied `<Link>` via an optional header slot (the component stays router-free), and adds the analogous `/live` FUNNEL-panel → `/funnel` link.
+
 > **Rendering is progressive (implementation note).** The ticker renders the audit fields that actually exist on each row. As of Sub-milestone 6.1 (STRATEGY.md §24.24), `category`, `agent_name`, and the `◆ proactive` marker are live. LLM telemetry (model, tokens, cost, cache-hit, latency) lands in STRATEGY.md §24.34 — captured **per-turn** (the SDK only resolves cost per `query()`-call, never per-event), so a dedicated `category='turn'` summary row carries those lanes populated, while funnel/progress rows leave them absent. The ticker never shows invented data — a missing field is simply absent, not faked, and a per-event cost split (which the SDK can't derive) is never fabricated.
 
 **Viewport 4: Simulator pitch**
@@ -1109,6 +1111,8 @@ Identical on every page:
 
 The status string is live (single tick per 30s). If degraded or offline, it changes color and adds a brief note.
 
+> **Build note (STRATEGY §24.35 Pass A — reconciliation).** This metadata footer was never built, and is not built in Pass A: it links to `/about` (deferred, STRATEGY §24.32) and a `/privacy` page that does not yet exist, so building it would link to 404s. The realized foot-of-page is the §8.4 connective rail (the directed "what's next") plus per-page methodology captions (page-specific honesty notes); the live status string described here is already served by the §8.3 live indicator + the `/live` system/telemetry panels and is not duplicated. The persistent identity + social (`GitHub · LinkedIn · X`) + `/about` · `/privacy` footer is deferred to the pass that lands `/about` (§24.32) + a `/privacy` page — intentionally absent until those routes exist.
+
 ### 8.3 Live indicator
 
 Used on `/` and in the footer. A single small dot with `● live` label. Connects to `/api/activity/stream` and pulses on each received event. Disconnects gracefully if SSE drops.
@@ -1135,6 +1139,8 @@ A single `ConnectiveRail` component fed a per-route config, hosted by the regist
 | `/contact` | — (the sink: no rail; the §5.7 alt-contact paths stand in) | — | — |
 
 Register-aware styling: clean and spacious in the marketing register, dense and monospace in ops. The convert option carries visual primacy (accent-filled) so the path to conversion is always the most prominent next step. Every convert link routes to `/contact` with the originating surface as carried context (`?from=<surface>`); `/live`, as the hub, is the only surface that exposes all three branch directions. Reduced-motion-safe; no auto-animation.
+
+> **Build note (STRATEGY §24.35 Pass A — reachability).** The rail must be *reachable* to do its job. Through 8.x each page `<main>` carried `min-h-dvh` and the rail rendered after it, so on a tall display a short page pushed the rail just past the fold — a directed "what's next" you had to hunt for. §24.35 moves the register layouts to a `min-h-dvh flex flex-col` column (header · a `flex-1` `<Outlet/>` wrapper · rail) and drops `min-h-dvh` from the page mains, so a short page seats the rail at the viewport bottom and a tall page flows it after content (unchanged).
 
 ---
 
