@@ -1,5 +1,6 @@
 import * as React from 'react'
 
+import { useDialog } from '~/lib/use-dialog'
 import type { FunnelApplication } from '~/lib/use-funnel'
 
 function Fact({ label, value }: { label: string; value: string }) {
@@ -16,20 +17,15 @@ function Fact({ label, value }: { label: string; value: string }) {
  * `/api/funnel` fields available today — the anonymized state/role/stage facts,
  * the win-confidence heuristic, and the published learning when present. The
  * richer per-application timeline + curator narrative are deferred (STRATEGY
- * §24.27). An accessible dialog: labeled, Escape-to-close, the backdrop closes.
+ * §24.27). An accessible modal dialog via the shared `useDialog` contract
+ * (PORTAL §8.5): labeled, focus-trapped, Escape + backdrop close, focus
+ * restored to the trigger card on close, the rest of the page held inert.
  */
 export function DetailPanel({ app, onClose }: { app: FunnelApplication | null; onClose: () => void }) {
+  const overlayRef = React.useRef<HTMLDivElement>(null)
   const panelRef = React.useRef<HTMLDivElement>(null)
 
-  React.useEffect(() => {
-    if (!app) return
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    panelRef.current?.focus()
-    return () => window.removeEventListener('keydown', onKey)
-  }, [app, onClose])
+  useDialog(app != null, onClose, panelRef, overlayRef)
 
   if (!app) return null
 
@@ -38,7 +34,7 @@ export function DetailPanel({ app, onClose }: { app: FunnelApplication | null; o
   const win = app.win_confidence
 
   return (
-    <div className="fixed inset-0 z-30 flex justify-end">
+    <div ref={overlayRef} className="fixed inset-0 z-30 flex justify-end">
       <button
         type="button"
         aria-label="Close details"
@@ -86,7 +82,10 @@ export function DetailPanel({ app, onClose }: { app: FunnelApplication | null; o
             </h3>
             <div className="flex items-center gap-3">
               <div aria-hidden="true" className="h-2 flex-1 overflow-hidden rounded-full bg-secondary">
-                <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(0, Math.min(100, win))}%` }} />
+                <div
+                  className="h-full rounded-full bg-primary"
+                  style={{ width: `${Math.max(0, Math.min(100, win))}%` }}
+                />
               </div>
               <span className="font-mono text-sm tabular-nums text-foreground">{win}%</span>
             </div>

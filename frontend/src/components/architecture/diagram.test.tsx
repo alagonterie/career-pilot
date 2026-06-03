@@ -152,6 +152,16 @@ describe('NodePanel', () => {
     expect(onClose).toHaveBeenCalledTimes(2)
   })
 
+  it('is a described, focus-managed dialog via the shared contract (§24.36 36.2)', () => {
+    render(<NodePanel node={byId('host-router')} status="healthy" arch={ARCH} mode={MODE} onClose={() => {}} />)
+    const panel = screen.getByTestId('arch-node-panel')
+    // aria-describedby points at the node description (the tightened role=dialog).
+    expect(panel).toHaveAttribute('aria-describedby', 'arch-node-desc')
+    expect(document.getElementById('arch-node-desc')).toHaveTextContent(byId('host-router').description)
+    // useDialog moves focus into the panel on open.
+    expect(document.activeElement).toBe(panel)
+  })
+
   it('renders the live sanitizer demo for the demo node (§24.35 Pass B)', async () => {
     // The pub-sanitize node carries demo:'sanitizer' → its modal hosts the live
     // demo (lazy fetch). Mock the POST so the body renders without a backend.

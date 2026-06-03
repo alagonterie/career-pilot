@@ -55,6 +55,35 @@ test.describe('/momentum — pipeline board, frontend <-> backend', () => {
     expect(failedRequests).toEqual([])
   })
 
+  test('the detail drawer traps focus and restores it to the card on close (§24.36 36.2)', async ({ page }) => {
+    await page.goto('/momentum')
+
+    // Open from a keyboard-focused card so the trigger is a known element.
+    const card = page.getByTestId('funnel-card').filter({ hasText: 'Wayne Enterprises' })
+    await card.focus()
+    await page.keyboard.press('Enter')
+
+    const panel = page.getByRole('dialog', { name: 'Wayne Enterprises' })
+    await expect(panel).toBeVisible()
+    // Focus lands in the dialog shell on open.
+    await expect(panel).toBeFocused()
+
+    // Tab moves into the dialog's only tabbable (Close), and the trap keeps it
+    // there — Tab off the end and Shift+Tab off the top both stay inside.
+    const close = panel.getByRole('button', { name: 'Close panel' })
+    await page.keyboard.press('Tab')
+    await expect(close).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(close).toBeFocused()
+    await page.keyboard.press('Shift+Tab')
+    await expect(close).toBeFocused()
+
+    // Escape closes and focus returns to the triggering card.
+    await page.keyboard.press('Escape')
+    await expect(panel).toBeHidden()
+    await expect(card).toBeFocused()
+  })
+
   test('the shared header nav reaches /momentum and back', async ({ page }) => {
     await page.goto('/')
     const nav = page.getByRole('navigation', { name: 'Primary' })
