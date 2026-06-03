@@ -100,6 +100,41 @@ test('live page matches visual baseline', { tag: '@visual' }, async ({ page }) =
   })
 })
 
+// §24.36 36.1 — async-state baselines, reachable via the mock-only `?__state`
+// override. These are the regression guard for the shared loading/empty/error
+// language; `animations:'disabled'` freezes the skeleton pulse + the connecting
+// cursor at a deterministic frame.
+test('funnel loading state matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  await page.goto('/funnel?__state=loading')
+  await expect(page.getByTestId('funnel-skeleton')).toBeVisible()
+  await expect(page).toHaveScreenshot('funnel-loading.png', { animations: 'disabled', fullPage: true })
+})
+
+test('funnel empty state matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  await page.goto('/funnel?__state=empty')
+  await expect(page.getByTestId('funnel-empty')).toBeVisible()
+  await expect(page).toHaveScreenshot('funnel-empty.png', { animations: 'disabled', fullPage: true })
+})
+
+test('funnel error state matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  await page.goto('/funnel?__state=error')
+  await expect(page.getByTestId('funnel-error')).toBeVisible()
+  await expect(page).toHaveScreenshot('funnel-error.png', { animations: 'disabled', fullPage: true })
+})
+
+test('architecture loading state matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  await page.goto('/architecture?__state=loading')
+  await expect(page.getByTestId('arch-skeleton')).toBeVisible()
+  await expect(page).toHaveScreenshot('architecture-loading.png', { animations: 'disabled', fullPage: true })
+})
+
+test('live loading state matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  await page.goto('/live?__state=loading')
+  await expect(page.getByTestId('panel-skeleton').first()).toBeVisible()
+  await expect(page.getByTestId('trace-empty')).toContainText(/connecting/i)
+  await expect(page).toHaveScreenshot('live-loading.png', { animations: 'disabled', fullPage: true })
+})
+
 test('contact page matches visual baseline', { tag: '@visual' }, async ({ page }) => {
   await page.goto('/contact')
   await expect(page.getByRole('heading', { name: 'Talk to me', level: 1 })).toBeVisible()

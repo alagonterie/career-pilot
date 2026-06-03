@@ -23,9 +23,14 @@ function ev(partial: Partial<AuditEvent> & { seq: number }): AuditEvent {
 }
 
 describe('LiveTicker', () => {
-  it('shows a friendly empty state while warming up', () => {
+  it('shows a connected-but-empty state when open with no events (§24.36 36.1)', () => {
     render(<LiveTicker events={[]} status="open" />)
-    expect(screen.getByTestId('ticker-empty')).toHaveTextContent(/warming up/i)
+    expect(screen.getByTestId('ticker-empty')).toHaveTextContent(/no agent activity/i)
+  })
+
+  it('shows a connecting affordance before the stream opens (§24.36 36.1)', () => {
+    render(<LiveTicker events={[]} status="idle" />)
+    expect(screen.getByTestId('ticker-empty')).toHaveTextContent(/connecting/i)
   })
 
   it('shows an offline message when reconnecting with no events', () => {

@@ -1,5 +1,6 @@
 import * as React from 'react'
 
+import { useSurfaceState } from './dev-state'
 import { connectActivityStream, type StreamStatus } from './sse'
 
 /**
@@ -40,13 +41,21 @@ export function useActivityStream(baseUrl: string, limit = 5): ActivityStreamSta
   const [events, setEvents] = React.useState<AuditEvent[]>([])
   const [status, setStatus] = React.useState<StreamStatus | 'idle'>('idle')
   const [count, setCount] = React.useState(0)
+  const forced = useSurfaceState('activity')
 
   React.useEffect(() => {
     const ac = new AbortController()
     const seen = new Set<number>()
+    // Clean transition when the override flips (the dev switcher): clear the
+    // ring buffer + reset status so the new state renders fresh, not stacked on
+    // the prior connection's events.
+    setEvents([])
+    setStatus('idle')
+    setCount(0)
     void connectActivityStream({
       baseUrl,
       since: 0,
+      stateParam: forced === 'normal' ? undefined : forced,
       signal: ac.signal,
       onStatus: setStatus,
       onEvent: (ev) => {
@@ -63,7 +72,7 @@ export function useActivityStream(baseUrl: string, limit = 5): ActivityStreamSta
       },
     })
     return () => ac.abort()
-  }, [baseUrl, limit])
+  }, [baseUrl, limit, forced])
 
   return { events, status, count }
 }

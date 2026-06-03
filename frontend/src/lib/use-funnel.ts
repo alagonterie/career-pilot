@@ -1,3 +1,4 @@
+import { useSurfaceState, withState } from './dev-state'
 import { usePolledJson, type PollStatus } from './use-polled-json'
 
 /**
@@ -42,7 +43,8 @@ export interface FunnelState {
  * transient blip; only a cold first failure shows `'error'`).
  */
 export function useFunnel(baseUrl: string, pollMs?: number): FunnelState {
-  return usePolledJson<FunnelResponse>(`${baseUrl}/api/funnel`, pollMs)
+  const forced = useSurfaceState('funnel')
+  return usePolledJson<FunnelResponse>(withState(`${baseUrl}/api/funnel`, forced), pollMs)
 }
 
 export interface StatTile {

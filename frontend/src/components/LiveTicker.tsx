@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 
+import { LiveCursor, StateNote } from '~/components/states'
 import type { StreamStatus } from '~/lib/sse'
 import type { AuditEvent } from '~/lib/use-activity-stream'
 
@@ -43,9 +44,18 @@ export function LiveTicker({
         {action}
       </div>
       {shown.length === 0 ? (
-        <p data-testid="ticker-empty" className="font-mono text-sm text-muted-foreground">
-          {status === 'reconnecting' ? 'Activity stream offline — reconnecting…' : 'Agents warming up…'}
-        </p>
+        status === 'reconnecting' ? (
+          <StateNote data-testid="ticker-empty" tone="error">
+            Activity stream offline — reconnecting…
+          </StateNote>
+        ) : status === 'open' ? (
+          <StateNote data-testid="ticker-empty">No agent activity yet.</StateNote>
+        ) : (
+          <p data-testid="ticker-empty" className="flex items-center gap-1 font-mono text-sm text-muted-foreground">
+            Connecting to the live feed
+            <LiveCursor />
+          </p>
+        )
       ) : (
         <ol className="space-y-1 font-mono text-sm">
           {/* No opacity-fade for older lines: opacity blending drops text below

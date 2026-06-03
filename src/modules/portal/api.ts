@@ -387,6 +387,97 @@ function handleSimulatorStream(
   req.on('close', () => removeSimulatorClient(runId, res));
 }
 
+// ── mock-only async-state override seam (§24.36 / Sub-milestone 36.1) ───────
+//
+// dev/E2E ONLY: when PORTAL_MOCK_STATE_SEAM=1 (set by scripts/portal-dev-server.ts
+// + scripts/portal-e2e-server.ts, never in production), a `?__state=loading|empty
+// |error` query forces the matching async state so the loading/empty/error UIs
+// are reachable in dev (the state-switcher) and snapshottable in @visual. The
+// production API never sets the flag, so this is dead code in prod and `__state`
+// is ignored even if a visitor appends it (PORTAL §10 / V2_IDEAS #16).
+type ForcedState = 'loading' | 'empty' | 'error';
+
+function parseForcedState(url: URL): ForcedState | null {
+  if (process.env.PORTAL_MOCK_STATE_SEAM !== '1') return null;
+  const v = url.searchParams.get('__state');
+  return v === 'loading' || v === 'empty' || v === 'error' ? v : null;
+}
+
+/** A valid-but-empty payload per read endpoint — the "system is real but quiet"
+ * preview state (0 applications / idle sessions / no telemetry). */
+function emptyPayloadFor(path: string): unknown {
+  switch (path) {
+    case '/api/funnel':
+      return { applications: [], stage_counts: {} };
+    case '/api/activity':
+      return { events: [], next_since: 0 };
+    case '/api/architecture':
+      return {
+        sessions: { active: 0, running: 0 },
+        containers: { running: 0, capacity_max: 0, memory_mb_each: 0, runtime: 'up' },
+        backend: 'online',
+      };
+    case '/api/system-status':
+      return { live_mode: false, pause_state: 'active', pause_reason: null, backend: 'online' };
+    case '/api/telemetry':
+      return {
+        portkey: { available: false, reason: 'no_key' },
+        local: {
+          simulator_runs_total: 0,
+          activity_events_total: 0,
+          activity_events_24h: 0,
+          turns_total: 0,
+          turn_cost_cents_total: 0,
+          turn_cost_cents_24h: 0,
+        },
+      };
+    default:
+      return {};
+  }
+}
+
+function applyForcedState(
+  state: ForcedState,
+  path: string,
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  cors: Record<string, string>,
+): void {
+  const isStream = path.endsWith('/stream');
+  if (state === 'loading') {
+    // Hold the request open so the client stays in its loading/connecting state.
+    // The client aborts on unmount / when the override changes; the socket closes
+    // then. Swallow the abort-reset so it doesn't surface as an error.
+    req.on('error', () => {});
+    return;
+  }
+  if (state === 'error') {
+    // JSON 500 → polled hooks show the error state; for an SSE endpoint the
+    // stream client sees a non-ok response and surfaces its reconnecting state.
+    json(res, 500, { error: 'forced_error', __state: 'error' }, cors);
+    return;
+  }
+  // state === 'empty'
+  if (isStream) {
+    // Open the stream but register no client → zero events → the empty state.
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+      ...cors,
+    });
+    res.flushHeaders();
+    const ka = setInterval(() => {
+      if (!res.writableEnded) res.write(': ka\n\n');
+    }, 15_000);
+    ka.unref();
+    req.on('close', () => clearInterval(ka));
+    return;
+  }
+  json(res, 200, emptyPayloadFor(path), cors);
+}
+
 // ── request router ───────────────────────────────────────────────────────
 
 async function requestHandler(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -407,6 +498,10 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
       json(res, 401, { error: 'unauthorized', reason: auth.reason ?? null }, cors);
       return;
     }
+
+    // Mock-only async-state override (§24.36 36.1) — dev/E2E only; inert in prod.
+    const forced = method === 'GET' ? parseForcedState(url) : null;
+    if (forced) return applyForcedState(forced, path, req, res, cors);
 
     if (method === 'GET' && path === '/api/funnel') return handleFunnel(res, cors);
     if (method === 'GET' && path === '/api/activity/stream') return handleActivityStream(req, res, url, cors);

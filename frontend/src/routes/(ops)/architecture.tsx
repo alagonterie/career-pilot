@@ -6,6 +6,8 @@ import { ArchDiagram } from '~/components/architecture/ArchDiagram'
 import { Legend, ModeBanner } from '~/components/architecture/ModeBanner'
 import { NodePanel } from '~/components/architecture/NodePanel'
 import { deriveNodeStatus, NODES, type ArchNode } from '~/components/architecture/nodes'
+import { StateNote } from '~/components/states'
+import { Skeleton } from '~/components/ui/skeleton'
 import { REPO_URL, repoBlob } from '~/lib/site'
 import { useArchitecture } from '~/lib/use-architecture'
 
@@ -46,12 +48,18 @@ function ArchitecturePage() {
           <Legend />
         </header>
 
-        {arch ? (
+        {status === 'loading' ? (
+          // Loading twin of the diagram (§24.36 36.1) — a shaped placeholder so
+          // the page holds its height while the system endpoints are polled.
+          <Skeleton data-testid="arch-skeleton" className="h-[22rem] w-full rounded-lg" />
+        ) : status === 'error' ? (
+          <StateNote data-testid="arch-empty" tone="error">
+            System status is offline — retrying…
+          </StateNote>
+        ) : arch ? (
           <ArchDiagram arch={arch} mode={mode} selectedId={selected?.id ?? null} onSelect={setSelected} />
         ) : (
-          <p data-testid="arch-empty" className="font-mono text-sm text-muted-foreground">
-            {status === 'error' ? 'System status is offline — retrying…' : 'Reading system status…'}
-          </p>
+          <StateNote data-testid="arch-empty">Reading system status…</StateNote>
         )}
 
         <section

@@ -46,6 +46,9 @@ async function main(): Promise<void> {
   process.env.PORTAL_MOCK_CONTAINERS = String(mockContainerCount());
   // §24.31: scripted, container-free simulator runs (no LLM/Docker locally).
   process.env.PORTAL_MOCK_SIMULATOR = process.env.PORTAL_MOCK_SIMULATOR ?? '1';
+  // §24.36 36.1: honor the `?__state=loading|empty|error` override so the dev
+  // state-switcher can drive every async surface's edge states live. Mock-only.
+  process.env.PORTAL_MOCK_STATE_SEAM = process.env.PORTAL_MOCK_STATE_SEAM ?? '1';
 
   const db = initTestDb();
   runMigrations(db);

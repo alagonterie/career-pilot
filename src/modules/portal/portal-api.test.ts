@@ -359,6 +359,53 @@ describe('POST /api/sanitize-demo', () => {
   });
 });
 
+// ── mock-only async-state override seam (§24.36 36.1) ───────────────────────
+
+describe('the __state override seam (mock-only)', () => {
+  afterEach(() => {
+    delete process.env.PORTAL_MOCK_STATE_SEAM;
+  });
+
+  it('is ignored unless the mock seam env is set (production safety)', async () => {
+    // No PORTAL_MOCK_STATE_SEAM → `__state` is just an unknown query param.
+    const res = await fetch(`${base}/api/funnel?__state=error`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { applications: unknown[] };
+    expect(Array.isArray(body.applications)).toBe(true);
+  });
+
+  it('forces a 500 for __state=error when enabled', async () => {
+    process.env.PORTAL_MOCK_STATE_SEAM = '1';
+    const res = await fetch(`${base}/api/funnel?__state=error`);
+    expect(res.status).toBe(500);
+  });
+
+  it('serves a valid-but-empty payload for __state=empty (overriding real rows)', async () => {
+    process.env.PORTAL_MOCK_STATE_SEAM = '1';
+    // Seed a real row so "empty" provably overrides non-empty data.
+    seedFunnel({ id: 'app-1', ref: 'fintech-a', status: 'SCREENING', stage: 'screening' });
+    const body = (await (await fetch(`${base}/api/funnel?__state=empty`)).json()) as {
+      applications: unknown[];
+      stage_counts: Record<string, number>;
+    };
+    expect(body.applications).toEqual([]);
+    expect(body.stage_counts).toEqual({});
+
+    const arch = (await (await fetch(`${base}/api/architecture?__state=empty`)).json()) as {
+      sessions: { active: number };
+      backend: string;
+    };
+    expect(arch.sessions.active).toBe(0);
+    expect(arch.backend).toBe('online');
+  });
+
+  it('only applies to GET — a POST is unaffected', async () => {
+    process.env.PORTAL_MOCK_STATE_SEAM = '1';
+    const res = await fetch(`${base}/api/sanitize-demo?__state=error`, { method: 'POST' });
+    expect(res.status).toBe(200);
+  });
+});
+
 // ── CORS + routing + error-safety ──────────────────────────────────────────
 
 describe('CORS + routing', () => {

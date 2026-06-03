@@ -2,6 +2,7 @@ import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
 import * as React from 'react'
 
 import { DefaultCatchBoundary } from '~/components/DefaultCatchBoundary'
+import { DevStateSwitcher } from '~/components/dev/DevStateSwitcher'
 import { NotFound } from '~/components/NotFound'
 import appCss from '~/styles/app.css?url'
 
@@ -27,6 +28,9 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         {children}
+        {/* Dev-only async-state switcher (§24.36 36.1). Gated on `import.meta.env.DEV`
+            so Rollup tree-shakes it from the production bundle. */}
+        {import.meta.env.DEV ? <DevStateSwitcher /> : null}
         <Scripts />
       </body>
     </html>
