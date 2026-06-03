@@ -14,6 +14,7 @@ import type {
   ProviderOptions,
   QueryInput,
   TraceEvent,
+  TurnTelemetry,
 } from './types.js';
 
 const TRACE_INPUT_SUMMARY_MAX = 200;
@@ -77,6 +78,100 @@ export function sdkMessageToTraceEvents(message: unknown, emitTrace: boolean): T
   }
 
   return [];
+}
+
+/** Finite number, or 0. Mirrors the defensive parse style above. */
+function finiteOrZero(v: unknown): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+}
+
+/**
+ * True for the career-pilot MCP tool names that write a portal-visible row
+ * (`record_funnel_event` / `record_progress`). Matches on the tool-name
+ * suffix so it is robust to the MCP server prefix the SDK prepends
+ * (`mcp__<server>__…`). The count of these dispatches is the §24.34
+ * portal-worthy gate.
+ */
+export function isRecordCallToolName(name: unknown): boolean {
+  return typeof name === 'string' && /__record_(funnel_event|progress)$/.test(name);
+}
+
+interface SdkModelUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
+  costUSD?: number;
+}
+
+/**
+ * Pure derivation of per-turn telemetry from an SDK `result` message (§24.34).
+ * Returns null for any non-result message. Fills every field EXCEPT
+ * `record_calls` (a turn-wide count the caller tracks across assistant
+ * messages). Defensive against the untyped SDK message shape, like
+ * `sdkMessageToTraceEvents`.
+ *
+ * Granularity note (verified against the SDK cost-tracking docs): cost is only
+ * resolved per-turn (`total_cost_usd`) and per-model (`modelUsage[*].costUSD`);
+ * there is no per-subagent/per-tool cost. `model_used` is the highest-cost
+ * model; `tokens` sums input+output across models (falling back to the
+ * cumulative `usage` when `modelUsage` is absent); `cache_hit` is set if any
+ * model read from cache. `total_cost_usd` is an SDK estimate — not billing.
+ */
+export function sdkResultToTurnTelemetry(message: unknown): Omit<TurnTelemetry, 'record_calls'> | null {
+  if (!message || typeof message !== 'object') return null;
+  const m = message as {
+    type?: string;
+    total_cost_usd?: number;
+    duration_ms?: number;
+    duration_api_ms?: number;
+    num_turns?: number;
+    modelUsage?: Record<string, SdkModelUsage>;
+    usage?: { input_tokens?: number; output_tokens?: number };
+  };
+  if (m.type !== 'result') return null;
+
+  const modelUsage = m.modelUsage && typeof m.modelUsage === 'object' ? m.modelUsage : {};
+  const entries = Object.entries(modelUsage);
+
+  let model_used: string | null = null;
+  let bestCost = -Infinity;
+  let tokens = 0;
+  let cacheHit = false;
+  const model_usage: TurnTelemetry['details']['model_usage'] = {};
+  for (const [name, u] of entries) {
+    const input = finiteOrZero(u?.inputTokens);
+    const output = finiteOrZero(u?.outputTokens);
+    const cache_read = finiteOrZero(u?.cacheReadInputTokens);
+    const cache_creation = finiteOrZero(u?.cacheCreationInputTokens);
+    const cost_usd = finiteOrZero(u?.costUSD);
+    tokens += input + output;
+    if (cache_read > 0) cacheHit = true;
+    if (cost_usd > bestCost) {
+      bestCost = cost_usd;
+      model_used = name;
+    }
+    model_usage[name] = { input, output, cache_read, cache_creation, cost_usd };
+  }
+  // Fall back to the cumulative result-level usage when no per-model map.
+  if (entries.length === 0 && m.usage) {
+    tokens = finiteOrZero(m.usage.input_tokens) + finiteOrZero(m.usage.output_tokens);
+  }
+
+  const totalCost = finiteOrZero(m.total_cost_usd);
+  return {
+    model_used,
+    tokens,
+    cost_cents: Math.round(totalCost * 100),
+    cache_hit: cacheHit ? 1 : 0,
+    latency_ms: Math.max(0, Math.round(finiteOrZero(m.duration_ms))),
+    details: {
+      num_turns: Math.round(finiteOrZero(m.num_turns)),
+      duration_api_ms: Math.max(0, Math.round(finiteOrZero(m.duration_api_ms))),
+      total_cost_usd: totalCost,
+      model_usage,
+    },
+  };
 }
 
 function log(msg: string): void {
@@ -506,12 +601,34 @@ export class ClaudeProvider implements AgentProvider {
 
     async function* translateEvents(): AsyncGenerator<ProviderEvent> {
       let messageCount = 0;
+      // §24.34 portal-worthy gate: count record_* tool_use dispatches across
+      // the whole turn (subagents included — their assistant messages flow
+      // through here too), so the result event can carry the count.
+      let recordCalls = 0;
+      const recordSeen = new Set<string>();
       for await (const message of sdkResult) {
         if (aborted) return;
         messageCount++;
 
         // Yield activity for every SDK event so the poll loop knows the agent is working
         yield { type: 'activity' };
+
+        // §24.34: tally record_funnel_event / record_progress dispatches,
+        // deduping by message.id (parallel tool calls repeat the id with
+        // identical content — the SDK cost-tracking dedup rule). Always-on
+        // (independent of emitTrace) — this feeds the owner audit trail.
+        if (message.type === 'assistant') {
+          const am = message as { message?: { id?: string; content?: unknown } };
+          const mid = am.message?.id;
+          if (!mid || !recordSeen.has(mid)) {
+            if (mid) recordSeen.add(mid);
+            const blocks = Array.isArray(am.message?.content) ? (am.message!.content as unknown[]) : [];
+            for (const b of blocks) {
+              const block = b as { type?: string; name?: string };
+              if (block.type === 'tool_use' && isRecordCallToolName(block.name)) recordCalls++;
+            }
+          }
+        }
 
         // Simulator trace (§24.20): sandbox-gated. Emits tool/subagent calls
         // from assistant messages and end-of-run cost from the result message.
@@ -526,7 +643,9 @@ export class ClaudeProvider implements AgentProvider {
           yield { type: 'init', continuation: message.session_id };
         } else if (message.type === 'result') {
           const text = 'result' in message ? (message as { result?: string }).result ?? null : null;
-          yield { type: 'result', text };
+          const base = sdkResultToTurnTelemetry(message);
+          const telemetry: TurnTelemetry | undefined = base ? { ...base, record_calls: recordCalls } : undefined;
+          yield { type: 'result', text, telemetry };
         } else if (message.type === 'system' && (message as { subtype?: string }).subtype === 'api_retry') {
           yield { type: 'error', message: 'API retry', retryable: true };
         } else if (message.type === 'system' && (message as { subtype?: string }).subtype === 'rate_limit_event') {

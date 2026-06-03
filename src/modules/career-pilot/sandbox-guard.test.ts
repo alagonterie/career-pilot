@@ -107,4 +107,10 @@ describe('denyIfNotOwner', () => {
     expect(blocked).toBe(true);
     expect(forbiddenResponse('r3')).toBe(true);
   });
+
+  it('blocks a sandbox session from record_turn_telemetry (§24.34 is owner-only too)', () => {
+    const blocked = denyIfNotOwner('career_pilot.record_turn_telemetry', content('r4'), session('ag-sandbox'), inDb);
+    expect(blocked).toBe(true);
+    expect(forbiddenResponse('r4')).toBe(true);
+  });
 });

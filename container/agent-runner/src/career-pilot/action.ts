@@ -131,6 +131,34 @@ export async function sendAction<T = unknown>(
   };
 }
 
+/**
+ * Fire-and-forget variant of {@link sendAction} (§24.34). Writes the
+ * system-action outbound row and returns immediately — it does NOT poll
+ * inbound.db for the host's response. For side-channel writes the agent
+ * neither needs nor should block on (per-turn telemetry): blocking turn
+ * teardown on a 10s response poll would be wrong, and the result is
+ * irrelevant to the agent's output.
+ *
+ * The host dispatches, writes its response, and marks the outbound row
+ * delivered exactly as for `sendAction` (the `delivered` table is the host's
+ * dedup guard, so the row is processed exactly once); the unread response
+ * simply sits in the ephemeral per-session inbound.db and is reclaimed with
+ * the session. Inherits the readonly-DB single retry.
+ */
+export async function sendActionNoWait(action: string, payload: Record<string, unknown>): Promise<void> {
+  const requestId = generateRequestId();
+  const r = getSessionRouting();
+  await writeMessageOutWithRetry({
+    id: requestId,
+    kind: 'system',
+    platform_id: r.platform_id,
+    channel_type: r.channel_type,
+    thread_id: r.thread_id,
+    content: JSON.stringify({ action, requestId, payload }),
+  });
+  log(`sendActionNoWait: ${action} (${requestId})`);
+}
+
 interface MessageInRow {
   id: string;
   content: string;
