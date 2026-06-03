@@ -38,12 +38,19 @@ test.describe('/simulator — the recruiter simulator, frontend <-> backend', ()
     // are the next step).
     await expect(page.getByTestId('connective-rail')).toHaveCount(0)
 
-    await page.getByLabel('Company name').fill('Wayne Enterprises')
-    await page.getByLabel('Role / title').fill('Principal Engineer')
-    await page.getByRole('button', { name: /run simulation/i }).click()
-
-    // The live trace streams in (proof it's a real run, not a screencast).
-    await expect(page.getByTestId('sim-activity')).toBeVisible()
+    // Fill + run. The button is server-rendered, so a click landing before React
+    // hydrates the form is dropped (onClick isn't attached yet) and the run never
+    // starts — a pre-existing hydration race. Retry the trigger until the run is
+    // observably underway; the early-return makes the retry a no-op once it is
+    // (and the final successful fill is what seeds the run's company/role).
+    await expect(async () => {
+      if (await page.getByTestId('sim-activity').isVisible()) return
+      await page.getByLabel('Company name').fill('Wayne Enterprises')
+      await page.getByLabel('Role / title').fill('Principal Engineer')
+      await page.getByRole('button', { name: /run simulation/i }).click()
+      // The live trace streams in (proof it's a real run, not a screencast).
+      await expect(page.getByTestId('sim-activity')).toBeVisible({ timeout: 2000 })
+    }).toPass({ timeout: 15_000 })
     await expect(page.getByTestId('sim-trace-subagent').first()).toBeVisible()
 
     // The run completes → the results view, with the output materialized.
