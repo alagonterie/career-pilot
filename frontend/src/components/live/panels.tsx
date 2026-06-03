@@ -9,7 +9,11 @@ import type { PollStatus } from '~/lib/use-polled-json'
 import type { TelemetryView } from '~/lib/use-telemetry'
 
 /** Loading twin for a panel body (§24.36 36.1) — a couple of metric-sized
- * skeletons so the panel keeps its shape while its endpoint is polled. */
+ * skeletons so the panel keeps its shape while its endpoint is polled. The
+ * panels that the rail composes (`Cost & cache`, `Recent outcomes`) carry a
+ * `min-h` sized to their measured loaded footprint so loading→ok reserves the
+ * same height and the trace stream (which is `h-full`, sized by the rail) doesn't
+ * collapse — the §24.36 Tier-2 stability standard, made concrete for /live. */
 function PanelSkeleton({ lines = 1 }: { lines?: number }) {
   return (
     <div data-testid="panel-skeleton" className="flex flex-col gap-2">
@@ -227,20 +231,20 @@ export function CostCachePanel({ view, status }: { view: TelemetryView; status?:
   const local = view.local
   if (status === 'loading') {
     return (
-      <Panel title="Cost & cache">
+      <Panel title="Cost & cache" className="min-h-[148px]">
         <PanelSkeleton lines={1} />
       </Panel>
     )
   }
   if (status === 'error') {
     return (
-      <Panel title="Cost & cache">
+      <Panel title="Cost & cache" className="min-h-[148px]">
         <PanelOffline />
       </Panel>
     )
   }
   return (
-    <Panel title="Cost & cache">
+    <Panel title="Cost & cache" className="min-h-[148px]">
       {view.available && s && s.total_cost_usd != null ? (
         <>
           <Metric value={`$${s.total_cost_usd.toFixed(2)}`} label="spend today" />
@@ -288,20 +292,20 @@ export function RecentOutcomesPanel({ apps, status }: { apps: FunnelApplication[
     .slice(0, 6)
   if (status === 'loading') {
     return (
-      <Panel title="Recent outcomes">
+      <Panel title="Recent outcomes" className="min-h-[166px]">
         <PanelSkeleton lines={3} />
       </Panel>
     )
   }
   if (status === 'error') {
     return (
-      <Panel title="Recent outcomes">
+      <Panel title="Recent outcomes" className="min-h-[166px]">
         <PanelOffline />
       </Panel>
     )
   }
   return (
-    <Panel title="Recent outcomes">
+    <Panel title="Recent outcomes" className="min-h-[166px]">
       {recent.length === 0 ? (
         <p className="font-mono text-xs text-muted-foreground">No activity yet.</p>
       ) : (
