@@ -11,16 +11,16 @@ import { expect, test } from '@playwright/test'
 // `loading` deliberately hangs requests (aborted on teardown) and `error`
 // deliberately returns 500s, so that noise is expected, not a failure.
 
-test.describe('/funnel async states', () => {
+test.describe('/momentum async states', () => {
   test('loading → a skeleton board, not the real board', async ({ page }) => {
-    await page.goto('/funnel?__state=loading')
-    await expect(page.getByRole('heading', { level: 1, name: 'Funnel' })).toBeVisible()
+    await page.goto('/momentum?__state=loading')
+    await expect(page.getByRole('heading', { level: 1, name: 'Momentum' })).toBeVisible()
     await expect(page.getByTestId('funnel-skeleton')).toBeVisible()
     await expect(page.getByTestId('funnel-board')).toHaveCount(0)
   })
 
   test('empty → a themed empty note (a11y clean)', async ({ page }) => {
-    await page.goto('/funnel?__state=empty')
+    await page.goto('/momentum?__state=empty')
     const note = page.getByTestId('funnel-empty')
     await expect(note).toBeVisible()
     await expect(note).toContainText(/no applications/i)
@@ -30,7 +30,7 @@ test.describe('/funnel async states', () => {
   })
 
   test('error → a themed offline note', async ({ page }) => {
-    await page.goto('/funnel?__state=error')
+    await page.goto('/momentum?__state=error')
     const note = page.getByTestId('funnel-error')
     await expect(note).toBeVisible()
     await expect(note).toContainText(/offline/i)

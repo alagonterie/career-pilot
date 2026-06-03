@@ -87,7 +87,7 @@ describe('FunnelCard win-confidence bar (§24.35 Pass D)', () => {
 describe('StatTiles', () => {
   it('renders the four labeled tiles', () => {
     render(<StatTiles apps={APPS} />)
-    for (const label of ['Applications YTD', 'Interviews this month', 'Offers', 'Avg days in funnel']) {
+    for (const label of ['Applications YTD', 'Interviews this month', 'Offers', 'Avg days active']) {
       expect(screen.getByText(label)).toBeInTheDocument()
     }
     expect(screen.getAllByTestId('stat-value')).toHaveLength(4)

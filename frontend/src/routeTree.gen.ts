@@ -12,8 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as opsRouteRouteImport } from './routes/(ops)/route'
 import { Route as marketingRouteRouteImport } from './routes/(marketing)/route'
 import { Route as marketingIndexRouteImport } from './routes/(marketing)/index'
+import { Route as opsMomentumRouteImport } from './routes/(ops)/momentum'
 import { Route as opsLiveRouteImport } from './routes/(ops)/live'
-import { Route as opsFunnelRouteImport } from './routes/(ops)/funnel'
 import { Route as opsArchitectureRouteImport } from './routes/(ops)/architecture'
 import { Route as marketingWorkRouteImport } from './routes/(marketing)/work'
 import { Route as marketingContactRouteImport } from './routes/(marketing)/contact'
@@ -33,14 +33,14 @@ const marketingIndexRoute = marketingIndexRouteImport.update({
   path: '/',
   getParentRoute: () => marketingRouteRoute,
 } as any)
+const opsMomentumRoute = opsMomentumRouteImport.update({
+  id: '/momentum',
+  path: '/momentum',
+  getParentRoute: () => opsRouteRoute,
+} as any)
 const opsLiveRoute = opsLiveRouteImport.update({
   id: '/live',
   path: '/live',
-  getParentRoute: () => opsRouteRoute,
-} as any)
-const opsFunnelRoute = opsFunnelRouteImport.update({
-  id: '/funnel',
-  path: '/funnel',
   getParentRoute: () => opsRouteRoute,
 } as any)
 const opsArchitectureRoute = opsArchitectureRouteImport.update({
@@ -74,8 +74,8 @@ export interface FileRoutesByFullPath {
   '/contact': typeof marketingContactRoute
   '/work': typeof marketingWorkRoute
   '/architecture': typeof opsArchitectureRoute
-  '/funnel': typeof opsFunnelRoute
   '/live': typeof opsLiveRoute
+  '/momentum': typeof opsMomentumRoute
   '/': typeof marketingIndexRoute
   '/simulator/': typeof marketingSimulatorIndexRoute
   '/simulator/results/$id': typeof marketingSimulatorResultsIdRoute
@@ -84,8 +84,8 @@ export interface FileRoutesByTo {
   '/contact': typeof marketingContactRoute
   '/work': typeof marketingWorkRoute
   '/architecture': typeof opsArchitectureRoute
-  '/funnel': typeof opsFunnelRoute
   '/live': typeof opsLiveRoute
+  '/momentum': typeof opsMomentumRoute
   '/': typeof marketingIndexRoute
   '/simulator': typeof marketingSimulatorIndexRoute
   '/simulator/results/$id': typeof marketingSimulatorResultsIdRoute
@@ -97,8 +97,8 @@ export interface FileRoutesById {
   '/(marketing)/contact': typeof marketingContactRoute
   '/(marketing)/work': typeof marketingWorkRoute
   '/(ops)/architecture': typeof opsArchitectureRoute
-  '/(ops)/funnel': typeof opsFunnelRoute
   '/(ops)/live': typeof opsLiveRoute
+  '/(ops)/momentum': typeof opsMomentumRoute
   '/(marketing)/': typeof marketingIndexRoute
   '/(marketing)/simulator/': typeof marketingSimulatorIndexRoute
   '/(marketing)/simulator/results/$id': typeof marketingSimulatorResultsIdRoute
@@ -109,8 +109,8 @@ export interface FileRouteTypes {
     | '/contact'
     | '/work'
     | '/architecture'
-    | '/funnel'
     | '/live'
+    | '/momentum'
     | '/'
     | '/simulator/'
     | '/simulator/results/$id'
@@ -119,8 +119,8 @@ export interface FileRouteTypes {
     | '/contact'
     | '/work'
     | '/architecture'
-    | '/funnel'
     | '/live'
+    | '/momentum'
     | '/'
     | '/simulator'
     | '/simulator/results/$id'
@@ -131,8 +131,8 @@ export interface FileRouteTypes {
     | '/(marketing)/contact'
     | '/(marketing)/work'
     | '/(ops)/architecture'
-    | '/(ops)/funnel'
     | '/(ops)/live'
+    | '/(ops)/momentum'
     | '/(marketing)/'
     | '/(marketing)/simulator/'
     | '/(marketing)/simulator/results/$id'
@@ -166,18 +166,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof marketingIndexRouteImport
       parentRoute: typeof marketingRouteRoute
     }
+    '/(ops)/momentum': {
+      id: '/(ops)/momentum'
+      path: '/momentum'
+      fullPath: '/momentum'
+      preLoaderRoute: typeof opsMomentumRouteImport
+      parentRoute: typeof opsRouteRoute
+    }
     '/(ops)/live': {
       id: '/(ops)/live'
       path: '/live'
       fullPath: '/live'
       preLoaderRoute: typeof opsLiveRouteImport
-      parentRoute: typeof opsRouteRoute
-    }
-    '/(ops)/funnel': {
-      id: '/(ops)/funnel'
-      path: '/funnel'
-      fullPath: '/funnel'
-      preLoaderRoute: typeof opsFunnelRouteImport
       parentRoute: typeof opsRouteRoute
     }
     '/(ops)/architecture': {
@@ -240,14 +240,14 @@ const marketingRouteRouteWithChildren = marketingRouteRoute._addFileChildren(
 
 interface opsRouteRouteChildren {
   opsArchitectureRoute: typeof opsArchitectureRoute
-  opsFunnelRoute: typeof opsFunnelRoute
   opsLiveRoute: typeof opsLiveRoute
+  opsMomentumRoute: typeof opsMomentumRoute
 }
 
 const opsRouteRouteChildren: opsRouteRouteChildren = {
   opsArchitectureRoute: opsArchitectureRoute,
-  opsFunnelRoute: opsFunnelRoute,
   opsLiveRoute: opsLiveRoute,
+  opsMomentumRoute: opsMomentumRoute,
 }
 
 const opsRouteRouteWithChildren = opsRouteRoute._addFileChildren(

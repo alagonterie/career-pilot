@@ -55,15 +55,15 @@ function Home() {
       </section>
 
       {/* Viewport 2 — funnel strip (PORTAL §5.1): the search as a live pipeline,
-          reusing the compact funnel; clicking through opens /funnel. */}
+          reusing the compact funnel; clicking through opens /momentum. */}
       {apps.length > 0 ? (
         <section aria-labelledby="home-funnel-heading" className="mt-24 w-full">
           <div className="mb-3 flex items-center justify-between">
             <h2 id="home-funnel-heading" className="text-sm font-semibold text-muted-foreground">
               The search, live
             </h2>
-            <Link to="/funnel" className="font-mono text-xs text-accent-cool hover:underline">
-              see the funnel →
+            <Link to="/momentum" className="font-mono text-xs text-accent-cool hover:underline">
+              track the search →
             </Link>
           </div>
           <FunnelCompact apps={apps} />

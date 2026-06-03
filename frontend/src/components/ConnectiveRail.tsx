@@ -2,11 +2,11 @@ import { Link, useLocation } from '@tanstack/react-router'
 
 import { REPO_URL } from '~/lib/site'
 
-type Surface = '/' | '/live' | '/architecture' | '/funnel' | '/work'
+type Surface = '/' | '/live' | '/architecture' | '/momentum' | '/work'
 type RailKind = 'convert' | 'deepen' | 'pivot'
 
 type RailItem =
-  | { label: string; kind: RailKind; to: '/contact' | '/live' | '/architecture' | '/funnel' | '/work' | '/simulator' }
+  | { label: string; kind: RailKind; to: '/contact' | '/live' | '/architecture' | '/momentum' | '/work' | '/simulator' }
   | { label: string; kind: RailKind; href: string }
 
 interface RailCfg {
@@ -43,7 +43,7 @@ const RAIL: Record<Surface, RailCfg> = {
       { label: 'See it run', kind: 'pivot', to: '/live' },
     ],
   },
-  '/funnel': {
+  '/momentum': {
     register: 'ops',
     items: [
       { label: 'Talk to me', kind: 'convert', to: '/contact' },

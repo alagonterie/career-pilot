@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 
-// /funnel reads the built GET /api/funnel through a polling hook and renders the
+// /momentum reads the built GET /api/funnel through a polling hook and renders the
 // stage board from the deterministic funnel seed (scripts/portal-e2e-server.ts
 // → seedDeterministicFunnel). Correctness rests on semantic assertions + a11y +
 // the console/network gate; the live stage-advance motion is dev-only.
@@ -11,7 +11,7 @@ function ignorable(url: string): boolean {
   return url.includes('/api/funnel') || url.includes('/api/activity/stream')
 }
 
-test.describe('/funnel — pipeline board, frontend <-> backend', () => {
+test.describe('/momentum — pipeline board, frontend <-> backend', () => {
   test('renders the stage board + reveal tier + detail panel from the seeded API', async ({ page }) => {
     const consoleErrors: string[] = []
     page.on('console', (msg) => {
@@ -23,9 +23,9 @@ test.describe('/funnel — pipeline board, frontend <-> backend', () => {
       failedRequests.push(`${req.method()} ${req.url()} — ${req.failure()?.errorText ?? ''}`)
     })
 
-    await page.goto('/funnel')
+    await page.goto('/momentum')
 
-    await expect(page.getByRole('heading', { level: 1, name: 'Funnel' })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: 'Momentum' })).toBeVisible()
 
     // Board renders from the seeded /api/funnel over the polling hook.
     const board = page.getByTestId('funnel-board')
@@ -55,13 +55,13 @@ test.describe('/funnel — pipeline board, frontend <-> backend', () => {
     expect(failedRequests).toEqual([])
   })
 
-  test('the shared header nav reaches /funnel and back', async ({ page }) => {
+  test('the shared header nav reaches /momentum and back', async ({ page }) => {
     await page.goto('/')
     const nav = page.getByRole('navigation', { name: 'Primary' })
 
-    await nav.getByRole('link', { name: 'Funnel' }).click()
-    await expect(page).toHaveURL('/funnel')
-    await expect(page.getByRole('heading', { level: 1, name: 'Funnel' })).toBeVisible()
+    await nav.getByRole('link', { name: 'Momentum' }).click()
+    await expect(page).toHaveURL('/momentum')
+    await expect(page.getByRole('heading', { level: 1, name: 'Momentum' })).toBeVisible()
 
     await nav.getByRole('link', { name: 'Jane Doe' }).click()
     await expect(page).toHaveURL('/')

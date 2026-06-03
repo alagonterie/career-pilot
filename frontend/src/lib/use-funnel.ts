@@ -85,6 +85,6 @@ export function deriveStatTiles(apps: FunnelApplication[]): StatTile[] {
     { label: 'Applications YTD', value: String(ytd), hint: 'applied this year' },
     { label: 'Interviews this month', value: String(interviewsThisMonth), hint: 'entered an interview stage' },
     { label: 'Offers', value: String(offers), hint: 'received' },
-    { label: 'Avg days in funnel', value: String(avgDays), hint: 'heuristic · active applications' },
+    { label: 'Avg days active', value: String(avgDays), hint: 'heuristic · active applications' },
   ]
 }

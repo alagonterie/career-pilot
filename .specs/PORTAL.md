@@ -65,10 +65,10 @@ The model that prevents both:
    the connective rail (§8.4) pulls them forward toward /contact.
 ```
 
-- **The home is the funnel mouth.** Its five viewports (§5.1) *are* connective tissue: each hands off a directed next step (funnel strip → `/funnel`, live ticker → `/live`, simulator pitch → `/simulator`, resume teaser → `/work` + `/contact`). A fully-built home channels; a hero-only home leaks.
+- **The home is the funnel mouth.** Its five viewports (§5.1) *are* connective tissue: each hands off a directed next step (funnel strip → `/momentum`, live ticker → `/live`, simulator pitch → `/simulator`, resume teaser → `/work` + `/contact`). A fully-built home channels; a hero-only home leaks.
 - **`/live` is the hub.** It's where the one register-crossing CTA lands (§3.5) and where intent forks: the skeptic deepens into `/architecture` + the repo, the "prove-it" visitor pivots to `/simulator`, the convinced visitor converts at `/contact`.
 - **`/contact` is the single sink.** Every surface offers a path to it, and it accepts **carried context** (the role/company a simulator run was about, the surface the visitor came from) so converting is one low-friction step, not a cold form.
-- **Every deep surface offers a next step.** No `/live`, `/funnel`, `/architecture`, `/simulator`, or `/work` is a terminus: each carries the **connective rail** (§8.4) — a constant convert path (→ `/contact`) plus 1-2 contextual deepen/pivot options. The top nav (§8.1) independently supports free "bounce anywhere" movement; the rail adds *directed* pull so an interested visitor is led forward rather than left to find their own way.
+- **Every deep surface offers a next step.** No `/live`, `/momentum`, `/architecture`, `/simulator`, or `/work` is a terminus: each carries the **connective rail** (§8.4) — a constant convert path (→ `/contact`) plus 1-2 contextual deepen/pivot options. The top nav (§8.1) independently supports free "bounce anywhere" movement; the rail adds *directed* pull so an interested visitor is led forward rather than left to find their own way.
 
 This journey is not new scope invented here — it's the persona paths above + the §3.5 register transitions made physical. What it adds is the **connective tissue**: the rail (§8.4), the home build-out (§5.1), and a real `/contact` sink (§5.7) — turning five strong-but-isolated surfaces into a path that deepens and converts. STRATEGY.md §24.30 carries the delivery decomposition (the "conversion spine").
 
@@ -82,7 +82,7 @@ The portal is visually split between two registers:
 Used on `/`, `/work`, `/contact`. Generous whitespace, large typography, restrained color, one focal element per viewport-height. Conveys product taste; doesn't intimidate the non-technical visitor.
 
 ### B. Operations register: Bloomberg/mission-control density
-Used on `/live`, `/funnel`, `/architecture`. Dense multi-panel layouts, monospace numeric data, streaming text, abundant real-time signals. Conveys engineering depth; rewards visitors who clicked "see it work."
+Used on `/live`, `/momentum`, `/architecture`. Dense multi-panel layouts, monospace numeric data, streaming text, abundant real-time signals. Conveys engineering depth; rewards visitors who clicked "see it work."
 
 A visitor moves between registers via deliberate transitions. The landing page hero contains exactly one CTA that crosses the register boundary: `[ See it work → ]` → opens `/live`.
 
@@ -117,7 +117,7 @@ Motion: limited. The only auto-animating element on `/` is a single pulsing "●
 |---|---|---|
 | `StatusPill` | Both | Real-time on `/`; one per system status (e.g. "🟢 OPEN FOR OFFERS") |
 | `LiveTicker` | Both | Compact on `/`, expanded on `/live` |
-| `FunnelStrip` | Both | Compact 5-stage strip on `/`, full-detail board on `/funnel` |
+| `FunnelStrip` | Both | Compact 5-stage strip on `/`, full-detail board on `/momentum` |
 | `Card` | Landing | Glass-y surface, used for resume content, contact form |
 | `Panel` | Ops | Bordered, dense, no padding |
 | `LogStream` | Ops | Append-only terminal-like component, monospace |
@@ -145,7 +145,7 @@ Motion: limited. The only auto-animating element on `/` is a single pulsing "●
 
 **Why TanStack Start (vs Next.js 15):**
 
-- **Type-safe routing end-to-end.** Every route param, search param, loader return, and `<Link>` target is inferred by the compiler. Critical for our dashboard pages with multi-param state: `/live?filter=tailor&since=<ts>`, `/funnel?reveal=fintech-b`, `/simulator/results/:id`. Rename a route → TS catches every call site.
+- **Type-safe routing end-to-end.** Every route param, search param, loader return, and `<Link>` target is inferred by the compiler. Critical for our dashboard pages with multi-param state: `/live?filter=tailor&since=<ts>`, `/momentum?reveal=fintech-b`, `/simulator/results/:id`. Rename a route → TS catches every call site.
 - **No RSC mental tax.** Server functions are typed RPC; no `"use client"`/`"use server"` poisoning, no "can't import from server component" footguns, no hydration-mismatch landmines.
 - **Smaller framework footprint** → easier to stay under the 3 MiB Cloudflare Worker compressed bundle cap (free tier).
 - **Engineering-taste signal.** The audience for this portal includes engineering hiring managers and senior peers — they recognize TanStack Start as a thoughtful 2026 choice. Next.js is universally recognized but uninteresting.
@@ -159,7 +159,7 @@ Motion: limited. The only auto-animating element on `/` is a single pulsing "●
 3. **3 MiB compressed Worker budget on Cloudflare's free tier.** Audit any dep addition. TanStack Start ships less framework code than Next.js, giving more headroom.
 4. **SSE consumers** prefer `fetch`-with-stream-reader over `EventSource` so we can set custom headers (e.g., auth) — and to multiplex over HTTP/2 (Cloudflare default), sidestepping the browser 6-connection HTTP/1.1 cap on `EventSource`.
 5. **Server functions for forms.** `/contact` submission flows through a TanStack Start server function (typed RPC) that calls the native-`http` backend via Cloudflare Tunnel. No client-side API key handling.
-6. **Search params as first-class state.** Filter chips on `/live`, reveal toggles on `/funnel`, and pagination on `/simulator/results` use TanStack Router's typed `useSearch()` instead of ad-hoc URL parsing — deep-linkable, type-safe, refresh-safe.
+6. **Search params as first-class state.** Filter chips on `/live`, reveal toggles on `/momentum`, and pagination on `/simulator/results` use TanStack Router's typed `useSearch()` instead of ad-hoc URL parsing — deep-linkable, type-safe, refresh-safe.
 
 **Implementation discipline:** Before any frontend code lands, we do a focused TanStack Start docs pass (v1 changelog, the `@cloudflare/vite-plugin` deploy path, server-functions API, search-param typing patterns) and capture canonical patterns for our specific needs (SSE streaming, server-function error handling, route prefetching). Done — captured in STRATEGY.md §24.23.
 
@@ -173,7 +173,7 @@ Motion: limited. The only auto-animating element on `/` is a single pulsing "●
 /                    Landing — hero + funnel + activity hook + simulator CTA
 /live                Real-time ops dashboard (the "dig in")
 /simulator           Recruiter Simulator (interactive sandbox)
-/funnel              Funnel race detail + history + outcomes
+/momentum            Funnel race detail + history + outcomes (visitor label "Momentum"; internal name = funnel)
 /architecture        Live system architecture + current state
 /work                Resume / experience / projects / writing
 /contact             Recruiter contact form + direct contact options
@@ -241,7 +241,7 @@ A horizontal 5-stage strip with the visitor's eye-line drawn left to right:
   4 active        2 active         1 active                     
 ```
 
-Each dot = one application. Color reflects state. Hovering shows obfuscated label ("Series-B fintech, applied 12 days ago"). Clicking the strip opens `/funnel`. No real company names on this page.
+Each dot = one application. Color reflects state. Hovering shows obfuscated label ("Series-B fintech, applied 12 days ago"). Clicking the strip opens `/momentum`. No real company names on this page.
 
 Below the strip, a single sentence:
 > *Companies are obfuscated until each process closes — [see anonymization policy](/about#anonymization).*
@@ -266,7 +266,7 @@ The `◆ proactive` marker calls out events the agent initiated on its own — t
 
 Compact, dense, monospace. This is the bridge from landing register to ops register. The visitor who clicks `Watch live →` is self-selecting into the deep view.
 
-> **Build note (STRATEGY §24.35 Pass A).** The ticker's `watch live →` link to `/live` (mockup above) was specified but unbuilt through 8.x — the shipped `LiveTicker` rendered no link, dead-ending Viewport 3 (the only path on was the top nav). §24.35 Pass A builds it as a page-supplied `<Link>` via an optional header slot (the component stays router-free), and adds the analogous `/live` FUNNEL-panel → `/funnel` link.
+> **Build note (STRATEGY §24.35 Pass A).** The ticker's `watch live →` link to `/live` (mockup above) was specified but unbuilt through 8.x — the shipped `LiveTicker` rendered no link, dead-ending Viewport 3 (the only path on was the top nav). §24.35 Pass A builds it as a page-supplied `<Link>` via an optional header slot (the component stays router-free), and adds the analogous `/live` FUNNEL-panel → `/momentum` link.
 
 > **Build note (STRATEGY §24.35 Pass C).** The compact ticker **drops `category='turn'` rows** — those per-turn cost summaries (§24.34) are the `/live` trace stream's story (where they render as a batch-sealing separator); on a 5-line teaser they're noise. The ticker shows the action events; the turn-cost rollup lives on `/live`.
 
@@ -305,7 +305,7 @@ Three-column on desktop, stacked on mobile. The resume content is hand-curated, 
 - Link to `/about`
 - "Built with [stack list]" — small grey text
 
-> **Build note (the funnel mouth — STRATEGY §24.30 / Sub-milestone 8.1).** The home is the mouth of the conversion funnel (§2): each viewport hands the visitor a directed next step. Phase 6.1 shipped only the hero (Viewport 1) + the live ticker (Viewport 3), so today the home channels into `/live` and leaks every other path. Sub-milestone 8.1 builds Viewport 2 (the **funnel strip**, a compact `FunnelStrip` over `/api/funnel` → `/funnel`) + Viewport 5 (the **resume+contact teaser** → `/work` + `/contact`) and rewires the hero's "Talk to me →" from its `mailto:` placeholder to `/contact`; the **simulator pitch** (Viewport 4 → `/simulator`) lands in 8.2 with that route.
+> **Build note (the funnel mouth — STRATEGY §24.30 / Sub-milestone 8.1).** The home is the mouth of the conversion funnel (§2): each viewport hands the visitor a directed next step. Phase 6.1 shipped only the hero (Viewport 1) + the live ticker (Viewport 3), so today the home channels into `/live` and leaks every other path. Sub-milestone 8.1 builds Viewport 2 (the **funnel strip**, a compact `FunnelStrip` over `/api/funnel` → `/momentum`) + Viewport 5 (the **resume+contact teaser** → `/work` + `/contact`) and rewires the hero's "Talk to me →" from its `mailto:` placeholder to `/contact`; the **simulator pitch** (Viewport 4 → `/simulator`) lands in 8.2 with that route.
 
 ---
 
@@ -409,7 +409,7 @@ Filter chips above the stream: `[All] [Reactive] [Proactive] [Research] [Tailor]
 > **Backend note — trace telemetry capture.** The per-line metrics (`model_used`, `tokens`, `cost_cents`, `cache_hit`, `latency_ms`) and the `proactive` marker that powers the `◆` glyph + the Reactive/Proactive filter exist as columns on `public_audit_trail` but are not yet populated by any writer. The capture path (mirror the Agent SDK's per-turn usage from the container/poll-loop level; source `proactive` from the session trigger kind) is specified in STRATEGY.md §24.14 and built in Phase 5 alongside the SSE layer. Until then these fields render as `—` (the empty-state per §10).
 
 #### Panel: `FUNNEL (compact)`
-A reduced version of the funnel race. Same data as `/funnel` but compacted to one row.
+A reduced version of the funnel race. Same data as `/momentum` but compacted to one row.
 
 #### Panel: `COST & CACHE`
 Two numbers:
@@ -605,7 +605,9 @@ The `Talk to me` button pre-fills the contact form on `/contact` with the compan
 
 ---
 
-### 5.4 `/funnel` — Funnel race detail
+### 5.4 `/momentum` — the funnel race detail (visitor label: **Momentum**)
+
+> **Naming (owner call, 2026-06-03).** Route + visitor label = **Momentum** / `/momentum` (the gamified horse-race framing; see §8.1). Everything internal stays **funnel** — `/api/funnel`, `public_funnel_view`, the `Funnel*` components, `funnel_events`, `funnel-curator`. The rest of this section uses "funnel" as that internal domain term.
 
 **Purpose:** The gamified deep-dive into the candidate's job search. Recruiter sees motion ("this person is in demand"), engineer sees a real pipeline tracker.
 
@@ -753,7 +755,7 @@ Below the diagram: a panel labeled `WHAT YOU'RE LOOKING AT`:
 
 > **Build note (Sub-milestone 7.2, STRATEGY §24.28).** **Ships now:** the SVG system map (three regions, a curated faithful subset of the diagram above), a system-mode banner (`live_mode` SHADOW/LIVE + `pause_state`), per-node status badges, the node click-through side panel, and the "what you're looking at" prose+links panel — all from `GET /api/architecture` + `GET /api/system-status` via a polling hook. **The honesty rule:** a status badge lights up only for a node we actually probe (host pause-state, `backend` online, container runtime, active sessions); every other node (the external triggers, Portkey, the Anthropic API, sanitization, the tunnel/edge) renders as **structure with no health claim** — an outline marker, never a fake-green dot — with a legend stating the distinction. This is the same render-if-present discipline as the trace-telemetry lanes (§24.24). **Deferred:** live probes for the structural nodes (a Portkey health read, per-subagent activity, tunnel/worker reachability) and the per-node "recent log excerpts / recent calls" in the side panel — both need the §24.24 telemetry-capture family; until then the side panel shows the node's description + the live facts we do have + a line-anchored code link. **Enrichment (post-build):** an owner **actor** node ("Jane Doe", no status badge) with a bidirectional Telegram edge; **bidirectional** edges for the duplex relationships only (owner↔Telegram, Web-sandbox↔Router, Telegram↔Router, Router↔Session-DB) while triggers/spawns/LLM-calls/append stay one-way; and, since a technical visitor reads this page, every third-party node (Portkey, Anthropic, Telegram, Cloudflare, Google) carries a what-it-is/how-used description **plus an external doc link** even though we don't own it.
 
-> **Build note (STRATEGY §24.35 Pass B).** The node click-through is now a **grow-into-centered-modal** (motion `layoutId` shared-element from the node's box → centered; reduced-motion → instant), not a right drawer (`/funnel`'s `DetailPanel` keeps its drawer — intentional divergence). The `pub-sanitize` ("Sanitization") node's modal **hosts the live anonymization demo** — the real sanitizer over synthetic input, lazy-fetched on open, relocated here from `/live` (§5.2) because it proves the very pipeline that node *is*. That node therefore carries a distinct `▶` **interactive marker** (not the structural `◇`), and the "what you're looking at" panel gains a **"see the sanitizer run →"** control that opens it — so the privacy proof isn't buried behind a guess.
+> **Build note (STRATEGY §24.35 Pass B).** The node click-through is now a **grow-into-centered-modal** (motion `layoutId` shared-element from the node's box → centered; reduced-motion → instant), not a right drawer (`/momentum`'s `DetailPanel` keeps its drawer — intentional divergence). The `pub-sanitize` ("Sanitization") node's modal **hosts the live anonymization demo** — the real sanitizer over synthetic input, lazy-fetched on open, relocated here from `/live` (§5.2) because it proves the very pipeline that node *is*. That node therefore carries a distinct `▶` **interactive marker** (not the structural `◇`), and the "what you're looking at" panel gains a **"see the sanitizer run →"** control that opens it — so the privacy proof isn't buried behind a guess.
 
 ---
 
@@ -951,7 +953,7 @@ On `/` landing ticker (compact):
 16:24  parse_email    ▸ gmail webhook    haiku
 ```
 
-In `/funnel` per-application timeline:
+In `/momentum` per-application timeline:
 ```
 2026-05-25  ◆ followup drafted (pending owner approval)
 2026-05-22  ◆ funnel: APPLIED → SCREENING (gmail signal)
@@ -992,9 +994,9 @@ The agent learns from outcomes. Rejection-as-fuel is the canonical case.
 5. Free-form answers stored in `rejection_learnings` (private) keyed to the application + role category.
 6. **Future fuel:** every subsequent `research-company` and `tailor-resume` run for similar companies/roles includes a context block:
    > *"Prior learnings from similar attempts:* [bulleted, anonymized excerpts]*"*
-7. **Optional portal publication:** the candidate can flip `reflection_published: true` per learning. Published reflections show on the application's `/funnel` detail panel as a "What I learned" block, with the company still obfuscated unless `public_state = 'public'`.
+7. **Optional portal publication:** the candidate can flip `reflection_published: true` per learning. Published reflections show on the application's `/momentum` detail panel as a "What I learned" block, with the company still obfuscated unless `public_state = 'public'`.
 
-**Why this matters for the showcase:** A hiring manager who lands on `/funnel` and sees a closed/rejected entry with a handwritten reflection ("*I underestimated their bar for systems design — leaning into Designing Data-Intensive Applications before my next big-tech round*") thinks: *this is someone who learns in public*. That signal is much harder to fake than competence claims.
+**Why this matters for the showcase:** A hiring manager who lands on `/momentum` and sees a closed/rejected entry with a handwritten reflection ("*I underestimated their bar for systems design — leaning into Designing Data-Intensive Applications before my next big-tech round*") thinks: *this is someone who learns in public*. That signal is much harder to fake than competence claims.
 
 **Other feedback loops in the same family:**
 
@@ -1104,10 +1106,16 @@ Both are required for a real send: `LIVE_MODE=true` AND owner approves the speci
 
 Minimal. Logo / wordmark left, links right:
 ```
-  Jane Doe    /live    /simulator    /funnel    /work    /contact
+  Jane Doe    Live    Momentum    Architecture    Simulator    Work    Contact
 ```
 
+**Order (owner call, 2026-06-03):** lead with the wow (`/live`, the real-time hub the home "See it work →" CTA targets), then its drill-ins (`Momentum`, `Architecture`), then the personal/conversion tail (`Simulator`, `Work`, `Contact`). This clusters the ops surfaces then the personal ones — and ends on the `/contact` sink. (Supersedes the earlier interleaved `/live · /simulator · /funnel · /work` ordering; `/architecture` had also never been listed here.)
+
+**"Momentum" = the visitor-facing label for the funnel page** (owner call, 2026-06-03). "Funnel" read as sales jargon and clashed with the page's *gamified, horse-race* intent (applications racing to an offer — "things are moving, this person's in demand"), which is deliberately warmer than the cool/technical `Architecture` + `Live`. The route is **`/momentum`**; **all internal naming stays "funnel"** — `/api/funnel`, `public_funnel_view`, the `Funnel*` components, the `funnel_events` table, the `funnel-curator` subagent. So: public surface = Momentum, internal domain = funnel.
+
 The wordmark is the persona name, **not a domain** — the deployed site is `hire.<DOMAIN>` (`hire.example.com` placeholder) per the locked domain pattern; the earlier `janedoe.dev` here was a stray placeholder, reconciled in STRATEGY §24.25. Sticky on scroll. On mobile, collapses to hamburger.
+
+**Header vs footer (the IA rule):** the header carries the *journey* — the surfaces a visitor should actively explore (kept to ~6 items). Secondary/background links live in the footer (§8.2): socials, legal/privacy, and **`/about`** (background/story, not a primary destination) — so `/about` is **not** a header item.
 
 ### 8.2 Footer
 
@@ -1144,7 +1152,7 @@ A single `ConnectiveRail` component fed a per-route config, hosted by the regist
 | `/` (home) | Talk to me → `/contact` | See it work → `/live` | Try it → `/simulator` |
 | `/live` (the hub) | Talk to me → `/contact` | How it works → `/architecture` | Run it on your role → `/simulator` |
 | `/architecture` | Talk to me → `/contact` | Read the code → GitHub repo | See it run → `/live` |
-| `/funnel` | Talk to me → `/contact` | Watch it live → `/live` | — |
+| `/momentum` | Talk to me → `/contact` | Watch it live → `/live` | — |
 | `/work` | Talk to me → `/contact` | See the system → `/live` | — |
 | `/simulator` (results) | Talk to me (context-prefilled) → `/contact` | Share results | Try another |
 | `/about` | Talk to me → `/contact` | Read the code → GitHub | See it run → `/live` |
@@ -1198,7 +1206,7 @@ Backend tables:
 
 #### `public_funnel_view` — the current-state read-model
 
-`public_audit_trail` is an append-only *event log*; the funnel surfaces (`/` strip, `/funnel` board, `/live` compact funnel) need *current state per application*. `public_funnel_view` is a maintained physical projection table (one row per application), written by a host-side hook on every `applications` / `funnel_events` write — the same best-effort, post-commit discipline as the `public_audit_trail` mirror. Columns:
+`public_audit_trail` is an append-only *event log*; the funnel surfaces (`/` strip, `/momentum` board, `/live` compact funnel) need *current state per application*. `public_funnel_view` is a maintained physical projection table (one row per application), written by a host-side hook on every `applications` / `funnel_events` write — the same best-effort, post-commit discipline as the `public_audit_trail` mirror. Columns:
 
 | Column | Meaning |
 |---|---|
@@ -1208,8 +1216,8 @@ Backend tables:
 | `role_title`, `status` | current canonical status (see the pinned status vocabulary) |
 | `stage` | the derived 5-stage value for the funnel strip (Applied / Screening / Tech / Final / Offer, + terminal) |
 | `applied_at`, `stage_entered_at`, `last_activity_at` | timestamps — the API/frontend computes "days in stage / pipeline" at read time (never precomputed, so a row never goes stale) |
-| `win_confidence` | heuristic %, labeled low-rigor on `/funnel` |
-| `published_learning` | sanitized excerpt of the latest published reflection for this application (nullable) — feeds the `/funnel` "What I learned" block (§6.7) without the API ever reading the private `learnings` table |
+| `win_confidence` | heuristic %, labeled low-rigor on `/momentum` |
+| `published_learning` | sanitized excerpt of the latest published reflection for this application (nullable) — feeds the `/momentum` "What I learned" block (§6.7) without the API ever reading the private `learnings` table |
 
 When an application's obfuscation policy changes (`public_state` flip, label/name edit), the hook refreshes the row so `application_ref` reflects current intent — mirroring the retroactive resanitization already done for `public_audit_trail`.
 
@@ -1229,7 +1237,7 @@ When an application's obfuscation policy changes (`public_state` flip, label/nam
 
 > **Build note (STRATEGY §24.36 / Sub-milestone 36.1).** These states get a **consistent visual language** (a shared skeleton primitive for content-shaped areas; the honest "not connected / offline" treatment for degraded externals; concise inline copy for streams) instead of the current ad-hoc per-page handling. Because the seeded E2E/dev DB is always instant + populated, the loading/empty/error states are otherwise unreachable in tests — so a **mock-only request override** (`?__state=loading|empty|error`, honored only by the dev/E2E API, never production) makes each state reachable for `@visual` snapshots, driven live in dev by a small **state-switcher** panel. A production-facing state-preview toggle is deferred (V2_IDEAS #16) — a live site serving fake loading/error states would undercut the "everything here is real" credibility.
 >
-> **Dimensional-stability standard (Tier 2 — owner call, 2026-06-03; the bar for every async surface, here and in §24.36 36.2–36.5 + the §24.37 mobile work).** A state change must never yank surrounding content: (a) the **loading skeleton reserves the loaded layout's footprint** so loading→ok is ≈zero layout shift (the frequent, watched transition); (b) **empty/error center their message within a reserved region** (a sensible min-height) rather than collapsing the surface to a bare line — and without ballooning into a large empty void on a very tall surface (a ~900px diagram's error state reserves a comfortable framed region, not its full height). Grid-composed surfaces (the `/live` panel grid) are stabilized by the grid row sizing to its tallest cell; single-surface pages (`/funnel`, `/architecture`) reserve their region explicitly.
+> **Dimensional-stability standard (Tier 2 — owner call, 2026-06-03; the bar for every async surface, here and in §24.36 36.2–36.5 + the §24.37 mobile work).** A state change must never yank surrounding content: (a) the **loading skeleton reserves the loaded layout's footprint** so loading→ok is ≈zero layout shift (the frequent, watched transition); (b) **empty/error center their message within a reserved region** (a sensible min-height) rather than collapsing the surface to a bare line — and without ballooning into a large empty void on a very tall surface (a ~900px diagram's error state reserves a comfortable framed region, not its full height). Grid-composed surfaces (the `/live` panel grid) are stabilized by the grid row sizing to its tallest cell; single-surface pages (`/momentum`, `/architecture`) reserve their region explicitly.
 
 ---
 
