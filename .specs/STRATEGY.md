@@ -3851,6 +3851,8 @@ This is the honest, low-risk choice: turn-level data on a turn-level row (semant
 6. Container build + host suite + the visible-layer frontend (seed alignment + local-cost lane) + tsc + format:check green; `home.png` / `live.png` re-blessed and validated in isolation.
 7. Spec deltas: this §24.34; §24.24 tier-table "Deferred" cell repointed here (capture now lands); §3 schema `category` vocab += `'turn'`; PORTAL §5.1 (line ~269) + §8.3 progressive-render notes repointed from "a later dedicated phase" → §24.34 (turn-level attribution clarified).
 
+**Reconciled (§24.35 Pass C).** DoD #5's "`LogStream` renders the lanes by presence" still holds for *action* rows, but the `category='turn'` row itself no longer renders as a peer line — it renders as a **batch-sealing separator** (the same metrics, inline in a rule), and the compact home ticker drops turn rows entirely. The capture/attribution here is unchanged; only the turn row's *presentation* moved (§24.35 Pass C).
+
 ---
 
 #### 24.35 Phase 8 UI-feedback refinement (hands-on polish) + Pass A — navigation & layout reachability
@@ -3910,6 +3912,21 @@ The PORTAL §8.2 "identical metadata footer" (status string + deploy hash + soci
 4. `/funnel`'s `DetailPanel` is untouched (intentional side-drawer divergence).
 5. Frontend unit + tsc + build green; E2E green (architecture: demo-in-modal + explainer + the existing `cont-runtime` dialog open/close; live: anon assertions removed); `@visual` re-blessed in isolation (`live.png` shorter, `architecture.png` `▶` marker, new `architecture-sanitizer-modal.png`).
 6. Spec deltas: this Pass B; PORTAL §5.5 (node interaction = grow-into-modal; the sanitizer node hosts the live demo) + §5.2 (the demo relocated off `/live`) + §24.33 reconciliation (the demo's home is now the `pub-sanitize` modal).
+
+**Pass C — `/live` trace stream: auto-scroll fix + turn-row redesign (#4 + #5).**
+
+*#4 — the auto-scroll dies once the buffer fills.* `LogStream` keeps a "stuck to bottom" auto-scroll, but the effect is keyed on `filtered.length`. The activity hook caps events at `limit` (60 on `/live`), so once the ring buffer is full `length` is constant — new events replace old, the effect never re-fires, and auto-scroll silently stops. Fix: key the effect on the **newest event's `seq`** (`filtered.at(-1)?.seq`), which keeps changing as events append even at the cap. Also make it slicker (the #4 ask): **smooth-scroll when motion is allowed** (`scrollTo({ behavior: 'smooth' })`, gated by motion's `useReducedMotion()`), falling back to the instant jump under prefers-reduced-motion (the terminal-style discrete jump it does today). The "jump to live" button + the stuck-detection are unchanged.
+
+*#5 — turn rows read as a weird peer event.* §24.34 emits one `category='turn'` summary row per portal-worthy owner turn; rendered through the same action-line template it looks like a sibling event (`time · turn · ◆ · turn complete · opus-4-8 …`) — a rollup masquerading as an action, which the owner flagged. Redesign: a `turn` row renders as a **batch-sealing separator** — a thin rule with the real metrics inline (`── turn · <model> · <tok> · $<cost> · <latency> · cache✓ ──`), visually distinct from action lines (no time/agent/summary in the action shape). It reads as "here's what the actions above just cost," which is what a turn *is*. **Purely additive:** the branch is `e.category === 'turn' ? <TurnSeal/> : <ActionLine/>`; action lines keep their progressive lane rendering (still honest render-if-present — exercised by a subagent row carrying telemetry, and ready for the deferred §24.34 per-row enrichment). On the **compact home ticker** (`LiveTicker`) turn rows are **dropped** entirely (`category !== 'turn'`) — the ticker is a 5-line teaser; the per-turn cost story belongs on `/live`.
+
+**What ships (Pass C).** `LogStream.tsx` (the `newestSeq`-keyed smooth/instant auto-scroll + the `turn`-row seal branch, `data-testid="trace-turn"`); `LiveTicker.tsx` (filter out `turn` rows); unit tests (`log-stream.test` turn-seal case + `LiveTicker.test` drop-turns case); `live.spec.ts` (assert the turn seal); re-bless `home.png` (ticker no longer shows the turn line) + `live.png` (the turn seal).
+
+**Definition of done.**
+1. `LogStream` auto-scroll re-fires on every new event even when the ring buffer is at its cap (keyed on the newest `seq`, not `length`); smooth when motion is allowed, instant under reduced-motion; "jump to live" still works.
+2. A `category='turn'` row renders as a distinct batch-sealing separator (a rule + the inline real metrics), not an action line; action lines (non-turn) keep their progressive lanes.
+3. The home `LiveTicker` no longer renders `turn` rows.
+4. Frontend unit + tsc + build green; functional E2E green (the `/live` turn seal asserted; the §24.34 model-chip + local-spend assertions still pass); `@visual` re-blessed in isolation (`home.png`, `live.png`).
+5. Spec deltas: this Pass C; PORTAL §5.2 (turn seal) + §5.1 (ticker drops turns); a §24.34 reconciliation note (turn rows now render as a seal, not a peer line).
 
 ---
 
