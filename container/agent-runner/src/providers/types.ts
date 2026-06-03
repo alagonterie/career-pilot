@@ -125,9 +125,49 @@ export interface TraceEvent {
   cost_usd?: number;
 }
 
+/**
+ * Per-turn LLM economics captured from the SDK `result` message (§24.34).
+ * The honest unit is one `query()` call — the SDK resolves cost only per-turn
+ * (`total_cost_usd`), with no per-subagent/per-tool breakdown (subagent usage
+ * rolls up into the parent result). `record_calls` counts this turn's
+ * `record_funnel_event` / `record_progress` dispatches: the poll-loop emits a
+ * turn-telemetry row only when `> 0` (the "portal-worthy" gate). All numeric
+ * fields are JSON-serializable for the fire-and-forget host action payload.
+ */
+export interface TurnTelemetry {
+  /** Primary (highest-cost) model name across the turn, or null if unknown. */
+  model_used: string | null;
+  /** Billable token volume = sum of input + output across models. */
+  tokens: number;
+  /** round(total_cost_usd * 100) — an SDK-side estimate, not authoritative. */
+  cost_cents: number;
+  /** 1 if any model read from cache this turn, else 0. */
+  cache_hit: 0 | 1;
+  /** Turn wall-clock duration (SDK `duration_ms`). */
+  latency_ms: number;
+  /** record_* tool_use dispatches this turn (the portal-worthy gate). */
+  record_calls: number;
+  /** Extra context persisted into the audit row's details_json. */
+  details: {
+    num_turns: number;
+    duration_api_ms: number;
+    total_cost_usd: number;
+    model_usage: Record<
+      string,
+      { input: number; output: number; cache_read: number; cache_creation: number; cost_usd: number }
+    >;
+  };
+}
+
 export type ProviderEvent =
   | { type: 'init'; continuation: string }
-  | { type: 'result'; text: string | null }
+  /**
+   * Turn complete. `telemetry` (§24.34) is present when the SDK emitted a
+   * `result` message with usage; the poll-loop forwards it as a per-turn
+   * audit row when the turn was portal-worthy. Optional + additive — the
+   * owner event stream is otherwise byte-identical to upstream.
+   */
+  | { type: 'result'; text: string | null; telemetry?: TurnTelemetry }
   | { type: 'error'; message: string; retryable: boolean; classification?: string }
   | { type: 'progress'; message: string }
   /**

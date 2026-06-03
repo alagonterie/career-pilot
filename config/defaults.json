@@ -66,6 +66,7 @@
     "portal_sse_keepalive_ms": 15000,
     "portal_telemetry_cache_ms": 30000,
     "portal_architecture_cache_ms": 5000,
+    "telemetry_capture": true,
     "simulator_enabled": true,
     "simulator_max_turns": 30,
     "simulator_max_budget_usd": 0.1,

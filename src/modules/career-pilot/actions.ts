@@ -293,6 +293,77 @@ export async function handleRecordProgress(
   }
 }
 
+// ── record_turn_telemetry ───────────────────────────────────────────────────
+
+const TURN_TELEMETRY_SUMMARY = 'turn complete';
+
+/** Coerce a payload value to a finite number, or null (for nullable columns). */
+function numOrNull(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+/**
+ * Write a per-turn LLM-telemetry row (category='turn') to public_audit_trail.
+ *
+ * The honest unit is one query() call: the SDK resolves cost only per-turn
+ * (no per-subagent/per-tool breakdown — subagent usage rolls up into the
+ * parent result), so this row carries the turn's real model/tokens/cost/cache/
+ * latency on a turn-level row, while the funnel/progress writers stay
+ * untouched. The container's poll-loop fires it fire-and-forget when the turn
+ * made ≥1 record_* call (the portal-worthy gate); registered owner-only, so a
+ * sandbox emission never lands a row. Gated by the `telemetry_capture`
+ * preference (default true) — a kill switch.
+ *
+ * The row carries no free text (numbers + a fixed summary), so it needs no
+ * sanitization and is exempt from the funnel-only resanitization hooks.
+ */
+export async function handleRecordTurnTelemetry(
+  content: Record<string, unknown>,
+  session: Session,
+  inDb: Database.Database,
+): Promise<void> {
+  const requestId = reqId(content);
+  const p = payload(content);
+  try {
+    const db = getDb();
+
+    // Kill switch — when telemetry_capture is off, ack without writing.
+    if (!getConfig<boolean>(db, 'telemetry_capture', true)) {
+      writeResponse(inDb, requestId, { ok: true, data: { skipped: true } });
+      return;
+    }
+
+    const id = generateId('turn');
+    const now = new Date().toISOString();
+    const details = typeof p.details === 'object' && p.details ? (p.details as Record<string, unknown>) : {};
+    db.prepare(
+      `INSERT INTO public_audit_trail
+         (id, seq, ts, category, agent_name, proactive, model_used, tokens, cost_cents, cache_hit, latency_ms, summary, details_json)
+       VALUES (@id, (SELECT COALESCE(MAX(seq), 0) + 1 FROM public_audit_trail),
+               @ts, 'turn', NULL, @proactive, @model_used, @tokens, @cost_cents, @cache_hit, @latency_ms, @summary, @details_json)`,
+    ).run({
+      id,
+      ts: now,
+      proactive: deriveProactive(inDb) ? 1 : 0,
+      model_used: typeof p.model_used === 'string' ? p.model_used : null,
+      tokens: numOrNull(p.tokens),
+      cost_cents: numOrNull(p.cost_cents),
+      cache_hit: p.cache_hit === 1 || p.cache_hit === true ? 1 : 0,
+      latency_ms: numOrNull(p.latency_ms),
+      summary: TURN_TELEMETRY_SUMMARY,
+      details_json: JSON.stringify({ ...details, record_calls: numOrNull(p.record_calls) }),
+    });
+
+    writeResponse(inDb, requestId, { ok: true, data: { id } });
+  } catch (err) {
+    log.error('handleRecordTurnTelemetry failed', { err });
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
 // ── create_gmail_draft ─────────────────────────────────────────────────────
 
 const STUB_DRAFT_PREFIX = 'stub-draft-';

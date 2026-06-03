@@ -13,6 +13,7 @@ import {
   stripInternalTags,
   type RoutingContext,
 } from './formatter.js';
+import { sendActionNoWait } from './career-pilot/action.js';
 import type { AgentProvider, AgentQuery, ProviderEvent } from './providers/types.js';
 
 const POLL_INTERVAL_MS = 1000;
@@ -463,6 +464,22 @@ async function processQuery(
         // (send_message) mid-turn, or the message may not need a response
         // at all — either way the turn is finished.
         markCompleted(initialBatchIds);
+        // §24.34: when the turn did portal-worthy work (made ≥1 record_* call),
+        // emit a fire-and-forget per-turn telemetry row. Owner-only host-side
+        // (registerOwnerOnly) — a sandbox emission is rejected by the perimeter,
+        // so no group check is needed here. Never blocks turn teardown.
+        if (event.telemetry && event.telemetry.record_calls > 0) {
+          const t = event.telemetry;
+          void sendActionNoWait('career_pilot.record_turn_telemetry', {
+            model_used: t.model_used,
+            tokens: t.tokens,
+            cost_cents: t.cost_cents,
+            cache_hit: t.cache_hit,
+            latency_ms: t.latency_ms,
+            record_calls: t.record_calls,
+            details: t.details,
+          }).catch((err) => log(`turn-telemetry emit failed: ${err instanceof Error ? err.message : String(err)}`));
+        }
         if (event.text) {
           const { hasUnwrapped, toolTextEmissions } = dispatchResultText(event.text, routing);
           if (hasUnwrapped && toolTextEmissions.length > 0 && toolTextNudges < MAX_TOOL_TEXT_NUDGES) {

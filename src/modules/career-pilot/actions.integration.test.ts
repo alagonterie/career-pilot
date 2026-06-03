@@ -29,6 +29,7 @@ import {
   handleListApplications,
   handleRecordFunnelEvent,
   handleRecordProgress,
+  handleRecordTurnTelemetry,
   handleUpdateApplication,
   handleUpdateProfileField,
 } from './actions.js';
@@ -734,6 +735,101 @@ describe('proactive trace-capture (§24.24)', () => {
       proactive: number;
     };
     expect(fe.proactive).toBe(0);
+  });
+});
+
+// ── record_turn_telemetry (§24.34) ─────────────────────────────────────────
+
+describe('handleRecordTurnTelemetry', () => {
+  it('writes a category=turn row with the five telemetry columns + proactive from the wake', async () => {
+    seedWake('task'); // proactive trigger
+    const c = actionContent('career_pilot.record_turn_telemetry', {
+      model_used: 'claude-opus-4-8',
+      tokens: 17000,
+      cost_cents: 4,
+      cache_hit: 1,
+      latency_ms: 1234,
+      record_calls: 2,
+      details: { num_turns: 3, duration_api_ms: 1100, total_cost_usd: 0.041, model_usage: {} },
+    });
+    await handleRecordTurnTelemetry(c, FAKE_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+
+    const row = getDb()
+      .prepare(
+        `SELECT category, agent_name, proactive, model_used, tokens, cost_cents, cache_hit, latency_ms, summary, details_json
+           FROM public_audit_trail WHERE category = 'turn'`,
+      )
+      .get() as {
+      category: string;
+      agent_name: string | null;
+      proactive: number;
+      model_used: string;
+      tokens: number;
+      cost_cents: number;
+      cache_hit: number;
+      latency_ms: number;
+      summary: string;
+      details_json: string;
+    };
+    expect(row.category).toBe('turn');
+    expect(row.agent_name).toBeNull(); // a turn is not one subagent
+    expect(row.proactive).toBe(1);
+    expect(row.model_used).toBe('claude-opus-4-8');
+    expect(row.tokens).toBe(17000);
+    expect(row.cost_cents).toBe(4);
+    expect(row.cache_hit).toBe(1);
+    expect(row.latency_ms).toBe(1234);
+    expect(row.summary).toBe('turn complete');
+    expect(JSON.parse(row.details_json).record_calls).toBe(2);
+  });
+
+  it('does not write a row when telemetry_capture is disabled (kill switch)', async () => {
+    getDb()
+      .prepare(
+        `INSERT INTO preferences (key, value, updated_at) VALUES ('telemetry_capture', 'false', datetime('now'))`,
+      )
+      .run();
+    const c = actionContent('career_pilot.record_turn_telemetry', {
+      model_used: 'claude-opus-4-8',
+      tokens: 100,
+      cost_cents: 1,
+      cache_hit: 0,
+      latency_ms: 50,
+      record_calls: 1,
+    });
+    await handleRecordTurnTelemetry(c, FAKE_SESSION, inDb);
+
+    const resp = readResponse(c.requestId);
+    expect(resp.frame.ok).toBe(true);
+    if (resp.frame.ok) expect((resp.frame.data as { skipped?: boolean }).skipped).toBe(true);
+    const n = (
+      getDb().prepare(`SELECT COUNT(*) AS n FROM public_audit_trail WHERE category = 'turn'`).get() as { n: number }
+    ).n;
+    expect(n).toBe(0);
+  });
+
+  it('is defensive — missing/garbage fields land as NULL columns, cache_hit defaults 0', async () => {
+    const c = actionContent('career_pilot.record_turn_telemetry', { record_calls: 1 });
+    await handleRecordTurnTelemetry(c, FAKE_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+
+    const row = getDb()
+      .prepare(
+        `SELECT model_used, tokens, cost_cents, cache_hit, latency_ms FROM public_audit_trail WHERE category = 'turn'`,
+      )
+      .get() as {
+      model_used: string | null;
+      tokens: number | null;
+      cost_cents: number | null;
+      cache_hit: number;
+      latency_ms: number | null;
+    };
+    expect(row.model_used).toBeNull();
+    expect(row.tokens).toBeNull();
+    expect(row.cost_cents).toBeNull();
+    expect(row.cache_hit).toBe(0);
+    expect(row.latency_ms).toBeNull();
   });
 });
 

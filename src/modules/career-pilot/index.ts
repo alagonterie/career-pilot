@@ -16,6 +16,7 @@ import {
   handleListApplications,
   handleRecordFunnelEvent,
   handleRecordProgress,
+  handleRecordTurnTelemetry,
   handleUpdateApplication,
   handleUpdateProfileField,
 } from './actions.js';
@@ -63,6 +64,7 @@ registerOwnerOnly('career_pilot.record_funnel_event', handleRecordFunnelEvent);
 registerOwnerOnly('career_pilot.get_application', handleGetApplication);
 registerOwnerOnly('career_pilot.list_applications', handleListApplications);
 registerOwnerOnly('career_pilot.record_progress', handleRecordProgress);
+registerOwnerOnly('career_pilot.record_turn_telemetry', handleRecordTurnTelemetry);
 registerOwnerOnly('career_pilot.create_gmail_draft', handleCreateGmailDraft);
 registerOwnerOnly('career_pilot.record_job_lead', handleRecordJobLead);
 registerOwnerOnly('career_pilot.query_job_leads', handleQueryJobLeads);
