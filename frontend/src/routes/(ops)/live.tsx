@@ -59,8 +59,12 @@ function LivePage() {
           </p>
         </header>
 
-        {/* top stat row */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {/* top stat row — `grid-auto-rows` floors every panel to the loaded
+            row height (the LLM-telemetry "not connected" copy is the tallest), so
+            the loading skeletons reserve the same footprint (§24.36 Tier-2: no
+            shift on load). The grid already equalizes the row; this pins its
+            minimum across states. */}
+        <div className="grid grid-cols-1 gap-4 [grid-auto-rows:minmax(164px,auto)] sm:grid-cols-2 lg:grid-cols-4">
           <SystemStatusPanel mode={mode} arch={arch} status={archStatus} />
           <SessionsPanel arch={arch} status={archStatus} />
           <ContainerPoolPanel arch={arch} status={archStatus} />
@@ -75,6 +79,9 @@ function LivePage() {
           <div className="flex flex-col gap-4">
             <Panel
               title="Funnel"
+              // min-h reserves the loaded footprint so loading→ok doesn't shift
+              // the rail (§24.36 Tier-2; the value is the measured loaded height).
+              className="min-h-[152px]"
               action={
                 <Link to="/funnel" className="font-mono text-[11px] text-accent-cool hover:underline">
                   open →
