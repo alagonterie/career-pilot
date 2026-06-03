@@ -3851,6 +3851,44 @@ This is the honest, low-risk choice: turn-level data on a turn-level row (semant
 
 ---
 
+#### 24.35 Phase 8 UI-feedback refinement (hands-on polish) + Pass A — navigation & layout reachability
+
+After §24.34 the owner exercised the live portal and surfaced eight UX observations plus a mobile-strategy question. None reopen a locked decision; all are polish/correctness on already-shipped surfaces. To keep the spec from drifting from ad-hoc edits, they're grouped into five spec-anchored passes, each run as the established cadence (a drill-in commit, then a build commit):
+
+| Pass | Items | Scope |
+|---|---|---|
+| **A** (this) | #1 footer reachability · #2 contextual nav | Sticky-footer register layout so the connective rail is reachable without a full scroll; the spec'd-but-unbuilt ticker "watch live →" link (+ the analogous `/live` funnel-panel link) |
+| **B** | #6 arch node modal · #3 anon-demo relocation | `/architecture` node click → grow-into-centered-modal (motion `layoutId`); the §24.33 anonymization demo moves off `/live` into the `pub-sanitize` node's modal (lazy-fetched) with a discoverability cue |
+| **C** | #4 trace auto-scroll · #5 turn-row redesign | Fix the `LogStream` ring-buffer auto-scroll bug; redesign `category='turn'` rows as a batch-sealing summary separator (not a peer event line) |
+| **D** | #8 card progress bar · #7 content resize | Funnel card bar → `win_confidence` heuristic (not a restated lane); funnel/simulator resize stability (observed live first) |
+| **E** | mobile | A dedicated mobile-layout spec: header collapse, per-page responsive strategy, a Playwright mobile-viewport project |
+
+**Pass A — navigation & layout reachability.**
+
+*#1 — the rail was below the fold by construction.* Every page `<main>` carried `min-h-dvh`, and the `ConnectiveRail` (PORTAL §8.4) renders *after* `<main>` in the register layout — so even a near-empty page on a tall display forced `main` to a full viewport height and pushed the rail just past the fold. You always had to scroll to reach the directed "what's next," defeating §8.4's "no dead-end" intent. The fix is the classic sticky-footer layout, applied in both register `route.tsx` files: the layout becomes a `min-h-dvh flex flex-col` column (header · a `flex-1` wrapper around `<Outlet/>` · rail), and `min-h-dvh` is dropped from every page `<main>`. A short page then seats the rail at the viewport bottom (visible, no scroll); a tall page flows the rail after content (byte-identical to before). Pure layout — no component logic.
+
+The PORTAL §8.2 "identical metadata footer" (status string + deploy hash + social/`/about`/`/privacy` links) is *not* built here: it links to `/about` (deferred, §24.32) and a `/privacy` page that does not exist, so building it now means linking to 404s. §8.2 is reconciled to record that the realized foot-of-page is the §8.4 rail + per-page methodology captions; the live-status line it described is already served by the §8.3 indicator + the `/live` panels (not duplicated); the persistent social/identity footer is deferred to the pass that lands `/about` + `/privacy`.
+
+*#2 — contextual links on dead-end teasers.* PORTAL §5.1 Viewport 3 already specifies `[ Watch live → ] ← link to /live` in the home live ticker, but the shipped `LiveTicker` renders no such link — the ticker teases the ops register and dead-ends (the only path on was the top nav). This closes that drift: `LiveTicker` gains an optional `action` header slot (kept router-free + unit-testable — the page supplies the `<Link>`, mirroring the funnel-strip header pattern), and the home page passes `<Link to="/live">watch live →</Link>`. The shared `/live` `Panel` gains the same optional `action` slot, used to add an `open →` link on the FUNNEL panel → `/funnel` (the one analogous ops-surface dead-end the rail doesn't already cover from `/live`). Subtle, register-appropriate, reduced-motion-safe.
+
+**What ships (Pass A).**
+- `frontend/src/routes/(marketing)/route.tsx` + `(ops)/route.tsx`: the `min-h-dvh flex flex-col` sticky-footer wrapper around header / `<Outlet/>` / rail.
+- The eight page `<main>`s: drop `min-h-dvh` (now provided by the layout).
+- `LiveTicker` + the `/live` `Panel`: an optional `action?: ReactNode` header slot (justify-between when present; backward-compatible — existing call sites omit it).
+- `index.tsx` Viewport 3 → `watch live →` (`/live`); `live.tsx` FUNNEL panel → `open →` (`/funnel`).
+
+**Deferred (noted).** The §8.2 social/identity footer (blocked on `/about` §24.32 + a `/privacy` page); a full dead-end audit of every secondary section (Pass A does the two clear, spec-backed ones); mobile (Pass E).
+
+**Definition of done.**
+1. On a short page (e.g. `/contact`) the connective rail is within the first viewport (no scroll) at the 1280×720 E2E viewport; on a tall page the rail still flows after content, unchanged.
+2. No page `<main>` carries `min-h-dvh`; both register layouts provide it via the `flex flex-col` column + `flex-1` content wrapper.
+3. The home live ticker renders a `watch live →` link to `/live`; the `/live` FUNNEL panel renders an `open →` link to `/funnel`; both are real client-side `<Link>`s (the E2E round-trips one).
+4. `LiveTicker` + `Panel` stay unit-testable without a router (the `action` slot is page-supplied); existing unit tests stay green.
+5. Frontend unit + tsc + `vite build` green; functional E2E green (incl. a ticker→`/live` nav assertion); the affected `@visual` baselines (those whose full-page height shifts on short pages, plus home/live for the links) re-blessed and validated in isolation.
+6. Spec deltas: this §24.35 (opener + Pass A); PORTAL §8.4 reachability build-note, §8.2 footer reconciliation, §5.1 Viewport 3 "watch live →" now-built note.
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
