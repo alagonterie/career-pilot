@@ -31,7 +31,7 @@ export function AnonymizationDemo({ state }: { state: SanitizeDemoState }) {
               </p>
               <pre
                 data-testid="anon-raw"
-                className="overflow-x-auto whitespace-pre-wrap rounded-md border border-border bg-background p-3 font-mono text-[11px] leading-relaxed text-muted-foreground"
+                className="min-h-[13rem] overflow-x-auto whitespace-pre-wrap rounded-md border border-border bg-background p-3 font-mono text-[11px] leading-relaxed text-muted-foreground"
               >
                 {data.raw}
               </pre>
@@ -42,7 +42,7 @@ export function AnonymizationDemo({ state }: { state: SanitizeDemoState }) {
               </p>
               <pre
                 data-testid="anon-sanitized"
-                className="overflow-x-auto whitespace-pre-wrap rounded-md border border-primary/30 bg-background p-3 font-mono text-[11px] leading-relaxed text-foreground"
+                className="min-h-[13rem] overflow-x-auto whitespace-pre-wrap rounded-md border border-primary/30 bg-background p-3 font-mono text-[11px] leading-relaxed text-foreground"
               >
                 {data.sanitized}
               </pre>
