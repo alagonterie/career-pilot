@@ -1117,7 +1117,7 @@ Minimal. Logo / wordmark left, links right:
 
 **"Momentum" = the visitor-facing label for the funnel page** (owner call, 2026-06-03). "Funnel" read as sales jargon and clashed with the page's *gamified, horse-race* intent (applications racing to an offer — "things are moving, this person's in demand"), which is deliberately warmer than the cool/technical `Architecture` + `Live`. The route is **`/momentum`**; **all internal naming stays "funnel"** — `/api/funnel`, `public_funnel_view`, the `Funnel*` components, the `funnel_events` table, the `funnel-curator` subagent. So: public surface = Momentum, internal domain = funnel.
 
-The wordmark is the persona name, **not a domain** — the deployed site is `hire.<DOMAIN>` (`hire.example.com` placeholder) per the locked domain pattern; the earlier `janedoe.dev` here was a stray placeholder, reconciled in STRATEGY §24.25. Sticky on scroll. On mobile, collapses to hamburger.
+The wordmark is the persona name, **not a domain** — the deployed site is `hire.<DOMAIN>` (`hire.example.com` placeholder) per the locked domain pattern; the earlier `janedoe.dev` here was a stray placeholder, reconciled in STRATEGY §24.25. Sticky on scroll. On mobile, collapses to a **hamburger** (the responsive contract for the nav — and every page — is §13).
 
 **Header vs footer (the IA rule):** the header carries the *journey* — the surfaces a visitor should actively explore (kept to ~6 items). Secondary/background links live in the footer (§8.2): socials, legal/privacy, and **`/about`** (background/story, not a primary destination) — so `/about` is **not** a header item.
 
@@ -1183,7 +1183,7 @@ The contract, when a dialog is open:
 | **The rest of the page is `inert`** while open | AT + pointer can't reach backdrop content the visitor isn't supposed to be in. Applied by marking off-path siblings from the overlay up to `<body>` — **no portal**, so the modal's grow-from-node `motion` transition is preserved. |
 | `role="dialog"` + `aria-modal="true"` + `aria-labelledby` (+ `aria-describedby` where there's a description) | The dialog announces itself correctly; the title/description are the accessible name/description. |
 
-This is the load-bearing answer to the §13 accessibility open-question for overlays (keyboard navigation + focus management), closed for dialogs in STRATEGY §24.36 36.2. New overlay surfaces consume `useDialog` rather than re-implementing it.
+This is the load-bearing answer to the §14 accessibility open-question for overlays (keyboard navigation + focus management), closed for dialogs in STRATEGY §24.36 36.2. New overlay surfaces consume `useDialog` rather than re-implementing it.
 
 ---
 
@@ -1357,7 +1357,38 @@ The required 5 are enforced (the `LIVE_MODE` flip command refuses if they're not
 
 ---
 
-## 13. Open questions
+## 13. Responsive & mobile
+
+The portal is **phone-primary responsive**, not desktop-only. A page that overflows or hides controls behind un-tappable targets on a phone reads as *unfinished* to anyone — so good mobile behavior is table-stakes, independent of who's looking. The tie-breaker persona, where a layout call trades phone polish against desktop, is the **recruiter on a phone** (a plausible first-touch context): on the surfaces a recruiter hits first, the phone wins.
+
+**Target & breakpoint.** Design canonically for **~390px** (modern iPhone/Android), verified down to **320px** (iPhone SE) and **360px** (common Android). The phone/desktop divide is Tailwind's **`md` (768px)**, applied mobile-first: base styles are the phone treatment, `md:` restores the desktop layout. (The header may collapse at a lower threshold if the full nav row still fits comfortably at tablet widths — tuned in build.) Out of scope: a **tablet-specific tier** (the phone + desktop treatments cover the middle) and a **native app** (STRATEGY Part V) — responsive web is the plan.
+
+**Recon-grounded (2026-06-03 — all 8 routes driven at 390px + spot-checked at 320px on `dev:mock` via the Playwright MCP, *before* this spec was written).** Every page already stacks into a clean single column with **zero content overflow** — Tailwind's responsive utilities do most of the work. There is exactly **one universal break** (the top nav), plus **two ops-page judgment calls** and minor polish. Mobile is therefore a focused pass, not a responsive rebuild.
+
+**The responsive contract, surface by surface:**
+
+| Surface | Behavior below `md` |
+|---|---|
+| **Top nav (§8.1)** | *The one universal break.* The horizontal link row (`Live · Momentum · Architecture · Simulator · Work · Contact` + wordmark ≈ 431px) overflows every page → horizontal scroll, the last link clipped, the wordmark wrapped. Collapses to a **hamburger** (below). |
+| `/` home · `/work` · `/contact` · `/simulator` (input) · `/simulator/results/$id` | **Already correct** — single-column stack; forms, cards, and chip rows reflow; fits to 320px. No change beyond the shared header. |
+| `/architecture` (§5.5) | The SVG **scales to fit** the width (whole-system-at-a-glance — the point of an architecture diagram — is preserved). Detail comes from **tapping a node** (the §8.5 node modal, rendered as a **bottom-sheet** on phones), not from reading the shrunk labels. Native pinch-zoom remains a bonus escape hatch. |
+| `/live` (§5.2) | **Trace-first.** The live trace stream leads (the "agent working now" wow is immediately visible, not buried); the stat panels (system status, sessions, container pool, telemetry, cost, recent outcomes) stack below. **All panels kept** — honest and complete. |
+| `/momentum` (§5.4) | The board's desktop horse-race flattens to a **vertical stack** of stage sections (top-to-bottom = progress toward an offer); **zero-count stages collapse to a slim row** so empty stages don't each eat a screen. |
+
+**The hamburger (§8.1).** Below the breakpoint the header keeps the wordmark left and shows a hamburger button right; tapping it opens a menu (a sheet) carrying the six nav links + the `● live` indicator. If realized as an overlay sheet it consumes the **§8.5 dialog contract** (focus in, Tab-trap, Escape, background `inert`, focus-restore). The header stays sticky; at `md+` the full horizontal row returns unchanged.
+
+**Tap targets.** Interactive controls meet **≥44px** on phones (WCAG 2.5.5 / Apple HIG): the hamburger, the `/architecture` nodes, the `/momentum` cards, the `/live` trace filter chips. The architecture nodes also carry a mobile-only **"tap a node for detail"** cue (there's no hover affordance on touch).
+
+**Decisions (owner-delegated, recon-grounded — the alternatives and why-not):**
+- **`/architecture` SVG → scale-to-fit + tap-for-detail.** Not *min-width + horizontal pan* (a two-axis scroll trap, and it loses the at-a-glance gestalt), and not a *separate mobile diagram* (two representations to keep in sync). The readable detail already lives in the node modals we built (§8.5). *Escape hatch:* a modest min-width pan if build-time review finds the labels too cramped.
+- **`/live` → trace-first, keep all panels.** Not *collapsible stat panels* (hides info + adds interaction cost a skimming visitor doesn't want) and not *current order* (buries the centerpiece below four panels). The fix is purely ordering. *Escape hatch:* condense the stat panels if the scroll proves too long.
+- **`/momentum` → vertical stack + compact empties.** Not *horizontal scroll-snap* (off-screen columns are a discoverability anti-pattern and fight the page's vertical scroll). The race metaphor is a desktop affordance; readability wins on the phone.
+
+**Carried over unchanged:** the reduced-motion guarantee (§3.5) and the dialog focus/a11y contract (§8.5) apply on mobile as on desktop; the bottom-sheet node modal honors both.
+
+---
+
+## 14. Open questions
 
 1. **Should `/live` be discoverable without clicking through?** Alternative: render a "preview pane" of `/live` as a viewport on `/` for visitors who don't click. Risk: dilutes the apple-clean hero. Recommendation: keep landing clean, but add a single ~120px-tall live ticker between viewports 2 and 3 as a teaser.
 
@@ -1369,7 +1400,7 @@ The required 5 are enforced (the `LIVE_MODE` flip command refuses if they're not
 
 5. **PDF resume generation:** Server-side generation (puppeteer in the host process) or static commit-time artifact? Recommendation: server-side, signals "live system."
 
-6. **Mobile experience for `/live`:** Dense ops UI doesn't translate. Options: (a) hide non-essential panels on mobile and show a vertically-stacked subset, (b) render `/live` as a horizontal carousel of panels, (c) redirect mobile to `/` with a "best on desktop" note. Recommendation: (a) — vertically stacked subset.
+6. **Mobile experience for `/live`:** Dense ops UI doesn't translate. Options: (a) hide non-essential panels on mobile and show a vertically-stacked subset, (b) render `/live` as a horizontal carousel of panels, (c) redirect mobile to `/` with a "best on desktop" note. Recommendation: (a) — vertically stacked subset. *(**Resolved** — §13 + STRATEGY §24.37, 2026-06-03. Recon found `/live` already stacks cleanly with no overflow, so the canonical answer evolved past "hide a subset" to **trace-first ordering, all panels kept**; the broader mobile strategy is now §13.)*
 
 7. **Anonymous analytics for the portal:** Cloudflare Web Analytics or none? Recommendation: Cloudflare, since it's privacy-respecting and free with the Workers deployment.
 
@@ -1377,7 +1408,7 @@ The required 5 are enforced (the `LIVE_MODE` flip command refuses if they're not
 
 ---
 
-## 14. Out of scope (deliberately)
+## 15. Out of scope (deliberately)
 
 - A blog / writing CMS — link out to wherever the candidate writes.
 - A general portfolio (non-career-pilot) — `/work` covers the resume case, but career-pilot is the centerpiece.
@@ -1388,7 +1419,7 @@ The required 5 are enforced (the `LIVE_MODE` flip command refuses if they're not
 
 ---
 
-## 15. Next step
+## 16. Next step
 
 After sign-off on this spec, the next deliverable is `STRATEGY.md`:
 - Branch structure (where this lives relative to NanoClaw fork)

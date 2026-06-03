@@ -4000,7 +4000,7 @@ After the §24.35 creative passes (A–D), the owner called the shift: stop addi
 4. E2E (`funnel.spec.ts` + `architecture.spec.ts`): open the panel from a keyboard-focused trigger, Tab through and assert focus never leaves the dialog, Escape closes and focus returns to the trigger; axe stays zero-violation. No new `@visual` baseline (focus/inert aren't pixel changes); existing baselines unaffected.
 5. Frontend unit + tsc + build green; host suite untouched (frontend-only pass).
 6. Dimensional-stability standard (§24.36 36.1 DoD #6 / PORTAL §10) continues to hold — this pass changes focus/AT behavior, not layout.
-7. Spec deltas: this 36.2 drill-in; PORTAL §8.5 (the shared dialog focus/a11y contract as a cross-cutting component); the §13 accessibility open-question note (dialogs now closed) — see PORTAL §8.5 / §13.
+7. Spec deltas: this 36.2 drill-in; PORTAL §8.5 (the shared dialog focus/a11y contract as a cross-cutting component); the §14 accessibility open-question note (dialogs now closed) — see PORTAL §8.5 / §14. *(Was §13; PORTAL renumbered when §24.37 inserted the new §13 "Responsive & mobile".)*
 
 **Sub-pass 36.3 — error boundaries + the backend-down fallback.**
 
@@ -4061,6 +4061,38 @@ After the §24.35 creative passes (A–D), the owner called the shift: stop addi
 **This closes §24.36.** Next is **§24.37 + PORTAL §13 — mobile** (its own spec-first drill-in).
 
 **Nav IA + naming polish (owner call, 2026-06-03; folded into §24.36 as UI polish).** Two refinements to the shared top nav (PORTAL §8.1): (1) **reorder** to lead with the wow and cluster ops-then-personal — `Live · Momentum · Architecture · Simulator · Work · Contact` (the built header had drifted to lead with `Work`; the old spec order was a different interleave); (2) **rename the funnel page's visitor-facing label + route to "Momentum" / `/momentum`** (the gamified horse-race framing reads better than the sales-jargon "Funnel" and contrasts the technical `Architecture`/`Live`). **All internal naming stays "funnel"** (`/api/funnel`, `public_funnel_view`, `Funnel*` components, `funnel_events`, `funnel-curator`) — public surface = Momentum, internal domain = funnel. `/about` is confirmed a **footer** link (§8.2), not a header item (the header carries the journey; the footer carries background/utility). Every `@visual` baseline re-blessed (the shared header changed on all pages).
+
+---
+
+#### 24.37 Mobile / responsive (the canonical mobile spec — PORTAL §13)
+
+Mobile was promoted out of the §24.35 batch (Pass E) as its own spec-first pass — a responsive *strategy*, not a refinement. The canonical UX contract is **PORTAL §13** (new section); this drill-in is the recon + build plan + DoD.
+
+**Recon first (the method — done before this spec).** All 8 routes were driven at **390px** and spot-checked at **320px** on `dev:mock` via the Playwright MCP (the "observe before spec" discipline). The result reframed the work: every page already stacks into a clean single column with **zero content overflow** — so this is a focused pass, not a responsive rebuild. Findings: **one universal break** — the top-nav row (≈431px) overflows every page (→ hamburger); **two ops-page judgment calls** — `/architecture`'s SVG scales to fit but its labels are cramped at ~43%, and `/live` stacks fine but buries the trace-stream centerpiece under four stat panels; **minor polish** — `/momentum`'s stacked board wastes a screen per empty stage. `/`, `/work`, `/contact`, and both simulator views are already correct (header aside) down to 320px.
+
+**Design decisions (owner-delegated; recon-grounded).** Detailed with their alternatives in PORTAL §13. In brief: `/architecture` → **scale-to-fit + tap-for-detail** (lean on the §8.5 node modal as a phone bottom-sheet, not a pannable diagram); `/live` → **trace-first ordering, all panels kept** (fix the order, don't hide content); `/momentum` → **vertical stack + collapse zero-count stages** (not a horizontal scroll-snap). Each carries a build-time escape hatch (PORTAL §13).
+
+**Breakpoint + approach.** Phone/desktop divide at Tailwind **`md` (768px)**, mobile-first (base = phone, `md:` = desktop). Phone target ~390px, verified to 320px.
+
+**What ships (frontend-only).**
+- **`SiteHeader`** — collapse the nav to a **hamburger** below the breakpoint (wordmark + `● live` retained); a menu/sheet carries the six links. If an overlay sheet, it consumes the §8.5 `useDialog` contract. The full row returns at `md+`.
+- **`/architecture`** — node tap targets ≥44px on phone; the node modal (`NodePanel`) gets a **bottom-sheet** variant below the breakpoint; a mobile-only "tap a node for detail" cue; SVG scale-to-fit confirmed (no overflow). The "see the sanitizer run" control is unchanged.
+- **`/live`** — reorder so the **trace stream is first in the DOM**; the desktop multi-column grid uses explicit grid placement so reading order == visual order on both (a11y-correct — no flex `order` hack). All panels kept.
+- **`/momentum`** — zero-count stage sections render as a **slim collapsed row** on phone; the vertical stack already exists.
+- **Cross-cutting** — a ≥44px tap-target audit; confirm no horizontal scroll at 320–430px.
+- **Test infra** — a Playwright **mobile-viewport project** (a Pixel-5-class ~393px device descriptor) running the functional + axe E2E at phone width; new mobile `@visual` baselines for the surfaces that change (header→hamburger, `/architecture`, `/live`, `/momentum`). `@visual` stays OS-specific + CI-skipped (existing convention); the functional + axe specs run in CI.
+
+**Out of scope (recorded).** A tablet-specific tier and a native app (STRATEGY Part V); the dynamic per-run share OG (Phase 9 / §24.36 36.5). The three design escape-hatches (PORTAL §13) are fallbacks, not v1 scope.
+
+**Definition of done.**
+1. **No horizontal scroll at 390px or 320px on any of the 8 routes**, header included: the nav collapses to a working hamburger below the breakpoint (accessible — focus / Tab-trap / Escape / `inert` / focus-restore via §8.5 if a sheet) and the full row returns at `md+`.
+2. `/architecture` on phone: the SVG scales to fit; nodes are ≥44px tap targets and open the node detail as a bottom-sheet; a mobile cue signals nodes are tappable.
+3. `/live` on phone: the live trace stream renders **above** the stat panels; DOM order == reading order on both mobile + desktop; all panels present.
+4. `/momentum` on phone: stage sections stack; zero-count stages render as a slim collapsed row (no full-height empty void).
+5. Tap targets ≥44px on the interactive mobile controls (hamburger, arch nodes, funnel cards, trace filter chips).
+6. A Playwright mobile-viewport project runs the functional + axe E2E at ~393px (green in CI); new mobile `@visual` baselines (header / architecture / live / momentum) validated in isolation (OS-specific, CI-skipped); existing desktop baselines unaffected (the changes are `<md`-gated).
+7. Frontend unit + tsc + `vite build` green; host suite untouched (frontend-only pass).
+8. Spec deltas: this §24.37; **PORTAL §13** (NEW "Responsive & mobile" section) with the §13→§14 / §14→§15 / §15→§16 renumber, the §8.5 + 36.2-DoD `§13`→`§14` cross-ref bump, and the §14 open-question #6 (`/live` mobile) marked resolved.
 
 ---
 
