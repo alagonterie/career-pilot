@@ -31,7 +31,7 @@ export function AnonymizationDemo({ state }: { state: SanitizeDemoState }) {
               </p>
               <pre
                 data-testid="anon-raw"
-                className="min-h-[13rem] overflow-x-auto whitespace-pre-wrap rounded-md border border-border bg-background p-3 font-mono text-[11px] leading-relaxed text-muted-foreground"
+                className="h-64 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background p-3 font-mono text-[11px] leading-relaxed text-muted-foreground"
               >
                 {data.raw}
               </pre>
@@ -42,7 +42,7 @@ export function AnonymizationDemo({ state }: { state: SanitizeDemoState }) {
               </p>
               <pre
                 data-testid="anon-sanitized"
-                className="min-h-[13rem] overflow-x-auto whitespace-pre-wrap rounded-md border border-primary/30 bg-background p-3 font-mono text-[11px] leading-relaxed text-foreground"
+                className="h-64 overflow-auto whitespace-pre-wrap rounded-md border border-primary/30 bg-background p-3 font-mono text-[11px] leading-relaxed text-foreground"
               >
                 {data.sanitized}
               </pre>
@@ -53,15 +53,20 @@ export function AnonymizationDemo({ state }: { state: SanitizeDemoState }) {
             <span data-testid="anon-count" className="font-mono text-[11px] text-primary">
               {data.redactions} redaction{data.redactions === 1 ? '' : 's'}
             </span>
-            <button
-              type="button"
-              data-testid="anon-another"
-              onClick={showAnother}
-              disabled={data.total <= 1}
-              className="rounded-md border border-border px-3 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-            >
-              Show another →
-            </button>
+            <div className="flex items-center gap-3">
+              <span data-testid="anon-index" className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                {data.sample + 1} / {data.total}
+              </span>
+              <button
+                type="button"
+                data-testid="anon-another"
+                onClick={showAnother}
+                disabled={data.total <= 1}
+                className="rounded-md border border-border px-3 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              >
+                Show another →
+              </button>
+            </div>
           </div>
         </>
       ) : (
