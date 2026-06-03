@@ -59,12 +59,12 @@ function LivePage() {
           </p>
         </header>
 
-        {/* top stat row — `grid-auto-rows` floors every panel to the loaded
-            row height (the LLM-telemetry "not connected" copy is the tallest), so
-            the loading skeletons reserve the same footprint (§24.36 Tier-2: no
-            shift on load). The grid already equalizes the row; this pins its
-            minimum across states. */}
-        <div className="grid grid-cols-1 gap-4 [grid-auto-rows:minmax(164px,auto)] sm:grid-cols-2 lg:grid-cols-4">
+        {/* top stat row — `grid-auto-rows` floors every panel to the MAX loaded
+            row height so loading→ok never shifts (§24.36 Tier-2), regardless of
+            whether LLM-telemetry loads connected (taller metrics) or not (shorter
+            "not connected" copy). 196px = the connected height; the grid already
+            equalizes the row, this pins its floor across states + data. */}
+        <div className="grid grid-cols-1 gap-4 [grid-auto-rows:minmax(196px,auto)] sm:grid-cols-2 lg:grid-cols-4">
           <SystemStatusPanel mode={mode} arch={arch} status={archStatus} />
           <SessionsPanel arch={arch} status={archStatus} />
           <ContainerPoolPanel arch={arch} status={archStatus} />
