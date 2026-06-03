@@ -1,9 +1,34 @@
 import type { ReactNode } from 'react'
 
 import { ModeBanner } from '~/components/architecture/ModeBanner'
+import { StateNote } from '~/components/states'
+import { Skeleton } from '~/components/ui/skeleton'
 import type { ArchitectureData, SystemMode } from '~/lib/use-architecture'
 import type { FunnelApplication } from '~/lib/use-funnel'
+import type { PollStatus } from '~/lib/use-polled-json'
 import type { TelemetryView } from '~/lib/use-telemetry'
+
+/** Loading twin for a panel body (§24.36 36.1) — a couple of metric-sized
+ * skeletons so the panel keeps its shape while its endpoint is polled. */
+function PanelSkeleton({ lines = 1 }: { lines?: number }) {
+  return (
+    <div data-testid="panel-skeleton" className="flex flex-col gap-2">
+      <Skeleton className="h-7 w-20" />
+      {Array.from({ length: lines }).map((_, i) => (
+        <Skeleton key={i} className="h-3 w-28" />
+      ))}
+    </div>
+  )
+}
+
+/** The honest offline note shared by every panel's error branch. */
+function PanelOffline() {
+  return (
+    <StateNote tone="error" className="text-xs">
+      Offline — retrying…
+    </StateNote>
+  )
+}
 
 /** A titled ops-panel card — the shared shell for the /live grid. */
 export function Panel({
@@ -41,46 +66,82 @@ function Metric({ value, label }: { value: string; label: string }) {
 /** SYSTEM STATUS — reuses the architecture ModeBanner (mode + pause ladder) plus
  * a backend-health dot. UPTIME / LAST-DEPLOY need a host field no endpoint
  * exposes yet, so they're omitted rather than faked (§24.29). */
-export function SystemStatusPanel({ mode, arch }: { mode: SystemMode | null; arch: ArchitectureData | null }) {
+export function SystemStatusPanel({
+  mode,
+  arch,
+  status,
+}: {
+  mode: SystemMode | null
+  arch: ArchitectureData | null
+  status?: PollStatus
+}) {
   const online = arch?.backend === 'online'
   return (
     <Panel title="System status">
-      <ModeBanner mode={mode} />
-      <div className="flex items-center gap-2">
-        <span
-          aria-hidden="true"
-          className={`inline-block h-2 w-2 rounded-full ${online ? 'bg-primary' : 'bg-muted-foreground'}`}
-        />
-        <span className="font-mono text-xs text-muted-foreground">backend {arch?.backend ?? '—'}</span>
-      </div>
+      {status === 'loading' ? (
+        <PanelSkeleton lines={1} />
+      ) : status === 'error' ? (
+        <PanelOffline />
+      ) : (
+        <>
+          <ModeBanner mode={mode} />
+          <div className="flex items-center gap-2">
+            <span
+              aria-hidden="true"
+              className={`inline-block h-2 w-2 rounded-full ${online ? 'bg-primary' : 'bg-muted-foreground'}`}
+            />
+            <span className="font-mono text-xs text-muted-foreground">backend {arch?.backend ?? '—'}</span>
+          </div>
+        </>
+      )}
     </Panel>
   )
 }
 
 /** ACTIVE SESSIONS — live counts from /api/architecture (the 24h history chart
  * needs a series endpoint → deferred). */
-export function SessionsPanel({ arch }: { arch: ArchitectureData | null }) {
+export function SessionsPanel({ arch, status }: { arch: ArchitectureData | null; status?: PollStatus }) {
   const running = arch?.sessions.running
   const active = arch?.sessions.active
   return (
     <Panel title="Active sessions">
-      <div className="flex items-end gap-6">
-        <Metric value={running != null ? String(running) : '—'} label="running" />
-        <Metric value={active != null ? String(active) : '—'} label="active" />
-      </div>
+      {status === 'loading' ? (
+        <PanelSkeleton />
+      ) : status === 'error' ? (
+        <PanelOffline />
+      ) : (
+        <div className="flex items-end gap-6">
+          <Metric value={running != null ? String(running) : '—'} label="running" />
+          <Metric value={active != null ? String(active) : '—'} label="active" />
+        </div>
+      )}
     </Panel>
   )
 }
 
 /** CONTAINER POOL — running / capacity + a memory-utilization readout, reusing
  * 7.2's /api/architecture container shape. */
-export function ContainerPoolPanel({ arch }: { arch: ArchitectureData | null }) {
+export function ContainerPoolPanel({ arch, status }: { arch: ArchitectureData | null; status?: PollStatus }) {
   const c = arch?.containers
   const running = c?.running ?? null
   const cap = c?.capacity_max ?? null
   const down = c?.runtime === 'down'
   const pct = c && running != null && cap ? Math.round((running / cap) * 100) : 0
   const memUsed = c && running != null ? running * c.memory_mb_each : null
+  if (status === 'loading') {
+    return (
+      <Panel title="Container pool">
+        <PanelSkeleton />
+      </Panel>
+    )
+  }
+  if (status === 'error') {
+    return (
+      <Panel title="Container pool">
+        <PanelOffline />
+      </Panel>
+    )
+  }
   return (
     <Panel title="Container pool">
       <Metric
@@ -103,8 +164,22 @@ export function ContainerPoolPanel({ arch }: { arch: ArchitectureData | null }) 
 
 /** LLM TELEMETRY — Portkey lanes when available, else the honest "not connected"
  * state; the always-real local aggregates render unconditionally (§24.29). */
-export function TelemetryPanel({ view }: { view: TelemetryView }) {
+export function TelemetryPanel({ view, status }: { view: TelemetryView; status?: PollStatus }) {
   const s = view.summary
+  if (status === 'loading') {
+    return (
+      <Panel title="LLM telemetry">
+        <PanelSkeleton lines={2} />
+      </Panel>
+    )
+  }
+  if (status === 'error') {
+    return (
+      <Panel title="LLM telemetry">
+        <PanelOffline />
+      </Panel>
+    )
+  }
   return (
     <Panel title="LLM telemetry">
       {view.available && s ? (
@@ -147,9 +222,23 @@ export function TelemetryPanel({ view }: { view: TelemetryView }) {
 
 /** COST & CACHE — Portkey-sourced spend when available, else the honest pending
  * state (the "~$X/day" tagline renders only with a real number — §24.29). */
-export function CostCachePanel({ view }: { view: TelemetryView }) {
+export function CostCachePanel({ view, status }: { view: TelemetryView; status?: PollStatus }) {
   const s = view.summary
   const local = view.local
+  if (status === 'loading') {
+    return (
+      <Panel title="Cost & cache">
+        <PanelSkeleton lines={1} />
+      </Panel>
+    )
+  }
+  if (status === 'error') {
+    return (
+      <Panel title="Cost & cache">
+        <PanelOffline />
+      </Panel>
+    )
+  }
   return (
     <Panel title="Cost & cache">
       {view.available && s && s.total_cost_usd != null ? (
@@ -191,12 +280,26 @@ export function CostCachePanel({ view }: { view: TelemetryView }) {
  * the ◆ public marker, from the already-polled funnel rows. An honest
  * current-state snapshot; true transition arrows need the deferred
  * funnel_events history (§24.29). */
-export function RecentOutcomesPanel({ apps }: { apps: FunnelApplication[] }) {
+export function RecentOutcomesPanel({ apps, status }: { apps: FunnelApplication[]; status?: PollStatus }) {
   const recent = apps
     .filter((a) => a.last_activity_at != null)
     .slice()
     .sort((a, b) => (b.last_activity_at as string).localeCompare(a.last_activity_at as string))
     .slice(0, 6)
+  if (status === 'loading') {
+    return (
+      <Panel title="Recent outcomes">
+        <PanelSkeleton lines={3} />
+      </Panel>
+    )
+  }
+  if (status === 'error') {
+    return (
+      <Panel title="Recent outcomes">
+        <PanelOffline />
+      </Panel>
+    )
+  }
   return (
     <Panel title="Recent outcomes">
       {recent.length === 0 ? (

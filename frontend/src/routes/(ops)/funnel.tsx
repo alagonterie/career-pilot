@@ -2,8 +2,9 @@ import { createFileRoute } from '@tanstack/react-router'
 import * as React from 'react'
 
 import { DetailPanel } from '~/components/funnel/DetailPanel'
-import { FunnelBoard } from '~/components/funnel/FunnelBoard'
+import { FunnelBoard, FunnelBoardSkeleton } from '~/components/funnel/FunnelBoard'
 import { StatTiles } from '~/components/funnel/StatTiles'
+import { StateNote } from '~/components/states'
 import { useFunnel, type FunnelApplication } from '~/lib/use-funnel'
 
 // First page of the ops register (PORTAL §5.4). `(ops)` is a pathless route
@@ -39,14 +40,22 @@ function FunnelPage() {
           </p>
         </header>
 
-        <StatTiles apps={apps} />
+        <StatTiles apps={apps} loading={status === 'loading'} />
 
-        {apps.length > 0 ? (
-          <FunnelBoard apps={apps} onSelect={setSelected} />
+        {/* The three async states share one visual language (§24.36 36.1):
+            a shaped skeleton while loading, a themed note for empty / offline. */}
+        {status === 'loading' ? (
+          <FunnelBoardSkeleton />
+        ) : status === 'error' ? (
+          <StateNote data-testid="funnel-error" tone="error">
+            Funnel data is offline — retrying…
+          </StateNote>
+        ) : apps.length === 0 ? (
+          <StateNote data-testid="funnel-empty">
+            No applications in the pipeline yet — the first agents are warming up.
+          </StateNote>
         ) : (
-          <p data-testid="funnel-empty" className="font-mono text-sm text-muted-foreground">
-            {status === 'error' ? 'Funnel data is offline — retrying…' : 'Loading the pipeline…'}
-          </p>
+          <FunnelBoard apps={apps} onSelect={setSelected} />
         )}
 
         <footer className="border-t border-border pt-6 text-[11px] leading-relaxed text-muted-foreground">

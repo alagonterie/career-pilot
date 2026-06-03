@@ -1,3 +1,4 @@
+import { useSurfaceState, withState } from './dev-state'
 import { usePolledJson, type PollStatus } from './use-polled-json'
 
 /**
@@ -42,8 +43,9 @@ export interface ArchitectureState {
  * else `loading`.
  */
 export function useArchitecture(baseUrl: string, pollMs?: number): ArchitectureState {
-  const arch = usePolledJson<ArchitectureData>(`${baseUrl}/api/architecture`, pollMs)
-  const mode = usePolledJson<SystemMode>(`${baseUrl}/api/system-status`, pollMs)
+  const forced = useSurfaceState('architecture')
+  const arch = usePolledJson<ArchitectureData>(withState(`${baseUrl}/api/architecture`, forced), pollMs)
+  const mode = usePolledJson<SystemMode>(withState(`${baseUrl}/api/system-status`, forced), pollMs)
 
   const status: PollStatus =
     arch.status === 'ok' && mode.status === 'ok'

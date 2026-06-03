@@ -1,3 +1,4 @@
+import { useSurfaceState, withState } from './dev-state'
 import { usePolledJson, type PollStatus } from './use-polled-json'
 
 /**
@@ -41,7 +42,8 @@ export interface TelemetryState {
 
 /** Poll `GET /api/telemetry` (the generic `usePolledJson` primitive again). */
 export function useTelemetry(baseUrl: string, pollMs?: number): TelemetryState {
-  return usePolledJson<Telemetry>(`${baseUrl}/api/telemetry`, pollMs)
+  const forced = useSurfaceState('telemetry')
+  return usePolledJson<Telemetry>(withState(`${baseUrl}/api/telemetry`, forced), pollMs)
 }
 
 /** The view-model the telemetry/cost panels render from. */

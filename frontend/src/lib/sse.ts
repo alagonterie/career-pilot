@@ -96,6 +96,9 @@ export interface ActivityStreamOptions {
   baseUrl: string
   /** Resume cursor (`seq`); `0` (default) replays the full backlog then goes live. */
   since?: number
+  /** Mock-only async-state override (§24.36) — `loading`/`empty`/`error`; honored
+   * only by the dev/E2E API. Forwarded as `?__state`; absent in production. */
+  stateParam?: 'loading' | 'empty' | 'error'
   signal: AbortSignal
   onEvent: (event: SseEvent) => void
   onStatus?: (status: StreamStatus) => void
@@ -117,7 +120,8 @@ export async function connectActivityStream(opts: ActivityStreamOptions): Promis
   while (!opts.signal.aborted) {
     opts.onStatus?.(firstAttempt ? 'connecting' : 'reconnecting')
     try {
-      const url = `${opts.baseUrl}/api/activity/stream?since=${cursor}`
+      const url =
+        `${opts.baseUrl}/api/activity/stream?since=${cursor}` + (opts.stateParam ? `&__state=${opts.stateParam}` : '')
       const res = await fetch(url, {
         signal: opts.signal,
         headers: { Accept: 'text/event-stream' },

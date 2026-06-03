@@ -11,6 +11,8 @@ import {
   SystemStatusPanel,
   TelemetryPanel,
 } from '~/components/live/panels'
+import { StateNote } from '~/components/states'
+import { Skeleton } from '~/components/ui/skeleton'
 import { useActivityStream } from '~/lib/use-activity-stream'
 import { useArchitecture } from '~/lib/use-architecture'
 import { useFunnel } from '~/lib/use-funnel'
@@ -38,10 +40,10 @@ export const Route = createFileRoute('/(ops)/live')({
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
 
 function LivePage() {
-  const { arch, mode } = useArchitecture(API_BASE)
-  const { data: funnel } = useFunnel(API_BASE)
+  const { arch, mode, status: archStatus } = useArchitecture(API_BASE)
+  const { data: funnel, status: funnelStatus } = useFunnel(API_BASE)
   const { events, status, count } = useActivityStream(API_BASE, 60)
-  const { data: telemetry } = useTelemetry(API_BASE)
+  const { data: telemetry, status: telemetryStatus } = useTelemetry(API_BASE)
 
   const view = deriveTelemetryView(telemetry)
   const apps = funnel?.applications ?? []
@@ -59,10 +61,10 @@ function LivePage() {
 
         {/* top stat row */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <SystemStatusPanel mode={mode} arch={arch} />
-          <SessionsPanel arch={arch} />
-          <ContainerPoolPanel arch={arch} />
-          <TelemetryPanel view={view} />
+          <SystemStatusPanel mode={mode} arch={arch} status={archStatus} />
+          <SessionsPanel arch={arch} status={archStatus} />
+          <ContainerPoolPanel arch={arch} status={archStatus} />
+          <TelemetryPanel view={view} status={telemetryStatus} />
         </div>
 
         {/* centerpiece (trace) + right rail */}
@@ -79,10 +81,18 @@ function LivePage() {
                 </Link>
               }
             >
-              <FunnelCompact apps={apps} />
+              {funnelStatus === 'loading' ? (
+                <Skeleton className="h-20 w-full" />
+              ) : funnelStatus === 'error' ? (
+                <StateNote tone="error" className="text-xs">
+                  Offline — retrying…
+                </StateNote>
+              ) : (
+                <FunnelCompact apps={apps} />
+              )}
             </Panel>
-            <CostCachePanel view={view} />
-            <RecentOutcomesPanel apps={apps} />
+            <CostCachePanel view={view} status={telemetryStatus} />
+            <RecentOutcomesPanel apps={apps} status={funnelStatus} />
           </div>
         </div>
 

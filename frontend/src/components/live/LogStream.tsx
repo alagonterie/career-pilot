@@ -2,6 +2,7 @@ import { useReducedMotion } from 'motion/react'
 import * as React from 'react'
 
 import { LiveIndicator } from '~/components/LiveIndicator'
+import { LiveCursor, StateNote } from '~/components/states'
 import type { StreamStatus } from '~/lib/sse'
 import type { AuditEvent } from '~/lib/use-activity-stream'
 
@@ -142,13 +143,29 @@ export function LogStream({
 
       <div className="relative min-h-0 flex-1">
         {filtered.length === 0 ? (
-          <p data-testid="trace-empty" className="px-4 py-6 font-mono text-sm text-muted-foreground">
-            {events.length === 0
-              ? status === 'reconnecting'
-                ? 'Activity stream offline — reconnecting…'
-                : 'Agents warming up…'
-              : 'No events match this filter.'}
-          </p>
+          events.length > 0 ? (
+            <StateNote data-testid="trace-empty" className="px-4 py-6">
+              No events match this filter.
+            </StateNote>
+          ) : status === 'reconnecting' ? (
+            <StateNote data-testid="trace-empty" tone="error" className="px-4 py-6">
+              Activity stream offline — reconnecting…
+            </StateNote>
+          ) : status === 'open' ? (
+            <StateNote data-testid="trace-empty" className="px-4 py-6">
+              No agent activity yet.
+            </StateNote>
+          ) : (
+            // connecting / idle — a stream gets a terminal "connecting" affordance,
+            // not a skeleton (§24.36 36.1: skeletons can't predict a stream's shape).
+            <p
+              data-testid="trace-empty"
+              className="flex items-center gap-1 px-4 py-6 font-mono text-sm text-muted-foreground"
+            >
+              Connecting to the live feed
+              <LiveCursor />
+            </p>
+          )
         ) : (
           <ol
             ref={scrollRef}

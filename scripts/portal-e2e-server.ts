@@ -89,6 +89,10 @@ async function main(): Promise<void> {
   // Docker/LLM. Without it, POST /api/simulator would 503 (no adapter) — that
   // unavailable branch is unit-tested instead.
   process.env.PORTAL_MOCK_SIMULATOR = process.env.PORTAL_MOCK_SIMULATOR ?? '1';
+  // §24.36 36.1: honor the `?__state=loading|empty|error` override so the
+  // loading/empty/error UIs are reachable + snapshottable in the E2E (the seeded
+  // DB is otherwise always instant + populated). Mock-only — prod never sets it.
+  process.env.PORTAL_MOCK_STATE_SEAM = process.env.PORTAL_MOCK_STATE_SEAM ?? '1';
 
   const db = initTestDb();
   runMigrations(db);

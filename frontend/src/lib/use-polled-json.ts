@@ -29,6 +29,14 @@ export function usePolledJson<T>(url: string, pollMs = DEFAULT_POLL_MS): PolledJ
     const hadData = { current: false }
     let timer: ReturnType<typeof setTimeout> | undefined
 
+    // Clean transition on every (re)subscribe — i.e. when `url` changes (the
+    // base URL or, via §24.36's seam, the `?__state` override). Resetting to the
+    // loading shell here means flipping a surface's state in the dev switcher
+    // shows loading → the new state, never a stale flash. The steady-state poll
+    // is the timer loop below (same effect instance), so it never resets.
+    setStatus('loading')
+    setData(null)
+
     const tick = async (): Promise<void> => {
       try {
         const res = await fetch(url, { signal: ac.signal })
@@ -39,7 +47,12 @@ export function usePolledJson<T>(url: string, pollMs = DEFAULT_POLL_MS): PolledJ
         hadData.current = true
       } catch {
         if (ac.signal.aborted) return
-        if (!hadData.current) setStatus('error') // cold failure; keep last-good otherwise
+        // Cold failure (no good data yet this subscribe) → the error state. A
+        // transient blip AFTER a good read keeps the last-good data (resilience).
+        if (!hadData.current) {
+          setStatus('error')
+          setData(null)
+        }
       }
       if (!ac.signal.aborted) timer = setTimeout(() => void tick(), pollMs)
     }

@@ -40,9 +40,14 @@ const EVENTS: AuditEvent[] = [
 ]
 
 describe('LogStream', () => {
-  it('shows a warming-up empty state with no events', () => {
+  it('shows a connected-but-empty state when open with no events (§24.36 36.1)', () => {
     render(<LogStream events={[]} status="open" count={0} />)
-    expect(screen.getByTestId('trace-empty')).toHaveTextContent(/warming up/i)
+    expect(screen.getByTestId('trace-empty')).toHaveTextContent(/no agent activity/i)
+  })
+
+  it('shows a connecting affordance before the stream opens (§24.36 36.1)', () => {
+    render(<LogStream events={[]} status="idle" count={0} />)
+    expect(screen.getByTestId('trace-empty')).toHaveTextContent(/connecting/i)
   })
 
   it('renders one line per event with the progressive metric lanes', () => {
