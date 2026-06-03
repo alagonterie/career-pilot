@@ -1,6 +1,7 @@
 import { motion } from 'motion/react'
 import * as React from 'react'
 
+import { useDialog } from '~/lib/use-dialog'
 import { repoBlob } from '~/lib/site'
 import type { ArchitectureData, SystemMode } from '~/lib/use-architecture'
 
@@ -61,11 +62,13 @@ function nodeFacts(
 }
 
 /**
- * The node click-through side panel (PORTAL §5.5). Reuses the funnel
- * DetailPanel's accessible-dialog pattern (labeled, Escape + backdrop close).
- * Renders the node's description + the live facts we actually probe + a
- * line-anchored code link; structural nodes carry the honest "no live probe"
- * note. Recent log excerpts / per-node calls are deferred (§24.28).
+ * The node click-through modal (PORTAL §5.5), sharing the funnel drawer's
+ * accessible-dialog contract via `useDialog` (PORTAL §8.5): labeled +
+ * described, focus-trapped, Escape + backdrop close, focus restored to the
+ * triggering node on close, the rest of the page held inert. Renders the node's
+ * description + the live facts we actually probe + a line-anchored code link;
+ * structural nodes carry the honest "no live probe" note. Recent log excerpts /
+ * per-node calls are deferred (§24.28).
  */
 export function NodePanel({
   node,
@@ -80,17 +83,10 @@ export function NodePanel({
   mode: SystemMode | null
   onClose: () => void
 }) {
+  const overlayRef = React.useRef<HTMLDivElement>(null)
   const panelRef = React.useRef<HTMLDivElement>(null)
 
-  React.useEffect(() => {
-    if (!node) return
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    panelRef.current?.focus()
-    return () => window.removeEventListener('keydown', onKey)
-  }, [node, onClose])
+  useDialog(node != null, onClose, panelRef, overlayRef)
 
   if (!node) return null
 
@@ -99,7 +95,7 @@ export function NodePanel({
   const facts = nodeFacts(node, arch, mode)
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center p-4">
+    <div ref={overlayRef} className="fixed inset-0 z-30 flex items-center justify-center p-4">
       <motion.button
         type="button"
         aria-label="Close details"
@@ -117,6 +113,7 @@ export function NodePanel({
         role="dialog"
         aria-modal="true"
         aria-labelledby="arch-node-title"
+        aria-describedby="arch-node-desc"
         data-testid="arch-node-panel"
         transition={{ layout: { duration: 0.2, ease: 'easeOut' } }}
         className="relative z-10 max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-lg border border-border bg-card p-6 shadow-xl focus:outline-none"
@@ -166,7 +163,9 @@ export function NodePanel({
             </button>
           </div>
 
-          <p className="text-sm leading-relaxed text-foreground/90">{node.description}</p>
+          <p id="arch-node-desc" className="text-sm leading-relaxed text-foreground/90">
+            {node.description}
+          </p>
 
           {facts.length > 0 ? (
             <dl className="grid grid-cols-2 gap-4">

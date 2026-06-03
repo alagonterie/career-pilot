@@ -22,7 +22,6 @@ test.describe('/architecture — live system map, frontend <-> backend', () => {
     await page.emulateMedia({ reducedMotion: 'reduce' })
   })
 
-
   test('renders the map + honest status badges + the node panel from the seeded API', async ({ page }) => {
     const consoleErrors: string[] = []
     page.on('console', (msg) => {
@@ -96,10 +95,43 @@ test.describe('/architecture — live system map, frontend <-> backend', () => {
 
   test('the "see the sanitizer run" explainer control opens the sanitizer modal', async ({ page }) => {
     await page.goto('/architecture')
+    // Gate on a probed status badge: it only reflects the polled data once React
+    // has hydrated, so by here the explainer button's onClick is live. Clicking
+    // the SSR-rendered button before hydration drops the open (a pre-existing
+    // race, surfaced while adding the §24.36 36.2 focus test below).
+    await expect(page.getByTestId('arch-node-host-router')).toHaveAttribute('data-status', 'healthy')
     await page.getByRole('button', { name: /see the sanitizer run/i }).click()
     const modal = page.getByRole('dialog', { name: 'Sanitization' })
     await expect(modal).toBeVisible()
     await expect(modal.getByTestId('anon-sanitized')).toContainText('[EMAIL_REDACTED]')
+  })
+
+  test('the node modal traps focus and restores it to the node on close (§24.36 36.2)', async ({ page }) => {
+    await page.goto('/architecture')
+
+    // Gate on hydration before keyboard-activating the node — the SSR-rendered
+    // node buttons are clickable before React attaches onClick, so activating
+    // pre-hydration would drop the open (same race as the explainer test above).
+    const trigger = page.getByTestId('arch-node-cont-runtime')
+    await expect(trigger).toHaveAttribute('data-status', 'healthy')
+    await trigger.focus()
+    await page.keyboard.press('Enter')
+
+    const panel = page.getByRole('dialog', { name: 'Container runtime' })
+    await expect(panel).toBeVisible()
+    await expect(panel).toBeFocused()
+
+    // Tab through every stop — focus must stay on a descendant of the dialog,
+    // never escaping to the (now inert) page behind it.
+    for (let i = 0; i < 5; i++) {
+      await page.keyboard.press('Tab')
+      await expect(panel.locator(':focus')).toHaveCount(1)
+    }
+
+    // Escape closes and focus returns to the triggering node.
+    await page.keyboard.press('Escape')
+    await expect(panel).toBeHidden()
+    await expect(trigger).toBeFocused()
   })
 
   test('the shared header nav reaches /architecture and back', async ({ page }) => {

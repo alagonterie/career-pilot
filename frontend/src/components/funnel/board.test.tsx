@@ -135,4 +135,15 @@ describe('card click opens the detail panel (composed)', () => {
     fireEvent.click(screen.getByText('Wayne Enterprises'))
     expect(screen.getByRole('dialog', { name: 'Wayne Enterprises' })).toBeInTheDocument()
   })
+
+  it('restores focus to the triggering card when the panel closes (§24.36 36.2)', () => {
+    render(<Harness />)
+    const card = screen.getByText('Wayne Enterprises').closest('button') as HTMLButtonElement
+    card.focus() // the card is focused when it's activated
+    fireEvent.click(card)
+    expect(screen.getByRole('dialog', { name: 'Wayne Enterprises' })).toBeInTheDocument()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByTestId('funnel-detail')).not.toBeInTheDocument()
+    expect(document.activeElement).toBe(card)
+  })
 })
