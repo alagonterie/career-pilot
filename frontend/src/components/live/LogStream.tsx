@@ -208,7 +208,11 @@ export function LogStream({
                     </span>
                   ) : null}
                   {e.application_ref ? <span className="text-muted-foreground">[{e.application_ref}]</span> : null}
-                  <span className="min-w-0 flex-1 text-foreground">{e.summary}</span>
+                  {/* On a phone the metadata prefix eats the narrow column, so the
+                      summary drops to its own full-width line (a clean sentence,
+                      not a ragged right-gutter wrap — §24.37). Inline terminal row
+                      restored at sm+. */}
+                  <span className="w-full min-w-0 text-foreground sm:w-auto sm:flex-1">{e.summary}</span>
                   {/* progressive metric lanes — present only when captured (§24.24) */}
                   {e.model_used ? <Lane title="model">{e.model_used}</Lane> : null}
                   {e.tokens != null ? <Lane title="tokens">{e.tokens.toLocaleString()} tok</Lane> : null}

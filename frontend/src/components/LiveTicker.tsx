@@ -75,7 +75,10 @@ export function LiveTicker({
                 </span>
               ) : null}
               {e.application_ref ? <span className="text-muted-foreground">[{e.application_ref}]</span> : null}
-              <span className="min-w-0 flex-1 truncate text-foreground">{e.summary}</span>
+              {/* Phone: the summary drops to its own full-width line (full text,
+                  wrapped) instead of truncating in a squeezed column; desktop keeps
+                  the single-line truncating terminal row (§24.37). */}
+              <span className="w-full min-w-0 text-foreground sm:w-auto sm:flex-1 sm:truncate">{e.summary}</span>
               {e.model_used ? <span className="text-muted-foreground">{e.model_used}</span> : null}
               {e.cache_hit ? <span className="text-muted-foreground">(cache hit)</span> : null}
             </li>
