@@ -1,8 +1,6 @@
 import type { FunnelApplication } from '~/lib/use-funnel'
 import { cn } from '~/lib/utils'
 
-const STAGE_ORDER = ['applied', 'screening', 'tech', 'final', 'offer']
-
 /**
  * One application on the funnel board (PORTAL §5.4). Obfuscated label by
  * default; the real company name + a `◆ public` marker when the reveal tier is
@@ -13,8 +11,9 @@ const STAGE_ORDER = ['applied', 'screening', 'tech', 'final', 'offer']
  */
 export function FunnelCard({ app, onSelect }: { app: FunnelApplication; onSelect: () => void }) {
   const isPublic = app.public_state === 'public'
-  const stageIdx = STAGE_ORDER.indexOf(app.stage)
-  const progress = stageIdx >= 0 ? Math.round(((stageIdx + 1) / STAGE_ORDER.length) * 100) : 0
+  // The bar shows win_confidence (a low-rigor heuristic) rather than restating
+  // the stage the card is already filed under (§24.35 Pass D, #8).
+  const win = app.win_confidence
 
   return (
     <button
@@ -44,9 +43,17 @@ export function FunnelCard({ app, onSelect }: { app: FunnelApplication; onSelect
         {app.days_in_stage != null ? `${app.days_in_stage}d in stage` : '—'}
       </p>
 
-      <div aria-hidden="true" className="mt-2 h-1 w-full overflow-hidden rounded-full bg-secondary">
-        <div className="h-full rounded-full bg-primary" style={{ width: `${progress}%` }} />
-      </div>
+      {win != null ? (
+        <div className="mt-2 flex items-center gap-1.5" title="win confidence — a low-rigor heuristic">
+          <div aria-hidden="true" className="h-1 flex-1 overflow-hidden rounded-full bg-secondary">
+            <div
+              className="h-full rounded-full bg-primary/70"
+              style={{ width: `${Math.max(0, Math.min(100, win))}%` }}
+            />
+          </div>
+          <span className="font-mono text-[10px] tabular-nums text-muted-foreground">~{win}%</span>
+        </div>
+      ) : null}
     </button>
   )
 }

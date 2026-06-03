@@ -35,7 +35,7 @@ export function FunnelBoard({
 
   return (
     <MotionConfig reducedMotion="user">
-      <div data-testid="funnel-board" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div data-testid="funnel-board" className="grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {COLUMNS.map((col) => {
           const items = apps.filter((a) => a.stage === col.stage)
           return (
@@ -51,7 +51,7 @@ export function FunnelBoard({
                 </h2>
                 <span className="font-mono text-xs tabular-nums text-muted-foreground">{items.length}</span>
               </header>
-              <div className="flex flex-col gap-2">
+              <div className="flex h-[16rem] flex-col gap-2 overflow-y-auto">
                 {items.map((a) => (
                   <motion.div key={a.application_ref} layout layoutId={a.application_ref}>
                     <FunnelCard app={a} onSelect={() => onSelect(a)} />

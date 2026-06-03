@@ -6,6 +6,7 @@ import type { FunnelApplication } from '~/lib/use-funnel'
 
 import { DetailPanel } from './DetailPanel'
 import { FunnelBoard } from './FunnelBoard'
+import { FunnelCard } from './FunnelCard'
 import { StatTiles } from './StatTiles'
 
 function app(p: Partial<FunnelApplication> & { application_ref: string }): FunnelApplication {
@@ -64,6 +65,22 @@ describe('FunnelBoard', () => {
     fireEvent.click(screen.getByText('[fintech-a]'))
     expect(onSelect).toHaveBeenCalledTimes(1)
     expect(onSelect.mock.calls[0][0].application_ref).toBe('fintech-a')
+  })
+})
+
+describe('FunnelCard win-confidence bar (§24.35 Pass D)', () => {
+  it('shows the ~N% win-confidence bar when present (not the stage position)', () => {
+    render(
+      <FunnelCard app={app({ application_ref: 'x', stage: 'screening', win_confidence: 64 })} onSelect={() => {}} />,
+    )
+    expect(screen.getByText('~64%')).toBeInTheDocument()
+  })
+
+  it('shows no bar when win_confidence is null', () => {
+    const { container } = render(
+      <FunnelCard app={app({ application_ref: 'y', win_confidence: null })} onSelect={() => {}} />,
+    )
+    expect(container.querySelector('[title*="win confidence"]')).toBeNull()
   })
 })
 
