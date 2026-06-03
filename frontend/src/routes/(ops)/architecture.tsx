@@ -99,6 +99,7 @@ function ArchitecturePage() {
       <AnimatePresence>
         {selected ? (
           <NodePanel
+            key={selected.id}
             node={selected}
             status={deriveNodeStatus(selected, arch, mode)}
             arch={arch}

@@ -100,10 +100,14 @@ export function NodePanel({
 
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center p-4">
-      <button
+      <motion.button
         type="button"
         aria-label="Close details"
         onClick={onClose}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
         className="absolute inset-0 bg-background/70 backdrop-blur-sm"
       />
       <motion.div
@@ -118,8 +122,8 @@ export function NodePanel({
       >
         <motion.div
           initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.1, duration: 0.2 }}
+          animate={{ opacity: 1, transition: { delay: 0.15, duration: 0.2 } }}
+          exit={{ opacity: 0, transition: { duration: 0.1 } }}
           className="flex flex-col gap-6"
         >
           <div className="flex items-start justify-between gap-4">
