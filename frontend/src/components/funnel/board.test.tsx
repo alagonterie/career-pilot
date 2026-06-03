@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import * as React from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -65,6 +65,17 @@ describe('FunnelBoard', () => {
     fireEvent.click(screen.getByText('[fintech-a]'))
     expect(onSelect).toHaveBeenCalledTimes(1)
     expect(onSelect.mock.calls[0][0].application_ref).toBe('fintech-a')
+  })
+
+  it('collapses an empty stage on mobile — its body is hidden < sm (§24.37)', () => {
+    // Only an offer card; applied/screening/tech/final are empty. On a phone the
+    // board stacks vertically, so an empty stage's "—" body is `hidden sm:flex`
+    // (the section collapses to its header row — no full-height void).
+    render(<FunnelBoard apps={[app({ application_ref: 'x', stage: 'offer' })]} onSelect={() => {}} />)
+    const dash = within(screen.getByTestId('funnel-col-applied')).getByText('—')
+    expect(dash.parentElement?.className).toContain('hidden')
+    // A populated stage keeps its card (not collapsed).
+    expect(within(screen.getByTestId('funnel-col-offer')).getByText('[x]')).toBeInTheDocument()
   })
 })
 

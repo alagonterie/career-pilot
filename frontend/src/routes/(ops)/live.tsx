@@ -49,7 +49,7 @@ function LivePage() {
   return (
     <>
       <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-12">
-        <header>
+        <header className="order-1">
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Live</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             The agent system running the job search, in real time — sessions, containers, cost, and every sanitized
@@ -57,20 +57,13 @@ function LivePage() {
           </p>
         </header>
 
-        {/* top stat row — `grid-auto-rows` floors every panel to the MAX loaded
-            row height so loading→ok never shifts (§24.36 Tier-2), regardless of
-            whether LLM-telemetry loads connected (taller metrics) or not (shorter
-            "not connected" copy). 196px = the connected height; the grid already
-            equalizes the row, this pins its floor across states + data. */}
-        <div className="grid grid-cols-1 gap-4 [grid-auto-rows:minmax(196px,auto)] sm:grid-cols-2 lg:grid-cols-4">
-          <SystemStatusPanel mode={mode} arch={arch} status={archStatus} />
-          <SessionsPanel arch={arch} status={archStatus} />
-          <ContainerPoolPanel arch={arch} status={archStatus} />
-          <TelemetryPanel view={view} status={telemetryStatus} />
-        </div>
-
-        {/* centerpiece (trace) + right rail */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {/* centerpiece (trace) + right rail. Trace-first on a phone (§13): the
+            "agent working now" wow leads instead of being buried under the stat
+            tiles. It's first in the DOM (so mobile reading order == visual order),
+            and `lg:order` floats the stat row back on top at desktop. The
+            reordered stat panels are non-interactive display widgets, so the
+            desktop focus order is unaffected and the primary content leads. */}
+        <div className="order-2 grid grid-cols-1 gap-4 lg:order-3 lg:grid-cols-3">
           <div className="lg:col-span-2">
             <LogStream events={events} status={status} count={count} />
           </div>
@@ -101,7 +94,19 @@ function LivePage() {
           </div>
         </div>
 
-        <footer className="border-t border-border pt-6 text-[11px] leading-relaxed text-muted-foreground">
+        {/* top stat row — `grid-auto-rows` floors every panel to the MAX loaded
+            row height so loading→ok never shifts (§24.36 Tier-2), regardless of
+            whether LLM-telemetry loads connected (taller metrics) or not (shorter
+            "not connected" copy). 196px = the connected height; the grid already
+            equalizes the row, this pins its floor across states + data. */}
+        <div className="order-3 grid grid-cols-1 gap-4 [grid-auto-rows:minmax(196px,auto)] sm:grid-cols-2 lg:order-2 lg:grid-cols-4">
+          <SystemStatusPanel mode={mode} arch={arch} status={archStatus} />
+          <SessionsPanel arch={arch} status={archStatus} />
+          <ContainerPoolPanel arch={arch} status={archStatus} />
+          <TelemetryPanel view={view} status={telemetryStatus} />
+        </div>
+
+        <footer className="order-4 border-t border-border pt-6 text-[11px] leading-relaxed text-muted-foreground">
           Every line is sanitized public data — companies obfuscated by default, no PII. Per-line LLM telemetry (model,
           tokens, cost, cache) renders as it&apos;s captured; absent fields are simply not shown, never faked.
         </footer>

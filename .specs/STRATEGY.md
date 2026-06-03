@@ -4072,12 +4072,12 @@ Mobile was promoted out of the §24.35 batch (Pass E) as its own spec-first pass
 
 **Design decisions (owner-delegated; recon-grounded).** Detailed with their alternatives in PORTAL §13. In brief: `/architecture` → **scale-to-fit + tap-for-detail** (lean on the §8.5 node modal as a phone bottom-sheet, not a pannable diagram); `/live` → **trace-first ordering, all panels kept** (fix the order, don't hide content); `/momentum` → **vertical stack + collapse zero-count stages** (not a horizontal scroll-snap). Each carries a build-time escape hatch (PORTAL §13).
 
-**Breakpoint + approach.** Phone/desktop divide at Tailwind **`md` (768px)**, mobile-first (base = phone, `md:` = desktop). Phone target ~390px, verified to 320px.
+**Breakpoint + approach.** Phone/desktop divide is mobile-first, hooking into the project's **existing `sm` (640) / `lg` (1024) breakpoints** rather than inventing a single `md` divide: the header collapses below **`sm`** (where the full row no longer fits — tablets keep it, per §13's lower-threshold note), the funnel empty-collapse + architecture tap-area gate on `sm`, and `/live` reorders below **`lg`** (its grid's existing breakpoint). Phone target ~390px, verified to 320px.
 
 **What ships (frontend-only).**
-- **`SiteHeader`** — collapse the nav to a **hamburger** below the breakpoint (wordmark + `● live` retained); a menu/sheet carries the six links. If an overlay sheet, it consumes the §8.5 `useDialog` contract. The full row returns at `md+`.
+- **`SiteHeader`** — collapse the nav to a **hamburger** below `sm` (wordmark retained); a labeled **disclosure** menu carries the six links. Built as a disclosure (`aria-expanded` / `aria-controls` + Escape + outside-click + link-tap close), **not** a `useDialog` modal sheet — a nav disclosure isn't modal, so it doesn't trap focus or inert the page (§8.5 is for the modal overlays). The full row returns at `sm+`. (Impl note: the outside-click listener is armed on the next tick so the opening click — which detaches the toggled Menu→X icon — can't self-close it.)
 - **`/architecture`** — node tap targets ≥44px on phone; the node modal (`NodePanel`) gets a **bottom-sheet** variant below the breakpoint; a mobile-only "tap a node for detail" cue; SVG scale-to-fit confirmed (no overflow). The "see the sanitizer run" control is unchanged.
-- **`/live`** — reorder so the **trace stream is first in the DOM**; the desktop multi-column grid uses explicit grid placement so reading order == visual order on both (a11y-correct — no flex `order` hack). All panels kept.
+- **`/live`** — lead the DOM with the **trace + rail centerpiece** (clean mobile reading order == visual order); desktop floats the stat row back on top via `lg:order` utilities. This is a11y-sound because the reordered stat panels are non-interactive display widgets (no focusable elements → no focus-order impact), and leading the DOM with the primary content is good practice. All panels kept.
 - **`/momentum`** — zero-count stage sections render as a **slim collapsed row** on phone; the vertical stack already exists.
 - **Cross-cutting** — a ≥44px tap-target audit; confirm no horizontal scroll at 320–430px.
 - **Test infra** — a Playwright **mobile-viewport project** (a Pixel-5-class ~393px device descriptor) running the functional + axe E2E at phone width; new mobile `@visual` baselines for the surfaces that change (header→hamburger, `/architecture`, `/live`, `/momentum`). `@visual` stays OS-specific + CI-skipped (existing convention); the functional + axe specs run in CI.
@@ -4085,12 +4085,12 @@ Mobile was promoted out of the §24.35 batch (Pass E) as its own spec-first pass
 **Out of scope (recorded).** A tablet-specific tier and a native app (STRATEGY Part V); the dynamic per-run share OG (Phase 9 / §24.36 36.5). The three design escape-hatches (PORTAL §13) are fallbacks, not v1 scope.
 
 **Definition of done.**
-1. **No horizontal scroll at 390px or 320px on any of the 8 routes**, header included: the nav collapses to a working hamburger below the breakpoint (accessible — focus / Tab-trap / Escape / `inert` / focus-restore via §8.5 if a sheet) and the full row returns at `md+`.
+1. **No horizontal scroll at 390px or 320px on any of the 8 routes**, header included: the nav collapses to a working hamburger below `sm` (a labeled disclosure — `aria-expanded` / `aria-controls`, Escape + outside-click + link-tap close, ≥44px) and the full row returns at `sm+`.
 2. `/architecture` on phone: the SVG scales to fit; nodes are ≥44px tap targets and open the node detail as a bottom-sheet; a mobile cue signals nodes are tappable.
-3. `/live` on phone: the live trace stream renders **above** the stat panels; DOM order == reading order on both mobile + desktop; all panels present.
+3. `/live` on phone: the live trace stream renders **above** the stat panels (trace+rail lead the DOM, so mobile reading order == visual order); desktop floats the stat row on top via `lg:order` (the reordered panels are non-interactive, so focus order is unaffected); all panels present.
 4. `/momentum` on phone: stage sections stack; zero-count stages render as a slim collapsed row (no full-height empty void).
 5. Tap targets ≥44px on the interactive mobile controls (hamburger, arch nodes, funnel cards, trace filter chips).
-6. A Playwright mobile-viewport project runs the functional + axe E2E at ~393px (green in CI); new mobile `@visual` baselines (header / architecture / live / momentum) validated in isolation (OS-specific, CI-skipped); existing desktop baselines unaffected (the changes are `<md`-gated).
+6. A Playwright mobile-viewport project (Pixel 5, ~393px) runs the functional + axe E2E in CI; 5 new mobile `@visual` baselines (home / nav-open / architecture / live / momentum) validated in isolation (OS-specific, CI-skipped); existing desktop baselines unaffected (every change is gated below the desktop breakpoints — `sm`/`lg` — or is an invisible overlay button).
 7. Frontend unit + tsc + `vite build` green; host suite untouched (frontend-only pass).
 8. Spec deltas: this §24.37; **PORTAL §13** (NEW "Responsive & mobile" section) with the §13→§14 / §14→§15 / §15→§16 renumber, the §8.5 + 36.2-DoD `§13`→`§14` cross-ref bump, and the §14 open-question #6 (`/live` mobile) marked resolved.
 
