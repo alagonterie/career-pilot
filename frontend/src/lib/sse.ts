@@ -149,3 +149,43 @@ export async function connectActivityStream(opts: ActivityStreamOptions): Promis
     backoff = Math.min(backoff * 2, MAX_BACKOFF_MS)
   }
 }
+
+export interface SimulatorStreamOptions {
+  /** Portal API origin, e.g. `http://localhost:3001`. */
+  baseUrl: string
+  /** The run id returned by `POST /api/simulator`. */
+  runId: string
+  signal: AbortSignal
+  onEvent: (event: SseEvent) => void
+  onError?: (err: unknown) => void
+  onClose?: () => void
+}
+
+/**
+ * Open one simulator-run SSE stream (`/api/simulator/:id/stream`) and pump its
+ * named `trace`/`chat`/`task` events to `onEvent` until the run ends or `signal`
+ * aborts (Sub-milestone 8.2). Reuses the same fetch-stream-reader + `SseParser`
+ * transport as `connectActivityStream`, but a run is *ephemeral*: the server
+ * pushes live from connect with no `id:`/seq, so there is no backlog replay and
+ * no reconnect — a drop ends the run (`onError`), a clean end fires `onClose`.
+ */
+export async function connectSimulatorStream(opts: SimulatorStreamOptions): Promise<void> {
+  try {
+    const url = `${opts.baseUrl}/api/simulator/${encodeURIComponent(opts.runId)}/stream`
+    const res = await fetch(url, { signal: opts.signal, headers: { Accept: 'text/event-stream' } })
+    if (!res.ok || !res.body) throw new Error(`simulator stream HTTP ${res.status}`)
+
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    const parser = new SseParser()
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      for (const ev of parser.push(decoder.decode(value, { stream: true }))) opts.onEvent(ev)
+    }
+    opts.onClose?.()
+  } catch (err) {
+    if (opts.signal.aborted) return
+    opts.onError?.(err)
+  }
+}

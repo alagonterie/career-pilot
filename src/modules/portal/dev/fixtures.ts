@@ -223,6 +223,47 @@ export function seedDeterministicFunnel(db: Database.Database): void {
   }
 }
 
+// ── deterministic simulator run (E2E share page — fixed row) ────────────────
+
+/**
+ * Seed one fixed, shareable, non-expiring `simulator_runs` row so the read-only
+ * `/simulator/results/$id` share page (Sub-milestone 8.2, §24.31) renders
+ * deterministically. `expires_at` is far-future so `getSimulatorResult` always
+ * returns it; content is fixed. Do NOT change without re-blessing simulator-results.png.
+ */
+export function seedDeterministicSimulatorRun(db: Database.Database): void {
+  db.prepare(
+    `INSERT INTO simulator_runs
+       (id, ts, visitor_company, visitor_role, jd_excerpt, tailored_resume,
+        outreach_draft, total_cost_cents, total_latency_ms, cache_hit_count, shareable, expires_at)
+     VALUES (@id, @ts, @company, @role, @jd, @resume, @outreach, @cost, @latency, @cache, 1, @expires)`,
+  ).run({
+    id: 'det-sim-1',
+    ts: '2026-06-01T12:00:00Z',
+    company: 'Wayne Enterprises',
+    role: 'Principal Engineer',
+    jd: 'We need a principal engineer to lead our platform org.',
+    resume: [
+      '## Tailored resume — Principal Engineer @ Wayne Enterprises',
+      '',
+      '- Shipped a multi-region ingestion pipeline on GCP serving 4B+ events/day.',
+      '- Cut p99 API latency 38% via edge caching + read-model projections.',
+      '- Led a 4-engineer team through a zero-downtime datastore migration.',
+      '',
+      '## Cold outreach — Wayne Enterprises',
+      '',
+      'Subject: Principal Engineer — a builder who ships at your scale',
+      '',
+      'Hi there, I came across your recent engineering work and would love a short conversation.',
+    ].join('\n'),
+    outreach: null,
+    cost: 4,
+    latency: 22000,
+    cache: 1,
+    expires: '2099-01-01T00:00:00Z',
+  });
+}
+
 // ── rich dev seed ───────────────────────────────────────────────────────────
 
 interface AppSeed {

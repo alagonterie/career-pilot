@@ -28,6 +28,7 @@ import {
   mockContainerCount,
   mockPortkeySummary,
   newGeneratorState,
+  seedDeterministicSimulatorRun,
   seedRichFixture,
 } from '../src/modules/portal/dev/fixtures.js';
 import { startPortalApi, stopPortalApi } from '../src/modules/portal/api.js';
@@ -43,10 +44,13 @@ async function main(): Promise<void> {
   // Set the env-gated dev seams BEFORE startPortalApi so the handlers see them.
   process.env.PORTAL_MOCK_PORTKEY = JSON.stringify(mockPortkeySummary());
   process.env.PORTAL_MOCK_CONTAINERS = String(mockContainerCount());
+  // §24.31: scripted, container-free simulator runs (no LLM/Docker locally).
+  process.env.PORTAL_MOCK_SIMULATOR = process.env.PORTAL_MOCK_SIMULATOR ?? '1';
 
   const db = initTestDb();
   runMigrations(db);
   seedRichFixture(db);
+  seedDeterministicSimulatorRun(db);
 
   const { port } = await startPortalApi({ host: '127.0.0.1', port: API_PORT });
   const apiBase = `http://127.0.0.1:${port}`;

@@ -6,7 +6,7 @@ type Surface = '/' | '/live' | '/architecture' | '/funnel' | '/work'
 type RailKind = 'convert' | 'deepen' | 'pivot'
 
 type RailItem =
-  | { label: string; kind: RailKind; to: '/contact' | '/live' | '/architecture' | '/funnel' | '/work' }
+  | { label: string; kind: RailKind; to: '/contact' | '/live' | '/architecture' | '/funnel' | '/work' | '/simulator' }
   | { label: string; kind: RailKind; href: string }
 
 interface RailCfg {
@@ -15,15 +15,16 @@ interface RailCfg {
 }
 
 // Per-surface "what's next" (PORTAL §8.4). The convert path is the constant; the
-// /simulator-pointing pivots land in 8.2 with that route (you can't type-safely
-// Link to a route that doesn't exist yet). /contact (the sink) + any unmapped
-// route render no rail.
+// /simulator-pointing pivots landed in 8.2 with that route. /contact (the sink),
+// /simulator (its own results CTAs are the next step), + any unmapped route
+// render no rail.
 const RAIL: Record<Surface, RailCfg> = {
   '/': {
     register: 'marketing',
     items: [
       { label: 'Talk to me', kind: 'convert', to: '/contact' },
       { label: 'See it work', kind: 'deepen', to: '/live' },
+      { label: 'Try it', kind: 'pivot', to: '/simulator' },
     ],
   },
   '/live': {
@@ -31,6 +32,7 @@ const RAIL: Record<Surface, RailCfg> = {
     items: [
       { label: 'Talk to me', kind: 'convert', to: '/contact' },
       { label: 'How it works', kind: 'deepen', to: '/architecture' },
+      { label: 'Run it on your role', kind: 'pivot', to: '/simulator' },
     ],
   },
   '/architecture': {

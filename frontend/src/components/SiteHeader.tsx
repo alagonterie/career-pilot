@@ -28,6 +28,9 @@ export function SiteHeader() {
           <Link to="/live" className={linkClass}>
             Live
           </Link>
+          <Link to="/simulator" className={linkClass}>
+            Simulator
+          </Link>
           <Link to="/contact" className={linkClass}>
             Contact
           </Link>

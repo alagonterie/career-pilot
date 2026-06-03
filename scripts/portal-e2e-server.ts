@@ -33,6 +33,7 @@ import {
   nextAuditSeq,
   seedDeterministicBacklog,
   seedDeterministicFunnel,
+  seedDeterministicSimulatorRun,
   seedSessions,
   type AuditSeed,
 } from '../src/modules/portal/dev/fixtures.js';
@@ -83,12 +84,18 @@ async function main(): Promise<void> {
   // Fixed container count (no DB source — see file header) so /api/architecture
   // is deterministic without Docker. Set before the API starts serving.
   process.env.PORTAL_MOCK_CONTAINERS = process.env.PORTAL_MOCK_CONTAINERS ?? '2';
+  // §24.31: enable the scripted, container-free simulator seam so the /simulator
+  // happy path (run → live stream → results) is exercised end-to-end with no
+  // Docker/LLM. Without it, POST /api/simulator would 503 (no adapter) — that
+  // unavailable branch is unit-tested instead.
+  process.env.PORTAL_MOCK_SIMULATOR = process.env.PORTAL_MOCK_SIMULATOR ?? '1';
 
   const db = initTestDb();
   runMigrations(db);
 
   seedDeterministicBacklog(db);
   seedDeterministicFunnel(db);
+  seedDeterministicSimulatorRun(db);
   seedSessions(db);
 
   const { port } = await startPortalApi({ host: '127.0.0.1', port: PORT });

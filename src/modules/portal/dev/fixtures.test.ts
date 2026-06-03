@@ -13,7 +13,9 @@ import { runMigrations } from '../../../db/migrations/index.js';
 import { getActiveSessions, getRunningSessions } from '../../../db/sessions.js';
 import { APPLICATION_STATUSES, deriveFunnelStage } from '../public-funnel-view.js';
 import { getPortkeyAnalytics } from '../portkey-analytics.js';
+import { getSimulatorResult } from '../simulator.js';
 
+import { buildSimulatorScript } from './mock-simulator.js';
 import {
   buildSyntheticEvent,
   insertSyntheticEvent,
@@ -21,6 +23,7 @@ import {
   newGeneratorState,
   seedDeterministicBacklog,
   seedDeterministicFunnel,
+  seedDeterministicSimulatorRun,
   seedRichFixture,
   seedSessions,
 } from './fixtures.js';
@@ -183,6 +186,42 @@ describe('seedSessions (architecture feed — §24.28)', () => {
     }).not.toThrow();
     expect(getActiveSessions().length).toBeGreaterThan(0);
     expect(count('public_funnel_view')).toBe(5);
+  });
+});
+
+describe('seedDeterministicSimulatorRun (8.2 share page — §24.31)', () => {
+  it('seeds one non-expired shareable run that getSimulatorResult returns', () => {
+    seedDeterministicSimulatorRun(db);
+    const row = getSimulatorResult('det-sim-1');
+    expect(row).not.toBeNull();
+    expect(row?.visitor_company).toBe('Wayne Enterprises');
+    expect(row?.shareable).toBe(1);
+    expect(row?.tailored_resume).toContain('Tailored resume');
+  });
+});
+
+describe('buildSimulatorScript (mock-simulator — §24.31)', () => {
+  it('produces a wire-shaped, personalized script ending in the terminal task', () => {
+    const steps = buildSimulatorScript('Acme Corp', 'Staff Engineer');
+    // First push is delayed enough for the client to connect (no-op otherwise).
+    expect(steps[0].delayMs).toBeGreaterThanOrEqual(300);
+    // Exactly one terminal `task`, and it is last.
+    const taskSteps = steps.filter((s) => s.kind === 'task');
+    expect(taskSteps).toHaveLength(1);
+    expect(steps[steps.length - 1].kind).toBe('task');
+    // Exactly one end-of-run `result` trace carrying cost (matches the real wire).
+    const results = steps.filter((s) => s.kind === 'trace' && (s.payload as { t?: string }).t === 'result');
+    expect(results).toHaveLength(1);
+    expect((results[0].payload as { cost_usd: number }).cost_usd).toBeGreaterThan(0);
+    // Personalized on the visitor's company/role.
+    const text = JSON.stringify(steps);
+    expect(text).toContain('Acme Corp');
+    expect(text).toContain('Staff Engineer');
+    // Both parallel subagents are dispatched.
+    const subs = steps
+      .filter((s) => s.kind === 'trace' && (s.payload as { t?: string }).t === 'subagent')
+      .map((s) => (s.payload as { subagent: string }).subagent);
+    expect(subs).toEqual(expect.arrayContaining(['research-company', 'tailor-resume', 'draft-outreach']));
   });
 });
 
