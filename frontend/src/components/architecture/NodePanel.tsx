@@ -118,12 +118,12 @@ export function NodePanel({
         aria-modal="true"
         aria-labelledby="arch-node-title"
         data-testid="arch-node-panel"
-        transition={{ layout: { duration: 0.3, ease: 'easeOut' } }}
+        transition={{ layout: { duration: 0.2, ease: 'easeOut' } }}
         className="relative z-10 max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-lg border border-border bg-card p-6 shadow-xl focus:outline-none"
       >
         <motion.div
           initial={{ opacity: 0 }}
-          animate={{ opacity: 1, transition: { delay: 0.3, duration: 0.2 } }}
+          animate={{ opacity: 1, transition: { delay: 0.2, duration: 0.2 } }}
           exit={{ opacity: 0, transition: { duration: 0.1 } }}
           className="flex flex-col gap-6"
         >
