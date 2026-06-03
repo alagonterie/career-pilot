@@ -6,10 +6,23 @@ import type { FunnelApplication } from '~/lib/use-funnel'
 import type { TelemetryView } from '~/lib/use-telemetry'
 
 /** A titled ops-panel card — the shared shell for the /live grid. */
-export function Panel({ title, children, className }: { title: string; children: ReactNode; className?: string }) {
+export function Panel({
+  title,
+  children,
+  className,
+  action,
+}: {
+  title: string
+  children: ReactNode
+  className?: string
+  action?: ReactNode
+}) {
   return (
     <section className={['flex flex-col gap-3 rounded-lg border border-border bg-card p-4', className ?? ''].join(' ')}>
-      <h2 className="font-mono text-xs font-semibold uppercase tracking-widest text-muted-foreground">{title}</h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-mono text-xs font-semibold uppercase tracking-widest text-muted-foreground">{title}</h2>
+        {action}
+      </div>
       {children}
     </section>
   )

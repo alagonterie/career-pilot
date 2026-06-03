@@ -9,6 +9,7 @@ import { FunnelCompact } from './FunnelCompact'
 import {
   ContainerPoolPanel,
   CostCachePanel,
+  Panel,
   RecentOutcomesPanel,
   SessionsPanel,
   SystemStatusPanel,
@@ -132,6 +133,18 @@ describe('CostCachePanel', () => {
     expect(screen.getByTestId('cost-unavailable')).toBeInTheDocument()
     expect(screen.getByTestId('local-spend')).toHaveTextContent('$0.10 est') // 10 cents
     expect(screen.getByText('2 turns')).toBeInTheDocument()
+  })
+})
+
+describe('Panel', () => {
+  it('renders a page-supplied header action (the open-link slot — §24.35 Pass A)', () => {
+    render(
+      <Panel title="Funnel" action={<a href="/funnel">open →</a>}>
+        <p>body</p>
+      </Panel>,
+    )
+    expect(screen.getByRole('heading', { name: 'Funnel' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /open/i })).toHaveAttribute('href', '/funnel')
   })
 })
 

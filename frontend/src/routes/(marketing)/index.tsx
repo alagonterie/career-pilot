@@ -20,7 +20,7 @@ function Home() {
   const apps = funnel?.applications ?? []
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-3xl flex-col items-center px-6 py-20">
+    <main className="mx-auto flex max-w-3xl flex-col items-center px-6 py-20">
       {/*
         Viewport 1 — hero (SSR-static; PORTAL §5.1). Generic placeholder persona
         (Jane Doe); real content arrives via candidate_profile later. The two
@@ -73,8 +73,17 @@ function Home() {
         </section>
       ) : null}
 
-      {/* Viewport 3 — live activity hook. */}
-      <LiveTicker events={events} status={status} />
+      {/* Viewport 3 — live activity hook. The "watch live →" link is the
+          contextual bridge into the ops register (PORTAL §5.1 / §24.35 Pass A). */}
+      <LiveTicker
+        events={events}
+        status={status}
+        action={
+          <Link to="/live" className="font-mono text-xs text-accent-cool hover:underline">
+            watch live →
+          </Link>
+        }
+      />
 
       {/* Viewport 4 — simulator pitch (PORTAL §5.1): a single high-intent CTA into
           the grippiest spoke. No form here — the form lives on /simulator. */}

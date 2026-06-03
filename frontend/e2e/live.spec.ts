@@ -104,4 +104,15 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
     await expect(page).toHaveURL('/live')
     await expect(page.getByRole('heading', { level: 1, name: 'Live' })).toBeVisible()
   })
+
+  test('the FUNNEL panel links into /funnel (contextual nav — §24.35 Pass A)', async ({ page }) => {
+    await page.goto('/live')
+    // Scope to main; the FUNNEL panel header action is the only "open →" link.
+    await page
+      .getByRole('main')
+      .getByRole('link', { name: /open →/ })
+      .click()
+    await expect(page).toHaveURL(/\/funnel$/)
+    await expect(page.getByRole('heading', { level: 1, name: 'Funnel' })).toBeVisible()
+  })
 })

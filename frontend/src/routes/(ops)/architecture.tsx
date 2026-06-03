@@ -32,7 +32,7 @@ function ArchitecturePage() {
 
   return (
     <>
-      <main className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col gap-8 px-6 py-12">
+      <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-12">
         <header className="flex flex-col gap-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Architecture</h1>

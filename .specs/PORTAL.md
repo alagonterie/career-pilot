@@ -1111,7 +1111,7 @@ Identical on every page:
 
 The status string is live (single tick per 30s). If degraded or offline, it changes color and adds a brief note.
 
-> **Build note (STRATEGY §24.35 Pass A — reconciliation).** This metadata footer was never built, and is not built in Pass A: it links to `/about` (deferred, STRATEGY §24.32) and a `/privacy` page that does not yet exist, so building it would link to 404s. The realized foot-of-page is the §8.4 connective rail (the directed "what's next") plus per-page methodology captions (page-specific honesty notes); the live status string described here is already served by the §8.3 live indicator + the `/live` system/telemetry panels and is not duplicated. The persistent identity + social (`GitHub · LinkedIn · X`) + `/about` · `/privacy` footer is deferred to the pass that lands `/about` (§24.32) + a `/privacy` page — intentionally absent until those routes exist.
+> **Build note (STRATEGY §24.35 Pass A — reconciliation).** This metadata footer is not built, and the foot-of-page design is confirmed as **two-tier with the §8.4 connective rail as the primary, unchanged element**: the rail (the directed "what's next") stays the focus, and per-page methodology captions carry page-specific honesty notes. The **status string / deploy hash / cache%** described here are *retired* as redundant — that telemetry already lives on `/live` + the §8.3 live indicator. A **slim, muted social/legal strip** (persona · `GitHub · LinkedIn · X` · `/about` · `/privacy`) is planned to sit *below* the rail, but is **deferred** to the pass that lands `/about` (§24.32) + a `/privacy` page so it never links to a 404 — intentionally absent until those routes exist.
 
 ### 8.3 Live indicator
 

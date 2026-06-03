@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+
 import type { StreamStatus } from '~/lib/sse'
 import type { AuditEvent } from '~/lib/use-activity-stream'
 
@@ -14,7 +16,15 @@ function hhmm(ts: string): string {
  * model + cache-hit lanes appear only once a later capture phase populates
  * them. A missing field is simply absent — never faked.
  */
-export function LiveTicker({ events, status }: { events: AuditEvent[]; status: StreamStatus | 'idle' }) {
+export function LiveTicker({
+  events,
+  status,
+  action,
+}: {
+  events: AuditEvent[]
+  status: StreamStatus | 'idle'
+  action?: ReactNode
+}) {
   return (
     <section
       id="live-ticker"
@@ -22,9 +32,12 @@ export function LiveTicker({ events, status }: { events: AuditEvent[]; status: S
       data-testid="live-ticker"
       className="mx-auto mt-16 w-full max-w-2xl rounded-lg border border-border bg-card p-4"
     >
-      <h2 id="ticker-heading" className="mb-3 text-sm font-semibold text-muted-foreground">
-        Live activity
-      </h2>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 id="ticker-heading" className="text-sm font-semibold text-muted-foreground">
+          Live activity
+        </h2>
+        {action}
+      </div>
       {events.length === 0 ? (
         <p data-testid="ticker-empty" className="font-mono text-sm text-muted-foreground">
           {status === 'reconnecting' ? 'Activity stream offline — reconnecting…' : 'Agents warming up…'}

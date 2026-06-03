@@ -55,7 +55,7 @@ function ShareResults() {
   }, [id])
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-6 py-16">
+    <main className="mx-auto flex w-full max-w-3xl flex-col px-6 py-16">
       {state.status === 'loading' ? (
         <p data-testid="share-loading" className="text-sm text-muted-foreground">
           Loading the run…

@@ -69,4 +69,11 @@ describe('LiveTicker', () => {
     // category is the fallback label when agent_name is null
     expect(screen.getByText('funnel')).toBeInTheDocument()
   })
+
+  it('renders a page-supplied header action (the watch-live link slot — §24.35 Pass A)', () => {
+    // The slot is router-free: the page supplies the <Link>; a plain <a> proves
+    // the component renders it without a router context.
+    render(<LiveTicker events={[]} status="open" action={<a href="/live">watch live →</a>} />)
+    expect(screen.getByRole('link', { name: /watch live/i })).toHaveAttribute('href', '/live')
+  })
 })

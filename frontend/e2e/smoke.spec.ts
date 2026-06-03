@@ -55,4 +55,13 @@ test.describe('landing (/) — hero + live ticker, frontend <-> backend', () => 
     expect(consoleErrors).toEqual([])
     expect(failedRequests).toEqual([])
   })
+
+  test('the live-activity ticker links into /live (contextual nav — §24.35 Pass A)', async ({ page }) => {
+    await page.goto('/')
+    const ticker = page.getByTestId('live-ticker')
+    await expect(ticker).toBeVisible()
+    await ticker.getByRole('link', { name: /watch live/i }).click()
+    await expect(page).toHaveURL(/\/live$/)
+    await expect(page.getByRole('heading', { name: 'Live', level: 1 })).toBeVisible()
+  })
 })
