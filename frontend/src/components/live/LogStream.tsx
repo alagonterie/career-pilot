@@ -207,12 +207,17 @@ export function LogStream({
                       ◆
                     </span>
                   ) : null}
-                  {e.application_ref ? <span className="text-muted-foreground">[{e.application_ref}]</span> : null}
-                  {/* On a phone the metadata prefix eats the narrow column, so the
-                      summary drops to its own full-width line (a clean sentence,
-                      not a ragged right-gutter wrap — §24.37). Inline terminal row
-                      restored at sm+. */}
-                  <span className="w-full min-w-0 text-foreground sm:w-auto sm:flex-1">{e.summary}</span>
+                  {/* [ref] + summary are one unit: on a phone the group drops to
+                      its own full-width line, the ref leading the message (it's the
+                      message's subject), and the message wraps fully below the
+                      metadata row (§24.37); inline terminal row restored at sm+.
+                      mr-2 matches the row's gap-x-2 so desktop is unchanged. */}
+                  <span className="w-full min-w-0 sm:w-auto sm:flex-1">
+                    {e.application_ref ? (
+                      <span className="mr-2 text-muted-foreground">[{e.application_ref}]</span>
+                    ) : null}
+                    <span className="text-foreground">{e.summary}</span>
+                  </span>
                   {/* progressive metric lanes — present only when captured (§24.24) */}
                   {e.model_used ? <Lane title="model">{e.model_used}</Lane> : null}
                   {e.tokens != null ? <Lane title="tokens">{e.tokens.toLocaleString()} tok</Lane> : null}

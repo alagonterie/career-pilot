@@ -74,11 +74,15 @@ export function LiveTicker({
                   ◆ proactive
                 </span>
               ) : null}
-              {e.application_ref ? <span className="text-muted-foreground">[{e.application_ref}]</span> : null}
-              {/* Phone: the summary drops to its own full-width line (full text,
-                  wrapped) instead of truncating in a squeezed column; desktop keeps
-                  the single-line truncating terminal row (§24.37). */}
-              <span className="w-full min-w-0 text-foreground sm:w-auto sm:flex-1 sm:truncate">{e.summary}</span>
+              {/* [ref] + summary are one unit: on a phone the group drops to its
+                  own full-width line, the ref leading the message, clamped to 2
+                  lines so one long action can't swallow the 5-line teaser (§24.37);
+                  desktop keeps the single-line truncating terminal row. mr-2 matches
+                  the row's gap-x-2 so desktop is unchanged. */}
+              <span className="line-clamp-2 w-full min-w-0 sm:line-clamp-none sm:block sm:w-auto sm:flex-1 sm:truncate">
+                {e.application_ref ? <span className="mr-2 text-muted-foreground">[{e.application_ref}]</span> : null}
+                <span className="text-foreground">{e.summary}</span>
+              </span>
               {e.model_used ? <span className="text-muted-foreground">{e.model_used}</span> : null}
               {e.cache_hit ? <span className="text-muted-foreground">(cache hit)</span> : null}
             </li>
