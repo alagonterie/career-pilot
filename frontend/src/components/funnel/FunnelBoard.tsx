@@ -1,4 +1,4 @@
-import { MotionConfig, motion } from 'motion/react'
+import { motion } from 'motion/react'
 
 import { Skeleton } from '~/components/ui/skeleton'
 import type { FunnelApplication } from '~/lib/use-funnel'
@@ -20,10 +20,10 @@ const PIPELINE_STAGES = new Set(COLUMNS.map((c) => c.stage))
 /**
  * The horse-race board (PORTAL §5.4). Each card is a `motion` element keyed by
  * `layoutId`, so when a poll moves an application to a new column the card
- * animates across — the gamified "this person is in demand" motion. Wrapped in
- * `MotionConfig reducedMotion="user"` so the animation is frozen under
- * prefers-reduced-motion (the Playwright visual baselines + reduced-motion
- * users) — deterministic, never a barrier.
+ * animates across — the gamified "this person is in demand" motion. The card
+ * animation is frozen under prefers-reduced-motion via the root
+ * `MotionConfig reducedMotion="user"` (src/routes/__root.tsx — §24.36 36.4),
+ * which also keeps the Playwright visual baselines deterministic.
  */
 export function FunnelBoard({
   apps,
@@ -35,7 +35,7 @@ export function FunnelBoard({
   const offboard = apps.filter((a) => !PIPELINE_STAGES.has(a.stage))
 
   return (
-    <MotionConfig reducedMotion="user">
+    <>
       <div data-testid="funnel-board" className="grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {COLUMNS.map((col) => {
           const items = apps.filter((a) => a.stage === col.stage)
@@ -81,7 +81,7 @@ export function FunnelBoard({
           </div>
         </section>
       ) : null}
-    </MotionConfig>
+    </>
   )
 }
 

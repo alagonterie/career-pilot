@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { AnimatePresence, MotionConfig } from 'motion/react'
+import { AnimatePresence } from 'motion/react'
 import * as React from 'react'
 
 import { ArchDiagram } from '~/components/architecture/ArchDiagram'
@@ -34,7 +34,7 @@ function ArchitecturePage() {
   const [selected, setSelected] = React.useState<ArchNode | null>(null)
 
   return (
-    <MotionConfig reducedMotion="user">
+    <>
       <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-12">
         <header className="flex flex-col gap-4">
           <div>
@@ -124,6 +124,6 @@ function ArchitecturePage() {
           />
         ) : null}
       </AnimatePresence>
-    </MotionConfig>
+    </>
   )
 }

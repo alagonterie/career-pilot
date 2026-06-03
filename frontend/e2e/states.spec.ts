@@ -66,3 +66,26 @@ test.describe('/live async states', () => {
     await expect(page.getByTestId('trace-empty')).toContainText(/no agent activity/i)
   })
 })
+
+test.describe('reduced-motion (§24.36 36.4)', () => {
+  test('the global reset makes CSS animation inert under prefers-reduced-motion', async ({ page }) => {
+    // The loading skeleton renders Tailwind `animate-pulse` (and `?__state=loading`
+    // hangs, so it stays put for the measurement).
+    const pulseDurationS = () =>
+      page
+        .locator('.animate-pulse')
+        .first()
+        .evaluate((el) => parseFloat(getComputedStyle(el).animationDuration))
+
+    // Control: with no preference, the pulse runs.
+    await page.goto('/momentum?__state=loading')
+    await expect(page.getByTestId('funnel-skeleton')).toBeVisible()
+    expect(await pulseDurationS()).toBeGreaterThan(0.5)
+
+    // Treatment: under prefers-reduced-motion the app.css global reset neutralizes
+    // it (the media query re-matches live — no reload needed).
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await expect(page.getByTestId('funnel-skeleton')).toBeVisible()
+    expect(await pulseDurationS()).toBeLessThan(0.001)
+  })
+})

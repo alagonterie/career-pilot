@@ -1,4 +1,5 @@
 import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
+import { MotionConfig } from 'motion/react'
 import * as React from 'react'
 
 import { DevStateSwitcher } from '~/components/dev/DevStateSwitcher'
@@ -27,7 +28,10 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body>
-        {children}
+        {/* One root MotionConfig so EVERY motion/react animation respects
+            prefers-reduced-motion (the structural guarantee — §24.36 36.4); the
+            CSS reset in app.css covers CSS animations + transitions. */}
+        <MotionConfig reducedMotion="user">{children}</MotionConfig>
         {/* Dev-only async-state switcher (§24.36 36.1). Gated on `import.meta.env.DEV`
             so Rollup tree-shakes it from the production bundle. */}
         {import.meta.env.DEV ? <DevStateSwitcher /> : null}
