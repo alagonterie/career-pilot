@@ -115,6 +115,9 @@ agents-sdk-docs
 *.tfvars
 !*.tfvars.example
 .terraform.tfstate.lock.info
+# Saved plan files — can embed sensitive values (tunnel secrets, tokens)
+tfplan*
+*.tfplan
 
 # Test artifacts
 coverage/
