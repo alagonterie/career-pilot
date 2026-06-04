@@ -9,6 +9,7 @@ name: deploy-frontend
 # binding + the owner-only Cloudflare Access gate are Terraform-managed
 # (infra/), applied out-of-band, not in this workflow.
 on:
+  workflow_dispatch: {} # manual/ad-hoc deploy of the current ref
   push:
     branches: [dev, master]
     paths:
