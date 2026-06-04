@@ -41,7 +41,26 @@ jobs:
           VITE_API_BASE: ${{ vars.VITE_API_BASE }}
           # Build-time site identity (VITE_PERSON_NAME etc.) is wired in Phase 9.4
           # (persona de-genericization); the generic build deploys fine until then.
+          # BFF Worker bindings (STRATEGY §24.39 D12): with VITE_API_BASE empty the
+          # browser calls /api/* SAME-ORIGIN; the Worker proxies to the tunnel host
+          # using an Access service token. Injected post-deploy as Worker secrets.
+          BACKEND_API_BASE: ${{ vars.BACKEND_API_BASE }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
         run: |
           if [ "${{ github.ref_name }}" = "dev" ]; then export CLOUDFLARE_ENV=dev; fi
           pnpm exec vite build
           pnpm exec wrangler deploy
+          # Push the BFF bindings onto the deployed Worker (idempotent; persists
+          # across deploys). Guarded — a no-op until all three are configured, so
+          # this stays safe before the service token exists.
+          WORKER_NAME="career-pilot-portal"
+          if [ "${{ github.ref_name }}" = "dev" ]; then WORKER_NAME="career-pilot-portal-dev"; fi
+          if [ -n "$BACKEND_API_BASE" ] && [ -n "$CF_ACCESS_CLIENT_ID" ] && [ -n "$CF_ACCESS_CLIENT_SECRET" ]; then
+            printf '{"BACKEND_API_BASE":"%s","CF_ACCESS_CLIENT_ID":"%s","CF_ACCESS_CLIENT_SECRET":"%s"}' \
+              "$BACKEND_API_BASE" "$CF_ACCESS_CLIENT_ID" "$CF_ACCESS_CLIENT_SECRET" \
+              | pnpm exec wrangler secret bulk --name "$WORKER_NAME"
+            echo "BFF Worker bindings injected for $WORKER_NAME"
+          else
+            echo "BFF Worker bindings not configured yet — skipping (proxy returns 503 until set)"
+          fi

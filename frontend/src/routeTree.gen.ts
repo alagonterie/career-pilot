@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as opsRouteRouteImport } from './routes/(ops)/route'
 import { Route as marketingRouteRouteImport } from './routes/(marketing)/route'
 import { Route as marketingIndexRouteImport } from './routes/(marketing)/index'
+import { Route as ApiSplatRouteImport } from './routes/api/$'
 import { Route as opsMomentumRouteImport } from './routes/(ops)/momentum'
 import { Route as opsLiveRouteImport } from './routes/(ops)/live'
 import { Route as opsCrashRouteImport } from './routes/(ops)/crash'
@@ -33,6 +34,11 @@ const marketingIndexRoute = marketingIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => marketingRouteRoute,
+} as any)
+const ApiSplatRoute = ApiSplatRouteImport.update({
+  id: '/api/$',
+  path: '/api/$',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const opsMomentumRoute = opsMomentumRouteImport.update({
   id: '/momentum',
@@ -83,6 +89,7 @@ export interface FileRoutesByFullPath {
   '/crash': typeof opsCrashRoute
   '/live': typeof opsLiveRoute
   '/momentum': typeof opsMomentumRoute
+  '/api/$': typeof ApiSplatRoute
   '/': typeof marketingIndexRoute
   '/simulator/': typeof marketingSimulatorIndexRoute
   '/simulator/results/$id': typeof marketingSimulatorResultsIdRoute
@@ -94,6 +101,7 @@ export interface FileRoutesByTo {
   '/crash': typeof opsCrashRoute
   '/live': typeof opsLiveRoute
   '/momentum': typeof opsMomentumRoute
+  '/api/$': typeof ApiSplatRoute
   '/': typeof marketingIndexRoute
   '/simulator': typeof marketingSimulatorIndexRoute
   '/simulator/results/$id': typeof marketingSimulatorResultsIdRoute
@@ -108,6 +116,7 @@ export interface FileRoutesById {
   '/(ops)/crash': typeof opsCrashRoute
   '/(ops)/live': typeof opsLiveRoute
   '/(ops)/momentum': typeof opsMomentumRoute
+  '/api/$': typeof ApiSplatRoute
   '/(marketing)/': typeof marketingIndexRoute
   '/(marketing)/simulator/': typeof marketingSimulatorIndexRoute
   '/(marketing)/simulator/results/$id': typeof marketingSimulatorResultsIdRoute
@@ -121,6 +130,7 @@ export interface FileRouteTypes {
     | '/crash'
     | '/live'
     | '/momentum'
+    | '/api/$'
     | '/'
     | '/simulator/'
     | '/simulator/results/$id'
@@ -132,6 +142,7 @@ export interface FileRouteTypes {
     | '/crash'
     | '/live'
     | '/momentum'
+    | '/api/$'
     | '/'
     | '/simulator'
     | '/simulator/results/$id'
@@ -145,6 +156,7 @@ export interface FileRouteTypes {
     | '/(ops)/crash'
     | '/(ops)/live'
     | '/(ops)/momentum'
+    | '/api/$'
     | '/(marketing)/'
     | '/(marketing)/simulator/'
     | '/(marketing)/simulator/results/$id'
@@ -153,6 +165,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   marketingRouteRoute: typeof marketingRouteRouteWithChildren
   opsRouteRoute: typeof opsRouteRouteWithChildren
+  ApiSplatRoute: typeof ApiSplatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -177,6 +190,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof marketingIndexRouteImport
       parentRoute: typeof marketingRouteRoute
+    }
+    '/api/$': {
+      id: '/api/$'
+      path: '/api/$'
+      fullPath: '/api/$'
+      preLoaderRoute: typeof ApiSplatRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/(ops)/momentum': {
       id: '/(ops)/momentum'
@@ -278,6 +298,7 @@ const opsRouteRouteWithChildren = opsRouteRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   marketingRouteRoute: marketingRouteRouteWithChildren,
   opsRouteRoute: opsRouteRouteWithChildren,
+  ApiSplatRoute: ApiSplatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
