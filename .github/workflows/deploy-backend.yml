@@ -116,14 +116,23 @@ jobs:
           sudo -u career-pilot env XDG_RUNTIME_DIR=/run/user/\${CP_UID} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/\${CP_UID}/bus CP_ENVIRONMENT=dev CP_PORTAL_API_PORT=3002 CP_WEBHOOK_PORT=3001 CP_ASSISTANT_NAME='${CP_ASSISTANT_NAME}' CP_TZ='${CP_TZ}' TELEGRAM_BOT_TOKEN='${TELEGRAM_BOT_TOKEN}' PORTKEY_API_KEY='${PORTKEY_API_KEY}' ANTHROPIC_API_KEY='${ANTHROPIC_API_KEY}' bash /opt/career-pilot-dev/scripts/bootstrap-vm.sh
 
           # Post-bootstrap smoke check — the portal API answering proves the host
-          # process is up and serving (give it a moment to bind the port). Fails
-          # the deploy if the backend never comes up.
+          # process is up and serving (give it a moment to bind the port). On
+          # failure, dump host diagnostics (no local SSH available to debug).
           echo "== smoke: portal /api/system-status =="
+          ok=0
           for i in \$(seq 1 12); do
-            if curl -fsS -m 5 http://127.0.0.1:3002/api/system-status; then echo; echo "portal-ok"; break; fi
-            [ "\$i" -eq 12 ] && { echo "portal not responding after ~36s"; exit 1; }
+            if curl -fsS -m 5 http://127.0.0.1:3002/api/system-status; then echo; echo "portal-ok"; ok=1; break; fi
             sleep 3
           done
+          if [ "\$ok" -ne 1 ]; then
+            echo "== portal DOWN — diagnostics =="
+            sudo -u career-pilot env XDG_RUNTIME_DIR=/run/user/\${CP_UID} systemctl --user status nanoclaw-v2-365449e3 --no-pager -l 2>&1 | tail -n 30 || true
+            echo "== nanoclaw.error.log (tail 60) =="
+            sudo tail -n 60 /opt/career-pilot-dev/logs/nanoclaw.error.log 2>&1 || true
+            echo "== nanoclaw.log (tail 60) =="
+            sudo tail -n 60 /opt/career-pilot-dev/logs/nanoclaw.log 2>&1 || true
+            exit 1
+          fi
           EOF
 
           gcloud compute ssh "${VM_NAME}" \
