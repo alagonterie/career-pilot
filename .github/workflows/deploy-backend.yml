@@ -1,0 +1,109 @@
+name: deploy-backend
+
+# Phase 9.2 (STRATEGY.md §24.39). Codified provisioning of the isolated dev
+# backend stack on the shared GCP host. Auth GH -> GCP via Workload Identity
+# Federation (the deploy SA), reach the host over the IAP TCP tunnel (the only
+# SSH path the firewall allows), clone/pull the `dev` branch into
+# /opt/career-pilot-dev, and run the idempotent scripts/bootstrap-vm.sh as the
+# unprivileged `career-pilot` service user. Per-env config comes from the GitHub
+# `dev` Environment (vars + secrets) so real tokens never enter the repo.
+#
+# Trigger: workflow_dispatch ONLY while we validate the first runs. The
+# push-to-dev auto-deploy trigger lands once a manual run is green (the
+# commented block below).
+on:
+  workflow_dispatch: {}
+  # push:
+  #   branches: [dev]
+  #   paths:
+  #     - 'src/**'
+  #     - 'container/**'
+  #     - 'setup/**'
+  #     - 'scripts/**'
+  #     - 'config/**'
+  #     - 'package.json'
+  #     - 'pnpm-lock.yaml'
+  #     - '.github/workflows/deploy-backend.yml'
+
+concurrency:
+  group: deploy-backend-${{ github.ref }}
+  cancel-in-progress: false # never interrupt an in-flight provision
+
+permissions:
+  contents: read
+  id-token: write # required for Workload Identity Federation
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Authenticate to Google Cloud (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Provision dev backend over IAP SSH
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }} # short-lived; used only to clone the private repo onto the box
+          VM_NAME: ${{ vars.GCP_VM_NAME || 'career-pilot-host' }}
+          VM_ZONE: ${{ vars.GCP_ZONE || 'us-central1-a' }}
+          GCP_PROJECT: ${{ vars.GCP_PROJECT || 'career-pilot-497319' }}
+          # Per-env tunables (GitHub Environment vars) with safe fallbacks.
+          CP_ASSISTANT_NAME: ${{ vars.CP_ASSISTANT_NAME || 'Career Pilot' }}
+          CP_TZ: ${{ vars.CP_TZ || 'America/Chicago' }}
+          # Secrets (GitHub Environment secrets) — GH masks these in logs.
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_DEV_BOT_TOKEN }}
+          PORTKEY_API_KEY: ${{ secrets.PORTKEY_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          # Build the remote orchestration script on the runner (secrets get
+          # interpolated here, then it travels over the encrypted SSH channel as
+          # `bash -s` STDIN — so secrets never land in argv on either side).
+          # Remote-only expansions (clone URL, the service user's uid) are
+          # escaped (\$) to defer to the box.
+          cat > /tmp/cp-remote.sh <<EOF
+          set -euo pipefail
+          REPO=${GH_REPO}
+          AUTH_URL="https://x-access-token:${GH_TOKEN}@github.com/\${REPO}.git"
+          CLEAN_URL="https://github.com/\${REPO}.git"
+
+          # Ensure the checkout dir exists + is owned by the service user.
+          sudo install -d -o career-pilot -g career-pilot /opt/career-pilot-dev
+
+          # Clone-or-pull the dev branch as the service user.
+          if sudo -u career-pilot test -d /opt/career-pilot-dev/.git; then
+            sudo -u career-pilot git -C /opt/career-pilot-dev remote set-url origin "\${AUTH_URL}"
+            sudo -u career-pilot git -C /opt/career-pilot-dev fetch --depth=1 origin dev
+            sudo -u career-pilot git -C /opt/career-pilot-dev reset --hard origin/dev
+          else
+            sudo -u career-pilot git clone --depth=1 --branch dev "\${AUTH_URL}" /opt/career-pilot-dev
+          fi
+          # Scrub the token from the stored remote — never leave it on disk.
+          sudo -u career-pilot git -C /opt/career-pilot-dev remote set-url origin "\${CLEAN_URL}"
+
+          # A persistent user-systemd session so the service survives logout/reboot.
+          sudo loginctl enable-linger career-pilot
+          CP_UID=\$(id -u career-pilot)
+
+          # Run the idempotent bootstrap as the service user (one line — \`env\`
+          # guarantees the vars reach the script regardless of sudo's env policy;
+          # single-quoted values survive spaces; \${CP_UID} defers to the box).
+          sudo -u career-pilot env XDG_RUNTIME_DIR=/run/user/\${CP_UID} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/\${CP_UID}/bus CP_ENVIRONMENT=dev CP_PORTAL_API_PORT=3002 CP_WEBHOOK_PORT=3001 CP_ASSISTANT_NAME='${CP_ASSISTANT_NAME}' CP_TZ='${CP_TZ}' TELEGRAM_BOT_TOKEN='${TELEGRAM_BOT_TOKEN}' PORTKEY_API_KEY='${PORTKEY_API_KEY}' ANTHROPIC_API_KEY='${ANTHROPIC_API_KEY}' bash /opt/career-pilot-dev/scripts/bootstrap-vm.sh
+          EOF
+
+          gcloud compute ssh "${VM_NAME}" \
+            --project "${GCP_PROJECT}" \
+            --zone "${VM_ZONE}" \
+            --tunnel-through-iap \
+            --quiet \
+            --command="bash -s" < /tmp/cp-remote.sh
+
+          rm -f /tmp/cp-remote.sh
