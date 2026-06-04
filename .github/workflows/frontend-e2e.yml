@@ -32,6 +32,13 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Generate the Cloudflare Worker runtime types (declares the
+      # `cloudflare:workers` virtual module the BFF route imports). Generated,
+      # not committed (gitignored) — regenerated here so `tsc --noEmit` resolves
+      # it. The deploy path doesn't need this (vite's CF plugin resolves it at
+      # build); only the standalone typecheck does.
+      - name: Generate Cloudflare worker types
+        run: pnpm --filter @career-pilot/frontend cf-typegen
       - name: Typecheck frontend
         run: pnpm --filter @career-pilot/frontend typecheck
       - name: Install Playwright Chromium
