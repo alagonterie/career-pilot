@@ -166,6 +166,19 @@ export function addActivityClient(res: http.ServerResponse, cursor: number | nul
     lastSeq: cursor != null && cursor >= 0 ? cursor : currentMaxSeq(),
     lastWriteAt: Date.now(),
   };
+  // Establish the stream immediately. Node buffers the response headers until
+  // the first body write, and the client flips "connecting" → "open" only when
+  // its fetch resolves (i.e. when those headers arrive). With an empty backlog
+  // (no audit rows yet) the next write would be the keepalive ~15s later, so the
+  // portal hero/ticker would sit on "connecting…" for that long. A `: open`
+  // comment flushes the headers now (the parser skips comment-only frames, so it
+  // emits no spurious event). Mirrors addSimulatorClient.
+  try {
+    client.res.write(': open\n\n');
+    client.lastWriteAt = Date.now();
+  } catch {
+    return; // socket already closed before we could establish
+  }
   if (cursor != null && cursor >= 0) {
     for (const row of rowsSince(cursor)) writeEvent(client, row);
   }
