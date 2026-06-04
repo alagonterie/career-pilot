@@ -33,6 +33,7 @@
     "cleanup:onecli-agents": "tsx scripts/cleanup-onecli-agents.ts"
   },
   "dependencies": {
+    "@chat-adapter/telegram": "4.26.0",
     "@clack/core": "^1.2.0",
     "@clack/prompts": "^1.2.0",
     "@onecli-sh/sdk": "^0.5.0",
