@@ -6,5 +6,18 @@
   "main": "@tanstack/react-start/server-entry",
   "observability": {
     "enabled": true
+  },
+  // Named Cloudflare environments — selected at BUILD time by the vite plugin
+  // (`CLOUDFLARE_ENV=dev vite build` -> flattened config -> `wrangler deploy`;
+  // no CLOUDFLARE_ENV = the top-level prod config). The custom-domain binding
+  // and the owner-only Cloudflare Access gate are Terraform-managed (infra/),
+  // so real hostnames stay out of this committed/generic file (STRATEGY §24.38).
+  "env": {
+    "dev": {
+      "name": "career-pilot-portal-dev",
+      // Reachable ONLY via the Terraform-bound, Access-gated custom domain —
+      // no open *.workers.dev URL for dev.
+      "workers_dev": false
+    }
   }
 }

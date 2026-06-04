@@ -1,0 +1,46 @@
+name: deploy-frontend
+
+# Phase 9.1 (STRATEGY.md §24.38). Branch -> environment:
+#   push to `dev`    -> CLOUDFLARE_ENV=dev build -> wrangler deploy (career-pilot-portal-dev)
+#   push to `master` -> top-level (prod) build   -> wrangler deploy (career-pilot-portal)
+# The @cloudflare/vite-plugin selects the Cloudflare environment at BUILD time
+# via CLOUDFLARE_ENV; `wrangler deploy` then ships the flattened build (the
+# --env flag is a no-op with the plugin). The dev frontend's custom-domain
+# binding + the owner-only Cloudflare Access gate are Terraform-managed
+# (infra/), applied out-of-band, not in this workflow.
+on:
+  push:
+    branches: [dev, master]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/deploy-frontend.yml'
+
+concurrency:
+  group: deploy-frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # GitHub Environment carries the per-env vars/secrets (VITE_API_BASE, the
+    # build-time site identity) so real hostnames/identity never enter the repo.
+    environment: ${{ github.ref_name == 'master' && 'production' || 'dev' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build + deploy (${{ github.ref_name }})
+        working-directory: frontend
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          VITE_API_BASE: ${{ vars.VITE_API_BASE }}
+          # Build-time site identity (VITE_PERSON_NAME etc.) is wired in Phase 9.4
+          # (persona de-genericization); the generic build deploys fine until then.
+        run: |
+          if [ "${{ github.ref_name }}" = "dev" ]; then export CLOUDFLARE_ENV=dev; fi
+          pnpm exec vite build
+          pnpm exec wrangler deploy

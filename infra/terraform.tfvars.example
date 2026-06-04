@@ -25,3 +25,12 @@ frontend_subdomain = "hire"
 
 # --- Workers ---
 cloudflare_worker_subdomain = "career-pilot"
+
+# --- Access (Phase 9.1) ---
+# The sole identity allowed through Cloudflare Access on the deployed envs.
+owner_email = "you@example.com"
+
+# NOTE: `environment` (dev | prod) is NOT set here — pass it per apply
+# (`terraform apply -var environment=dev`) with a Terraform workspace per
+# environment (`terraform workspace new dev`) so dev and prod keep separate
+# state and a stray apply can't target the wrong environment.
