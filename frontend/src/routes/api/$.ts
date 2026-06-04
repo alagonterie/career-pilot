@@ -62,10 +62,19 @@ async function proxy(request: Request): Promise<Response> {
   } as RequestInit)
 
   // Stream the upstream response straight through (JSON or text/event-stream).
-  // Strip the upstream CORS headers — same-origin now, they're moot/confusing.
   const out = new Headers(res.headers)
+  // Strip the upstream CORS headers — same-origin now, they're moot/confusing.
   out.delete('access-control-allow-origin')
   out.delete('access-control-allow-credentials')
+  // CRITICAL: strip Set-Cookie. The Access-gated backend (api.<domain>) returns
+  // its OWN `CF_Authorization` cookie (the service token's JWT — aud = the API
+  // Access app) on every response. Forwarding it to the browser overwrites the
+  // browser's FRONTEND `CF_Authorization` (aud = the portal app) → the next
+  // same-origin /api/* request carries the wrong-audience JWT → the frontend
+  // Access app rejects it → 302 to the Access login → panels go "offline" after
+  // the first poll. The browser's session is the edge-set frontend cookie ONLY;
+  // the Worker→backend auth is the service-token headers, never a browser cookie.
+  out.delete('set-cookie')
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers: out })
 }
 
