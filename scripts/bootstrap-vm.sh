@@ -56,6 +56,12 @@ CP_WEBHOOK_PORT="${CP_WEBHOOK_PORT:-3001}"
 CP_PORTKEY_AI_PROVIDER="${CP_PORTKEY_AI_PROVIDER:-anthropic-default}"
 CP_ALLOW_PRODUCTION="${CP_ALLOW_PRODUCTION:-}"
 
+# The agent image Dockerfile uses BuildKit cache mounts (RUN --mount=type=cache).
+# Ubuntu's docker.io defaults to the legacy builder, which rejects --mount; opt
+# into the daemon's integrated BuildKit for the `docker build` in the container
+# step (setup/container.ts inherits this env).
+export DOCKER_BUILDKIT=1
+
 say()  { printf '\n\033[1;36m▸ %s\033[0m\n' "$*"; }
 die()  { printf '\033[31m  ✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
