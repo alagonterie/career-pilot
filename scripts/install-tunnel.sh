@@ -43,7 +43,12 @@ fi
 #    the equivalent of `--token` for a token-run.
 install -d -m 0750 /etc/cloudflared
 umask 077
-printf 'TUNNEL_TOKEN=%s\n' "${CLOUDFLARED_TOKEN}" > "${ENV_FILE}"
+# Strip any stray whitespace/newline. A cloudflared token is base64 (no internal
+# whitespace), so this is safe — and it guards against a token set via a piped
+# `gh secret set` carrying a trailing newline, which cloudflared rejects as
+# "Provided Tunnel token is not valid."
+token="$(printf '%s' "${CLOUDFLARED_TOKEN}" | tr -d '[:space:]')"
+printf 'TUNNEL_TOKEN=%s\n' "${token}" > "${ENV_FILE}"
 chmod 0600 "${ENV_FILE}"
 
 # 3. System unit — runs the remotely-managed tunnel from the token, restarts on
