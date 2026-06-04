@@ -61,6 +61,11 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_DEV_BOT_TOKEN }}
           PORTKEY_API_KEY: ${{ secrets.PORTKEY_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # cloudflared tunnel token (the Terraform `dev_tunnel_token` output);
+          # empty until the edge is applied + the secret set — the install step
+          # below no-ops while unset.
+          CLOUDFLARED_TOKEN: ${{ secrets.CLOUDFLARED_DEV_TUNNEL_TOKEN }}
+          API_HOST: ${{ vars.API_HOST || 'api.dev.hire.example.com' }}
         run: |
           set -euo pipefail
 
@@ -106,6 +111,18 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y docker-buildx docker-compose-v2
 
+          # cloudflared tunnel daemon — the dev backend's SOLE ingress (the VM
+          # has no inbound ports). Remotely-managed: ingress rules live in
+          # Cloudflare (Terraform infra/tunnel.tf); the daemon needs only the
+          # token. Idempotent; no-ops when the secret is unset (edge not yet
+          # applied). Token reaches the installer via env (the same channel as
+          # the other deploy secrets), then lands in a root-only env-file.
+          if [ -n '${CLOUDFLARED_TOKEN}' ]; then
+            sudo env CLOUDFLARED_TOKEN='${CLOUDFLARED_TOKEN}' bash /opt/career-pilot-dev/scripts/install-tunnel.sh
+          else
+            echo "CLOUDFLARED_DEV_TUNNEL_TOKEN unset — skipping tunnel daemon install"
+          fi
+
           # A persistent user-systemd session so the service survives logout/reboot.
           sudo loginctl enable-linger career-pilot
           CP_UID=\$(id -u career-pilot)
@@ -132,6 +149,32 @@ jobs:
             echo "== nanoclaw.log (tail 60) =="
             sudo tail -n 60 /opt/career-pilot-dev/logs/nanoclaw.log 2>&1 || true
             exit 1
+          fi
+
+          # Edge smoke (only when the tunnel is configured): the PUBLIC api host
+          # should answer THROUGH the tunnel with an Access challenge (302/401/
+          # 403) — proving DNS + tunnel + Access are all up — and NOT a 5xx/000
+          # (tunnel down) or 404 (missing ingress). We can't fetch the backend
+          # JSON here (the runner holds no Access cookie); the authenticated
+          # browser path is the D9 owner verify.
+          if [ -n '${CLOUDFLARED_TOKEN}' ]; then
+            echo "== smoke: edge https://${API_HOST}/api/system-status (expect Access challenge) =="
+            edge_ok=0
+            for i in \$(seq 1 10); do
+              code=\$(curl -s -o /dev/null -m 8 -w '%{http_code}' "https://${API_HOST}/api/system-status" || echo 000)
+              echo "  attempt \$i: HTTP \$code"
+              case "\$code" in
+                302|401|403) echo "edge-ok (Access gating; tunnel up)"; edge_ok=1; break ;;
+                200) echo "edge-ok (HTTP 200 — note: an Access challenge was expected)"; edge_ok=1; break ;;
+              esac
+              sleep 6
+            done
+            if [ "\$edge_ok" -ne 1 ]; then
+              echo "== edge DOWN — cloudflared diagnostics =="
+              sudo systemctl status cloudflared-dev --no-pager -l 2>&1 | tail -n 30 || true
+              sudo journalctl -u cloudflared-dev --no-pager -n 40 2>&1 || true
+              exit 1
+            fi
           fi
           EOF
 
