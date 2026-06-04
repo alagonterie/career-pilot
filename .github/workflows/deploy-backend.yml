@@ -12,7 +12,12 @@ name: deploy-backend
 # backend; the bootstrap is idempotent and gated by a portal smoke check.
 # workflow_dispatch stays for manual/ad-hoc redeploys.
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      reset:
+        description: 'Clean app-data reset before provisioning (wipes applications/funnel/sessions; PRESERVES the OneCLI vault, Telegram pairing, config + persona). Dev only.'
+        type: boolean
+        default: false
   push:
     branches: [dev]
     paths:
@@ -78,6 +83,10 @@ jobs:
           # VARIABLE. Sets OneCLI's NEXTAUTH_URL so browser OAuth callbacks use
           # the gated host (no SSH-forward). Bootstrap no-ops the URL if unset.
           ONECLI_PUBLIC_URL: ${{ vars.ONECLI_PUBLIC_URL }}
+          # Clean app-data reset toggle — only true via workflow_dispatch -f
+          # reset=true; empty/false on push. Gates the destructive reset-dev.ts
+          # below (off any web button, per the destructive-ops-via-CI decision).
+          RESET: ${{ inputs.reset || 'false' }}
           # Service-token creds (GH `dev` secrets) so the edge smoke reaches the
           # backend THROUGH Access+tunnel (a token-authed 200), instead of only
           # seeing the Access challenge (302) — which masks a dead tunnel (1033).
@@ -153,6 +162,19 @@ jobs:
           # A persistent user-systemd session so the service survives logout/reboot.
           sudo loginctl enable-linger career-pilot
           CP_UID=\$(id -u career-pilot)
+
+          # Optional CLEAN APP-DATA RESET (workflow_dispatch -f reset=true) BEFORE
+          # provisioning: stop the host unit so the DB is quiescent, then run
+          # scripts/reset-dev.ts — it wipes app-data only (applications/funnel/
+          # sessions) and PRESERVES the OneCLI vault, Telegram pairing, config +
+          # persona. Falls through to the bootstrap below, which re-migrates +
+          # restarts. Destructive → CI-only, never a web button (§24.41).
+          if [ '${RESET}' = 'true' ]; then
+            echo "== reset=true: clean app-data reset before provision =="
+            sudo -u career-pilot env XDG_RUNTIME_DIR=/run/user/\${CP_UID} systemctl --user stop nanoclaw-v2-365449e3 || true
+            sudo -u career-pilot bash -lc 'cd /opt/career-pilot-dev && pnpm install --frozen-lockfile >/dev/null 2>&1 || true'
+            sudo -u career-pilot env ENVIRONMENT=dev bash -lc 'cd /opt/career-pilot-dev && pnpm exec tsx scripts/reset-dev.ts'
+          fi
 
           # Run the idempotent bootstrap as the service user (one line — \`env\`
           # guarantees the vars reach the script regardless of sudo's env policy;

@@ -99,6 +99,28 @@ function main(): void {
     console.log(`  set preferences.portal_api_port = ${portalPort}`);
   }
 
+  // Dev cost caps — tighten the daily LLM budgets below the shared defaults
+  // (config/defaults.json: owner 5 / sandbox 5) for the unattended dev closed
+  // loop, so a runaway (e.g. a recruiter-sim bug — 9.3) is bounded. Seeded only
+  // when NOT production, and only if ABSENT (ON CONFLICT DO NOTHING) so a runtime
+  // tune (Telegram /set, or a manual preferences edit) is never clobbered by a
+  // later deploy — and reset:dev preserves preferences, so the cap survives a
+  // reset too. Prod (9.4) keeps the defaults.json values. 9.3 may tune these.
+  if (env !== 'production') {
+    const devCaps: Record<string, string> = {
+      owner_daily_llm_budget_usd: '3',
+      sandbox_daily_global_budget_usd: '2',
+    };
+    const now = new Date().toISOString();
+    const seedCap = db.prepare(
+      `INSERT INTO preferences (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO NOTHING`,
+    );
+    for (const [k, v] of Object.entries(devCaps)) {
+      const res = seedCap.run(k, v, now);
+      console.log(`  dev cost cap ${k} = ${v}${res.changes ? '' : ' (already set — preserved)'}`);
+    }
+  }
+
   const owner = ensureOwnerGroup();
   const sandbox = ensureSandboxGroup();
   console.log(`  sandbox group ready: ${sandbox.id} (${SANDBOX_FOLDER}) + portal/sandbox wiring`);
