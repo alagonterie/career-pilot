@@ -10,3 +10,9 @@ import './cli.js';
 // The custom `portal` channel (HTTP+SSE transport) — carries the public
 // Recruiter Simulator. Not from upstream NanoClaw. See STRATEGY.md §7 + §24.19.
 import './portal/adapter.js';
+// Telegram — the owner's control channel. VENDORED from upstream NanoClaw's
+// `channels` branch (not side-installed via add-telegram, so it survives the
+// deploy's `git reset --hard` — STRATEGY.md §24.39 D12 follow-on). Token comes
+// from the host env (.env via the systemd drop-in); pairing is `--step
+// pair-telegram`; owner-only lock is `unknown_sender_policy='strict'`.
+import './telegram.js';
