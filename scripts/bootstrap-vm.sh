@@ -38,6 +38,10 @@
 #   CP_WEBHOOK_PORT         webhook listener port    (default: 3001 — dev)
 #   CP_PORTKEY_AI_PROVIDER  Portkey provider slug    (default: anthropic-default)
 #   CP_ALLOW_PRODUCTION     "1" to permit prod        (default: unset)
+#   CP_ONECLI_VERSION       OneCLI gateway image tag (default: 1.23.0 — keep in
+#                           sync with setup/onecli.ts ONECLI_GATEWAY_VERSION)
+#   CP_ONECLI_PUBLIC_URL    gated OneCLI UI URL       (default: unset → install
+#                           default; set → OAuth callbacks use it, gated connect)
 #   TELEGRAM_BOT_TOKEN      this env's bot token      (secret; required)
 #   PORTKEY_API_KEY         LLM-gateway key           (secret; required)
 #   ANTHROPIC_API_KEY       direct-Anthropic bypass   (secret; optional)
@@ -55,6 +59,12 @@ CP_PORTAL_API_PORT="${CP_PORTAL_API_PORT:-3002}"
 CP_WEBHOOK_PORT="${CP_WEBHOOK_PORT:-3001}"
 CP_PORTKEY_AI_PROVIDER="${CP_PORTKEY_AI_PROVIDER:-anthropic-default}"
 CP_ALLOW_PRODUCTION="${CP_ALLOW_PRODUCTION:-}"
+# OneCLI gateway image tag — keep in sync with setup/onecli.ts ONECLI_GATEWAY_VERSION.
+CP_ONECLI_VERSION="${CP_ONECLI_VERSION:-1.23.0}"
+# Gated OneCLI UI URL (e.g. https://onecli.dev.hire.<apex>). Unset → install
+# default (localhost, OAuth unreachable through the tunnel). Set → NEXTAUTH_URL/
+# NEXT_PUBLIC_APP_URL point here so the owner connects Gmail via the gated host.
+CP_ONECLI_PUBLIC_URL="${CP_ONECLI_PUBLIC_URL:-}"
 
 # The agent image Dockerfile uses BuildKit cache mounts (RUN --mount=type=cache).
 # Ubuntu's docker.io defaults to the legacy builder, which rejects --mount; opt
@@ -128,33 +138,69 @@ else
   pnpm exec tsx setup/index.ts --step onecli
 fi
 
-# Ensure the gateway is actually UP + survives reboots. The --reuse path above
-# does NOT restart a stopped stack, and the containers have no restart policy by
-# default, so a rebooted VM leaves the gateway down → onecli.<host> 502s through
-# the tunnel and credential injection fails. Start any stopped onecli containers
-# (compose project "onecli") and pin a restart policy, then health-check :10254.
-# Bring the gateway up the OneCLI-native way (respects the compose stack's
-# postgres→onecli ordering; `docker start` on individual containers does not),
-# pin a restart policy so it survives reboots, then health-check :10254. On
-# failure, dump container state + logs (no local SSH to debug otherwise).
-onecli start >/dev/null 2>&1 || true
-onecli_cids="$(docker ps -aq --filter 'label=com.docker.compose.project=onecli' 2>/dev/null || true)"
-[ -n "$onecli_cids" ] && docker update --restart unless-stopped $onecli_cids >/dev/null 2>&1 || true
-# OneCLI publishes on the docker BRIDGE gateway (172.17.0.1), not host loopback
-# — so health-check there, not 127.0.0.1 (which yields a false "down"). This is
-# the same address the tunnel ingress for onecli.<host> targets.
+# OneCLI durable runtime config — the install defaults are wrong for our topology
+# on TWO axes, and NEITHER is reproducible from a bare `docker compose up`, so we
+# pin both via the compose project env-file ($HOME/.onecli/.env, read for ${VAR}
+# substitution) + the service env_file ($HOME/.env, the compose's `env_file:
+# ../.env`), then recreate:
+#   1. BIND HOST — the gateway must publish on the docker BRIDGE gateway IP
+#      (172.17.0.1), not host loopback, so spawned agent containers AND the
+#      cloudflared tunnel (onecli.<host> ingress) reach it. The install default is
+#      127.0.0.1; an un-pinned recreate silently rebinds to loopback → onecli.
+#      <host> 502s + credential injection breaks. Pin ONECLI_BIND_HOST so the
+#      bridge bind survives any recreate (reset:dev, fresh prod VM).
+#   2. OAUTH CALLBACK HOST — the OneCLI web app (Auth.js) derives its OAuth
+#      redirect + state-cookie host from NEXTAUTH_URL; the image default is
+#      localhost:10254 (unreachable through the tunnel → "Invalid state
+#      parameter" on a gated browser connect). Point NEXTAUTH_URL/
+#      NEXT_PUBLIC_APP_URL at the public gated host so the owner connects Gmail
+#      directly via onecli.<host> with no SSH-forward. Env-specific → only when
+#      CP_ONECLI_PUBLIC_URL is set.
+# Also pin ONECLI_VERSION (compose defaults to `latest` → drift). The recreate
+# preserves the NAMED volumes (onecli_pgdata = the OAuth vault), so connected apps
+# survive. Replaces the old `onecli start` (the v2 CLI has no `start` verb — it
+# silently no-op'd; this `up` + the restart policy keep the gateway alive).
+ONECLI_DIR="$HOME/.onecli"
+if [ -f "$ONECLI_DIR/docker-compose.yml" ]; then
+  echo "  pinning OneCLI runtime config (bind host + OAuth callback host)"
+  cat > "$ONECLI_DIR/.env" <<EOF
+ONECLI_BIND_HOST=172.17.0.1
+ONECLI_VERSION=${CP_ONECLI_VERSION}
+EOF
+  if [ -n "${CP_ONECLI_PUBLIC_URL:-}" ]; then
+    # Merge into $HOME/.env (OneCLI's service env_file) — replace only the two
+    # OAuth-URL lines, preserve anything else OneCLI may have written there.
+    touch "$HOME/.env"
+    grep -vE '^(NEXTAUTH_URL|NEXT_PUBLIC_APP_URL)=' "$HOME/.env" > "$HOME/.env.tmp" 2>/dev/null || true
+    cat >> "$HOME/.env.tmp" <<EOF
+NEXTAUTH_URL=${CP_ONECLI_PUBLIC_URL}
+NEXT_PUBLIC_APP_URL=${CP_ONECLI_PUBLIC_URL}
+EOF
+    mv "$HOME/.env.tmp" "$HOME/.env"
+    chmod 600 "$HOME/.env"
+    echo "  OneCLI OAuth callback host → ${CP_ONECLI_PUBLIC_URL}"
+  else
+    echo "  CP_ONECLI_PUBLIC_URL unset — leaving NEXTAUTH_URL at the install default"
+  fi
+  ( cd "$ONECLI_DIR" && docker compose up -d ) 2>&1 | tail -5 || true
+  onecli_cids="$(docker ps -aq --filter 'label=com.docker.compose.project=onecli' 2>/dev/null || true)"
+  [ -n "$onecli_cids" ] && docker update --restart unless-stopped $onecli_cids >/dev/null 2>&1 || true
+fi
+# Health-check on the BRIDGE IP (not 127.0.0.1 → false "down"), at /api/health
+# (/health is 404). This is the same address the onecli.<host> tunnel ingress
+# targets. On failure dump container state + logs (no local SSH to debug).
 gw_ok=0
 for _ in $(seq 1 20); do
-  if curl -fsS -m 3 http://172.17.0.1:10254/health >/dev/null 2>&1; then gw_ok=1; break; fi
+  if curl -fsS -m 3 http://172.17.0.1:10254/api/health >/dev/null 2>&1; then gw_ok=1; break; fi
   sleep 3
 done
 if [ "$gw_ok" -eq 1 ]; then
-  echo "  OneCLI gateway healthy on :10254"
+  echo "  OneCLI gateway healthy on 172.17.0.1:10254"
 else
   {
-    echo "WARNING: OneCLI gateway not answering on :10254 — diagnostics:"
+    echo "WARNING: OneCLI gateway not answering on 172.17.0.1:10254 — diagnostics:"
     docker ps -a --filter 'label=com.docker.compose.project=onecli' --format '{{.Names}}: {{.Status}}' || true
-    for c in $onecli_cids; do echo "--- docker logs $c (tail 30) ---"; docker logs --tail 30 "$c" 2>&1 || true; done
+    for c in $(docker ps -aq --filter 'label=com.docker.compose.project=onecli' 2>/dev/null); do echo "--- docker logs $c (tail 30) ---"; docker logs --tail 30 "$c" 2>&1 || true; done
   } >&2
 fi
 
