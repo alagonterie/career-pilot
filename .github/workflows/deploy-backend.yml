@@ -69,6 +69,11 @@ jobs:
           # committed) — the real apex stays out of the generic/forkable repo,
           # like the other env-specific values. The edge smoke no-ops if unset.
           API_HOST: ${{ vars.API_HOST }}
+          # Service-token creds (GH `dev` secrets) so the edge smoke reaches the
+          # backend THROUGH Access+tunnel (a token-authed 200), instead of only
+          # seeing the Access challenge (302) — which masks a dead tunnel (1033).
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
         run: |
           set -euo pipefail
 
@@ -160,15 +165,19 @@ jobs:
           # (tunnel down) or 404 (missing ingress). We can't fetch the backend
           # JSON here (the runner holds no Access cookie); the authenticated
           # browser path is the D9 owner verify.
-          if [ -n '${CLOUDFLARED_TOKEN}' ] && [ -n '${API_HOST}' ]; then
-            echo "== smoke: edge https://${API_HOST}/api/system-status (expect Access challenge) =="
+          if [ -n '${CLOUDFLARED_TOKEN}' ] && [ -n '${API_HOST}' ] && [ -n '${CF_ACCESS_CLIENT_ID}' ]; then
+            echo "== smoke: edge https://${API_HOST}/api/system-status via service token (expect 200) =="
             edge_ok=0
             for i in \$(seq 1 10); do
-              code=\$(curl -s -o /dev/null -m 8 -w '%{http_code}' "https://${API_HOST}/api/system-status" || echo 000)
+              code=\$(curl -s -o /dev/null -m 8 -w '%{http_code}' \
+                -H "CF-Access-Client-Id: ${CF_ACCESS_CLIENT_ID}" \
+                -H "CF-Access-Client-Secret: ${CF_ACCESS_CLIENT_SECRET}" \
+                "https://${API_HOST}/api/system-status" || echo 000)
               echo "  attempt \$i: HTTP \$code"
               case "\$code" in
-                302|401|403) echo "edge-ok (Access gating; tunnel up)"; edge_ok=1; break ;;
-                200) echo "edge-ok (HTTP 200 — note: an Access challenge was expected)"; edge_ok=1; break ;;
+                200) echo "edge-ok (service token reached the backend through the tunnel)"; edge_ok=1; break ;;
+                530) echo "  (530/1033 = tunnel not connected; retrying)" ;;
+                302|401|403) echo "  (\$code = Access rejected the service token; retrying)" ;;
               esac
               sleep 6
             done
