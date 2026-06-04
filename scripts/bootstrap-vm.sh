@@ -133,18 +133,26 @@ fi
 # default, so a rebooted VM leaves the gateway down → onecli.<host> 502s through
 # the tunnel and credential injection fails. Start any stopped onecli containers
 # (compose project "onecli") and pin a restart policy, then health-check :10254.
+# Bring the gateway up the OneCLI-native way (respects the compose stack's
+# postgres→onecli ordering; `docker start` on individual containers does not),
+# pin a restart policy so it survives reboots, then health-check :10254. On
+# failure, dump container state + logs (no local SSH to debug otherwise).
+onecli start >/dev/null 2>&1 || true
 onecli_cids="$(docker ps -aq --filter 'label=com.docker.compose.project=onecli' 2>/dev/null || true)"
-if [ -n "$onecli_cids" ]; then
-  docker start $onecli_cids >/dev/null 2>&1 || true
-  docker update --restart unless-stopped $onecli_cids >/dev/null 2>&1 || true
-  gw_ok=0
-  for _ in $(seq 1 15); do
-    if curl -fsS -m 3 http://127.0.0.1:10254/health >/dev/null 2>&1; then gw_ok=1; break; fi
-    sleep 2
-  done
-  [ "$gw_ok" -eq 1 ] && echo "  OneCLI gateway healthy on :10254" || echo "  WARNING: OneCLI gateway not answering on :10254 after restart" >&2
+[ -n "$onecli_cids" ] && docker update --restart unless-stopped $onecli_cids >/dev/null 2>&1 || true
+gw_ok=0
+for _ in $(seq 1 20); do
+  if curl -fsS -m 3 http://127.0.0.1:10254/health >/dev/null 2>&1; then gw_ok=1; break; fi
+  sleep 3
+done
+if [ "$gw_ok" -eq 1 ]; then
+  echo "  OneCLI gateway healthy on :10254"
 else
-  echo "  WARNING: no OneCLI compose containers found (gateway install may have failed)" >&2
+  {
+    echo "WARNING: OneCLI gateway not answering on :10254 — diagnostics:"
+    docker ps -a --filter 'label=com.docker.compose.project=onecli' --format '{{.Names}}: {{.Status}}' || true
+    for c in $onecli_cids; do echo "--- docker logs $c (tail 30) ---"; docker logs --tail 30 "$c" 2>&1 || true; done
+  } >&2
 fi
 
 # ─── 5. backend DB provisioning (migrations + our agent groups) ─────────────
