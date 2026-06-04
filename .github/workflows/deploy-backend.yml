@@ -8,22 +8,22 @@ name: deploy-backend
 # unprivileged `career-pilot` service user. Per-env config comes from the GitHub
 # `dev` Environment (vars + secrets) so real tokens never enter the repo.
 #
-# Trigger: workflow_dispatch ONLY while we validate the first runs. The
-# push-to-dev auto-deploy trigger lands once a manual run is green (the
-# commented block below).
+# Trigger: push to `dev` (backend-affecting paths) auto-provisions the dev
+# backend; the bootstrap is idempotent and gated by a portal smoke check.
+# workflow_dispatch stays for manual/ad-hoc redeploys.
 on:
   workflow_dispatch: {}
-  # push:
-  #   branches: [dev]
-  #   paths:
-  #     - 'src/**'
-  #     - 'container/**'
-  #     - 'setup/**'
-  #     - 'scripts/**'
-  #     - 'config/**'
-  #     - 'package.json'
-  #     - 'pnpm-lock.yaml'
-  #     - '.github/workflows/deploy-backend.yml'
+  push:
+    branches: [dev]
+    paths:
+      - 'src/**'
+      - 'container/**'
+      - 'setup/**'
+      - 'scripts/**'
+      - 'config/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/deploy-backend.yml'
 
 concurrency:
   group: deploy-backend-${{ github.ref }}
