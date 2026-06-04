@@ -468,6 +468,10 @@ function applyForcedState(
       ...cors,
     });
     res.flushHeaders();
+    // Establish immediately (parity with addActivityClient): flushHeaders alone
+    // doesn't defeat proxy buffering — only a body byte does. Harmless locally
+    // (this dev/E2E seam isn't proxied), but keeps dev↔prod stream behavior identical.
+    res.write(': open\n\n');
     const ka = setInterval(() => {
       if (!res.writableEnded) res.write(': ka\n\n');
     }, 15_000);
