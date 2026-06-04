@@ -55,7 +55,11 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "backend" {
     }
     ingress_rule {
       hostname = local.onecli_host
-      service  = "http://localhost:${local.onecli_port}"
+      # OneCLI runs as a CONTAINER, published on the docker bridge gateway IP
+      # (ONECLI_URL=http://172.17.0.1:10254) — NOT host loopback — so containers
+      # can reach the vault. cloudflared (a host service) reaches it via the same
+      # bridge IP. (Contrast the api host above: a host process on 127.0.0.1.)
+      service = "http://172.17.0.1:${local.onecli_port}"
     }
     # Required terminal catch-all.
     ingress_rule {
