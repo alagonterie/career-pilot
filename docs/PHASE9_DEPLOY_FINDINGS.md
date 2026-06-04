@@ -5,11 +5,11 @@ the deploy/infra surface, so 9.2–9.4 don't re-derive them. Companion to
 STRATEGY.md §24.38 (the drill-in + the build-reconciliation note).
 
 ## Toolchain (the dev machine)
-- `terraform` v1.15.4; `gcloud` authed (alagonterie@gmail.com) + GCP Application
+- `terraform` v1.15.4; `gcloud` authed (`<owner-email>`) + GCP Application
   Default Credentials present; `wrangler` 4.96 driven via `CLOUDFLARE_API_TOKEN`
   (no `wrangler login`). Network egress works from the shell.
 - `infra/terraform.tfvars` (gitignored) holds the real values: GCP project
-  `career-pilot-497319`, a CF API token, account/zone IDs, apex `alagonterie.com`,
+  `<gcp-project-id>`, a CF API token, account/zone IDs, apex `example.com`,
   `owner_email`.
 
 ## Cloudflare
@@ -25,7 +25,7 @@ STRATEGY.md §24.38 (the drill-in + the build-reconciliation note).
   the deployed Worker name. Terraform owns the frontend host binding; wrangler
   only deploys the script → the real domain stays out of the generic committed repo.
 - **Token scope:** deploy needs Workers Scripts:Edit + Zone DNS:Edit (the
-  existing token `8b55f046…` has these). The **Access apply needs
+  existing token `<token-id>…` has these). The **Access apply needs
   `Account > Access: Apps and Policies: Edit`** — the existing token lacks it and
   cannot self-serve a broader token (no `User > API Tokens` permission → 403 on
   token management). Owner grants this once. 9.2 will additionally need
