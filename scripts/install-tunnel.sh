@@ -77,27 +77,33 @@ systemctl daemon-reload
 systemctl enable "${UNIT_NAME}" >/dev/null 2>&1 || true
 systemctl restart "${UNIT_NAME}" # (re)start; picks up a rotated token
 
-# Verify the daemon actually REGISTERS a tunnel connection — not merely that the
-# unit is "active". A crash-looping unit reports "activating", and an Access 302
-# masks a dead tunnel at the edge (error 1033), so "is-active" is not enough:
-# poll the journal for a registered edge connection.
-connected=0
-for _ in $(seq 1 12); do
-  if journalctl -u "${UNIT_NAME}" --no-pager 2>/dev/null \
-      | grep -qiE 'Registered tunnel connection|Connection [0-9a-f-]+ registered|Updated to new configuration'; then
-    connected=1
-    break
+# Verify the daemon is RUNNING STABLY — i.e. not crash-looping, which is the
+# real failure mode (an invalid token makes cloudflared exit ~immediately, so
+# the unit sits in "activating (auto-restart)" and never holds "active"). A
+# healthy daemon goes "active" and stays there. We require 3 consecutive
+# "active" reads. (An earlier journal-grep for "Registered tunnel connection"
+# proved too fragile — log wording + rotation + a restart-window race produced
+# false negatives even when the CF API showed the tunnel healthy. The deploy's
+# token-authed edge smoke is the authoritative end-to-end reachability gate;
+# this just catches a crash-looping daemon early with cloudflared diagnostics.)
+stable=0
+for _ in $(seq 1 8); do
+  if [ "$(systemctl is-active "${UNIT_NAME}" 2>/dev/null)" = "active" ]; then
+    stable=$((stable + 1))
+  else
+    stable=0
   fi
+  [ "$stable" -ge 3 ] && break
   sleep 2
 done
-if [ "$connected" -eq 1 ]; then
-  echo "install-tunnel: ${UNIT_NAME} registered a tunnel connection (active=$(systemctl is-active "${UNIT_NAME}"))"
+if [ "$stable" -ge 3 ]; then
+  echo "install-tunnel: ${UNIT_NAME} running stably (active x3)"
 else
   {
-    echo "install-tunnel: ${UNIT_NAME} did NOT register a tunnel connection — diagnostics:"
+    echo "install-tunnel: ${UNIT_NAME} not stable (crash-looping?) — diagnostics:"
     systemctl status "${UNIT_NAME}" --no-pager -l 2>&1 | tail -n 20 || true
-    echo "--- journalctl -u ${UNIT_NAME} (tail 60) ---"
-    journalctl -u "${UNIT_NAME}" --no-pager -n 60 2>&1 || true
+    echo "--- journalctl -u ${UNIT_NAME} (tail 40) ---"
+    journalctl -u "${UNIT_NAME}" --no-pager -n 40 2>&1 || true
   } >&2
   exit 1
 fi
