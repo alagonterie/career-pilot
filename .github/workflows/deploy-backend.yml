@@ -74,6 +74,10 @@ jobs:
           # committed) — the real apex stays out of the generic/forkable repo,
           # like the other env-specific values. The edge smoke no-ops if unset.
           API_HOST: ${{ vars.API_HOST }}
+          # The gated OneCLI UI URL (https://onecli.dev.hire.<apex>) — a GH `dev`
+          # VARIABLE. Sets OneCLI's NEXTAUTH_URL so browser OAuth callbacks use
+          # the gated host (no SSH-forward). Bootstrap no-ops the URL if unset.
+          ONECLI_PUBLIC_URL: ${{ vars.ONECLI_PUBLIC_URL }}
           # Service-token creds (GH `dev` secrets) so the edge smoke reaches the
           # backend THROUGH Access+tunnel (a token-authed 200), instead of only
           # seeing the Access challenge (302) — which masks a dead tunnel (1033).
@@ -153,7 +157,7 @@ jobs:
           # Run the idempotent bootstrap as the service user (one line — \`env\`
           # guarantees the vars reach the script regardless of sudo's env policy;
           # single-quoted values survive spaces; \${CP_UID} defers to the box).
-          sudo -u career-pilot env XDG_RUNTIME_DIR=/run/user/\${CP_UID} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/\${CP_UID}/bus CP_ENVIRONMENT=dev CP_PORTAL_API_PORT=3002 CP_WEBHOOK_PORT=3001 CP_ASSISTANT_NAME='${CP_ASSISTANT_NAME}' CP_TZ='${CP_TZ}' TELEGRAM_BOT_TOKEN='${TELEGRAM_BOT_TOKEN}' PORTKEY_API_KEY='${PORTKEY_API_KEY}' ANTHROPIC_API_KEY='${ANTHROPIC_API_KEY}' bash /opt/career-pilot-dev/scripts/bootstrap-vm.sh
+          sudo -u career-pilot env XDG_RUNTIME_DIR=/run/user/\${CP_UID} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/\${CP_UID}/bus CP_ENVIRONMENT=dev CP_PORTAL_API_PORT=3002 CP_WEBHOOK_PORT=3001 CP_ASSISTANT_NAME='${CP_ASSISTANT_NAME}' CP_TZ='${CP_TZ}' CP_ONECLI_PUBLIC_URL='${ONECLI_PUBLIC_URL}' TELEGRAM_BOT_TOKEN='${TELEGRAM_BOT_TOKEN}' PORTKEY_API_KEY='${PORTKEY_API_KEY}' ANTHROPIC_API_KEY='${ANTHROPIC_API_KEY}' bash /opt/career-pilot-dev/scripts/bootstrap-vm.sh
 
           # Post-bootstrap smoke check — the portal API answering proves the host
           # process is up and serving (give it a moment to bind the port). On
