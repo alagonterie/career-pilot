@@ -56,7 +56,10 @@ Wants=network-online.target
 
 [Service]
 EnvironmentFile=/etc/cloudflared/dev.env
-ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate run
+# --no-autoupdate is an APP-level flag → it must precede the `tunnel` subcommand
+# (cloudflared's canonical token-run form). Placing it after `tunnel` crash-loops
+# the daemon on a flag-parse error (the unit shows "activating", never connects).
+ExecStart=/usr/bin/cloudflared --no-autoupdate tunnel run
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true
@@ -69,5 +72,27 @@ systemctl daemon-reload
 systemctl enable "${UNIT_NAME}" >/dev/null 2>&1 || true
 systemctl restart "${UNIT_NAME}" # (re)start; picks up a rotated token
 
-sleep 2
-echo "install-tunnel: ${UNIT_NAME} is $(systemctl is-active "${UNIT_NAME}")"
+# Verify the daemon actually REGISTERS a tunnel connection — not merely that the
+# unit is "active". A crash-looping unit reports "activating", and an Access 302
+# masks a dead tunnel at the edge (error 1033), so "is-active" is not enough:
+# poll the journal for a registered edge connection.
+connected=0
+for _ in $(seq 1 12); do
+  if journalctl -u "${UNIT_NAME}" --no-pager 2>/dev/null \
+      | grep -qiE 'Registered tunnel connection|Connection [0-9a-f-]+ registered|Updated to new configuration'; then
+    connected=1
+    break
+  fi
+  sleep 2
+done
+if [ "$connected" -eq 1 ]; then
+  echo "install-tunnel: ${UNIT_NAME} registered a tunnel connection (active=$(systemctl is-active "${UNIT_NAME}"))"
+else
+  {
+    echo "install-tunnel: ${UNIT_NAME} did NOT register a tunnel connection — diagnostics:"
+    systemctl status "${UNIT_NAME}" --no-pager -l 2>&1 | tail -n 20 || true
+    echo "--- journalctl -u ${UNIT_NAME} (tail 60) ---"
+    journalctl -u "${UNIT_NAME}" --no-pager -n 60 2>&1 || true
+  } >&2
+  exit 1
+fi
