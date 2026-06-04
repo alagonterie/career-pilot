@@ -140,9 +140,12 @@ fi
 onecli start >/dev/null 2>&1 || true
 onecli_cids="$(docker ps -aq --filter 'label=com.docker.compose.project=onecli' 2>/dev/null || true)"
 [ -n "$onecli_cids" ] && docker update --restart unless-stopped $onecli_cids >/dev/null 2>&1 || true
+# OneCLI publishes on the docker BRIDGE gateway (172.17.0.1), not host loopback
+# — so health-check there, not 127.0.0.1 (which yields a false "down"). This is
+# the same address the tunnel ingress for onecli.<host> targets.
 gw_ok=0
 for _ in $(seq 1 20); do
-  if curl -fsS -m 3 http://127.0.0.1:10254/health >/dev/null 2>&1; then gw_ok=1; break; fi
+  if curl -fsS -m 3 http://172.17.0.1:10254/health >/dev/null 2>&1; then gw_ok=1; break; fi
   sleep 3
 done
 if [ "$gw_ok" -eq 1 ]; then
