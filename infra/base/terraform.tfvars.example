@@ -7,3 +7,7 @@ gcp_project_id = "your-gcp-project-id"
 # gcp_zone     = "us-central1-a"
 # machine_type = "e2-medium"   # shared dev+prod floor; e2-standard-2 is the escape hatch
 # boot_disk_gb = 50
+
+# CI deploy SA for IAP SSH (the deploy-backend.yml dev job). Leave unset to skip
+# the CI IAM grants (a fork without CI).
+# deployer_sa_email = "your-deployer@your-project.iam.gserviceaccount.com"
