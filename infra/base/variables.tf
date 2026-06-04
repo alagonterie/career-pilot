@@ -32,3 +32,9 @@ variable "service_user" {
   type        = string
   default     = "career-pilot"
 }
+
+variable "deployer_sa_email" {
+  description = "The CI deploy service account (GH Actions via WIF) that SSHes the host over IAP to run the dev bootstrap. Empty ('') skips the CI IAM grants (a fork without CI applies cleanly). Set in terraform.tfvars."
+  type        = string
+  default     = ""
+}
