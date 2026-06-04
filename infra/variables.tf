@@ -47,3 +47,18 @@ variable "cloudflare_worker_subdomain" {
   type        = string
   default     = "career-pilot"
 }
+
+variable "environment" {
+  description = "Deploy environment: 'dev' | 'prod'. Selects the frontend hostname + Worker name. Pass per apply (-var environment=dev) with a Terraform workspace per environment; no default, to avoid an accidental prod apply."
+  type        = string
+
+  validation {
+    condition     = contains(["dev", "prod"], var.environment)
+    error_message = "environment must be 'dev' or 'prod'."
+  }
+}
+
+variable "owner_email" {
+  description = "The owner's email — the sole identity allowed through Cloudflare Access on the deployed environments. Set in terraform.tfvars (gitignored)."
+  type        = string
+}
