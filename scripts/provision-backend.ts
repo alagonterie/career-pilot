@@ -85,6 +85,20 @@ function main(): void {
   runMigrations(db); // idempotent
   console.log('  migrations applied');
 
+  // Portal API port via the `preferences` config tier. The host reads it with
+  // getConfig('portal_api_port'), whose env tier (process.env.PORTAL_API_PORT)
+  // is empty under systemd — NanoClaw never loads .env into process.env — so the
+  // preferences table is the durable, getConfig-native way to pin a per-env port
+  // (dev 3002) on the shared VM. CP_PORTAL_API_PORT is exported by bootstrap-vm.sh.
+  const portalPort = process.env.CP_PORTAL_API_PORT;
+  if (portalPort && /^\d+$/.test(portalPort)) {
+    db.prepare(
+      `INSERT INTO preferences (key, value, updated_at) VALUES ('portal_api_port', ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    ).run(portalPort, new Date().toISOString());
+    console.log(`  set preferences.portal_api_port = ${portalPort}`);
+  }
+
   const owner = ensureOwnerGroup();
   const sandbox = ensureSandboxGroup();
   console.log(`  sandbox group ready: ${sandbox.id} (${SANDBOX_FOLDER}) + portal/sandbox wiring`);
