@@ -1,10 +1,12 @@
 #cloud-config
-# Phase 9.2 (STRATEGY.md §24.39) — env-agnostic host baseline for the shared
-# career-pilot VM. Installs the runtime the NanoClaw stacks need (Docker, Node,
-# pnpm) + the unprivileged service user. It deliberately installs NO app, env
-# config, OneCLI secrets, or cloudflared tunnel — those are per-env and land via
-# the SSH/IAP deploy step, so this template stays env-agnostic and the
-# (debuggable, re-runnable) app setup is not buried in fire-once cloud-init.
+# Phase 9.2 (STRATEGY.md §24.39) — env-agnostic OS baseline for the shared
+# career-pilot VM: Docker + the unprivileged service user + /opt. It deliberately
+# installs NO app, env config, OneCLI secrets, cloudflared tunnel — AND NOT the
+# Node/pnpm toolchain. Those land via the SSH/IAP deploy step's privileged
+# preamble (deploy-backend.yml), which is re-runnable + self-healing — unlike
+# fire-once cloud-init, whose Node install proved unreliable (the VM came up with
+# the distro's Node 18). Keeping cloud-init to the OS baseline matches this file's
+# own philosophy: debuggable, re-runnable setup belongs in the deploy step.
 package_update: true
 package_upgrade: true
 packages:
@@ -16,10 +18,6 @@ packages:
 runcmd:
   # Docker daemon — the container runtime NanoClaw spawns agents into.
   - systemctl enable --now docker
-  # Node 20 LTS + pnpm 10 — the host tree's toolchain.
-  - curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-  - apt-get install -y nodejs
-  - npm install -g pnpm@10
   # The unprivileged service user: owns the per-env repo checkouts and runs the
   # per-env systemd services; in the docker group so it can spawn agents.
   - id -u ${service_user} >/dev/null 2>&1 || useradd -m -s /bin/bash ${service_user}

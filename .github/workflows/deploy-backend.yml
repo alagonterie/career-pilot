@@ -89,6 +89,18 @@ jobs:
           # Scrub the token from the stored remote — never leave it on disk.
           sudo -u career-pilot git -C /opt/career-pilot-dev remote set-url origin "\${CLEAN_URL}"
 
+          # Host toolchain ensure (idempotent; privileged as the deploy SA — the
+          # unprivileged service user has no sudo). cloud-init lays only the OS
+          # baseline; Node 20 + pnpm 10 land here so the step is re-runnable +
+          # self-healing (the live VM first came up with the distro's Node 18,
+          # too old for the host tree).
+          NODE_MAJOR=\$(node -v 2>/dev/null | cut -d. -f1 | tr -d v)
+          if [ "\${NODE_MAJOR:-0}" -lt 20 ]; then
+            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+          fi
+          sudo npm install -g pnpm@10
+
           # A persistent user-systemd session so the service survives logout/reboot.
           sudo loginctl enable-linger career-pilot
           CP_UID=\$(id -u career-pilot)
