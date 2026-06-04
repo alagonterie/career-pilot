@@ -86,6 +86,28 @@ resource "cloudflare_record" "onecli" {
 # frontend (cloudflare.tf). Session matched to the frontend's 24h so the
 # CF_Authorization cookie the browser presents on the direct EventSource stream
 # (the D9 SSE-through-Access path) outlives a long-open portal session.
+# Service token the portal Worker presents (CF-Access-Client-Id/Secret) to reach
+# the api host machine-to-machine (STRATEGY §24.39 D12 — the browser no longer
+# hits this host directly; the Worker BFF proxies /api/* here). client_secret is
+# only readable at creation → it lives (sensitive) in state + the output below.
+resource "cloudflare_zero_trust_access_service_token" "worker" {
+  account_id = var.cloudflare_account_id
+  name       = "career-pilot-${var.environment}-worker"
+}
+
+# Non-identity policy: a request carrying the worker's service token passes
+# (no human identity required). Added alongside owner_only so the api app
+# accepts both the Worker (token) and, if ever needed, a direct owner login.
+resource "cloudflare_zero_trust_access_policy" "worker_service_token" {
+  account_id = var.cloudflare_account_id
+  name       = "career-pilot ${var.environment} worker service-token"
+  decision   = "non_identity"
+
+  include {
+    service_token = [cloudflare_zero_trust_access_service_token.worker.id]
+  }
+}
+
 resource "cloudflare_zero_trust_access_application" "api" {
   account_id                = var.cloudflare_account_id
   name                      = "career-pilot ${var.environment} api"
@@ -93,7 +115,10 @@ resource "cloudflare_zero_trust_access_application" "api" {
   type                      = "self_hosted"
   session_duration          = "24h"
   auto_redirect_to_identity = false
-  policies                  = [cloudflare_zero_trust_access_policy.owner_only.id]
+  policies = [
+    cloudflare_zero_trust_access_policy.owner_only.id,
+    cloudflare_zero_trust_access_policy.worker_service_token.id,
+  ]
 }
 
 # Owner-only Access on the OneCLI vault UI host — a higher-value target than the
@@ -119,6 +144,20 @@ output "dev_tunnel_token" {
 
 output "api_url" {
   value = "https://${local.api_host}"
+}
+
+# The portal Worker's Access service-token creds (STRATEGY §24.39 D12). Set as
+# the GH `dev` env secrets the deploy-frontend workflow injects into the Worker:
+#   worker_access_client_id     -> CF_ACCESS_CLIENT_ID
+#   worker_access_client_secret -> CF_ACCESS_CLIENT_SECRET
+output "worker_access_client_id" {
+  value     = cloudflare_zero_trust_access_service_token.worker.client_id
+  sensitive = true
+}
+
+output "worker_access_client_secret" {
+  value     = cloudflare_zero_trust_access_service_token.worker.client_secret
+  sensitive = true
 }
 
 output "onecli_url" {
