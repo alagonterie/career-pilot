@@ -65,6 +65,11 @@ jobs:
           # empty until the edge is applied + the secret set — the install step
           # below no-ops while unset.
           CLOUDFLARED_TOKEN: ${{ secrets.CLOUDFLARED_DEV_TUNNEL_TOKEN }}
+          # Tailscale auth key (owner-generated, reusable, pre-authorized) — joins
+          # the VM to the owner's tailnet for direct access to VM-local services
+          # + agent debugging (§24.41). Empty until the owner generates a key +
+          # sets the secret — the install step below no-ops while unset.
+          TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
           # The public api host for the edge smoke. A GH `dev` env VARIABLE (not
           # committed) — the real apex stays out of the generic/forkable repo,
           # like the other env-specific values. The edge smoke no-ops if unset.
@@ -129,6 +134,16 @@ jobs:
             sudo env CLOUDFLARED_TOKEN='${CLOUDFLARED_TOKEN}' bash /opt/career-pilot-dev/scripts/install-tunnel.sh
           else
             echo "CLOUDFLARED_DEV_TUNNEL_TOKEN unset — skipping tunnel daemon install"
+          fi
+
+          # Tailscale — join the VM to the owner's tailnet for direct access to
+          # VM-local services + agent debugging (§24.41). Additive to the
+          # cloudflared edge; preserves no-public-inbound (outbound join only).
+          # Idempotent; no-ops when the auth key is unset.
+          if [ -n '${TAILSCALE_AUTHKEY}' ]; then
+            sudo env TAILSCALE_AUTHKEY='${TAILSCALE_AUTHKEY}' bash /opt/career-pilot-dev/scripts/install-tailscale.sh
+          else
+            echo "TAILSCALE_AUTHKEY unset — skipping Tailscale join"
           fi
 
           # A persistent user-systemd session so the service survives logout/reboot.
