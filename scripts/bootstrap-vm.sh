@@ -128,6 +128,25 @@ else
   pnpm exec tsx setup/index.ts --step onecli
 fi
 
+# Ensure the gateway is actually UP + survives reboots. The --reuse path above
+# does NOT restart a stopped stack, and the containers have no restart policy by
+# default, so a rebooted VM leaves the gateway down → onecli.<host> 502s through
+# the tunnel and credential injection fails. Start any stopped onecli containers
+# (compose project "onecli") and pin a restart policy, then health-check :10254.
+onecli_cids="$(docker ps -aq --filter 'label=com.docker.compose.project=onecli' 2>/dev/null || true)"
+if [ -n "$onecli_cids" ]; then
+  docker start $onecli_cids >/dev/null 2>&1 || true
+  docker update --restart unless-stopped $onecli_cids >/dev/null 2>&1 || true
+  gw_ok=0
+  for _ in $(seq 1 15); do
+    if curl -fsS -m 3 http://127.0.0.1:10254/health >/dev/null 2>&1; then gw_ok=1; break; fi
+    sleep 2
+  done
+  [ "$gw_ok" -eq 1 ] && echo "  OneCLI gateway healthy on :10254" || echo "  WARNING: OneCLI gateway not answering on :10254 after restart" >&2
+else
+  echo "  WARNING: no OneCLI compose containers found (gateway install may have failed)" >&2
+fi
+
 # ─── 5. backend DB provisioning (migrations + our agent groups) ─────────────
 say "5/6 provision DB (migrations + career-pilot + sandbox groups)"
 provision_args=()
@@ -140,6 +159,26 @@ pnpm exec tsx scripts/provision-backend.ts ${provision_args[@]+"${provision_args
 # logout + reboot.
 say "6/6 service (--step service)"
 pnpm exec tsx setup/index.ts --step service
+
+# Host process env: the unit setup/service.ts generates sets only HOME/PATH — it
+# does NOT load .env. So host-side code that reads process.env gets nothing: the
+# Portkey analytics panel (portkey-analytics.ts), the host-side recruiter-sim's
+# LLM calls (9.3 — a host cron, not a container agent), and the Telegram
+# channel's token all need it. Add a user-unit drop-in that loads .env. SAFE for
+# container isolation: container env is an explicit -e allowlist built in
+# container-runner.ts (never the host process.env), so agents still never see a
+# raw key — this only widens the HOST process's own env.
+say "6b/6 host env drop-in (EnvironmentFile=.env)"
+unit="nanoclaw-v2-$(node -e 'process.stdout.write(require("crypto").createHash("sha1").update(process.cwd()).digest("hex").slice(0,8))')"
+dropin_dir="$HOME/.config/systemd/user/${unit}.service.d"
+mkdir -p "$dropin_dir"
+cat > "$dropin_dir/cp-env.conf" <<EOF
+[Service]
+EnvironmentFile=$PROJECT_ROOT/.env
+EOF
+echo "  wrote $dropin_dir/cp-env.conf"
+systemctl --user daemon-reload
+systemctl --user restart "${unit}.service"
 
 # ─── summary ────────────────────────────────────────────────────────────────
 unit="nanoclaw-v2-$(node -e 'process.stdout.write(require("crypto").createHash("sha1").update(process.cwd()).digest("hex").slice(0,8))')"
