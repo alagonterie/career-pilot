@@ -1,0 +1,9 @@
+# infra/base — the shared host VM + network (GCP-only, applied once).
+# Copy to terraform.tfvars (gitignored) and fill in the real project id.
+gcp_project_id = "your-gcp-project-id"
+
+# Optional overrides (defaults shown in variables.tf):
+# gcp_region   = "us-central1"
+# gcp_zone     = "us-central1-a"
+# machine_type = "e2-medium"   # shared dev+prod floor; e2-standard-2 is the escape hatch
+# boot_disk_gb = 50
