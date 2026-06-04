@@ -100,6 +100,10 @@ jobs:
             sudo apt-get install -y nodejs
           fi
           sudo npm install -g pnpm@10
+          # BuildKit needs the buildx component, which Ubuntu's docker.io omits —
+          # required for the agent image's RUN --mount=type=cache steps.
+          sudo apt-get update -qq
+          sudo apt-get install -y docker-buildx
 
           # A persistent user-systemd session so the service survives logout/reboot.
           sudo loginctl enable-linger career-pilot
