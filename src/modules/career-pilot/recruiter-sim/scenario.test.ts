@@ -13,6 +13,7 @@ function knobs(overrides: Partial<SimKnobs> = {}): SimKnobs {
     maxStepSec: 1,
     seedIntervalSec: 0,
     maxConcurrent: 1,
+    screenPassRate: 1, // tests opt into early attrition explicitly
     offerProbability: 1,
     rejectionProbability: 0,
     ghostProbability: 0,
@@ -84,6 +85,21 @@ describe('recruiter-sim scenario', () => {
     const { state, injects } = runTicks(emptySimState(), knobs({ offerProbability: 0, rejectionProbability: 1 }), 5);
     expect(classes(injects).at(-1)).toBe('rejection');
     expect(state.apps[0].outcome).toBe('rejection');
+  });
+
+  it('rejects at the screen step (early attrition) when screenPassRate is 0', () => {
+    // Two ticks: confirmation always sends (stage 0), then the screen step is an
+    // early rejection — the app never reaches an intro call. This is the realistic
+    // top-of-funnel cull that keeps most apps out of the deep funnel.
+    const { state, injects } = runTicks(emptySimState(), knobs({ screenPassRate: 0 }), 2);
+    expect(classes(injects)).toEqual(['application_confirmation', 'screen_rejection']);
+    expect(state.apps[0].status).toBe('closed');
+    expect(state.apps[0].outcome).toBe('rejection');
+  });
+
+  it('advances past the screen when screenPassRate is 1', () => {
+    const { injects } = runTicks(emptySimState(), knobs({ screenPassRate: 1 }), 2);
+    expect(classes(injects)).toEqual(['application_confirmation', 'screen_invite']);
   });
 
   it('ghosts after the first reply when ghost probability is 1', () => {
