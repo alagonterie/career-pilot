@@ -35,8 +35,10 @@ import { countRunningContainers } from '../../container-runtime.js';
 import { getActiveSessions, getRunningSessions } from '../../db/sessions.js';
 import { getConfig } from '../../get-config.js';
 import { log } from '../../log.js';
+import { loadState, simStatePath } from '../career-pilot/recruiter-sim/runner.js';
 
 import { relayContactSubmission, type ContactInput } from './contact-relay.js';
+import { applyKnobWrite, buildDevKnobs, buildDevPersonaFromDb, buildDevState, isDevEnv } from './dev-inspector.js';
 import { getTelemetry } from './portkey-analytics.js';
 import { buildSanitizeDemo } from './sanitize-demo.js';
 import { getRecentSimulatorRuns, getSimulatorResult, startSimulatorRun, type SimulatorInput } from './simulator.js';
@@ -482,6 +484,35 @@ function applyForcedState(
   json(res, 200, emptyPayloadFor(path), cors);
 }
 
+// ── dev inspector (§24.42b) — hard-gated `ENVIRONMENT==='dev'`, owner-only ──
+
+function handleDevState(res: http.ServerResponse, cors: Record<string, string>): void {
+  json(res, 200, buildDevState(getDb(), loadState(simStatePath())), cors);
+}
+
+function handleDevKnobs(res: http.ServerResponse, cors: Record<string, string>): void {
+  json(res, 200, buildDevKnobs(getDb()), cors);
+}
+
+async function handleDevKnobsWrite(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  cors: Record<string, string>,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch {
+    return json(res, 400, { error: 'invalid JSON body' }, cors);
+  }
+  const out = applyKnobWrite(getDb(), body);
+  json(res, out.status, out.body, cors);
+}
+
+function handleDevPersona(res: http.ServerResponse, cors: Record<string, string>): void {
+  json(res, 200, buildDevPersonaFromDb(), cors);
+}
+
 // ── request router ───────────────────────────────────────────────────────
 
 async function requestHandler(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -524,6 +555,16 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
     if (method === 'GET' && path.startsWith('/api/simulator/') && path.endsWith('/stream')) {
       const runId = path.slice('/api/simulator/'.length, -'/stream'.length);
       if (runId.length > 0) return handleSimulatorStream(req, res, runId, cors);
+    }
+
+    // Dev inspector (§24.42b): the whole `/api/dev/*` prefix is invisible
+    // (404) unless this is the dev stack — the non-negotiable PII guard.
+    if (path.startsWith('/api/dev/')) {
+      if (!isDevEnv()) return json(res, 404, { error: 'not_found', path }, cors);
+      if (method === 'GET' && path === '/api/dev/state') return handleDevState(res, cors);
+      if (method === 'GET' && path === '/api/dev/knobs') return handleDevKnobs(res, cors);
+      if (method === 'POST' && path === '/api/dev/knobs') return await handleDevKnobsWrite(req, res, cors);
+      if (method === 'GET' && path === '/api/dev/persona') return handleDevPersona(res, cors);
     }
 
     json(res, 404, { error: 'not_found', path }, cors);
