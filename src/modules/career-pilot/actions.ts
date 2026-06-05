@@ -129,6 +129,84 @@ const PROFILE_FIELDS = new Set([
   'gmail_account',
 ]);
 
+// `candidate_profile` typed columns. The agent passes free-form values to
+// `update_profile_field`; these get normalized to each column's canonical
+// storage form so a reader (the dev inspector, render-persona, the curator)
+// always finds the shape it expects. Without this, the agent storing
+// target_roles as a comma string or an over-escaped JSON string left the field
+// unparseable → it read as empty (the onboarding-stuck-at-5/6 bug).
+const ARRAY_PROFILE_FIELDS = new Set(['target_roles', 'skills']);
+const NUMBER_PROFILE_FIELDS = new Set(['comp_floor']);
+const OBJECT_PROFILE_FIELDS = new Set(['location_pref']);
+
+/** Parse a string to a string[] — tolerating a double-encoded JSON string. */
+function tryParseStringArray(s: string): string[] | null {
+  try {
+    const parsed = JSON.parse(s) as unknown;
+    if (Array.isArray(parsed)) return parsed.filter((v): v is string => typeof v === 'string');
+    if (typeof parsed === 'string') return tryParseStringArray(parsed);
+  } catch {
+    // not JSON — fall through to the caller's next strategy
+  }
+  return null;
+}
+
+/** Coerce any agent-supplied value into a clean string[] (for target_roles/skills). */
+function coerceStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .filter((v): v is string => typeof v === 'string')
+      .map((v) => v.trim())
+      .filter(Boolean);
+  }
+  if (typeof value !== 'string') return [];
+  const s = value.trim();
+  if (!s) return [];
+  // A clean JSON array, or an over-escaped one (`[\"x\"]` → un-escape, then parse).
+  const parsed = tryParseStringArray(s) ?? tryParseStringArray(s.replace(/\\"/g, '"'));
+  if (parsed) return parsed.map((v) => v.trim()).filter(Boolean);
+  // A human list: drop wrapping brackets, split on comma/newline, strip quotes.
+  return s
+    .replace(/^\[/, '')
+    .replace(/\]$/, '')
+    .split(/[,\n]/)
+    .map((x) => x.replace(/^[\s"'\\]+|[\s"'\\]+$/g, ''))
+    .filter(Boolean);
+}
+
+/**
+ * Normalize an `update_profile_field` value to its column's storage form before
+ * binding: array fields → JSON-array text, comp_floor → a number, location_pref
+ * → JSON-object text, everything else → a string (or null). Defensive against
+ * however the agent serialized the value.
+ */
+export function normalizeProfileValue(field: string, value: unknown): string | number | null {
+  if (value === undefined || value === null) return null;
+  if (ARRAY_PROFILE_FIELDS.has(field)) return JSON.stringify(coerceStringArray(value));
+  if (NUMBER_PROFILE_FIELDS.has(field)) {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    const cleaned = String(value).replace(/[^0-9.-]/g, '');
+    // Number('') === 0 (not NaN), so an all-non-numeric input must short-circuit.
+    const n = cleaned === '' ? NaN : Number(cleaned);
+    return Number.isFinite(n) ? n : null;
+  }
+  if (OBJECT_PROFILE_FIELDS.has(field)) {
+    if (typeof value === 'object') return JSON.stringify(value);
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value) as unknown;
+        if (parsed && typeof parsed === 'object') return JSON.stringify(parsed);
+      } catch {
+        // not JSON — store the raw string
+      }
+      return value;
+    }
+    return JSON.stringify(value);
+  }
+  // Plain string columns — coerce non-strings so the bind can't crash.
+  return typeof value === 'string' ? value : String(value);
+}
+
 export async function handleUpdateProfileField(
   content: Record<string, unknown>,
   _session: Session,
@@ -158,7 +236,7 @@ export async function handleUpdateProfileField(
     ).run({ updated_at: now });
 
     db.prepare(`UPDATE candidate_profile SET ${field} = @value, updated_at = @updated_at WHERE id = 1`).run({
-      value: value === undefined ? null : value,
+      value: normalizeProfileValue(field, value),
       updated_at: now,
     });
 
@@ -859,4 +937,4 @@ export async function handleListApplications(
 }
 
 // Exported for unit testing.
-export const _testing = { encodeSuffix, slugify, deriveIndustry };
+export const _testing = { encodeSuffix, slugify, deriveIndustry, normalizeProfileValue };
