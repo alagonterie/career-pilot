@@ -97,7 +97,7 @@ Captured for STRATEGY.md §24.40 (D14). Resolves the one open mechanism
 question — how a host-side fixture injects mail into the dev mailbox —
 against the live dev VM over Tailscale SSH. **Gate RESOLVED.**
 
-- **Dev mailbox + self-only allow-list target:** `alagonterie.career.dev@gmail.com`
+- **Dev mailbox + self-only allow-list target:** `candidate.dev@gmail.com` (placeholder; the real dev inbox lives only in the gitignored `.env`)
   (OneCLI Gmail app `connected`; 4 msgs / 2 threads — near-empty). This single
   address (and its `+tag` subaddresses) is the *entire* recipient/target
   allow-list (D14); the sim never touches anything else.
