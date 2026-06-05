@@ -45,6 +45,8 @@ export interface SimApp {
   fromAddress: string;
   /** Gmail thread to reply within — null until the runner fills it after the first inject. */
   threadId: string | null;
+  /** The prior email's Message-ID, for In-Reply-To threading — runner-owned. */
+  lastMessageId: string | null;
   /** Index of the NEXT funnel email to emit. `>= STAGES.length` → the terminal email. */
   stageIndex: number;
   status: SimAppStatus;

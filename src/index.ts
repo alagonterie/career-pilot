@@ -15,6 +15,7 @@ import { runMigrations } from './db/migrations/index.js';
 import { ensureContainerRuntimeRunning, cleanupOrphans } from './container-runtime.js';
 import { startActiveDeliveryPoll, startSweepDeliveryPoll, setDeliveryAdapter, stopDeliveryPolls } from './delivery.js';
 import { startHostSweep, stopHostSweep } from './host-sweep.js';
+import { startRecruiterSim, stopRecruiterSim } from './modules/career-pilot/recruiter-sim/runner.js';
 import { routeInbound } from './router.js';
 import { log } from './log.js';
 
@@ -175,6 +176,10 @@ async function main(): Promise<void> {
   startHostSweep();
   log.info('Host sweep started');
 
+  // 6b. Start the dev-only recruiter-sim loop (no-op outside ENVIRONMENT=dev;
+  // idle while recruiter_sim_enabled is false). STRATEGY.md §24.40.
+  startRecruiterSim();
+
   // 7. Start the `ncl` CLI socket server (data/ncl.sock).
   await startCliServer();
 
@@ -196,6 +201,7 @@ async function shutdown(signal: string): Promise<void> {
   }
   stopDeliveryPolls();
   stopHostSweep();
+  stopRecruiterSim();
   await stopCliServer();
   await stopPortalApi();
   try {
