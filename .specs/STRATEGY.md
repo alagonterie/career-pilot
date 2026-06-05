@@ -4293,6 +4293,39 @@ Both cut the recurrence cost for the 9.4 prod cutover (new prod Gmail + Telegram
 
 ---
 
+#### 24.42 Dev inspector + sim-control page (owner-only, dev-only)
+
+The 9.3b recruiter-sim is tuned today by editing `preferences` over SSH (`q.ts`) and toggling `recruiter_sim_enabled` by hand — fine for the agent, friction for the owner, who wants to adjust the dev loop and watch it work **from a phone**, no SSH. This specs a small **dev-only, owner-only inspector + control page** on the dev portal: light-control knob writes (the sim + the whole dev-loop pacing) plus read-only inspection of the candidate/persona state that drives the agent. It is a **dev-ergonomics tool, not a public showcase surface** — it never ships usefully to prod, and it serves the candidate's real unredacted PII, so its access model is the load-bearing part of the spec.
+
+**Recon (against the as-built portal + persona pipeline).**
+- *The portal API is a flat dispatch.* `src/modules/portal/api.ts` routes by `if (method === 'M' && path === '/api/x') return handleX(...)`. Adding endpoints = a new `handle*` + dispatch lines; the dev endpoints live under a `/api/dev/*` prefix.
+- *The persona/candidate state is host-owned + small.* `candidate_profile` (single row, migrations 105/108) + the rendered `groups/career-pilot/.claude-host-fragments/candidate.md` (written by `render-persona.ts`, which emits an **onboarding sentinel** when the profile is empty) + the authored `persona.md` + the composed `CLAUDE.md`. The read panels project these — there is no NanoClaw viewing surface to reuse (NanoClaw owns *composition*, not display).
+- *The knob set already exists in the config tier.* `SIM_KNOB_KEYS` (the `recruiter_sim_*` set) + the dev-loop pacing keys the owner asked to expose: `funnel_curator_cron`, `close_detection_cron`, `killer_match_cron`, `daily_briefing_time`, the dev cost caps (`owner_daily_llm_budget_usd`, `sandbox_daily_global_budget_usd`), `gmail_poll_interval_sec` / `calendar_poll_interval_sec`. All `preferences`-tier writes.
+- *The PII reality.* `candidate_profile` + the persona hold the real `full_name`, `master_resume`, etc. — exactly what the anonymization model keeps off the public surface. The read endpoints are the single place raw PII is served.
+
+**Decisions (locked).**
+- **The access model is the load-bearing guard: a hard `ENVIRONMENT==='dev'` gate on every `/api/dev/*` endpoint (404 otherwise), under the dev site's existing owner-only Cloudflare Access.** Two independent layers: (1) the endpoints **return 404 unless `ENVIRONMENT==='dev'`**, so on prod (`ENVIRONMENT=production`, a *public* surface) they do not exist and no PII is reachable — the non-negotiable guard; (2) the dev site sits behind CF Access (owner-email only), so on dev only the owner reaches them. Prod can't serve them at all; dev only serves the owner. The frontend route degrades to an "unavailable" state when the endpoints 404 (so even if rendered on prod it shows nothing).
+- **Writes are light-control only — a curated knob allow-list, never arbitrary config.** The write endpoint accepts only keys in an explicit `DEV_INSPECTOR_WRITABLE_KEYS` set (the `recruiter_sim_*` knobs + the dev-loop pacing keys above) and validates each value's type/range. No destructive ops (no reset, no killswitch, no `LIVE_MODE`) — those stay on CI/Telegram per the standing "destructive ops off web buttons" lean.
+- **Reads are read-only.** The persona/candidate panels never write; the canonical profile write path stays the Telegram onboarding flow (`update_profile_field`). A dev "seed/edit profile" is a possible future extension, explicitly out of scope here.
+
+**Sub-milestone decomposition (each its own commit, frontend cadence).**
+| Sub | Scope |
+|---|---|
+| **24.42a** (this drill-in) | Spec + the PORTAL §5.9 (dev-only) note. |
+| **24.42b** | **Backend: the dev-only `/api/dev/*` endpoints** — `GET /api/dev/state` (sim state from the sidecar + the seeded `applications`), `GET /api/dev/knobs` (the writable keys + current values), `POST /api/dev/knobs` (allow-list-validated preference writes), `GET /api/dev/persona` (candidate_profile + rendered candidate.md + onboarding progress). All hard-gated `ENVIRONMENT==='dev'` → 404. Host tests for the gate + the write allow-list. |
+| **24.42c** | **Frontend: the inspector page** — a new dev-gated `(ops)` route with the knob controls (toggles/sliders writing via `POST /api/dev/knobs`) + the read panels (sim state, persona/candidate, onboarding progress). Coverage with the endpoints stubbed. |
+
+**Definition of done.**
+1. Every `/api/dev/*` endpoint returns 404 when `ENVIRONMENT!=='dev'` (a host test asserts it) — no PII or sim state is reachable on a non-dev stack.
+2. On the dev stack (behind CF Access) the page shows the sim's live state + seeded applications, the `candidate_profile`/persona + onboarding progress, and lets the owner toggle `recruiter_sim_enabled` + tune the sim and dev-loop knobs, persisted to `preferences` and reflected on the next tick / flow.
+3. `POST /api/dev/knobs` refuses any key outside `DEV_INSPECTOR_WRITABLE_KEYS` and validates value types/ranges (host test).
+4. No destructive ops on the page; no prod behavior change; the public pages + `dev:mock`/E2E paths are untouched.
+5. (Note, not blocking) For the cron knobs (`funnel_curator_cron` et al.): confirm how the `*-bootstrap` reschedules an already-inserted recurring task when the cron preference changes — it may only take effect on the next fire/reclone — and surface the real semantics in the page (e.g. "applies next cycle").
+
+**Spec deltas.** This §24.42; a short PORTAL **§5.9 (dev-only)** note marking the inspector as a dev-ergonomics surface, hard-gated + never part of the public build's reachable data. Memory: [[status_current]].
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
