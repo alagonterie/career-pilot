@@ -90,3 +90,51 @@ pre-build code questions; the SSE/tunnel item stays a with-live-tunnel verify.
   `Account > Cloudflare Tunnel: Edit` for the *edge* layer's dev tunnel
   resource (token mgmt can't self-serve — 403). **`infra/base/` (the VM) is
   GCP-only and needs no CF token**, so the build starts there, before the gate.
+
+## Sub-milestone 9.3 — recruiter-sim injection mechanism (build-prerequisite, 2026-06-05)
+
+Captured for STRATEGY.md §24.40 (D14). Resolves the one open mechanism
+question — how a host-side fixture injects mail into the dev mailbox —
+against the live dev VM over Tailscale SSH. **Gate RESOLVED.**
+
+- **Dev mailbox + self-only allow-list target:** `alagonterie.career.dev@gmail.com`
+  (OneCLI Gmail app `connected`; 4 msgs / 2 threads — near-empty). This single
+  address (and its `+tag` subaddresses) is the *entire* recipient/target
+  allow-list (D14); the sim never touches anything else.
+- **Granted Gmail scopes (live):** `openid`, `gmail.send`, `gmail.modify`,
+  `gmail.readonly`, `userinfo.{email,profile}`. **`gmail.modify` is present.**
+- **`messages.insert` accepts `gmail.modify`** (primary docs:
+  developers.google.com/gmail/api/reference/rest/v1/users.messages/insert) →
+  **no scope reconnect needed.** It "inserts directly into the mailbox, similar
+  to IMAP APPEND … Does not send a message" — no SMTP, fully self-contained.
+- **Host-side authenticated call path = the OneCLI gateway proxy.** `onecli run
+  -- <cmd>` injects `HTTPS_PROXY` → the gateway + CA-trust env (`CURL_CA_BUNDLE`,
+  `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, …); the gateway MITM-injects the OAuth
+  bearer for `googleapis.com`. A host fetch needs only to route through that proxy
+  + trust the CA (the build helper replicates this; the host already constructs
+  `new OneCLI({url, apiKey})`). `secrets list` is empty — Gmail/Calendar are OAuth
+  **apps**, not API-key secrets (LLM is Portkey, no vaulted key), consistent with
+  the §24.39 skip-`--step auth` note.
+- **Live insert smoke (PASSED, then cleaned up):**
+  `POST /gmail/v1/users/me/messages?internalDateSource=dateHeader` with
+  `{raw:<base64url RFC822>, labelIds:[INBOX,UNREAD]}` → 200; message landed with
+  labels `[UNREAD, INBOX]`, readable via the same Gmail API the in-container
+  `mcp__gmail__*` curator uses. Arbitrary synthetic `From` accepted (insert
+  doesn't send). Trashed after (`/trash` → 200) → inbox clean (0 matches).
+- **Backdating works** (the speed-knob gift): `internalDateSource=dateHeader` +
+  a `Date:` header set the message's `internalDate` to 5 days prior — so the
+  engine can compress a multi-week funnel by backdating injected mail.
+- **Calendar:** `google-calendar` `connected` with `calendar.events` (+
+  `calendar.readonly`) → the `onsite_invite` `events.insert` path is scope-viable
+  (not yet smoke-tested; same gateway-proxy mechanism).
+- **Gotchas (load-bearing for the build):**
+  - Insert endpoint is `POST …/messages` (the bare collection) — **not**
+    `…/messages/insert` (that 404s; "insert" is the method name, not the path).
+  - **Empty-body POSTs through the gateway proxy return 411** (the proxy drops a
+    bare `Content-Length: 0`). `/trash` (and any no-body POST) must send a real
+    body — `-d '{}'` works (the endpoint ignores it).
+  - `messages.delete` needs full `https://mail.google.com/`; we only have
+    `modify`, so **use `/trash`** (modify-scoped) for cleanup/reset.
+- **Operational:** agent→VM Tailscale SSH uses `check` mode — a periodic
+  (~12h) browser re-auth at a `login.tailscale.com/a/...` URL the owner must
+  approve before the agent can SSH. Expected each session/period.
