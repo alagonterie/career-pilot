@@ -40,9 +40,9 @@ export function SimStatePanel({ state }: SimStatePanelProps) {
                   <th className="py-1.5 pr-3 font-medium">Role</th>
                   <th className="py-1.5 pr-3 font-medium">Label</th>
                   <th className="py-1.5 pr-3 font-medium">Stage</th>
+                  <th className="py-1.5 pr-3 font-medium">Next up</th>
                   <th className="py-1.5 pr-3 font-medium">Sim</th>
-                  <th className="py-1.5 pr-3 font-medium">DB status</th>
-                  <th className="py-1.5 font-medium">Next</th>
+                  <th className="py-1.5 font-medium">DB status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
@@ -51,12 +51,21 @@ export function SimStatePanel({ state }: SimStatePanelProps) {
                     <td className="py-1.5 pr-3 font-medium">{a.company}</td>
                     <td className="py-1.5 pr-3 text-muted-foreground">{a.role}</td>
                     <td className="py-1.5 pr-3 font-mono text-[10px]">{a.obfuscatedLabel}</td>
-                    <td className="py-1.5 pr-3 tabular-nums">{a.stageIndex}</td>
+                    <td className="py-1.5 pr-3 tabular-nums">
+                      {a.stageIndex}/{a.totalStages}
+                    </td>
+                    <td className="py-1.5 pr-3" data-testid={`sim-next-${a.appId}`}>
+                      <span className="font-mono text-[10px]">{a.upcoming}</span>
+                      {a.status === 'active' ? (
+                        <span className="ml-1 font-mono text-[10px] text-muted-foreground">
+                          · {relTime(a.nextFireAtMs)}
+                        </span>
+                      ) : null}
+                    </td>
                     <td className="py-1.5 pr-3">
                       <SimStatusChip status={a.status} outcome={a.outcome} />
                     </td>
-                    <td className="py-1.5 pr-3 font-mono text-[10px]">{dbStatusById.get(a.appId) ?? '—'}</td>
-                    <td className="py-1.5 font-mono text-[10px] text-muted-foreground">{relTime(a.nextFireAtMs)}</td>
+                    <td className="py-1.5 font-mono text-[10px]">{dbStatusById.get(a.appId) ?? '—'}</td>
                   </tr>
                 ))}
               </tbody>

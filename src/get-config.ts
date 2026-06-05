@@ -53,6 +53,16 @@ function lookupDefault(key: string): unknown {
   return prefs && key in prefs ? prefs[key] : undefined;
 }
 
+/**
+ * The canonical default (the `config/defaults.json` value) for a key, ignoring
+ * any env/preferences override — `undefined` if the key isn't in defaults.json.
+ * Used by the dev inspector to show each knob's default + drive "reset to
+ * default" (which deletes the preferences override so the value falls back here).
+ */
+export function getConfigDefault(key: string): unknown {
+  return lookupDefault(key);
+}
+
 /** Read the raw (string) preferences-table value for a key, if present. */
 function readPreference(db: Database.Database, key: string): string | undefined {
   try {

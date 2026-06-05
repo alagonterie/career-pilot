@@ -16,6 +16,10 @@ export type KnobGroup = 'sim' | 'pacing' | 'budget' | 'polling'
 export interface DevKnob {
   key: string
   value: unknown
+  /** The config/defaults.json value — what "reset" falls back to. */
+  default: unknown
+  /** True when a preferences-tier override exists (so the reset control is meaningful). */
+  overridden: boolean
   type: KnobType
   group: KnobGroup
   label: string
@@ -37,6 +41,10 @@ export interface DevSimApp {
   obfuscatedLabel: string
   threadId: string | null
   stageIndex: number
+  /** Total linear funnel stages before the terminal email (for an "i/N" read). */
+  totalStages: number
+  /** The next email this app has queued (classification), or its end state. */
+  upcoming: string
   status: 'active' | 'ghosted' | 'closed'
   outcome: 'offer' | 'rejection' | null
   nextFireAtMs: number
@@ -116,27 +124,19 @@ export interface KnobWriteResult {
   error?: string
 }
 
-/**
- * Write one knob via `POST /api/dev/knobs`. The server re-validates against the
- * allow-list + ranges (the client validation is only UX); a rejected write
- * returns `{ ok: false }` with the server's reason so the control can revert.
- */
-export async function postKnob(
-  baseUrl: string,
-  key: string,
-  value: boolean | number | string,
-): Promise<KnobWriteResult> {
+/** POST a knob-mutation body to `/api/dev/knobs`, normalizing the result. */
+async function postDev(baseUrl: string, body: Record<string, unknown>): Promise<KnobWriteResult> {
   try {
     const res = await fetch(`${baseUrl}/api/dev/knobs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key, value }),
+      body: JSON.stringify(body),
     })
     if (!res.ok) {
       let error: string | undefined
       try {
-        const body = (await res.json()) as { error?: string }
-        error = body.error
+        const json = (await res.json()) as { error?: string }
+        error = json.error
       } catch {
         // non-JSON error body
       }
@@ -146,6 +146,25 @@ export async function postKnob(
   } catch (err) {
     return { ok: false, status: 0, error: err instanceof Error ? err.message : 'network error' }
   }
+}
+
+/**
+ * Write one knob. The server re-validates against the allow-list + ranges (the
+ * client validation is only UX); a rejected write returns `{ ok: false }` with
+ * the server's reason so the control can revert.
+ */
+export function postKnob(baseUrl: string, key: string, value: boolean | number | string): Promise<KnobWriteResult> {
+  return postDev(baseUrl, { key, value })
+}
+
+/** Reset one knob to its default (deletes the preferences override). */
+export function resetKnob(baseUrl: string, key: string): Promise<KnobWriteResult> {
+  return postDev(baseUrl, { key, reset: true })
+}
+
+/** Reset every writable knob to its default at once. */
+export function resetAllKnobs(baseUrl: string): Promise<KnobWriteResult> {
+  return postDev(baseUrl, { resetAll: true })
 }
 
 // ── pure view helpers ─────────────────────────────────────────────────────────

@@ -5,6 +5,8 @@ import {
   fieldLabel,
   parseList,
   postKnob,
+  resetAllKnobs,
+  resetKnob,
   useDevKnobs,
   useDevState,
   type DevKnobsResponse,
@@ -27,6 +29,8 @@ describe('useDevKnobs', () => {
         {
           key: 'recruiter_sim_enabled',
           value: false,
+          default: false,
+          overridden: false,
           type: 'boolean',
           group: 'sim',
           label: 'Sim enabled',
@@ -107,6 +111,26 @@ describe('postKnob', () => {
     const out = await postKnob('http://x', 'recruiter_sim_enabled', true)
     expect(out.ok).toBe(false)
     expect(out.status).toBe(0)
+  })
+})
+
+describe('resetKnob / resetAllKnobs', () => {
+  it('resetKnob POSTs { key, reset: true }', async () => {
+    const fetchMock = vi.fn(async () => res({ key: 'recruiter_sim_max_concurrent', reset: true, value: 8 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await resetKnob('http://x', 'recruiter_sim_max_concurrent')
+    expect(out.ok).toBe(true)
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, { body?: string }]
+    expect(JSON.parse(init.body as string)).toEqual({ key: 'recruiter_sim_max_concurrent', reset: true })
+  })
+
+  it('resetAllKnobs POSTs { resetAll: true }', async () => {
+    const fetchMock = vi.fn(async () => res({ resetAll: true, cleared: 2 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await resetAllKnobs('http://x')
+    expect(out.ok).toBe(true)
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, { body?: string }]
+    expect(JSON.parse(init.body as string)).toEqual({ resetAll: true })
   })
 })
 

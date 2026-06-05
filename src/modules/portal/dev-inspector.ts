@@ -23,10 +23,11 @@
  */
 import type Database from 'better-sqlite3';
 
-import { getConfig } from '../../get-config.js';
+import { getConfig, getConfigDefault } from '../../get-config.js';
 import { type CandidateProfile, readCandidateProfile, renderPersona } from '../career-pilot/render-persona.js';
 import { SIM_KNOB_KEYS } from '../career-pilot/recruiter-sim/knobs.js';
-import type { SimState } from '../career-pilot/recruiter-sim/types.js';
+import { STAGE_CLASSIFICATIONS } from '../career-pilot/recruiter-sim/templates.js';
+import type { SimApp, SimState } from '../career-pilot/recruiter-sim/types.js';
 
 /** The hard environment gate. Read at request time — see the module header. */
 export function isDevEnv(): boolean {
@@ -176,25 +177,63 @@ function writePreference(db: Database.Database, key: string, stored: string): vo
   ).run(key, stored, new Date().toISOString());
 }
 
+/** Whether a key carries a `preferences`-tier override (the thing "reset" clears). */
+function hasPreference(db: Database.Database, key: string): boolean {
+  try {
+    return db.prepare('SELECT 1 FROM preferences WHERE key = ?').get(key) !== undefined;
+  } catch {
+    return false;
+  }
+}
+
+/** Delete one key's override → its value falls back through the tiers to defaults.json. */
+function deletePreference(db: Database.Database, key: string): void {
+  db.prepare('DELETE FROM preferences WHERE key = ?').run(key);
+}
+
+/** Clear every writable knob's override at once. Returns the rows removed. */
+function resetAllPreferences(db: Database.Database): number {
+  const placeholders = DEV_INSPECTOR_WRITABLE_KEYS.map(() => '?').join(',');
+  const info = db.prepare(`DELETE FROM preferences WHERE key IN (${placeholders})`).run(...DEV_INSPECTOR_WRITABLE_KEYS);
+  return info.changes;
+}
+
 export interface KnobWriteOutcome {
   status: number;
   body: unknown;
 }
 
 /**
- * Apply a `{ key, value }` knob write: validate against the allow-list + ranges,
- * persist to the preferences tier, and echo the coerced value. 400 on any
- * invalid/unknown input — nothing is written in that case.
+ * Mutate a knob. Three shapes (all allow-list-guarded):
+ *   { key, value }       → validate + persist the override; echo the coerced value.
+ *   { key, reset: true } → delete the override so it falls back to the default;
+ *                          echo the now-effective (default) value.
+ *   { resetAll: true }   → clear every writable knob's override at once.
+ * 400 on any invalid/unknown input — nothing is written in that case.
  */
 export function applyKnobWrite(db: Database.Database, raw: unknown): KnobWriteOutcome {
   if (typeof raw !== 'object' || raw === null) {
     return { status: 400, body: { error: 'expected a JSON object { key, value }' } };
   }
-  const { key, value } = raw as { key?: unknown; value?: unknown };
-  if (typeof key !== 'string') {
+  const body = raw as { key?: unknown; value?: unknown; reset?: unknown; resetAll?: unknown };
+
+  if (body.resetAll === true) {
+    const cleared = resetAllPreferences(db);
+    return { status: 200, body: { resetAll: true, cleared } };
+  }
+
+  if (typeof body.key !== 'string') {
     return { status: 400, body: { error: 'missing or non-string "key"' } };
   }
-  const res = validateKnobWrite(key, value);
+  const key = body.key;
+
+  if (body.reset === true) {
+    if (!KNOB_SPECS[key]) return { status: 400, body: { error: `key not writable: ${key}` } };
+    deletePreference(db, key);
+    return { status: 200, body: { key, reset: true, value: getConfig(db, key) } };
+  }
+
+  const res = validateKnobWrite(key, body.value);
   if (!res.ok) {
     return { status: 400, body: { error: res.error } };
   }
@@ -208,6 +247,10 @@ export function applyKnobWrite(db: Database.Database, raw: unknown): KnobWriteOu
 export interface KnobView {
   key: string;
   value: unknown;
+  /** The config/defaults.json value — what "reset" falls back to. */
+  default: unknown;
+  /** True when a preferences-tier override exists (so reset has something to clear). */
+  overridden: boolean;
   type: KnobType;
   group: KnobGroup;
   label: string;
@@ -224,6 +267,8 @@ export function buildDevKnobs(db: Database.Database): { knobs: KnobView[] } {
     return {
       key,
       value: getConfig(db, key),
+      default: getConfigDefault(key),
+      overridden: hasPreference(db, key),
       type: spec.type,
       group: spec.group,
       label: spec.label,
@@ -246,10 +291,32 @@ interface SimApplicationRow {
   last_activity_at: string | null;
 }
 
+/** Each sim app + the NEXT email it has queued (so the page shows what's coming). */
+export type SimAppView = SimApp & {
+  /** Total funnel stages before the terminal email (for an "i/N" progress read). */
+  totalStages: number;
+  /** The classification of the next email this app will inject — or its end state. */
+  upcoming: string;
+};
+
+/**
+ * What the sim has coming next for one app: the classification at `stageIndex`,
+ * the terminal decision once past the linear stages, or its end state when the
+ * thread ghosted / closed. Mirrors `scenario.stepApp` (authoritative — driven by
+ * the same `STAGE_CLASSIFICATIONS`).
+ */
+export function simUpcoming(app: SimApp): string {
+  if (app.status === 'ghosted') return 'ghosted — no further mail';
+  if (app.status === 'closed') return app.outcome ? `closed · ${app.outcome}` : 'closed';
+  if (app.stageIndex >= STAGE_CLASSIFICATIONS.length) return 'final decision · offer/rejection';
+  return STAGE_CLASSIFICATIONS[app.stageIndex];
+}
+
 /**
  * The sim's live scenario state (from the sidecar) joined to the `applications`
- * rows it seeded — so the page can show both the sim's internal funnel walk and
- * the real funnel position the curator advanced the rows to.
+ * rows it seeded — so the page can show both the sim's internal funnel walk
+ * (incl. what's queued next) and the real funnel position the curator advanced
+ * the rows to.
  */
 export function buildDevState(
   db: Database.Database,
@@ -257,7 +324,7 @@ export function buildDevState(
 ): {
   enabled: boolean;
   lastSeedAtMs: number;
-  apps: SimState['apps'];
+  apps: SimAppView[];
   applications: SimApplicationRow[];
 } {
   const enabled = getConfig<boolean>(db, 'recruiter_sim_enabled');
@@ -272,7 +339,12 @@ export function buildDevState(
       )
       .all(...ids) as SimApplicationRow[];
   }
-  return { enabled, lastSeedAtMs: state.lastSeedAtMs, apps: state.apps, applications };
+  const apps: SimAppView[] = state.apps.map((a) => ({
+    ...a,
+    totalStages: STAGE_CLASSIFICATIONS.length,
+    upcoming: simUpcoming(a),
+  }));
+  return { enabled, lastSeedAtMs: state.lastSeedAtMs, apps, applications };
 }
 
 // ── persona / onboarding ──────────────────────────────────────────────────────

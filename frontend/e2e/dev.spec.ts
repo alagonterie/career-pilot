@@ -13,6 +13,8 @@ const KNOBS = {
     {
       key: 'recruiter_sim_enabled',
       value: false,
+      default: false,
+      overridden: false,
       type: 'boolean',
       group: 'sim',
       label: 'Sim enabled',
@@ -22,8 +24,11 @@ const KNOBS = {
       note: null,
     },
     {
+      // overridden (value 2 ≠ default 8) so the reset controls are exercised.
       key: 'recruiter_sim_max_concurrent',
-      value: 8,
+      value: 2,
+      default: 8,
+      overridden: true,
       type: 'number',
       group: 'sim',
       label: 'Max concurrent',
@@ -35,6 +40,8 @@ const KNOBS = {
     {
       key: 'funnel_curator_cron',
       value: '30 7 * * *',
+      default: '30 7 * * *',
+      overridden: false,
       type: 'cron',
       group: 'pacing',
       label: 'Funnel cron',
@@ -57,6 +64,8 @@ const STATE = {
       obfuscatedLabel: 'ai-a',
       threadId: 't1',
       stageIndex: 2,
+      totalStages: 4,
+      upcoming: 'onsite_invite',
       status: 'active',
       outcome: null,
       nextFireAtMs: Date.now() + 120000,
@@ -131,10 +140,11 @@ test.describe('/dev — dev inspector + sim controls (§24.42c)', () => {
     await expect(page.getByTestId('knob-group-pacing')).toBeVisible()
     await expect(page.getByTestId('knob-recruiter_sim_enabled').getByRole('switch')).toBeVisible()
 
-    // Sim panel: joined DB status.
+    // Sim panel: joined DB status + what the sim has queued next.
     const simRow = page.getByTestId('sim-app-sim-1')
     await expect(simRow.getByText('Meridian Labs')).toBeVisible()
     await expect(simRow.getByText('screening')).toBeVisible()
+    await expect(page.getByTestId('sim-next-sim-1')).toContainText('onsite_invite')
 
     // Persona panel: onboarding mode (next = full_name) + the rendered sentinel.
     await expect(page.getByTestId('onboarding-badge')).toContainText('0/6')
@@ -157,6 +167,24 @@ test.describe('/dev — dev inspector + sim controls (§24.42c)', () => {
     await sw.click()
     const req = await reqP
     expect(req.postDataJSON()).toEqual({ key: 'recruiter_sim_enabled', value: true })
+  })
+
+  test('a per-knob reset POSTs { key, reset } and "All to defaults" POSTs { resetAll }', async ({ page }) => {
+    await stubDev(page)
+    await page.goto('/dev')
+
+    // The overridden knob shows a reset control; the rest do not.
+    await expect(page.getByTestId('knob-reset-recruiter_sim_max_concurrent')).toBeVisible()
+    await expect(page.getByTestId('knob-reset-recruiter_sim_enabled')).toHaveCount(0)
+
+    const resetReq = page.waitForRequest((r) => r.url().includes('/api/dev/knobs') && r.method() === 'POST')
+    await page.getByTestId('knob-reset-recruiter_sim_max_concurrent').click()
+    expect((await resetReq).postDataJSON()).toEqual({ key: 'recruiter_sim_max_concurrent', reset: true })
+
+    // "All to defaults" is enabled (one knob overridden) and posts resetAll.
+    const allReq = page.waitForRequest((r) => r.url().includes('/api/dev/knobs') && r.method() === 'POST')
+    await page.getByTestId('reset-all').click()
+    expect((await allReq).postDataJSON()).toEqual({ resetAll: true })
   })
 
   test('degrades to an "unavailable" note when the endpoints 404 (non-dev stack)', async ({ page }) => {
