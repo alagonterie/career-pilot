@@ -1,6 +1,5 @@
 import * as React from 'react'
 
-import { Badge } from '~/components/ui/badge'
 import { cn } from '~/lib/utils'
 import type { DevKnob, KnobWriteResult } from '~/lib/use-dev-inspector'
 
@@ -9,21 +8,24 @@ type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 interface KnobControlProps {
   knob: DevKnob
   onWrite: (key: string, value: boolean | number | string) => Promise<KnobWriteResult>
+  onReset: (key: string) => Promise<KnobWriteResult>
 }
 
 /**
  * One writable knob (24.42c). Controlled by local state seeded from the polled
- * value so edits feel instant; the parent poll reconciles the source of truth.
- * Commits on toggle (boolean), blur/Enter (number, cron), or slider release. A
- * rejected write (server re-validates) reverts the control and shows the reason.
+ * value, updated OPTIMISTICALLY on every commit so the control reflects the
+ * change instantly (the parent poll reconciles the source of truth); reverts +
+ * shows the reason if the server rejects. Commits on toggle (boolean), blur/Enter
+ * (number, cron), or slider release. A per-knob reset (shown when the knob is
+ * overridden) clears the preferences override → back to the default.
  */
-export function KnobControl({ knob, onWrite }: KnobControlProps) {
-  const [value, setValue] = React.useState<boolean | number | string>(coerce(knob))
+export function KnobControl({ knob, onWrite, onReset }: KnobControlProps) {
+  const [value, setValue] = React.useState<boolean | number | string>(coerceVal(knob.type, knob.value))
   const [save, setSave] = React.useState<SaveState>('idle')
   const [error, setError] = React.useState<string | null>(null)
-  // Re-seed from the poll only while the control is idle (don't clobber an edit
-  // in flight or a value the user is actively changing).
-  const baseline = coerce(knob)
+
+  // Re-seed from the poll only while idle — don't clobber an edit in flight.
+  const baseline = coerceVal(knob.type, knob.value)
   React.useEffect(() => {
     if (save === 'idle') setValue(baseline)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -31,6 +33,7 @@ export function KnobControl({ knob, onWrite }: KnobControlProps) {
 
   const commit = React.useCallback(
     async (next: boolean | number | string) => {
+      setValue(next) // optimistic — the control reflects the change immediately
       setSave('saving')
       setError(null)
       const res = await onWrite(knob.key, next)
@@ -46,6 +49,20 @@ export function KnobControl({ knob, onWrite }: KnobControlProps) {
     [knob.key, onWrite, baseline],
   )
 
+  const doReset = React.useCallback(async () => {
+    setSave('saving')
+    setError(null)
+    const res = await onReset(knob.key)
+    if (res.ok) {
+      setValue(coerceVal(knob.type, knob.default))
+      setSave('saved')
+      setTimeout(() => setSave('idle'), 1500)
+    } else {
+      setError(res.error ?? `HTTP ${res.status}`)
+      setSave('error')
+    }
+  }, [knob.key, knob.type, knob.default, onReset])
+
   return (
     <div className="flex flex-col gap-1 py-2" data-testid={`knob-${knob.key}`}>
       <div className="flex items-center justify-between gap-3">
@@ -53,7 +70,20 @@ export function KnobControl({ knob, onWrite }: KnobControlProps) {
           {knob.label}
           <span className="ml-2 font-mono text-[10px] text-muted-foreground">{knob.key}</span>
         </label>
-        <SaveIndicator state={save} />
+        <div className="flex shrink-0 items-center gap-2">
+          {knob.overridden ? (
+            <button
+              type="button"
+              onClick={() => void doReset()}
+              data-testid={`knob-reset-${knob.key}`}
+              title="Reset to default"
+              className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              ↺ reset
+            </button>
+          ) : null}
+          <SaveIndicator state={save} />
+        </div>
       </div>
 
       {knob.type === 'boolean' ? (
@@ -70,21 +100,31 @@ export function KnobControl({ knob, onWrite }: KnobControlProps) {
   )
 }
 
-function coerce(knob: DevKnob): boolean | number | string {
-  if (knob.type === 'boolean') return knob.value === true
-  if (knob.type === 'number') return typeof knob.value === 'number' ? knob.value : Number(knob.value)
-  return String(knob.value ?? '')
+function coerceVal(type: DevKnob['type'], raw: unknown): boolean | number | string {
+  if (type === 'boolean') return raw === true
+  if (type === 'number') return typeof raw === 'number' ? raw : Number(raw)
+  return String(raw ?? '')
 }
 
+// A fixed-width slot so the transient "saving…/saved" text never reflows the row
+// (it fades in/out within a reserved box instead of changing the layout).
 function SaveIndicator({ state }: { state: SaveState }) {
-  if (state === 'idle') return null
-  const map = {
+  const map: Record<SaveState, { text: string; cls: string }> = {
+    idle: { text: '', cls: '' },
     saving: { text: 'saving…', cls: 'text-muted-foreground' },
     saved: { text: 'saved ✓', cls: 'text-accent-cool' },
     error: { text: 'failed ✕', cls: 'text-destructive' },
-  } as const
+  }
   const m = map[state]
-  return <span className={cn('font-mono text-[10px]', m.cls)}>{m.text}</span>
+  return (
+    <span
+      aria-hidden={state === 'idle'}
+      data-testid="knob-save-indicator"
+      className={cn('inline-block w-16 shrink-0 text-right font-mono text-[10px] tabular-nums', m.cls)}
+    >
+      {m.text}
+    </span>
+  )
 }
 
 function BooleanToggle({ id, value, onToggle }: { id: string; value: boolean; onToggle: (v: boolean) => void }) {

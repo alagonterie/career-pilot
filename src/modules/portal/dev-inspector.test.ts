@@ -22,6 +22,7 @@ import {
   computeOnboardingProgress,
   DEV_INSPECTOR_WRITABLE_KEYS,
   ONBOARDING_FIELD_ORDER,
+  simUpcoming,
   validateKnobWrite,
 } from './dev-inspector.js';
 
@@ -177,6 +178,46 @@ describe('applyKnobWrite', () => {
   });
 });
 
+// ── reset to default ──────────────────────────────────────────────────────────
+
+describe('applyKnobWrite — reset', () => {
+  it('{ key, reset } deletes the override so the value falls back to the default', () => {
+    applyKnobWrite(getDb(), { key: 'recruiter_sim_max_concurrent', value: 2 });
+    expect(getConfig<number>(getDb(), 'recruiter_sim_max_concurrent')).toBe(2);
+
+    const out = applyKnobWrite(getDb(), { key: 'recruiter_sim_max_concurrent', reset: true });
+    expect(out.status).toBe(200);
+    expect(out.body).toMatchObject({ key: 'recruiter_sim_max_concurrent', reset: true, value: 8 });
+    expect(getConfig<number>(getDb(), 'recruiter_sim_max_concurrent')).toBe(8); // back to defaults.json
+    const row = getDb().prepare("SELECT value FROM preferences WHERE key = 'recruiter_sim_max_concurrent'").get();
+    expect(row).toBeUndefined(); // the override row is gone
+  });
+
+  it('refuses to reset a non-allow-listed key (400)', () => {
+    expect(applyKnobWrite(getDb(), { key: 'live_mode', reset: true }).status).toBe(400);
+  });
+
+  it('{ resetAll } clears every writable override but leaves non-writable prefs intact', () => {
+    applyKnobWrite(getDb(), { key: 'recruiter_sim_enabled', value: true });
+    applyKnobWrite(getDb(), { key: 'recruiter_sim_max_concurrent', value: 2 });
+    // a non-writable preference the page must never touch
+    getDb()
+      .prepare("INSERT INTO preferences (key, value, updated_at) VALUES ('portal_api_port', '3002', datetime('now'))")
+      .run();
+
+    const out = applyKnobWrite(getDb(), { resetAll: true });
+    expect(out.status).toBe(200);
+    expect(out.body).toMatchObject({ resetAll: true });
+    expect(getConfig<boolean>(getDb(), 'recruiter_sim_enabled')).toBe(false); // default
+    expect(getConfig<number>(getDb(), 'recruiter_sim_max_concurrent')).toBe(8); // default
+    // the non-writable pref survives
+    const row = getDb().prepare("SELECT value FROM preferences WHERE key = 'portal_api_port'").get() as
+      | { value: string }
+      | undefined;
+    expect(row?.value).toBe('3002');
+  });
+});
+
 // ── buildDevKnobs ─────────────────────────────────────────────────────────────
 
 describe('buildDevKnobs', () => {
@@ -194,6 +235,19 @@ describe('buildDevKnobs', () => {
     applyKnobWrite(getDb(), { key: 'recruiter_sim_max_concurrent', value: 2 });
     const { knobs } = buildDevKnobs(getDb());
     expect(knobs.find((k) => k.key === 'recruiter_sim_max_concurrent')?.value).toBe(2);
+  });
+
+  it('exposes each knob default + tracks overridden across write/reset', () => {
+    const before = buildDevKnobs(getDb()).knobs.find((k) => k.key === 'recruiter_sim_max_concurrent');
+    expect(before).toMatchObject({ default: 8, overridden: false });
+
+    applyKnobWrite(getDb(), { key: 'recruiter_sim_max_concurrent', value: 2 });
+    const after = buildDevKnobs(getDb()).knobs.find((k) => k.key === 'recruiter_sim_max_concurrent');
+    expect(after).toMatchObject({ value: 2, default: 8, overridden: true });
+
+    applyKnobWrite(getDb(), { key: 'recruiter_sim_max_concurrent', reset: true });
+    const reset = buildDevKnobs(getDb()).knobs.find((k) => k.key === 'recruiter_sim_max_concurrent');
+    expect(reset).toMatchObject({ value: 8, overridden: false });
   });
 });
 
@@ -213,6 +267,8 @@ describe('buildDevState', () => {
     expect(out.enabled).toBe(false);
     expect(out.lastSeedAtMs).toBe(12_345);
     expect(out.apps).toHaveLength(1);
+    // makeSimApp is at stageIndex 1 → the next email it has queued is screen_invite.
+    expect(out.apps[0]).toMatchObject({ appId: 'sim-app-1', upcoming: 'screen_invite', totalStages: 4 });
     expect(out.applications).toHaveLength(1);
     expect(out.applications[0]).toMatchObject({ id: 'sim-app-1', status: 'screening' });
   });
@@ -221,6 +277,25 @@ describe('buildDevState', () => {
     const out = buildDevState(getDb(), { apps: [], lastSeedAtMs: 0 });
     expect(out.apps).toEqual([]);
     expect(out.applications).toEqual([]);
+  });
+});
+
+// ── simUpcoming ───────────────────────────────────────────────────────────────
+
+describe('simUpcoming', () => {
+  it('maps an active stageIndex to the next queued classification', () => {
+    expect(simUpcoming(makeSimApp({ stageIndex: 0 }))).toBe('application_confirmation');
+    expect(simUpcoming(makeSimApp({ stageIndex: 1 }))).toBe('screen_invite');
+    expect(simUpcoming(makeSimApp({ stageIndex: 2 }))).toBe('onsite_invite');
+  });
+
+  it('reports the terminal decision once past the linear stages', () => {
+    expect(simUpcoming(makeSimApp({ stageIndex: 4 }))).toContain('final decision');
+  });
+
+  it('reports the end state for a ghosted or closed app', () => {
+    expect(simUpcoming(makeSimApp({ status: 'ghosted' }))).toContain('ghosted');
+    expect(simUpcoming(makeSimApp({ status: 'closed', outcome: 'offer' }))).toContain('offer');
   });
 });
 

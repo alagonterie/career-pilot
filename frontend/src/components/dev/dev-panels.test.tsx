@@ -7,15 +7,22 @@ import { KnobControls } from './KnobControls'
 import { PersonaPanel } from './PersonaPanel'
 import { SimStatePanel } from './SimStatePanel'
 
+const ok = async () => ({ ok: true as const, status: 200 })
+
 function knob(p: Partial<DevKnob> & { key: string; type: DevKnob['type']; group: DevKnob['group'] }): DevKnob {
+  const value = p.value ?? (p.type === 'boolean' ? false : p.type === 'number' ? 1 : '* * * * *')
   return {
-    value: p.type === 'boolean' ? false : p.type === 'number' ? 1 : '* * * * *',
-    label: p.key,
-    min: null,
-    max: null,
-    integer: false,
-    note: null,
-    ...p,
+    key: p.key,
+    type: p.type,
+    group: p.group,
+    value,
+    default: p.default ?? value,
+    overridden: p.overridden ?? false,
+    label: p.label ?? p.key,
+    min: p.min ?? null,
+    max: p.max ?? null,
+    integer: p.integer ?? false,
+    note: p.note ?? null,
   }
 }
 
@@ -41,26 +48,47 @@ const KNOBS: DevKnob[] = [
   }),
 ]
 
+const OVERRIDDEN_KNOBS: DevKnob[] = [
+  knob({
+    key: 'recruiter_sim_max_concurrent',
+    type: 'number',
+    group: 'sim',
+    value: 2,
+    default: 8,
+    overridden: true,
+    min: 0,
+    max: 100,
+    integer: true,
+    label: 'Max concurrent',
+  }),
+]
+
+function renderControls(knobs: DevKnob[], overrides: Partial<Parameters<typeof KnobControls>[0]> = {}) {
+  return render(<KnobControls knobs={knobs} onWrite={ok} onReset={ok} onResetAll={ok} {...overrides} />)
+}
+
 describe('KnobControls', () => {
   it('renders one card per group present', () => {
-    render(<KnobControls knobs={KNOBS} onWrite={vi.fn(async () => ({ ok: true, status: 200 }))} />)
+    renderControls(KNOBS)
     expect(screen.getByTestId('knob-group-sim')).toBeInTheDocument()
     expect(screen.getByTestId('knob-group-pacing')).toBeInTheDocument()
     expect(screen.queryByTestId('knob-group-polling')).not.toBeInTheDocument()
   })
 
-  it('toggling a boolean writes the flipped value', async () => {
-    const onWrite = vi.fn(async () => ({ ok: true, status: 200 }))
-    render(<KnobControls knobs={KNOBS} onWrite={onWrite} />)
+  it('toggling a boolean writes the flipped value AND optimistically flips the control', async () => {
+    const onWrite = vi.fn(ok)
+    renderControls(KNOBS, { onWrite })
     const sw = within(screen.getByTestId('knob-recruiter_sim_enabled')).getByRole('switch')
     expect(sw).toHaveAttribute('aria-checked', 'false')
     fireEvent.click(sw)
-    await waitFor(() => expect(onWrite).toHaveBeenCalledWith('recruiter_sim_enabled', true))
+    // The fix: the toggle reflects ON immediately (optimistic), not only after a poll.
+    await waitFor(() => expect(sw).toHaveAttribute('aria-checked', 'true'))
+    expect(onWrite).toHaveBeenCalledWith('recruiter_sim_enabled', true)
   })
 
   it('committing a number input writes the value on blur', async () => {
-    const onWrite = vi.fn(async () => ({ ok: true, status: 200 }))
-    render(<KnobControls knobs={KNOBS} onWrite={onWrite} />)
+    const onWrite = vi.fn(ok)
+    renderControls(KNOBS, { onWrite })
     const input = within(screen.getByTestId('knob-recruiter_sim_max_concurrent')).getByRole('spinbutton')
     fireEvent.change(input, { target: { value: '3' } })
     fireEvent.blur(input)
@@ -68,19 +96,18 @@ describe('KnobControls', () => {
   })
 
   it('does not write a number outside the knob range', async () => {
-    const onWrite = vi.fn(async () => ({ ok: true, status: 200 }))
-    render(<KnobControls knobs={KNOBS} onWrite={onWrite} />)
+    const onWrite = vi.fn(ok)
+    renderControls(KNOBS, { onWrite })
     const input = within(screen.getByTestId('knob-recruiter_sim_max_concurrent')).getByRole('spinbutton')
     fireEvent.change(input, { target: { value: '999' } }) // > max 100
     fireEvent.blur(input)
-    // give any pending microtask a chance, then assert no write happened
     await Promise.resolve()
     expect(onWrite).not.toHaveBeenCalled()
   })
 
   it('committing a cron input writes the string', async () => {
-    const onWrite = vi.fn(async () => ({ ok: true, status: 200 }))
-    render(<KnobControls knobs={KNOBS} onWrite={onWrite} />)
+    const onWrite = vi.fn(ok)
+    renderControls(KNOBS, { onWrite })
     const input = within(screen.getByTestId('knob-funnel_curator_cron')).getByRole('textbox')
     fireEvent.change(input, { target: { value: '*/5 * * * *' } })
     fireEvent.blur(input)
@@ -88,12 +115,41 @@ describe('KnobControls', () => {
   })
 
   it('reverts and shows the error when a write is rejected', async () => {
-    const onWrite = vi.fn(async () => ({ ok: false, status: 400, error: 'must be ≤ 100' }))
-    render(<KnobControls knobs={KNOBS} onWrite={onWrite} />)
+    const onWrite = vi.fn(async () => ({ ok: false as const, status: 400, error: 'must be ≤ 100' }))
+    renderControls(KNOBS, { onWrite })
     const sw = within(screen.getByTestId('knob-recruiter_sim_enabled')).getByRole('switch')
     fireEvent.click(sw)
     await waitFor(() => expect(screen.getByText('must be ≤ 100')).toBeInTheDocument())
     expect(sw).toHaveAttribute('aria-checked', 'false') // reverted
+  })
+
+  it('shows a per-knob reset only when overridden, and resets to the default on click', async () => {
+    const onReset = vi.fn(ok)
+    // not overridden → no reset button
+    const { unmount } = renderControls(KNOBS)
+    expect(screen.queryByTestId('knob-reset-recruiter_sim_max_concurrent')).not.toBeInTheDocument()
+    unmount()
+
+    // overridden → reset button resets the control to the default (8)
+    renderControls(OVERRIDDEN_KNOBS, { onReset })
+    const input = within(screen.getByTestId('knob-recruiter_sim_max_concurrent')).getByRole('spinbutton')
+    expect(input).toHaveValue(2)
+    fireEvent.click(screen.getByTestId('knob-reset-recruiter_sim_max_concurrent'))
+    await waitFor(() => expect(onReset).toHaveBeenCalledWith('recruiter_sim_max_concurrent'))
+    expect(input).toHaveValue(8) // optimistic reset to default
+  })
+
+  it('the "All to defaults" button is disabled until something is overridden', async () => {
+    const onResetAll = vi.fn(ok)
+    const { unmount } = renderControls(KNOBS, { onResetAll }) // none overridden
+    expect(screen.getByTestId('reset-all')).toBeDisabled()
+    unmount()
+
+    renderControls(OVERRIDDEN_KNOBS, { onResetAll })
+    const btn = screen.getByTestId('reset-all')
+    expect(btn).toBeEnabled()
+    fireEvent.click(btn)
+    await waitFor(() => expect(onResetAll).toHaveBeenCalled())
   })
 })
 
@@ -109,6 +165,8 @@ describe('SimStatePanel', () => {
         obfuscatedLabel: 'ai-a',
         threadId: 't1',
         stageIndex: 2,
+        totalStages: 4,
+        upcoming: 'onsite_invite',
         status: 'active',
         outcome: null,
         nextFireAtMs: Date.now() + 120000,
@@ -127,12 +185,14 @@ describe('SimStatePanel', () => {
     ],
   }
 
-  it('shows the enabled badge + a row joining sim app to its DB status', () => {
+  it('shows the enabled badge + a row joining sim app to its DB status + what is queued next', () => {
     render(<SimStatePanel state={state} />)
     expect(screen.getByTestId('sim-enabled-badge')).toHaveTextContent('running')
     const row = screen.getByTestId('sim-app-sim-1')
     expect(within(row).getByText('Meridian Labs')).toBeInTheDocument()
     expect(within(row).getByText('screening')).toBeInTheDocument() // joined DB status
+    // "Next up": the queued classification + an ETA for an active app.
+    expect(screen.getByTestId('sim-next-sim-1')).toHaveTextContent('onsite_invite')
   })
 
   it('renders an empty hint when no apps are in flight', () => {

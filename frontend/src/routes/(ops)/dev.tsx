@@ -6,7 +6,7 @@ import { SimStatePanel } from '~/components/dev/SimStatePanel'
 import { StateNote } from '~/components/states'
 import { Skeleton } from '~/components/ui/skeleton'
 import { seo } from '~/lib/seo'
-import { postKnob, useDevKnobs, useDevPersona, useDevState } from '~/lib/use-dev-inspector'
+import { postKnob, resetAllKnobs, resetKnob, useDevKnobs, useDevPersona, useDevState } from '~/lib/use-dev-inspector'
 
 // The dev-only inspector + sim-control surface (§24.42c). Lives in the `(ops)`
 // group (shared header/rail) but is NOT in the public nav — it's reached by
@@ -34,6 +34,8 @@ function DevInspectorPage() {
   const persona = useDevPersona(API_BASE)
 
   const onWrite = (key: string, value: boolean | number | string) => postKnob(API_BASE, key, value)
+  const onReset = (key: string) => resetKnob(API_BASE, key)
+  const onResetAll = () => resetAllKnobs(API_BASE)
 
   // Cold 404 on the knobs feed = not the dev stack → the whole surface is
   // unavailable (and no PII is reachable). This is the prod-degradation path.
@@ -70,7 +72,9 @@ function DevInspectorPage() {
         <>
           <section className="flex flex-col gap-3">
             <h2 className="font-mono text-xs uppercase tracking-widest text-foreground">Controls</h2>
-            {knobs.data ? <KnobControls knobs={knobs.data.knobs} onWrite={onWrite} /> : null}
+            {knobs.data ? (
+              <KnobControls knobs={knobs.data.knobs} onWrite={onWrite} onReset={onReset} onResetAll={onResetAll} />
+            ) : null}
           </section>
 
           <section className="flex flex-col gap-3">
