@@ -135,6 +135,7 @@ function makeSeed(nowMs: number, rng: () => number): { app: SimApp; intent: Seed
     fromName: `${name} Talent`,
     fromAddress: `talent@${slug(name)}.example`,
     threadId: null,
+    lastMessageId: null,
     stageIndex: 0,
     status: 'active',
     outcome: null,
