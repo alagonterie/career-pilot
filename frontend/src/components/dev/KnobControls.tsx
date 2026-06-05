@@ -1,0 +1,50 @@
+import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
+import type { DevKnob, KnobGroup, KnobWriteResult } from '~/lib/use-dev-inspector'
+
+import { KnobControl } from './KnobControl'
+
+const GROUP_ORDER: KnobGroup[] = ['sim', 'pacing', 'budget', 'polling']
+
+const GROUP_META: Record<KnobGroup, { title: string; blurb: string }> = {
+  sim: { title: 'Recruiter sim', blurb: 'The dev fixture that injects ATS mail into the dev mailbox.' },
+  pacing: { title: 'Loop pacing', blurb: 'Cron cadence for the proactive flows. Changes apply on the next reclone.' },
+  budget: { title: 'Cost caps', blurb: 'Daily LLM spend ceilings for the dev stack.' },
+  polling: { title: 'Polling', blurb: 'How often the host syncs Gmail / Calendar.' },
+}
+
+interface KnobControlsProps {
+  knobs: DevKnob[]
+  onWrite: (key: string, value: boolean | number | string) => Promise<KnobWriteResult>
+}
+
+/** The grouped knob control surface (24.42c). Light-control only — the backend
+ * allow-lists every key, so an unknown write can't slip through here. */
+export function KnobControls({ knobs, onWrite }: KnobControlsProps) {
+  const byGroup = new Map<KnobGroup, DevKnob[]>()
+  for (const knob of knobs) {
+    const list = byGroup.get(knob.group) ?? []
+    list.push(knob)
+    byGroup.set(knob.group, list)
+  }
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      {GROUP_ORDER.filter((g) => byGroup.has(g)).map((group) => {
+        const meta = GROUP_META[group]
+        return (
+          <Card key={group} data-testid={`knob-group-${group}`}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">{meta.title}</CardTitle>
+              <p className="text-xs text-muted-foreground">{meta.blurb}</p>
+            </CardHeader>
+            <CardContent className="divide-y divide-border/60 pt-0">
+              {(byGroup.get(group) ?? []).map((knob) => (
+                <KnobControl key={knob.key} knob={knob} onWrite={onWrite} />
+              ))}
+            </CardContent>
+          </Card>
+        )
+      })}
+    </div>
+  )
+}
