@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { HAIKU_EST_COST_USD, enrichBody, portkeyConfigured, sanitizeProse } from './prose.js';
+import { HAIKU_EST_COST_USD, enrichBody, enrichmentEnabled, sanitizeProse } from './prose.js';
 import type { InjectEmailIntent } from './types.js';
 
 const intent: InjectEmailIntent = {
@@ -18,29 +18,26 @@ const intent: InjectEmailIntent = {
   calendar: null,
 };
 
-const SAVED = { key: process.env.PORTKEY_API_KEY, bypass: process.env.PORTKEY_BYPASS };
+const SAVED_ENV = process.env.ENVIRONMENT;
 
 describe('recruiter-sim prose', () => {
   beforeEach(() => {
-    delete process.env.PORTKEY_API_KEY;
-    delete process.env.PORTKEY_BYPASS;
+    delete process.env.ENVIRONMENT;
   });
   afterEach(() => {
-    if (SAVED.key === undefined) delete process.env.PORTKEY_API_KEY;
-    else process.env.PORTKEY_API_KEY = SAVED.key;
-    if (SAVED.bypass === undefined) delete process.env.PORTKEY_BYPASS;
-    else process.env.PORTKEY_BYPASS = SAVED.bypass;
+    if (SAVED_ENV === undefined) delete process.env.ENVIRONMENT;
+    else process.env.ENVIRONMENT = SAVED_ENV;
   });
 
-  it('portkeyConfigured reflects the key + bypass flag', () => {
-    expect(portkeyConfigured()).toBe(false);
-    process.env.PORTKEY_API_KEY = 'pk-test';
-    expect(portkeyConfigured()).toBe(true);
-    process.env.PORTKEY_BYPASS = 'true';
-    expect(portkeyConfigured()).toBe(false);
+  it('enrichmentEnabled is true only on the dev stack', () => {
+    expect(enrichmentEnabled()).toBe(false);
+    process.env.ENVIRONMENT = 'dev';
+    expect(enrichmentEnabled()).toBe(true);
+    process.env.ENVIRONMENT = 'production';
+    expect(enrichmentEnabled()).toBe(false);
   });
 
-  it('uses the deterministic body when no key is configured (no network)', async () => {
+  it('uses the deterministic body outside the dev env (no gateway call)', async () => {
     const res = await enrichBody(intent, 1);
     expect(res.usedLlm).toBe(false);
     expect(res.body).toBe(intent.deterministicBody);
@@ -48,7 +45,7 @@ describe('recruiter-sim prose', () => {
   });
 
   it('uses the deterministic body when over budget — without calling out', async () => {
-    process.env.PORTKEY_API_KEY = 'pk-test'; // set, but budget gates before any fetch
+    process.env.ENVIRONMENT = 'dev'; // enabled, but budget gates before any gateway call
     const res = await enrichBody(intent, HAIKU_EST_COST_USD / 2);
     expect(res.usedLlm).toBe(false);
     expect(res.body).toBe(intent.deterministicBody);

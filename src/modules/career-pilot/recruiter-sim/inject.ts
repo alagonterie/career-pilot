@@ -117,15 +117,28 @@ function onecliBin(): string {
   return fs.existsSync(local) ? local : 'onecli';
 }
 
-interface CurlResult {
+export interface CurlResult {
   status: number;
   json: Record<string, unknown> | null;
   raw: string;
 }
 
-/** Run one `onecli run -- curl …` request through the gateway. */
-async function gatewayCurl(method: string, url: string, jsonBody?: unknown): Promise<CurlResult> {
+/**
+ * Run one `onecli run -- curl …` request through the gateway. The gateway
+ * MITM-injects the matching OneCLI credential for the target host (the Gmail
+ * OAuth bearer for googleapis.com; the Anthropic `x-api-key` for
+ * api.anthropic.com — see prose.ts). Shared with the prose adapter.
+ */
+export async function gatewayCurl(
+  method: string,
+  url: string,
+  jsonBody?: unknown,
+  extraHeaders?: Record<string, string>,
+): Promise<CurlResult> {
   const args = ['run', '--', 'curl', '-s', '-S', '-w', '\n%{http_code}', '-X', method, url];
+  if (extraHeaders) {
+    for (const [k, v] of Object.entries(extraHeaders)) args.push('-H', `${k}: ${v}`);
+  }
   if (jsonBody !== undefined) {
     args.push('-H', 'Content-Type: application/json', '--data-binary', JSON.stringify(jsonBody));
   }
