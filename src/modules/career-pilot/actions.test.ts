@@ -2,7 +2,42 @@ import { describe, expect, it } from 'vitest';
 
 import { _testing } from './actions.js';
 
-const { encodeSuffix, slugify, deriveIndustry } = _testing;
+const { encodeSuffix, slugify, deriveIndustry, normalizeProfileValue } = _testing;
+
+describe('normalizeProfileValue', () => {
+  it('stores array fields as clean JSON regardless of how the agent serialized them', () => {
+    // a real array
+    expect(normalizeProfileValue('target_roles', ['Staff Engineer', 'Senior Engineer'])).toBe(
+      '["Staff Engineer","Senior Engineer"]',
+    );
+    // a clean JSON-array string
+    expect(normalizeProfileValue('target_roles', '["Staff Engineer","Senior Engineer"]')).toBe(
+      '["Staff Engineer","Senior Engineer"]',
+    );
+    // a human comma list
+    expect(normalizeProfileValue('skills', 'Go, Rust, TypeScript')).toBe('["Go","Rust","TypeScript"]');
+    // empty → an empty array, never null-shaped junk
+    expect(normalizeProfileValue('target_roles', '')).toBe('[]');
+  });
+
+  it('repairs the over-escaped JSON the agent actually stored (the 5/6 onboarding bug)', () => {
+    const overEscaped = '[\\"Senior Software Engineer\\", \\"Staff Software Engineer\\"]';
+    const out = normalizeProfileValue('target_roles', overEscaped) as string;
+    expect(JSON.parse(out)).toEqual(['Senior Software Engineer', 'Staff Software Engineer']);
+  });
+
+  it('coerces comp_floor to a number, stripping currency formatting', () => {
+    expect(normalizeProfileValue('comp_floor', 165000)).toBe(165000);
+    expect(normalizeProfileValue('comp_floor', '$165,000')).toBe(165000);
+    expect(normalizeProfileValue('comp_floor', 'not a number')).toBeNull();
+  });
+
+  it('passes plain string fields through and maps null/undefined to null', () => {
+    expect(normalizeProfileValue('bio', 'Senior engineer.')).toBe('Senior engineer.');
+    expect(normalizeProfileValue('full_name', null)).toBeNull();
+    expect(normalizeProfileValue('full_name', undefined)).toBeNull();
+  });
+});
 
 describe('encodeSuffix', () => {
   it('maps 0..25 to a..z', () => {
