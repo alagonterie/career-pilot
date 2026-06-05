@@ -42,9 +42,9 @@ function DevInspectorPage() {
   const unavailable = knobs.status === 'error' && knobs.data === null
 
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-12">
+    <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-12 sm:px-6">
       <header className="flex flex-col gap-2">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Dev inspector</h1>
           <span className="rounded-md border border-border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
             dev · owner-only

@@ -20,6 +20,9 @@ export interface SimKnobs {
   /** How often a new simulated application is seeded (while below maxConcurrent). */
   seedIntervalSec: number;
   maxConcurrent: number;
+  /** Top-of-funnel: chance a seeded app advances past the confirmation to a screen
+   * (the rest get an early `screen_rejection` and close — the realistic attrition). */
+  screenPassRate: number;
   /** Terminal-branch split: chance of offer vs rejection (normalized over the two). */
   offerProbability: number;
   rejectionProbability: number;

@@ -19,7 +19,8 @@ describe('recruiter-sim knobs', () => {
   it('exposes the full knob set with no duplicates', () => {
     expect(new Set(SIM_KNOB_KEYS).size).toBe(SIM_KNOB_KEYS.length);
     expect(SIM_KNOB_KEYS).toContain('recruiter_sim_enabled');
-    expect(SIM_KNOB_KEYS.length).toBe(11);
+    expect(SIM_KNOB_KEYS).toContain('recruiter_sim_screen_pass_rate');
+    expect(SIM_KNOB_KEYS.length).toBe(12);
   });
 
   it('defaults the sim to disabled (a non-dev stack must never run it)', () => {

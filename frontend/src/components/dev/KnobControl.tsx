@@ -65,10 +65,14 @@ export function KnobControl({ knob, onWrite, onReset }: KnobControlProps) {
 
   return (
     <div className="flex flex-col gap-1 py-2" data-testid={`knob-${knob.key}`}>
-      <div className="flex items-center justify-between gap-3">
-        <label htmlFor={`knob-input-${knob.key}`} className="text-sm font-medium text-foreground">
-          {knob.label}
-          <span className="ml-2 font-mono text-[10px] text-muted-foreground">{knob.key}</span>
+      <div className="flex items-start justify-between gap-2">
+        {/* min-w-0 + truncate so the long unbreakable config key can shrink on
+            narrow screens (iPhone SE) instead of forcing horizontal overflow. */}
+        <label htmlFor={`knob-input-${knob.key}`} className="min-w-0 flex-1 text-sm font-medium text-foreground">
+          <span className="block truncate">{knob.label}</span>
+          <span className="block truncate font-mono text-[10px] font-normal text-muted-foreground" title={knob.key}>
+            {knob.key}
+          </span>
         </label>
         <div className="flex shrink-0 items-center gap-2">
           {knob.overridden ? (
@@ -172,7 +176,7 @@ function NumberInput({ id, knob, value, setValue, commit }: NumberInputProps) {
   }
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
       {hasRange ? (
         <input
           type="range"
@@ -185,7 +189,7 @@ function NumberInput({ id, knob, value, setValue, commit }: NumberInputProps) {
           onMouseUp={(e) => tryCommit(Number((e.target as HTMLInputElement).value))}
           onTouchEnd={(e) => tryCommit(Number((e.target as HTMLInputElement).value))}
           onKeyUp={(e) => tryCommit(Number((e.target as HTMLInputElement).value))}
-          className="h-1 flex-1 cursor-pointer accent-primary"
+          className="h-1 min-w-0 flex-1 basis-24 cursor-pointer accent-primary"
         />
       ) : null}
       <input

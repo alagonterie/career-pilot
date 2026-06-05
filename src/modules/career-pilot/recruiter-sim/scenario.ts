@@ -10,6 +10,10 @@
  *   seed (apply) → application_confirmation → screen_invite → onsite_invite (+Calendar)
  *               → next_round_update → terminal { offer | rejection }
  * with a per-step ghost chance (the thread goes quiet — close-detection's trigger).
+ * Most applications never get a screen, though: a top-of-funnel `screenPassRate`
+ * gate sends an early `screen_rejection` right after the confirmation (the
+ * realistic cull — applied, auto-confirmed, then passed over), so only a minority
+ * reach the deeper stages.
  *
  * The wall-clock pace is compressed (steps seconds/minutes apart — the speed
  * knob) while each email's Date header is BACKDATED along a realistic multi-week
@@ -168,6 +172,17 @@ function stepApp(app: SimApp, knobs: SimKnobs, nowMs: number, rng: () => number)
     app.outcome = outcome;
     app.status = 'closed';
     return buildAppInject(app, outcome === 'offer' ? 'offer' : 'rejection', internalDateMs);
+  }
+
+  // Top-of-funnel attrition: most applications are passed over right after the
+  // confirmation. At the screen step, only `screenPassRate` advance to an intro
+  // call; the rest get an early rejection and close — the realistic cull that
+  // keeps the deep funnel sparse. (The very first email, the confirmation at
+  // stage 0, always sends.)
+  if (stage === 1 && rng() >= knobs.screenPassRate) {
+    app.status = 'closed';
+    app.outcome = 'rejection';
+    return buildAppInject(app, 'screen_rejection', internalDateMs);
   }
 
   const classification = STAGE_CLASSIFICATIONS[stage];

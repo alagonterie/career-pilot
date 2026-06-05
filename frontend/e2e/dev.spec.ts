@@ -198,6 +198,17 @@ test.describe('/dev — dev inspector + sim controls (§24.42c)', () => {
     await expect(page.getByTestId('persona-panel')).toHaveCount(0)
   })
 
+  test('fits an iPhone SE viewport without horizontal overflow', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 667 }) // iPhone SE
+    await stubDev(page)
+    await page.goto('/dev')
+    await expect(page.getByTestId('knob-group-sim')).toBeVisible()
+    // The page must not be wider than the viewport — the long config keys in the
+    // knob headers truncate instead of forcing a horizontal scroll.
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+    expect(overflow).toBeLessThanOrEqual(1)
+  })
+
   test('is not linked from the public site nav (dev-only, direct URL)', async ({ page }) => {
     await page.goto('/')
     const nav = page.getByRole('navigation', { name: 'Primary' })

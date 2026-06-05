@@ -66,6 +66,7 @@
     "recruiter_sim_max_step_sec": 150,
     "recruiter_sim_seed_interval_sec": 90,
     "recruiter_sim_max_concurrent": 8,
+    "recruiter_sim_screen_pass_rate": 0.4,
     "recruiter_sim_offer_probability": 0.25,
     "recruiter_sim_rejection_probability": 0.5,
     "recruiter_sim_ghost_probability": 0.2,
