@@ -221,7 +221,7 @@ export function renderPersonaForGroup(group: AgentGroup): void {
   });
 }
 
-function readCandidateProfile(): CandidateProfile | null {
+export function readCandidateProfile(): CandidateProfile | null {
   try {
     const row = getDb().prepare('SELECT * FROM candidate_profile WHERE id = 1').get() as CandidateProfile | undefined;
     return row ?? null;

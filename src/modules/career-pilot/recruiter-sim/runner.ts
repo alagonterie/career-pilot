@@ -40,7 +40,7 @@ export function isRecruiterSimEnv(): boolean {
   return process.env.ENVIRONMENT === 'dev';
 }
 
-function simStatePath(): string {
+export function simStatePath(): string {
   return path.join(DATA_DIR, 'recruiter-sim-state.json');
 }
 
