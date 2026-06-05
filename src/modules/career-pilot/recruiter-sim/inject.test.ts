@@ -23,7 +23,7 @@ describe('recruiter-sim inject builders', () => {
     const raw = buildRawMessage({
       fromName: 'Meridian Labs Talent',
       fromAddress: 'talent@meridianlabs.example',
-      to: 'janedoe.career.dev@gmail.com',
+      to: 'candidate.dev@gmail.com',
       subject: 'We received your application — Backend Engineer',
       dateMs: Date.UTC(2026, 4, 31, 19, 11, 2),
       messageId: '<sim-abc@recruiter-sim.invalid>',
@@ -32,7 +32,7 @@ describe('recruiter-sim inject builders', () => {
     });
     const decoded = decodeBase64Url(raw);
     expect(decoded).toContain('From: Meridian Labs Talent <talent@meridianlabs.example>'); // ASCII → not encoded
-    expect(decoded).toContain('To: janedoe.career.dev@gmail.com');
+    expect(decoded).toContain('To: candidate.dev@gmail.com');
     expect(decoded).toContain('Subject: =?UTF-8?B?'); // subject has an em dash → encoded
     expect(decoded).toContain('Message-ID: <sim-abc@recruiter-sim.invalid>');
     expect(decoded).toContain('Thanks for applying — we will be in touch.'); // em dash preserved in body

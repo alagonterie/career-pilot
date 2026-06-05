@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import { assertSelfOnly, canonicalizeGmail, isSelfTarget } from './allow-list.js';
 
-const DEV = 'janedoe.career.dev@gmail.com';
+// Placeholder dev account (the real address lives only in the gitignored .env).
+const DEV = 'candidate.dev@gmail.com';
 
 describe('recruiter-sim allow-list', () => {
   it('canonicalizes Gmail: strips +tag, lowercases, drops dots in the local part', () => {
-    expect(canonicalizeGmail('janedoe.Career.Dev+acme@gmail.com')).toBe('janedoecareerdev@gmail.com');
-    expect(canonicalizeGmail('janedoecareerdev@gmail.com')).toBe('janedoecareerdev@gmail.com');
+    expect(canonicalizeGmail('Candidate.Dev+acme@gmail.com')).toBe('candidatedev@gmail.com');
+    expect(canonicalizeGmail('candidatedev@gmail.com')).toBe('candidatedev@gmail.com');
     expect(canonicalizeGmail('a.b@googlemail.com')).toBe('ab@googlemail.com');
   });
 
@@ -17,8 +18,8 @@ describe('recruiter-sim allow-list', () => {
 
   it('treats +tag and dot variants of the dev account as self', () => {
     expect(isSelfTarget(DEV, DEV)).toBe(true);
-    expect(isSelfTarget('janedoe.career.dev+acme01@gmail.com', DEV)).toBe(true);
-    expect(isSelfTarget('janedoecareerdev@gmail.com', DEV)).toBe(true);
+    expect(isSelfTarget('candidate.dev+acme01@gmail.com', DEV)).toBe(true);
+    expect(isSelfTarget('candidatedev@gmail.com', DEV)).toBe(true);
   });
 
   it('rejects any other recipient', () => {
@@ -28,6 +29,6 @@ describe('recruiter-sim allow-list', () => {
 
   it('assertSelfOnly throws for a non-self target and is silent for self', () => {
     expect(() => assertSelfOnly('recruiter@acme.example', DEV)).toThrow(/self-only allow-list/);
-    expect(() => assertSelfOnly('janedoe.career.dev+x@gmail.com', DEV)).not.toThrow();
+    expect(() => assertSelfOnly('candidate.dev+x@gmail.com', DEV)).not.toThrow();
   });
 });
