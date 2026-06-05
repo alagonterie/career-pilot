@@ -2,23 +2,25 @@
  * Recruiter-sim prose adapter (Sub-milestone 9.3b, STRATEGY.md §24.40 D2).
  *
  * Haiku enriches the deterministic backbone body into more natural recruiter/ATS
- * prose — but it is strictly OPTIONAL. Outside ENVIRONMENT=dev, over the sim
- * budget, or on any failure, the deterministic body is used verbatim. The engine
- * never hard-depends on the model (boilerplate ATS email is realistic on its
- * own; Haiku just adds variety).
+ * prose — but it is strictly OPTIONAL. With no PORTKEY_API_KEY, under
+ * PORTKEY_BYPASS, over the sim budget, or on any failure, the deterministic body
+ * is used verbatim. The engine never hard-depends on the model (boilerplate ATS
+ * email is realistic on its own; Haiku just adds variety).
  *
- * The call goes through the SAME OneCLI gateway path as the sim's Gmail
- * injection: `onecli run -- curl` to the Anthropic Messages API, with OneCLI
- * MITM-injecting the `x-api-key` from its `Anthropic` secret. Going gateway →
- * Anthropic (vs a direct Portkey fetch) keeps one credential path for the whole
- * fixture and avoids depending on a Portkey Model-Catalog provider slug.
+ * Routes through the locked LLM gateway — Portkey's Model Catalog — exactly as
+ * the rest of the system's LLM does: a host fetch to api.portkey.ai
+ * /v1/chat/completions with the AI-Provider slug in the model field
+ * (`@<provider>/claude-haiku-4-5`) + the host PORTKEY_API_KEY. Host-side Portkey
+ * is sanctioned (the host carries the key via the systemd EnvironmentFile
+ * drop-in; the /live analytics panel uses the same key), and this puts the sim's
+ * spend in Portkey's observability. (Gotcha learned at build: the catalog slug
+ * goes in the MODEL field as `@provider/model`, NOT an `x-portkey-provider`
+ * header — that header returns 400 "Invalid provider passed".)
  */
 import { log } from '../../../log.js';
-import { gatewayCurl } from './inject.js';
 import type { InjectEmailIntent } from './types.js';
 
 const HAIKU_MODEL = 'claude-haiku-4-5';
-const ANTHROPIC_MESSAGES_URL = 'https://api.anthropic.com/v1/messages';
 /** Conservative flat per-call estimate (a ~200-tok prompt + ~150-tok output on Haiku). */
 export const HAIKU_EST_COST_USD = 0.002;
 
@@ -28,9 +30,9 @@ export interface ProseResult {
   estCostUsd: number;
 }
 
-/** Enrichment is attempted only on the dev stack (the sim's only home). */
-export function enrichmentEnabled(): boolean {
-  return process.env.ENVIRONMENT === 'dev';
+/** True when a Portkey enrichment call is even possible (key present, not bypassed). */
+export function portkeyConfigured(): boolean {
+  return !!process.env.PORTKEY_API_KEY && process.env.PORTKEY_BYPASS !== 'true';
 }
 
 /**
@@ -49,29 +51,36 @@ export function sanitizeProse(text: string): string {
 }
 
 async function callHaiku(prompt: string): Promise<string> {
-  const res = await gatewayCurl(
-    'POST',
-    ANTHROPIC_MESSAGES_URL,
-    { model: HAIKU_MODEL, max_tokens: 320, messages: [{ role: 'user', content: prompt }] },
-    { 'anthropic-version': '2023-06-01' },
-  );
-  if (res.status < 200 || res.status >= 300) {
-    throw new Error(`anthropic HTTP ${res.status}: ${res.raw.slice(0, 160)}`);
-  }
-  const content = res.json?.content as Array<{ type?: string; text?: string }> | undefined;
-  const text = content?.find((b) => b.type === 'text')?.text ?? content?.[0]?.text;
-  if (typeof text !== 'string') throw new Error('anthropic: no text in completion');
+  const base = process.env.PORTKEY_BASE_URL || 'https://api.portkey.ai/v1';
+  const provider = process.env.PORTKEY_AI_PROVIDER || 'anthropic-default';
+  const res = await fetch(`${base}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-portkey-api-key': process.env.PORTKEY_API_KEY as string,
+    },
+    body: JSON.stringify({
+      model: `@${provider}/${HAIKU_MODEL}`,
+      max_tokens: 320,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) throw new Error(`portkey HTTP ${res.status}`);
+  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  const text = data.choices?.[0]?.message?.content;
+  if (typeof text !== 'string') throw new Error('portkey: no content in completion');
   return sanitizeProse(text);
 }
 
 /**
- * Return the email body for an intent: the Haiku-enriched version when on the
- * dev stack AND there is budget left, otherwise the deterministic backbone.
+ * Return the email body for an intent: the Haiku-enriched version when Portkey
+ * is configured AND there is budget left, otherwise the deterministic backbone.
  * Never throws.
  */
 export async function enrichBody(intent: InjectEmailIntent, budgetRemainingUsd: number): Promise<ProseResult> {
   const deterministic: ProseResult = { body: intent.deterministicBody, usedLlm: false, estCostUsd: 0 };
-  if (!enrichmentEnabled() || budgetRemainingUsd < HAIKU_EST_COST_USD) return deterministic;
+  if (!portkeyConfigured() || budgetRemainingUsd < HAIKU_EST_COST_USD) return deterministic;
   try {
     const prompt = `${intent.prosePrompt}\n\nDraft to rewrite (keep the facts, improve the wording):\n${intent.deterministicBody}`;
     const body = await callHaiku(prompt);
