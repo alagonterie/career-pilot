@@ -46,6 +46,7 @@ const seedIntent: SeedApplicationIntent = {
   companyName: 'Meridian Labs',
   obfuscatedLabel: 'Series B startup',
   roleTitle: 'Backend Engineer',
+  jdText: 'Own backend services and APIs; Go/Rust + PostgreSQL.',
   appliedAtMs: Date.UTC(2026, 4, 20),
 };
 
@@ -75,11 +76,13 @@ describe('recruiter-sim runner helpers', () => {
       status: string;
       public_state: string;
       company_name: string;
+      jd_text: string | null;
     }>;
     expect(rows).toHaveLength(1);
     expect(rows[0].status).toBe('applied');
     expect(rows[0].public_state).toBe('obfuscated');
     expect(rows[0].company_name).toBe('Meridian Labs');
+    expect(rows[0].jd_text).toContain('backend services'); // the seeded JD drives fit scoring
   });
 
   it('reconcileState drops sim apps whose application row is gone (post reset:dev)', () => {

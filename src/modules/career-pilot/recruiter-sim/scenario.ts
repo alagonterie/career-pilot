@@ -66,6 +66,30 @@ const ROLES = [
   'Staff Software Engineer',
 ];
 
+// A short synthetic JD ("what the role asks") per role archetype, seeded onto the
+// application so win_confidence can score *fit* (candidate profile vs the role),
+// not just funnel momentum. Deliberately varied so a backend/infra candidate fits
+// some roles better than others (Full-Stack is the weakest match).
+const JD_BY_ROLE: Record<string, string> = {
+  'Senior Software Engineer':
+    'Build and scale backend services and APIs. Strong distributed-systems fundamentals, production ownership, and a systems language (Go, Rust, or similar).',
+  'Backend Engineer':
+    'Own backend services, data models, and APIs. Requires Go or Rust, relational databases (PostgreSQL), and solid distributed-systems and API-design experience.',
+  'Full-Stack Engineer':
+    'Ship product end-to-end across a React/TypeScript frontend and a Node backend. Strong UI/UX sensibility and product velocity; comfort owning the full stack.',
+  'Platform Engineer':
+    'Build internal developer platforms and infrastructure. Kubernetes, infrastructure-as-code, observability, and distributed-systems depth.',
+  'Software Engineer, Infrastructure':
+    'Own reliability and scale of core infrastructure. Cloud (AWS), Kubernetes/Docker, distributed systems, and an on-call/operational mindset.',
+  'Staff Software Engineer':
+    'Set technical direction across teams: senior system-design leadership, cross-team architecture, and mentorship on top of deep backend/distributed-systems expertise.',
+};
+
+/** The seeded JD for a role (falls back to the role title when unmapped). */
+export function jdForRole(role: string): string {
+  return JD_BY_ROLE[role] ?? `${role} — see role description.`;
+}
+
 // ── seedable RNG (so tests are deterministic) ────────────────────────────────
 
 /** mulberry32 — a tiny deterministic PRNG. Returns a function yielding [0, 1). */
@@ -153,6 +177,7 @@ function makeSeed(nowMs: number, rng: () => number): { app: SimApp; intent: Seed
     companyName: name,
     obfuscatedLabel: label,
     roleTitle: role,
+    jdText: jdForRole(role),
     appliedAtMs,
   };
   return { app, intent };

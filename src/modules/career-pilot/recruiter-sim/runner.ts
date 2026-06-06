@@ -81,13 +81,14 @@ export function seedApplicationRow(db: Database.Database, intent: SeedApplicatio
   const appliedAt = new Date(intent.appliedAtMs).toISOString();
   db.prepare(
     `INSERT OR IGNORE INTO applications
-       (id, company_name, obfuscated_label, public_state, role_title, status, applied_at, last_activity_at, created_at)
-     VALUES (?, ?, ?, 'obfuscated', ?, 'applied', ?, ?, ?)`,
+       (id, company_name, obfuscated_label, public_state, role_title, jd_text, status, applied_at, last_activity_at, created_at)
+     VALUES (?, ?, ?, 'obfuscated', ?, ?, 'applied', ?, ?, ?)`,
   ).run(
     intent.appId,
     intent.companyName,
     intent.obfuscatedLabel,
     intent.roleTitle,
+    intent.jdText,
     appliedAt,
     appliedAt,
     new Date().toISOString(),
