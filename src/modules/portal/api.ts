@@ -38,7 +38,14 @@ import { log } from '../../log.js';
 import { loadState, simStatePath } from '../career-pilot/recruiter-sim/runner.js';
 
 import { relayContactSubmission, type ContactInput } from './contact-relay.js';
-import { applyKnobWrite, buildDevKnobs, buildDevPersonaFromDb, buildDevState, isDevEnv } from './dev-inspector.js';
+import {
+  applyDevControl,
+  applyKnobWrite,
+  buildDevKnobs,
+  buildDevPersonaFromDb,
+  buildDevState,
+  isDevEnv,
+} from './dev-inspector.js';
 import { getTelemetry } from './portkey-analytics.js';
 import { buildSanitizeDemo } from './sanitize-demo.js';
 import { getRecentSimulatorRuns, getSimulatorResult, startSimulatorRun, type SimulatorInput } from './simulator.js';
@@ -513,6 +520,21 @@ function handleDevPersona(res: http.ServerResponse, cors: Record<string, string>
   json(res, 200, buildDevPersonaFromDb(), cors);
 }
 
+async function handleDevControl(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  cors: Record<string, string>,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch {
+    return json(res, 400, { error: 'invalid JSON body' }, cors);
+  }
+  const out = applyDevControl(getDb(), body);
+  json(res, out.status, out.body, cors);
+}
+
 // ── request router ───────────────────────────────────────────────────────
 
 async function requestHandler(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -565,6 +587,7 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
       if (method === 'GET' && path === '/api/dev/knobs') return handleDevKnobs(res, cors);
       if (method === 'POST' && path === '/api/dev/knobs') return await handleDevKnobsWrite(req, res, cors);
       if (method === 'GET' && path === '/api/dev/persona') return handleDevPersona(res, cors);
+      if (method === 'POST' && path === '/api/dev/control') return await handleDevControl(req, res, cors);
     }
 
     json(res, 404, { error: 'not_found', path }, cors);

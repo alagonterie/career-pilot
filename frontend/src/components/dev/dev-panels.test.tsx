@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { DevKnob, DevPersonaResponse, DevStateResponse } from '~/lib/use-dev-inspector'
 
 import { KnobControls } from './KnobControls'
+import { PauseSpendControl } from './PauseSpendControl'
 import { PersonaPanel } from './PersonaPanel'
 import { SimStatePanel } from './SimStatePanel'
 
@@ -185,6 +186,7 @@ describe('SimStatePanel', () => {
   const state: DevStateResponse = {
     enabled: true,
     lastSeedAtMs: Date.now(),
+    pauseState: 'active',
     apps: [
       {
         appId: 'sim-1',
@@ -224,7 +226,9 @@ describe('SimStatePanel', () => {
   })
 
   it('renders an empty hint when no apps are in flight', () => {
-    render(<SimStatePanel state={{ enabled: false, lastSeedAtMs: 0, apps: [], applications: [] }} />)
+    render(
+      <SimStatePanel state={{ enabled: false, lastSeedAtMs: 0, pauseState: 'active', apps: [], applications: [] }} />,
+    )
     expect(screen.getByTestId('sim-enabled-badge')).toHaveTextContent('idle')
     expect(screen.getByText(/No simulated applications/i)).toBeInTheDocument()
   })
@@ -295,5 +299,40 @@ describe('PersonaPanel', () => {
     expect(screen.getByText('Backend Engineer, Platform Engineer')).toBeInTheDocument()
     expect(screen.getByText('$180,000')).toBeInTheDocument()
     expect(screen.getByTestId('onboarding-badge')).toHaveTextContent('6/6')
+  })
+})
+
+describe('PauseSpendControl', () => {
+  it('shows "spend live" + pauses on click (optimistically flips to frozen)', async () => {
+    const onControl = vi.fn(ok)
+    render(<PauseSpendControl pauseState="active" onControl={onControl} />)
+    expect(screen.getByTestId('pause-spend-badge')).toHaveTextContent('spend live')
+    fireEvent.click(screen.getByTestId('pause-spend-pause'))
+    await waitFor(() => expect(onControl).toHaveBeenCalledWith('pause'))
+    await waitFor(() => expect(screen.getByTestId('pause-spend-badge')).toHaveTextContent('spend frozen'))
+    expect(screen.getByTestId('pause-spend-resume')).toBeInTheDocument()
+  })
+
+  it('shows "spend frozen" + resumes on click', async () => {
+    const onControl = vi.fn(ok)
+    render(<PauseSpendControl pauseState="halted" onControl={onControl} />)
+    expect(screen.getByTestId('pause-spend-badge')).toHaveTextContent('spend frozen')
+    fireEvent.click(screen.getByTestId('pause-spend-resume'))
+    await waitFor(() => expect(onControl).toHaveBeenCalledWith('resume'))
+  })
+
+  it('reverts the optimistic flip + shows the error when the control call fails', async () => {
+    const onControl = vi.fn(async () => ({ ok: false as const, status: 500, error: 'boom' }))
+    render(<PauseSpendControl pauseState="active" onControl={onControl} />)
+    fireEvent.click(screen.getByTestId('pause-spend-pause'))
+    await waitFor(() => expect(screen.getByText('boom')).toBeInTheDocument())
+    expect(screen.getByTestId('pause-spend-badge')).toHaveTextContent('spend live') // reverted
+  })
+
+  it('shows a read-only note under killswitch — no pause/resume button on the page', () => {
+    render(<PauseSpendControl pauseState="killswitch" onControl={vi.fn(ok)} />)
+    expect(screen.getByText(/recover via SSH/i)).toBeInTheDocument()
+    expect(screen.queryByTestId('pause-spend-resume')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('pause-spend-pause')).not.toBeInTheDocument()
   })
 })

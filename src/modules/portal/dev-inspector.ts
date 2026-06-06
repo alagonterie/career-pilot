@@ -28,6 +28,8 @@ import { type CandidateProfile, readCandidateProfile, renderPersona } from '../c
 import { SIM_KNOB_KEYS } from '../career-pilot/recruiter-sim/knobs.js';
 import { STAGE_CLASSIFICATIONS } from '../career-pilot/recruiter-sim/templates.js';
 import type { SimApp, SimState } from '../career-pilot/recruiter-sim/types.js';
+import { executeControlCommand } from './kill-switch.js';
+import { getPauseState, type PauseState } from './system-modes.js';
 
 /** The hard environment gate. Read at request time — see the module header. */
 export function isDevEnv(): boolean {
@@ -358,6 +360,8 @@ export function buildDevState(
   lastSeedAtMs: number;
   apps: SimAppView[];
   applications: SimApplicationRow[];
+  /** System pause state (§24.43e) — `halted` means LLM spend is frozen. */
+  pauseState: PauseState;
 } {
   const enabled = getConfig<boolean>(db, 'recruiter_sim_enabled');
   const ids = state.apps.map((a) => a.appId);
@@ -376,7 +380,54 @@ export function buildDevState(
     totalStages: STAGE_CLASSIFICATIONS.length,
     upcoming: simUpcoming(a),
   }));
-  return { enabled, lastSeedAtMs: state.lastSeedAtMs, apps, applications };
+  return { enabled, lastSeedAtMs: state.lastSeedAtMs, apps, applications, pauseState: getPauseState() };
+}
+
+// ── dev "Pause LLM spend" control (§24.43e) ──────────────────────────────────
+
+export interface DevControlOutcome {
+  status: number;
+  body: unknown;
+}
+
+/**
+ * The dev "Pause LLM spend" control. Freezes ALL LLM spend while leaving the GCP
+ * infra up — for stepping away without burning credits.
+ *
+ *  - `pause`  → `executeControlCommand('/halt')`: `pause_state='halted'`, which
+ *    the container-runner spawn gate enforces (no container spawns at all —
+ *    reactive OR proactive — so the agent cannot make an LLM call) + kills any
+ *    running containers. ALSO flips `recruiter_sim_enabled=false`, because the
+ *    sim is host-side and doesn't honor `pause_state` (its Haiku enrichment would
+ *    keep spending otherwise).
+ *  - `resume` → `executeControlCommand('/resume')`: back to `pause_state='active'`.
+ *    Leaves the sim off — it's re-enabled deliberately via its own toggle.
+ *
+ * `/killswitch` is intentionally NOT reachable here — only the reversible states.
+ * Reuses the built control plane (kill-switch.ts), so the effect is identical to
+ * the Telegram `/halt` + `/resume`.
+ */
+export function applyDevControl(db: Database.Database, raw: unknown): DevControlOutcome {
+  if (typeof raw !== 'object' || raw === null) {
+    return { status: 400, body: { error: 'expected a JSON object { action: "pause" | "resume" }' } };
+  }
+  const action = (raw as { action?: unknown }).action;
+
+  if (action === 'pause') {
+    const outcome = executeControlCommand('/halt', 'dev: pause LLM spend', 'dev-inspector');
+    writePreference(db, 'recruiter_sim_enabled', 'false');
+    return { status: 200, body: { pauseState: outcome.state, killed: outcome.killed, simEnabled: false } };
+  }
+
+  if (action === 'resume') {
+    const outcome = executeControlCommand('/resume', null, 'dev-inspector');
+    return {
+      status: 200,
+      body: { pauseState: outcome.state, simEnabled: getConfig<boolean>(db, 'recruiter_sim_enabled') },
+    };
+  }
+
+  return { status: 400, body: { error: `unknown action: ${String(action)} (expected "pause" | "resume")` } };
 }
 
 // ── persona / onboarding ──────────────────────────────────────────────────────

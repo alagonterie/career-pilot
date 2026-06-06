@@ -56,6 +56,7 @@ const KNOBS = {
 const STATE = {
   enabled: false,
   lastSeedAtMs: 0,
+  pauseState: 'active',
   apps: [
     {
       appId: 'sim-1',

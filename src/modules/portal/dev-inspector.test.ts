@@ -16,6 +16,7 @@ import { SIM_KNOB_KEYS } from '../career-pilot/recruiter-sim/knobs.js';
 import type { SimApp, SimState } from '../career-pilot/recruiter-sim/types.js';
 
 import {
+  applyDevControl,
   applyKnobWrite,
   buildDevKnobs,
   buildDevState,
@@ -25,6 +26,7 @@ import {
   simUpcoming,
   validateKnobWrite,
 } from './dev-inspector.js';
+import { getPauseState } from './system-modes.js';
 
 beforeEach(() => {
   closeDb();
@@ -345,5 +347,34 @@ describe('computeOnboardingProgress', () => {
     expect(p.complete).toBe(true);
     expect(p.nextField).toBeNull();
     expect(p.filledCount).toBe(ONBOARDING_FIELD_ORDER.length);
+  });
+});
+
+describe('applyDevControl (§24.43e pause LLM spend)', () => {
+  it('pause → halts (pause_state=halted) AND turns the sim off', () => {
+    const db = getDb();
+    applyKnobWrite(db, { key: 'recruiter_sim_enabled', value: true }); // sim on first
+    const out = applyDevControl(db, { action: 'pause' });
+    expect(out.status).toBe(200);
+    expect((out.body as { pauseState: string; simEnabled: boolean }).pauseState).toBe('halted');
+    expect((out.body as { simEnabled: boolean }).simEnabled).toBe(false);
+    expect(getPauseState()).toBe('halted');
+    expect(getConfig<boolean>(db, 'recruiter_sim_enabled')).toBe(false);
+  });
+
+  it('resume → back to active (sim stays off)', () => {
+    const db = getDb();
+    applyDevControl(db, { action: 'pause' });
+    const out = applyDevControl(db, { action: 'resume' });
+    expect((out.body as { pauseState: string }).pauseState).toBe('active');
+    expect(getPauseState()).toBe('active');
+  });
+
+  it('rejects unknown actions + non-object bodies (400, no state change)', () => {
+    const db = getDb();
+    expect(applyDevControl(db, { action: 'nope' }).status).toBe(400);
+    expect(applyDevControl(db, null).status).toBe(400);
+    expect(applyDevControl(db, { action: 'killswitch' }).status).toBe(400); // not reachable here
+    expect(getPauseState()).toBe('active'); // nothing mutated
   });
 });

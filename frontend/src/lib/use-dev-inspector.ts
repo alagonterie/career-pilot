@@ -12,6 +12,9 @@ import { usePolledJson, type PollStatus } from './use-polled-json'
 export type KnobType = 'boolean' | 'number' | 'cron' | 'enum'
 export type KnobGroup = 'sim' | 'pacing' | 'budget' | 'polling' | 'models'
 
+/** System pause state (§24.43e). `halted` = LLM spend frozen (no container spawns). */
+export type PauseState = 'active' | 'paused' | 'halted' | 'killswitch'
+
 /** One writable knob + its current value and validation metadata (`GET /api/dev/knobs`). */
 export interface DevKnob {
   key: string
@@ -68,6 +71,8 @@ export interface DevStateResponse {
   lastSeedAtMs: number
   apps: DevSimApp[]
   applications: DevApplicationRow[]
+  /** System pause state — `halted` means LLM spend is frozen (§24.43e). */
+  pauseState: PauseState
 }
 
 /** The raw candidate_profile row (real PII — served only behind the dev gate). */
@@ -126,10 +131,14 @@ export interface KnobWriteResult {
   error?: string
 }
 
-/** POST a knob-mutation body to `/api/dev/knobs`, normalizing the result. */
-async function postDev(baseUrl: string, body: Record<string, unknown>): Promise<KnobWriteResult> {
+/** POST a mutation body to a dev endpoint (defaults to `/api/dev/knobs`), normalizing the result. */
+async function postDev(
+  baseUrl: string,
+  body: Record<string, unknown>,
+  path = '/api/dev/knobs',
+): Promise<KnobWriteResult> {
   try {
-    const res = await fetch(`${baseUrl}/api/dev/knobs`, {
+    const res = await fetch(`${baseUrl}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -167,6 +176,15 @@ export function resetKnob(baseUrl: string, key: string): Promise<KnobWriteResult
 /** Reset every writable knob to its default at once. */
 export function resetAllKnobs(baseUrl: string): Promise<KnobWriteResult> {
   return postDev(baseUrl, { resetAll: true })
+}
+
+/**
+ * Freeze (`'pause'` → halt the agent + turn the sim off) or unfreeze (`'resume'`)
+ * all LLM spend (§24.43e). Reuses the host control plane — reversible only; the
+ * killswitch is intentionally not reachable from the page.
+ */
+export function postDevControl(baseUrl: string, action: 'pause' | 'resume'): Promise<KnobWriteResult> {
+  return postDev(baseUrl, { action }, '/api/dev/control')
 }
 
 // ── pure view helpers ─────────────────────────────────────────────────────────
