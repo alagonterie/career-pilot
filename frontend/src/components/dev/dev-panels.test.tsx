@@ -10,7 +10,15 @@ import { SimStatePanel } from './SimStatePanel'
 const ok = async () => ({ ok: true as const, status: 200 })
 
 function knob(p: Partial<DevKnob> & { key: string; type: DevKnob['type']; group: DevKnob['group'] }): DevKnob {
-  const value = p.value ?? (p.type === 'boolean' ? false : p.type === 'number' ? 1 : '* * * * *')
+  const value =
+    p.value ??
+    (p.type === 'boolean'
+      ? false
+      : p.type === 'number'
+        ? 1
+        : p.type === 'enum'
+          ? (p.options?.[0] ?? 'default')
+          : '* * * * *')
   return {
     key: p.key,
     type: p.type,
@@ -22,6 +30,7 @@ function knob(p: Partial<DevKnob> & { key: string; type: DevKnob['type']; group:
     min: p.min ?? null,
     max: p.max ?? null,
     integer: p.integer ?? false,
+    options: p.options ?? null,
     note: p.note ?? null,
   }
 }
@@ -45,6 +54,14 @@ const KNOBS: DevKnob[] = [
     value: '30 7 * * *',
     label: 'Funnel cron',
     note: 'applies next cycle',
+  }),
+  knob({
+    key: 'dev_model_tier',
+    type: 'enum',
+    group: 'models',
+    value: 'default',
+    options: ['default', 'sonnet', 'haiku'],
+    label: 'Dev model tier',
   }),
 ]
 
@@ -72,7 +89,18 @@ describe('KnobControls', () => {
     renderControls(KNOBS)
     expect(screen.getByTestId('knob-group-sim')).toBeInTheDocument()
     expect(screen.getByTestId('knob-group-pacing')).toBeInTheDocument()
+    expect(screen.getByTestId('knob-group-models')).toBeInTheDocument()
     expect(screen.queryByTestId('knob-group-polling')).not.toBeInTheDocument()
+  })
+
+  it('picking a model tier option commits the selected value AND optimistically activates it', async () => {
+    const onWrite = vi.fn(ok)
+    renderControls(KNOBS, { onWrite })
+    const row = screen.getByTestId('knob-dev_model_tier')
+    expect(within(row).getByTestId('knob-option-dev_model_tier-default')).toHaveAttribute('aria-checked', 'true')
+    fireEvent.click(within(row).getByTestId('knob-option-dev_model_tier-haiku'))
+    await waitFor(() => expect(onWrite).toHaveBeenCalledWith('dev_model_tier', 'haiku'))
+    expect(within(row).getByTestId('knob-option-dev_model_tier-haiku')).toHaveAttribute('aria-checked', 'true')
   })
 
   it('toggling a boolean writes the flipped value AND optimistically flips the control', async () => {

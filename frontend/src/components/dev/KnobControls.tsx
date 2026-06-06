@@ -3,12 +3,17 @@ import type { DevKnob, KnobGroup, KnobWriteResult } from '~/lib/use-dev-inspecto
 
 import { KnobControl } from './KnobControl'
 
-const GROUP_ORDER: KnobGroup[] = ['sim', 'pacing', 'budget', 'polling']
+const GROUP_ORDER: KnobGroup[] = ['sim', 'pacing', 'budget', 'models', 'polling']
 
 const GROUP_META: Record<KnobGroup, { title: string; blurb: string }> = {
   sim: { title: 'Recruiter sim', blurb: 'The dev fixture that injects ATS mail into the dev mailbox.' },
   pacing: { title: 'Loop pacing', blurb: 'Cron cadence for the proactive flows. Changes apply on the next reclone.' },
   budget: { title: 'Cost caps', blurb: 'Daily LLM spend ceilings for the dev stack.' },
+  models: {
+    title: 'Model tier',
+    blurb:
+      'Drop the orchestrator + subagents off Opus for cheap dev runs (applies on the next spawn). The cost delta shows up in Portkey.',
+  },
   polling: { title: 'Polling', blurb: 'How often the host syncs Gmail / Calendar.' },
 }
 

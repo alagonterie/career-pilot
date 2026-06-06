@@ -72,6 +72,7 @@
     "recruiter_sim_ghost_probability": 0.2,
     "recruiter_sim_noise_ratio": 0.15,
     "recruiter_sim_daily_budget_usd": 0.5,
+    "dev_model_tier": "default",
     "portal_api_port": 3001,
     "portal_cors_origins": ["http://localhost:3000"],
     "portal_sse_tail_interval_ms": 1000,

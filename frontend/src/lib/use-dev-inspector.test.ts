@@ -37,6 +37,7 @@ describe('useDevKnobs', () => {
           min: null,
           max: null,
           integer: false,
+          options: null,
           note: null,
         },
       ],
