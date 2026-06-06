@@ -238,7 +238,7 @@ describe('SimStatePanel', () => {
     render(<SimStatePanel state={state} onSweep={onSweep} />)
     fireEvent.click(screen.getByTestId('sweep-now'))
     await waitFor(() => expect(onSweep).toHaveBeenCalled())
-    await waitFor(() => expect(screen.getByTestId('sweep-status')).toHaveTextContent(/enqueued/i))
+    await waitFor(() => expect(screen.getByTestId('sweep-status')).toHaveTextContent(/converted/i))
   })
 
   it('omits the sweep button when onSweep is not provided', () => {

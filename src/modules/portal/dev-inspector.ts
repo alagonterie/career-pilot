@@ -24,11 +24,13 @@
 import type Database from 'better-sqlite3';
 
 import { getAgentGroupByFolder } from '../../db/agent-groups.js';
+import { getDb } from '../../db/connection.js';
 import { nextEvenSeq } from '../../db/session-db.js';
 import { findSessionByAgentGroup } from '../../db/sessions.js';
 import { getConfig, getConfigDefault } from '../../get-config.js';
 import { log } from '../../log.js';
 import { openInboundDb } from '../../session-manager.js';
+import { applyFunnelFromEmailEvents } from '../career-pilot/funnel-apply.js';
 import { type CandidateProfile, readCandidateProfile, renderPersona } from '../career-pilot/render-persona.js';
 import { SIM_KNOB_KEYS } from '../career-pilot/recruiter-sim/knobs.js';
 import { STAGE_CLASSIFICATIONS } from '../career-pilot/recruiter-sim/templates.js';
@@ -463,30 +465,35 @@ export function enqueueSweepTask(inDb: Database.Database): string {
 }
 
 /**
- * Enqueue an on-demand funnel-curator sweep for the owner group (§24.43c). The
- * host-sweep picks up the `task` row on its next tick and wakes the orchestrator,
- * which runs the curator sweep → `update_application` → `public_funnel_view` —
- * converting the sim's inbound mail into board moves without waiting for the
- * daily cron. Needs an active owner session (created the first time the owner
- * messages the bot); 409 with a hint otherwise. Inert while the system is
- * halted/paused — the host-sweep's pause gate suppresses the proactive wake (so
- * "Pause LLM spend" also pauses sweeps, by design).
+ * The dev "Sweep & convert now" action (§24.43c). Two parts:
+ *   1. CONVERT (immediate, deterministic, host-side) — `applyFunnelFromEmailEvents`
+ *      converges the funnel board from the mail the curator has ALREADY classified
+ *      into `email_events`, without waiting for (or re-fetching) anything. This is
+ *      what makes already-consumed mail (the cursor has moved past it) show up.
+ *   2. SWEEP (async, best-effort) — enqueue a fresh `[scheduled trigger:
+ *      funnel-curator]` task so the orchestrator fetches any NEW mail; that run's
+ *      persist auto-converts via the same path (funnel-actions hook). Skipped (no
+ *      error) when there's no active owner session yet, or while halted/paused.
  */
 export function applyDevSweep(): DevSweepOutcome {
+  const db = getDb();
+  const applied = applyFunnelFromEmailEvents(db);
+
+  let sweepEnqueued = false;
   const group = getAgentGroupByFolder('career-pilot');
-  if (!group) return { status: 500, body: { error: 'owner group (folder "career-pilot") not found' } };
-  const session = findSessionByAgentGroup(group.id);
-  if (!session) {
-    return { status: 409, body: { error: 'no active owner session yet — message the dev bot once, then sweep' } };
+  const session = group ? findSessionByAgentGroup(group.id) : undefined;
+  if (group && session) {
+    const inDb = openInboundDb(group.id, session.id);
+    try {
+      enqueueSweepTask(inDb);
+      sweepEnqueued = true;
+    } finally {
+      inDb.close();
+    }
   }
-  const inDb = openInboundDb(group.id, session.id);
-  try {
-    const taskId = enqueueSweepTask(inDb);
-    log.info('dev: on-demand funnel-curator sweep enqueued', { taskId, group: group.id, session: session.id });
-    return { status: 200, body: { enqueued: true, taskId, sessionId: session.id } };
-  } finally {
-    inDb.close();
-  }
+
+  log.info('dev: sweep & convert', { converted: applied.converted, sweepEnqueued });
+  return { status: 200, body: { converted: applied.converted, changes: applied.changes, sweepEnqueued } };
 }
 
 // ── persona / onboarding ──────────────────────────────────────────────────────

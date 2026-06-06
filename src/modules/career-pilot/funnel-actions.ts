@@ -33,6 +33,7 @@ import type Database from 'better-sqlite3';
 
 import { getAgentGroup } from '../../db/agent-groups.js';
 import { getDb } from '../../db/connection.js';
+import { applyFunnelFromEmailEvents } from './funnel-apply.js';
 import { insertMessage } from '../../db/session-db.js';
 import { log } from '../../log.js';
 import type { Session } from '../../types.js';
@@ -465,6 +466,21 @@ export async function handlePersistFunnelState(
       ok: true,
       data: { run_id: runId, events_written: events.length },
     });
+
+    // §24.43: converge the funnel board from the just-classified mail —
+    // deterministic, host-side, no approval gate ("accurate representation by
+    // default"). Best-effort AFTER writeResponse so it never blocks or fails the
+    // persist; skipped on cheap-out (no new events to apply).
+    if (!p.cheap_out) {
+      try {
+        const applied = applyFunnelFromEmailEvents(db);
+        if (applied.converted > 0) {
+          log.info('funnel board converged after curator persist', { converted: applied.converted });
+        }
+      } catch (applyErr) {
+        log.error('applyFunnelFromEmailEvents after persist threw', { applyErr });
+      }
+    }
   } catch (err) {
     log.error('handlePersistFunnelState failed', { err });
     writeResponse(inDb, requestId, {
