@@ -21,7 +21,11 @@ export function LiveIndicator({ status, count }: { status: StreamStatus | 'idle'
         aria-hidden="true"
         className={cn('h-2 w-2 rounded-full', live ? 'bg-primary cp-live-pulse' : 'bg-muted-foreground')}
       />
-      {label}
+      {/* Fixed-width label slot (the longest status, "reconnecting", is 12ch in
+          the mono font) so the indicator's total width stays constant as the
+          status flips — no reflow nudging the centered hero row or the header it
+          sits in. Left-aligned: the dot+text stay tight, only trailing slack varies. */}
+      <span className="min-w-[12ch] text-left">{label}</span>
     </span>
   )
 }

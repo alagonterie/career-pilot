@@ -20,7 +20,7 @@ function Home() {
   // Exclude turns: this 5-row teaser shows actions, not the per-turn cost seals
   // (those are the /live story) — so a stretch of turns can't blank the ticker.
   const { events, status, count } = useActivityStream(API_BASE, { exclude: ['turn'] })
-  const { data: funnel } = useFunnel(API_BASE)
+  const { data: funnel, status: funnelStatus } = useFunnel(API_BASE)
   const apps = funnel?.applications ?? []
 
   return (
@@ -59,8 +59,11 @@ function Home() {
       </section>
 
       {/* Viewport 2 — funnel strip (PORTAL §5.1): the search as a live pipeline,
-          reusing the compact funnel; clicking through opens /momentum. */}
-      {apps.length > 0 ? (
+          reusing the compact funnel; clicking through opens /momentum. Rendered
+          from first paint (skeleton while the first poll lands) so it holds its
+          space instead of popping in — there's essentially always live data here.
+          A cold backend error is the one case it collapses (no stranded skeleton). */}
+      {funnelStatus !== 'error' ? (
         <section aria-labelledby="home-funnel-heading" className="mt-24 w-full">
           <div className="mb-3 flex items-center justify-between">
             <h2 id="home-funnel-heading" className="text-sm font-semibold text-muted-foreground">
@@ -70,7 +73,7 @@ function Home() {
               track the search →
             </Link>
           </div>
-          <FunnelCompact apps={apps} />
+          <FunnelCompact apps={apps} loading={funnelStatus === 'loading'} />
           <p className="mt-3 text-[11px] text-muted-foreground">
             Companies are obfuscated until each process closes — a deliberate privacy choice.
           </p>

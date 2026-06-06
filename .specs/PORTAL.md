@@ -250,6 +250,8 @@ Below the strip, a single sentence:
 
 This is itself a credibility signal (we thought about privacy, we're transparent about it).
 
+> **Build note (dimensional stability, STRATEGY §24.36).** Two home-viewport elements were brought into the §24.36 "hold the shape from first paint" standard. (1) **Viewport 1's `live` indicator** reserves a fixed-width label slot (the longest status, `reconnecting`, is 12ch in the mono font) so it no longer reflows — and nudge the centered hero row — as the SSE status flips `connecting → live → reconnecting`. (2) **This funnel strip** renders from first paint with a `FunnelCompact` skeleton while the first `/api/funnel` poll is in flight, instead of being gated `apps.length > 0` (which popped the whole strip into existence and shoved the page once data arrived — there's essentially always live data here). A cold backend error is the one case the strip collapses (no point stranding a forever-skeleton).
+
 **Viewport 3: Live activity hook**
 
 A compact `LiveTicker` showing the most recent 5 agent events, monospace, fading older lines. The example mixes reactive (user-triggered) and proactive (cron/webhook-triggered) events — the visitor sees the system working on its own:
