@@ -37,6 +37,30 @@ const CHIPS: Chip[] = [
   { id: 'system', label: 'System', match: (e) => e.agent_name == null },
 ]
 
+/**
+ * Collapse the cost-seal `turn` rows so only the ones that *seal something*
+ * survive. A turn row is the economic seal on the action lines above it (§24.35
+ * Pass C); a turn with no action lines since the previous turn seals nothing.
+ * Without this, a run of consecutive bare turns — common when the orchestrator
+ * answers directly or a curator sweep cheaps out — stacks as a wall of empty
+ * rules (the "strange-looking activity" on /live). Order-preserving; a turn is
+ * kept only when ≥1 action line has appeared since the last kept turn.
+ */
+function sealVisibleTurns(events: AuditEvent[]): AuditEvent[] {
+  const out: AuditEvent[] = []
+  let actionsSinceTurn = 0
+  for (const e of events) {
+    if (e.category === 'turn') {
+      if (actionsSinceTurn > 0) out.push(e)
+      actionsSinceTurn = 0
+    } else {
+      out.push(e)
+      actionsSinceTurn++
+    }
+  }
+  return out
+}
+
 /** A progressive metric lane — rendered by the caller only when its value exists. */
 function Lane({ children, title, tone }: { children: React.ReactNode; title: string; tone?: string }) {
   return (
@@ -73,10 +97,13 @@ export function LogStream({
   const reduce = useReducedMotion()
   const chip = CHIPS.find((c) => c.id === active) ?? CHIPS[0]
   const filtered = events.filter(chip.match)
+  // Drop bare/consecutive turn seals so a quiet stretch reads as quiet, not as a
+  // wall of empty rules. `visible` is what actually renders.
+  const visible = sealVisibleTurns(filtered)
   // Key the auto-scroll on the NEWEST event's seq, not the count: the activity
   // hook caps events at `limit`, so once the ring buffer is full the length goes
   // constant and a length-keyed effect would never re-fire — auto-scroll dies.
-  const newestSeq = filtered.length > 0 ? filtered[filtered.length - 1].seq : 0
+  const newestSeq = visible.length > 0 ? visible[visible.length - 1].seq : 0
 
   // Stay pinned to the newest line while the visitor is "stuck" to the bottom —
   // smooth when motion is allowed, an instant jump under reduced-motion (the
@@ -142,8 +169,10 @@ export function LogStream({
       </div>
 
       <div className="relative min-h-0 flex-1">
-        {filtered.length === 0 ? (
-          events.length > 0 ? (
+        {visible.length === 0 ? (
+          filtered.length === 0 && events.length > 0 ? (
+            // A chip genuinely excluded everything (vs. a window of bare turns,
+            // which collapses to nothing but isn't a "no match").
             <StateNote data-testid="trace-empty" className="px-4 py-6">
               No events match this filter.
             </StateNote>
@@ -151,7 +180,9 @@ export function LogStream({
             <StateNote data-testid="trace-empty" tone="error" className="px-4 py-6">
               Activity stream offline — reconnecting…
             </StateNote>
-          ) : status === 'open' ? (
+          ) : status === 'open' || events.length > 0 ? (
+            // Open with nothing to show, or a window of only cost-seal turns
+            // (collapsed away) — either way it's a quiet-but-connected stream.
             <StateNote data-testid="trace-empty" className="px-4 py-6">
               No agent activity yet.
             </StateNote>
@@ -173,7 +204,7 @@ export function LogStream({
             data-testid="trace-lines"
             className="max-h-[28rem] overflow-y-auto px-4 py-3 font-mono text-xs leading-relaxed"
           >
-            {filtered.map((e) =>
+            {visible.map((e) =>
               e.category === 'turn' ? (
                 // A turn row is the economic seal on the actions above it (§24.35
                 // Pass C) — a rule with the per-turn metrics inline, not a peer line.
@@ -234,7 +265,7 @@ export function LogStream({
           </ol>
         )}
 
-        {!stuck && filtered.length > 0 ? (
+        {!stuck && visible.length > 0 ? (
           <button
             type="button"
             data-testid="trace-jump"

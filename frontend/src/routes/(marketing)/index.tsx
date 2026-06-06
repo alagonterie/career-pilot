@@ -17,7 +17,9 @@ export const Route = createFileRoute('/(marketing)/')({
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
 
 function Home() {
-  const { events, status, count } = useActivityStream(API_BASE)
+  // Exclude turns: this 5-row teaser shows actions, not the per-turn cost seals
+  // (those are the /live story) — so a stretch of turns can't blank the ticker.
+  const { events, status, count } = useActivityStream(API_BASE, { exclude: ['turn'] })
   const { data: funnel } = useFunnel(API_BASE)
   const apps = funnel?.applications ?? []
 

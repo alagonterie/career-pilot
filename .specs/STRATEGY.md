@@ -4390,6 +4390,27 @@ Reviewing dev LLM spend surfaced a spec-vs-reality drift: the locked decision is
 
 ---
 
+#### 24.45 Live-feed legibility under turn-heavy stretches (a §24.35 Pass C follow-on)
+
+The §24.44 dev model-tier knob (running the agent on **Haiku** to cut spend) surfaced a latent weakness in the activity feed. Haiku delegates to subagents and records progress less eagerly than Sonnet did, so the stream fills with **`category='turn'` cost-seal rows** (§24.34) and few action lines. Both feed views handled that distribution badly:
+
+- *Home `LiveTicker` blanked.* The stream hook kept the last 5 raw rows then the component filtered turns out (§24.35 Pass C). Filtering **after** the cap meant a run of ≥5 consecutive turns filled the whole kept window with rows the ticker drops — so it rendered "No agent activity yet." even though real actions sat just behind the turns in the backlog.
+- *`/live` `LogStream` showed "strange activity."* Each turn renders as a batch-sealing separator (§24.35 Pass C). A trailing run of bare turns (no actions between them) drew as a **stack of empty rules** — a seal sealing nothing.
+
+**Fixes (both frontend-only; the capture/attribution model is unchanged).**
+1. **Ticker — exclude turns at ingestion.** `useActivityStream` takes an `exclude` option; the home page passes `['turn']` so turns are dropped **before** the 5-row cap. The window now holds the last five *actions*. The hook excludes at ingestion (not counting them toward the live indicator either); `LiveTicker` keeps its defensive turn-filter. A stable `excludeKey` dep keeps an inline array from churning the effect/reconnect.
+2. **Trace — a seal must seal something.** `LogStream` collapses turn rows so a `turn` renders only when ≥1 action line has appeared since the previous turn (`sealVisibleTurns`, order-preserving). Runs of bare/consecutive turns vanish; a window of *only* turns reads as the quiet "no agent activity yet." state (distinct from a chip "no match", which still keys on the unfiltered-but-empty case).
+
+**Deliberate non-change — no orchestrator narration tool.** The owner asked whether the orchestrator should get a `record_progress`-style tool so its turns aren't silent. Decided **no**: (a) a turn that only replied to the owner is *correctly* silent — manufacturing an action line would be noise; (b) `record_progress` is **subagent-keyed** (requires `subagent_name`, renders as that agent + spawns a filter chip), so the orchestrator using it would misrepresent the architecture — its honest footprint is the `agent_name=NULL` turn row (the "System" source) it already emits; (c) self-narration is exactly the instruction-following Haiku is least reliable at. If quiet stretches still read thin after these fixes, the better lever is surfacing **funnel/momentum state changes** as action lines (real, owner-independent) rather than orchestrator self-talk — revisit only if that proves insufficient.
+
+**Definition of done.**
+1. The home ticker shows the most recent *actions* during a turn-heavy stretch (no blank window while real actions are in the backlog); turns are excluded at the hook before the cap.
+2. The `/live` trace renders a turn seal only when it seals ≥1 action since the last turn; a run of bare turns collapses; a turns-only window shows the quiet state, not stacked rules nor a false "no match".
+3. Frontend unit + tsc + format green: `use-activity-stream.test` (exclude-before-cap + cap-after-exclude), `log-stream.test` (collapse + turns-only → quiet), existing `LiveTicker`/`LogStream` cases still pass.
+4. Spec deltas: this §24.45; PORTAL §5.1 (ticker excludes turns at ingestion) + §5.2 (a seal must seal something). Memory: [[status_current]].
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
