@@ -9,6 +9,7 @@ import { Skeleton } from '~/components/ui/skeleton'
 import { seo } from '~/lib/seo'
 import {
   postDevControl,
+  postDevSweep,
   postKnob,
   resetAllKnobs,
   resetKnob,
@@ -46,6 +47,7 @@ function DevInspectorPage() {
   const onReset = (key: string) => resetKnob(API_BASE, key)
   const onResetAll = () => resetAllKnobs(API_BASE)
   const onControl = (action: 'pause' | 'resume') => postDevControl(API_BASE, action)
+  const onSweep = () => postDevSweep(API_BASE)
 
   // Cold 404 on the knobs feed = not the dev stack → the whole surface is
   // unavailable (and no PII is reachable). This is the prod-degradation path.
@@ -91,7 +93,7 @@ function DevInspectorPage() {
 
           <section className="flex flex-col gap-3">
             <h2 className="font-mono text-xs uppercase tracking-widest text-foreground">Sim</h2>
-            <SimStatePanel state={state.data} />
+            <SimStatePanel state={state.data} onSweep={onSweep} />
           </section>
 
           <section className="flex flex-col gap-3">

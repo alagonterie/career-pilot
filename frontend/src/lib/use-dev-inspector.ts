@@ -82,6 +82,7 @@ export interface DevProfile {
   bio: string | null
   target_roles: string | null
   comp_floor: number | null
+  location_pref: string | null
   master_resume: string | null
   skills: string | null
   github_url: string | null
@@ -187,6 +188,15 @@ export function postDevControl(baseUrl: string, action: 'pause' | 'resume'): Pro
   return postDev(baseUrl, { action }, '/api/dev/control')
 }
 
+/**
+ * Enqueue an on-demand funnel-curator sweep (§24.43c) — the orchestrator wakes,
+ * classifies the sim's inbound mail, and applies the moves to the funnel board,
+ * instead of waiting for the daily cron. 409 if there's no active owner session.
+ */
+export function postDevSweep(baseUrl: string): Promise<KnobWriteResult> {
+  return postDev(baseUrl, {}, '/api/dev/sweep')
+}
+
 // ── pure view helpers ─────────────────────────────────────────────────────────
 
 /** A friendlier title for an onboarding field key (e.g. `full_name` → "Full name"). */
@@ -195,6 +205,7 @@ export function fieldLabel(field: string): string {
     full_name: 'Full name',
     target_roles: 'Target roles',
     comp_floor: 'Comp floor',
+    location_pref: 'Location preference',
     master_resume: 'Master resume',
     bio: 'Bio',
     why_this_exists: 'Why this exists',

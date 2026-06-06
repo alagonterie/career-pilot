@@ -232,6 +232,19 @@ describe('SimStatePanel', () => {
     expect(screen.getByTestId('sim-enabled-badge')).toHaveTextContent('idle')
     expect(screen.getByText(/No simulated applications/i)).toBeInTheDocument()
   })
+
+  it('shows a "Sweep & convert now" button when onSweep is provided + reports the enqueue', async () => {
+    const onSweep = vi.fn(ok)
+    render(<SimStatePanel state={state} onSweep={onSweep} />)
+    fireEvent.click(screen.getByTestId('sweep-now'))
+    await waitFor(() => expect(onSweep).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByTestId('sweep-status')).toHaveTextContent(/enqueued/i))
+  })
+
+  it('omits the sweep button when onSweep is not provided', () => {
+    render(<SimStatePanel state={state} />)
+    expect(screen.queryByTestId('sweep-now')).not.toBeInTheDocument()
+  })
 })
 
 describe('PersonaPanel', () => {
@@ -244,18 +257,19 @@ describe('PersonaPanel', () => {
           { field: 'full_name', filled: false },
           { field: 'target_roles', filled: false },
           { field: 'comp_floor', filled: false },
+          { field: 'location_pref', filled: false },
           { field: 'master_resume', filled: false },
           { field: 'bio', filled: false },
           { field: 'why_this_exists', filled: false },
         ],
         filledCount: 0,
-        totalCount: 6,
+        totalCount: 7,
         complete: false,
         nextField: 'full_name',
       },
     }
     render(<PersonaPanel persona={persona} />)
-    expect(screen.getByTestId('onboarding-badge')).toHaveTextContent('0/6')
+    expect(screen.getByTestId('onboarding-badge')).toHaveTextContent('0/7')
     expect(within(screen.getByTestId('onboarding-full_name')).getByText('← next')).toBeInTheDocument()
     expect(screen.getByTestId('candidate-md')).toHaveTextContent('Onboarding mode')
   })
@@ -268,6 +282,7 @@ describe('PersonaPanel', () => {
         bio: 'Backend engineer.',
         target_roles: '["Backend Engineer","Platform Engineer"]',
         comp_floor: 180000,
+        location_pref: '{"remote":true,"cities":["NYC"]}',
         master_resume: 'EXPERIENCE\n- thing',
         skills: '["Go","TypeScript"]',
         github_url: 'https://github.com/example',
@@ -284,12 +299,13 @@ describe('PersonaPanel', () => {
           { field: 'full_name', filled: true },
           { field: 'target_roles', filled: true },
           { field: 'comp_floor', filled: true },
+          { field: 'location_pref', filled: true },
           { field: 'master_resume', filled: true },
           { field: 'bio', filled: true },
           { field: 'why_this_exists', filled: true },
         ],
-        filledCount: 6,
-        totalCount: 6,
+        filledCount: 7,
+        totalCount: 7,
         complete: true,
         nextField: null,
       },
@@ -298,7 +314,7 @@ describe('PersonaPanel', () => {
     expect(screen.getByText('Jane Doe')).toBeInTheDocument()
     expect(screen.getByText('Backend Engineer, Platform Engineer')).toBeInTheDocument()
     expect(screen.getByText('$180,000')).toBeInTheDocument()
-    expect(screen.getByTestId('onboarding-badge')).toHaveTextContent('6/6')
+    expect(screen.getByTestId('onboarding-badge')).toHaveTextContent('7/7')
   })
 })
 
