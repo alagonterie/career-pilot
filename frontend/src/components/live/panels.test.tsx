@@ -158,6 +158,17 @@ describe('FunnelCompact + RecentOutcomes', () => {
     expect(screen.getByTestId('funnel-compact-reveal')).toHaveTextContent('devtools-b')
   })
 
+  it('holds its shape with skeletons while loading (no counts, no reveal)', () => {
+    render(<FunnelCompact apps={[]} loading />)
+    // all 5 stage cells still render (the strip keeps its shape) …
+    expect(screen.getByTestId('funnel-compact-applied')).toBeInTheDocument()
+    expect(screen.getByTestId('funnel-compact-offer')).toBeInTheDocument()
+    // … but as skeletons, not counts, and the reveal line is suppressed
+    expect(within(screen.getByTestId('funnel-compact-applied')).queryByText('0')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('funnel-compact-reveal')).not.toBeInTheDocument()
+    expect(document.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(5)
+  })
+
   it('lists recent outcomes newest-first with the public marker', () => {
     render(<RecentOutcomesPanel apps={APPS} />)
     const items = within(screen.getByTestId('recent-outcomes')).getAllByRole('listitem')
