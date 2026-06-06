@@ -43,52 +43,58 @@ export function LiveTicker({
         </h2>
         {action}
       </div>
-      {shown.length === 0 ? (
-        status === 'reconnecting' ? (
-          <StateNote data-testid="ticker-empty" tone="error">
-            Activity stream offline — reconnecting…
-          </StateNote>
-        ) : status === 'open' ? (
-          <StateNote data-testid="ticker-empty">No agent activity yet.</StateNote>
+      {/* Reserve the feed's 5-row capacity so the connecting/empty message and the
+          populated list occupy the same height — the box doesn't grow when events
+          arrive (the §24.36 dimensional-stability standard). 5 rows of text-sm
+          (1.25rem line) + 4 × space-y-1 (0.25rem) = 7.25rem. */}
+      <div className="min-h-[7.25rem]">
+        {shown.length === 0 ? (
+          status === 'reconnecting' ? (
+            <StateNote data-testid="ticker-empty" tone="error">
+              Activity stream offline — reconnecting…
+            </StateNote>
+          ) : status === 'open' ? (
+            <StateNote data-testid="ticker-empty">No agent activity yet.</StateNote>
+          ) : (
+            <p data-testid="ticker-empty" className="flex items-center gap-1 font-mono text-sm text-muted-foreground">
+              Connecting to the live feed
+              <LiveCursor />
+            </p>
+          )
         ) : (
-          <p data-testid="ticker-empty" className="flex items-center gap-1 font-mono text-sm text-muted-foreground">
-            Connecting to the live feed
-            <LiveCursor />
-          </p>
-        )
-      ) : (
-        <ol className="space-y-1 font-mono text-sm">
-          {/* No opacity-fade for older lines: opacity blending drops text below
+          <ol className="space-y-1 font-mono text-sm">
+            {/* No opacity-fade for older lines: opacity blending drops text below
               WCAG AA on the near-black card (axe-verified). Newest row sits at
               the bottom — that ordering is the hierarchy. */}
-          {shown.map((e) => (
-            <li key={e.seq} data-testid="ticker-row" className="flex flex-wrap items-center gap-x-2">
-              <span className="tabular-nums text-muted-foreground">{hhmm(e.ts)}</span>
-              <span className="text-accent-cool">{eventSourceLabel(e)}</span>
-              {e.proactive ? (
-                <span
-                  data-testid="proactive-marker"
-                  className="text-primary"
-                  title="proactive — the agent initiated this on its own"
-                >
-                  ◆ proactive
-                </span>
-              ) : null}
-              {/* [ref] + summary are one unit: on a phone the group drops to its
+            {shown.map((e) => (
+              <li key={e.seq} data-testid="ticker-row" className="flex flex-wrap items-center gap-x-2">
+                <span className="tabular-nums text-muted-foreground">{hhmm(e.ts)}</span>
+                <span className="text-accent-cool">{eventSourceLabel(e)}</span>
+                {e.proactive ? (
+                  <span
+                    data-testid="proactive-marker"
+                    className="text-primary"
+                    title="proactive — the agent initiated this on its own"
+                  >
+                    ◆ proactive
+                  </span>
+                ) : null}
+                {/* [ref] + summary are one unit: on a phone the group drops to its
                   own full-width line, the ref leading the message, clamped to 2
                   lines so one long action can't swallow the 5-line teaser (§24.37);
                   desktop keeps the single-line truncating terminal row. mr-2 matches
                   the row's gap-x-2 so desktop is unchanged. */}
-              <span className="line-clamp-2 w-full min-w-0 sm:line-clamp-none sm:block sm:w-auto sm:flex-1 sm:truncate">
-                {e.application_ref ? <span className="mr-2 text-muted-foreground">[{e.application_ref}]</span> : null}
-                <span className="text-foreground">{e.summary}</span>
-              </span>
-              {e.model_used ? <span className="text-muted-foreground">{e.model_used}</span> : null}
-              {e.cache_hit ? <span className="text-muted-foreground">(cache hit)</span> : null}
-            </li>
-          ))}
-        </ol>
-      )}
+                <span className="line-clamp-2 w-full min-w-0 sm:line-clamp-none sm:block sm:w-auto sm:flex-1 sm:truncate">
+                  {e.application_ref ? <span className="mr-2 text-muted-foreground">[{e.application_ref}]</span> : null}
+                  <span className="text-foreground">{e.summary}</span>
+                </span>
+                {e.model_used ? <span className="text-muted-foreground">{e.model_used}</span> : null}
+                {e.cache_hit ? <span className="text-muted-foreground">(cache hit)</span> : null}
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
     </section>
   )
 }

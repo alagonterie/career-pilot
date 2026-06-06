@@ -10,22 +10,25 @@ import { cn } from '~/lib/utils'
 export function LiveIndicator({ status, count }: { status: StreamStatus | 'idle'; count: number }) {
   const live = status === 'open'
   const label = live ? 'live' : status === 'reconnecting' ? 'reconnecting' : 'connecting'
+  // Fixed total width (dot + the longest status, "reconnecting" = 12ch in the
+  // mono font) with the dot+label centered inside it: the indicator never resizes
+  // as the status flips, so it can't nudge the centered hero row or the header it
+  // sits in; centering the content keeps it as close to true-center as a
+  // fixed-width slot allows.
   return (
     <span
       data-testid="live-indicator"
       data-status={status}
-      className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground"
+      className="inline-flex w-[calc(0.875rem+12ch)] items-center justify-center font-mono text-xs text-muted-foreground"
       title={`${count} event${count === 1 ? '' : 's'} received`}
     >
-      <span
-        aria-hidden="true"
-        className={cn('h-2 w-2 rounded-full', live ? 'bg-primary cp-live-pulse' : 'bg-muted-foreground')}
-      />
-      {/* Fixed-width label slot (the longest status, "reconnecting", is 12ch in
-          the mono font) so the indicator's total width stays constant as the
-          status flips — no reflow nudging the centered hero row or the header it
-          sits in. Left-aligned: the dot+text stay tight, only trailing slack varies. */}
-      <span className="min-w-[12ch] text-left">{label}</span>
+      <span className="inline-flex items-center gap-1.5">
+        <span
+          aria-hidden="true"
+          className={cn('h-2 w-2 rounded-full', live ? 'bg-primary cp-live-pulse' : 'bg-muted-foreground')}
+        />
+        {label}
+      </span>
     </span>
   )
 }
