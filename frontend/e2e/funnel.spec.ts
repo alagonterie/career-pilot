@@ -43,7 +43,7 @@ test.describe('/momentum — pipeline board, frontend <-> backend', () => {
     await page.getByText('Wayne Enterprises').click()
     const panel = page.getByRole('dialog', { name: 'Wayne Enterprises' })
     await expect(panel).toBeVisible()
-    await expect(panel.getByText(/low-rigor heuristic/i)).toBeVisible()
+    await expect(panel.getByText(/AI estimate/i)).toBeVisible()
     await page.getByRole('button', { name: 'Close panel' }).click()
     await expect(panel).toBeHidden()
 
