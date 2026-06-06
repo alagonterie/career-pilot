@@ -434,14 +434,18 @@ function emptyPayloadFor(path: string): unknown {
       return { live_mode: false, pause_state: 'active', pause_reason: null, backend: 'online' };
     case '/api/telemetry':
       return {
-        portkey: { available: false, reason: 'no_key' },
         local: {
           simulator_runs_total: 0,
           activity_events_total: 0,
           activity_events_24h: 0,
           turns_total: 0,
+          turns_24h: 0,
           turn_cost_cents_total: 0,
           turn_cost_cents_24h: 0,
+          cache_hit_rate: null,
+          turn_p50_ms: null,
+          turn_p95_ms: null,
+          top_model: null,
         },
       };
     default:

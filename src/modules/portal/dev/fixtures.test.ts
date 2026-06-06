@@ -3,7 +3,6 @@
  *   - seedRichFixture populates the four dynamic-page surfaces
  *   - the synthetic generator emits valid rows + bumps seq
  *   - maybeAdvanceFunnel advances an in-flight application to a valid stage
- *   - the PORTAL_MOCK_PORTKEY env seam (set → mock; unset → existing path)
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
@@ -12,7 +11,6 @@ import { closeDb, initTestDb } from '../../../db/connection.js';
 import { runMigrations } from '../../../db/migrations/index.js';
 import { getActiveSessions, getRunningSessions } from '../../../db/sessions.js';
 import { APPLICATION_STATUSES, deriveFunnelStage } from '../public-funnel-view.js';
-import { getPortkeyAnalytics } from '../portkey-analytics.js';
 import { getSimulatorResult } from '../simulator.js';
 
 import { buildSimulatorScript } from './mock-simulator.js';
@@ -117,28 +115,6 @@ describe('synthetic generator', () => {
     state.tick = 3;
     maybeAdvanceFunnel(db, state);
     expect(db.prepare('SELECT status FROM applications ORDER BY id').all()).toEqual(before);
-  });
-});
-
-describe('PORTAL_MOCK_PORTKEY env seam', () => {
-  afterEach(() => {
-    delete process.env.PORTAL_MOCK_PORTKEY;
-  });
-
-  it('returns the injected summary when set', async () => {
-    process.env.PORTAL_MOCK_PORTKEY = JSON.stringify({ total_requests: 7, top_model: 'opus-4-8' });
-    const res = await getPortkeyAnalytics();
-    expect(res.available).toBe(true);
-    expect((res.summary as { total_requests: number }).total_requests).toBe(7);
-  });
-
-  it('is inert when unset (no key → unavailable, no network)', async () => {
-    delete process.env.PORTAL_MOCK_PORTKEY;
-    const prevKey = process.env.PORTKEY_API_KEY;
-    delete process.env.PORTKEY_API_KEY;
-    const res = await getPortkeyAnalytics();
-    expect(res.available).toBe(false);
-    if (prevKey !== undefined) process.env.PORTKEY_API_KEY = prevKey;
   });
 });
 

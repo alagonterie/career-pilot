@@ -1,81 +1,62 @@
 /**
  * src/modules/portal/portkey-analytics.ts — /api/telemetry assembler.
  *
- * Sub-milestone 5.3 (STRATEGY.md §24.17). Combines Portkey's analytics summary
- * with locally-computable aggregates, cached 30s (PORTAL §11) so the public
- * dashboard never hammers Portkey.
+ * Powers the /live "LLM telemetry" + "Cost & cache" panels, sourced entirely
+ * from LOCAL per-turn telemetry (§24.34) — the `category='turn'` rows in
+ * public_audit_trail that carry model / tokens / cost / cache tokens / duration.
  *
- * Portkey source: GET https://api.portkey.ai/v1/analytics/summary?range=1d
- * with header `x-portkey-api-key: $PORTKEY_API_KEY`. Degrades gracefully per
- * PORTAL §10 — when PORTKEY_BYPASS=true, the key is unset, or the call
- * errors/times out, `portkey.available=false` and the frontend renders `—`.
- *
- * Field-level normalization of the live summary (cache rate, p50/p95, top
- * model) is calibrated against a real response in a later pass — there is no
- * live Portkey in dev, so we ship the raw passthrough + the tested degraded
- * path rather than bluffing Portkey's schema.
- *
- * See STRATEGY.md §12 (Portkey bypass) + §17 + §24.17.
+ * Why not Portkey's analytics API? It requires an Admin API key, which is
+ * Enterprise-plan-only (verified on the dev box 2026-06-06: the workspace
+ * gateway key gets 403 `AB03` on /v1/analytics/graphs/*; the old coded
+ * /v1/analytics/summary endpoint 404'd — it never existed). Routing through
+ * Portkey still works (turns are metered), but the analytics REST API is out of
+ * reach on the free tier — so these panels read data we already capture. The
+ * cost is the SDK *estimate* (labeled "est" in the UI), not Portkey billing.
+ * Cached 30s (PORTAL §11). See STRATEGY.md §24.47 (history: §24.17/§24.46).
  */
 import { getDb } from '../../db/connection.js';
 import { getConfig } from '../../get-config.js';
-import { log } from '../../log.js';
 
-const PORTKEY_ANALYTICS_URL = 'https://api.portkey.ai/v1/analytics/summary?range=1d';
 const DEFAULT_TELEMETRY_CACHE_MS = 30_000;
-const PORTKEY_FETCH_TIMEOUT_MS = 4000;
-
-export interface PortkeyResult {
-  available: boolean;
-  reason?: string;
-  summary?: unknown;
-}
 
 export interface TelemetryLocal {
   simulator_runs_total: number;
   activity_events_total: number;
   activity_events_24h: number;
-  // Real local spend, summed over the per-turn telemetry rows (§24.34). This
-  // is the honest, always-real counterpart to the Portkey aggregate (which may
-  // be unavailable); cost_cents is an SDK estimate, labeled as such in the UI.
+  // Per-turn LLM telemetry (§24.34), aggregated. cost_cents is an SDK estimate
+  // (labeled as such in the UI). The derived lanes (cache rate, p50/p95, top
+  // model) come from the turn rows' details_json (duration_api_ms + model_usage).
   turns_total: number;
+  turns_24h: number;
   turn_cost_cents_total: number;
   turn_cost_cents_24h: number;
+  /** 0..1 — Σ cache_read / Σ all prompt tokens over the 24h turns; null if no data. */
+  cache_hit_rate: number | null;
+  /** p50/p95 of per-turn duration_api_ms over the 24h turns; null if no data. */
+  turn_p50_ms: number | null;
+  turn_p95_ms: number | null;
+  /** Most-frequent model_used over the 24h turns; null if no data. */
+  top_model: string | null;
 }
 
 export interface Telemetry {
-  portkey: PortkeyResult;
   local: TelemetryLocal;
+}
+
+interface TurnModelUsage {
+  input?: number;
+  output?: number;
+  cache_read?: number;
+  cache_creation?: number;
 }
 
 let cache: { at: number; value: Telemetry } | null = null;
 
-export async function getPortkeyAnalytics(): Promise<PortkeyResult> {
-  if (process.env.PORTKEY_BYPASS === 'true') return { available: false, reason: 'bypass' };
-  // Dev/demo seam (§24.26): the fixture/demo server injects a fake summary so the
-  // /telemetry Portkey panel renders populated without a live key. Inert in prod
-  // (the env is never set there). See src/modules/portal/dev/fixtures.ts.
-  const mock = process.env.PORTAL_MOCK_PORTKEY;
-  if (mock) {
-    try {
-      return { available: true, summary: JSON.parse(mock) };
-    } catch {
-      return { available: false, reason: 'mock_parse_error' };
-    }
-  }
-  const key = process.env.PORTKEY_API_KEY;
-  if (!key) return { available: false, reason: 'no_key' };
-  try {
-    const res = await fetch(PORTKEY_ANALYTICS_URL, {
-      headers: { 'x-portkey-api-key': key },
-      signal: AbortSignal.timeout(PORTKEY_FETCH_TIMEOUT_MS),
-    });
-    if (!res.ok) return { available: false, reason: `http_${res.status}` };
-    return { available: true, summary: await res.json() };
-  } catch (err) {
-    log.warn('portkey analytics fetch failed', { err });
-    return { available: false, reason: 'unreachable' };
-  }
+/** Nearest-rank percentile over an ascending-sorted array; null when empty. */
+function percentile(sorted: number[], p: number): number | null {
+  if (sorted.length === 0) return null;
+  const idx = Math.ceil((p / 100) * sorted.length) - 1;
+  return sorted[Math.min(sorted.length - 1, Math.max(0, idx))];
 }
 
 function computeLocal(): TelemetryLocal {
@@ -84,19 +65,73 @@ function computeLocal(): TelemetryLocal {
   const evTotal = db.prepare('SELECT COUNT(*) AS n FROM public_audit_trail').get() as { n: number };
   const cutoff = new Date(Date.now() - 86_400_000).toISOString();
   const ev24 = db.prepare('SELECT COUNT(*) AS n FROM public_audit_trail WHERE ts >= ?').get(cutoff) as { n: number };
-  const turns = db
-    .prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(cost_cents), 0) AS c FROM public_audit_trail WHERE category = 'turn'`)
-    .get() as { n: number; c: number };
-  const turns24 = db
-    .prepare(`SELECT COALESCE(SUM(cost_cents), 0) AS c FROM public_audit_trail WHERE category = 'turn' AND ts >= ?`)
-    .get(cutoff) as { c: number };
+
+  // All captured turn rows. The windowed counts (turns_24h / spend-today) gate on
+  // `ts`; the derived lanes (cache rate, p50/p95, top model) aggregate over ALL
+  // turns — labeled without a "24h" qualifier — so the panels stay populated on a
+  // quiet day (turn capture is sparse and gated; §24.34). duration + cache tokens
+  // live in details_json, not as columns, so we parse it in JS.
+  const turnRows = db
+    .prepare(`SELECT ts, model_used, cost_cents, details_json FROM public_audit_trail WHERE category = 'turn'`)
+    .all() as Array<{
+    ts: string;
+    model_used: string | null;
+    cost_cents: number | null;
+    details_json: string | null;
+  }>;
+
+  let costTotal = 0;
+  let cost24 = 0;
+  let turns24 = 0;
+  let cacheRead = 0;
+  let promptTotal = 0;
+  const durations: number[] = [];
+  const modelCounts = new Map<string, number>();
+  for (const r of turnRows) {
+    const cents = r.cost_cents ?? 0;
+    costTotal += cents;
+    if (r.ts >= cutoff) {
+      turns24++;
+      cost24 += cents;
+    }
+    if (r.model_used) modelCounts.set(r.model_used, (modelCounts.get(r.model_used) ?? 0) + 1);
+    if (!r.details_json) continue;
+    let d: { duration_api_ms?: number; model_usage?: Record<string, TurnModelUsage> };
+    try {
+      d = JSON.parse(r.details_json) as typeof d;
+    } catch {
+      continue;
+    }
+    if (typeof d.duration_api_ms === 'number' && d.duration_api_ms > 0) durations.push(d.duration_api_ms);
+    for (const u of Object.values(d.model_usage ?? {})) {
+      const read = u.cache_read ?? 0;
+      cacheRead += read;
+      promptTotal += (u.input ?? 0) + read + (u.cache_creation ?? 0);
+    }
+  }
+
+  let topModel: string | null = null;
+  let topCount = -1;
+  for (const [m, n] of modelCounts) {
+    if (n > topCount) {
+      topModel = m;
+      topCount = n;
+    }
+  }
+  durations.sort((a, b) => a - b);
+
   return {
     simulator_runs_total: sim.n,
     activity_events_total: evTotal.n,
     activity_events_24h: ev24.n,
-    turns_total: turns.n,
-    turn_cost_cents_total: turns.c,
-    turn_cost_cents_24h: turns24.c,
+    turns_total: turnRows.length,
+    turns_24h: turns24,
+    turn_cost_cents_total: costTotal,
+    turn_cost_cents_24h: cost24,
+    cache_hit_rate: promptTotal > 0 ? cacheRead / promptTotal : null,
+    turn_p50_ms: percentile(durations, 50),
+    turn_p95_ms: percentile(durations, 95),
+    top_model: topModel,
   };
 }
 
@@ -109,9 +144,7 @@ export async function getTelemetry(): Promise<Telemetry> {
   }
   if (cache && Date.now() - cache.at < cacheMs) return cache.value;
 
-  const portkey = await getPortkeyAnalytics();
-  const local = computeLocal();
-  const value: Telemetry = { portkey, local };
+  const value: Telemetry = { local: computeLocal() };
   cache = { at: Date.now(), value };
   return value;
 }

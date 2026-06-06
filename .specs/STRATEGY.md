@@ -4460,6 +4460,31 @@ The clean unit is the **session**: `x-portkey-trace-id: <session_id>`, injected 
 
 ---
 
+#### 24.47 `/live` telemetry panels — source from local per-turn data (Portkey analytics API is Enterprise-gated)
+
+§24.17 built the `/live` "LLM telemetry" + "Cost & cache" panels to read Portkey's analytics REST API, with a local lane as the always-real fallback. §24.46 routed the agent through Portkey and the owner enabled it in dev — yet the panels still showed "Portkey analytics not connected". **Live diagnosis on the dev box (2026-06-06):** `/api/telemetry` returned `portkey.available=false, reason=http_404` — the coded endpoint `/v1/analytics/summary?range=1d` never existed (it was a never-calibrated guess, per the §24.17 note). The *real* endpoint family `/v1/analytics/graphs/*` returns **403 `AB03` (insufficient permissions)** with the workspace gateway key. Portkey's analytics/control-plane API needs an **Admin API key**, which is **Enterprise-plan-only** — out of reach on our free Developer tier. (Routing is unaffected and works: turns are metered — the local lane already shows real spend.)
+
+**Decision (owner, 2026-06-06): drop the Portkey analytics-API dependency for these panels and source them from the local per-turn telemetry we already capture (§24.34).** The `public_audit_trail` turn rows carry model / tokens / cost / cache tokens / duration — everything the panels show, and the same data behind the real local spend. Result: the panels are always populated (no external dependency, no key, no plan gate) and the "not connected" state is gone, replaced by real data.
+
+**Honest labels (owner explicitly wants the viewer-facing copy to stay honest about what the numbers are):**
+- cost is the SDK *estimate* (labeled "est"), not Portkey billing;
+- "turns 24h", not raw gateway "requests" (a turn fans out into many requests we can't count without the API);
+- "turn p50/p95" — whole-turn latency from `duration_api_ms`, not per-request;
+- scope = owner-agent turns (the §24.34 capture gate); sim/sandbox host calls aren't counted.
+
+**What lands.**
+- `portkey-analytics.ts`: remove the Portkey fetch (+ the analytics `PORTKEY_BYPASS` / `PORTAL_MOCK_PORTKEY` seams); `getTelemetry()` returns `{ local }`. `computeLocal()` gains `turns_24h`, `turn_p50_ms`, `turn_p95_ms`, `cache_hit_rate` (Σ `cache_read` / Σ all prompt tokens, from `details_json.model_usage`), `top_model` (mode of `model_used`).
+- Frontend `use-telemetry.ts` + `panels.tsx`: drop the Portkey summary/reason path; render both panels from `local`, with the honest labels above + an "awaiting first agent turn" empty state when there are no turns.
+- Dev/E2E: remove the `PORTAL_MOCK_PORTKEY` seam; the seeded fixture turn row gains `details_json` (duration + model_usage) so dev/demo + E2E populate the lanes from local.
+
+**Definition of done.**
+1. `/api/telemetry` returns `{ local }` with the derived fields and makes no network call to Portkey.
+2. `/live` "LLM telemetry" shows cache-hit %, turns 24h, turn p50, top model; "Cost & cache" shows spend (est) + cache line — both from local turn data, both labeled honestly; the "not connected" copy is gone.
+3. Host + frontend unit suites green; the `/live` E2E asserts the populated lanes (not the removed `telemetry-unavailable`).
+4. Spec deltas: this §24.47; §24.17 + §24.46 reconciliations (Portkey analytics API is Enterprise-gated → local-sourced). Memory: [[status_current]], [[portkey_routing]].
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.

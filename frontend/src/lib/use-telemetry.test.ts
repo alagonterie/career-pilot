@@ -7,44 +7,29 @@ const LOCAL = {
   activity_events_total: 42,
   activity_events_24h: 12,
   turns_total: 8,
+  turns_24h: 5,
   turn_cost_cents_total: 37,
   turn_cost_cents_24h: 12,
+  cache_hit_rate: 0.66,
+  turn_p50_ms: 15000,
+  turn_p95_ms: 31000,
+  top_model: 'claude-haiku-4-5',
 }
 
 describe('deriveTelemetryView (telemetry view-model)', () => {
-  it('is unavailable with a null reason before the first payload', () => {
-    const v = deriveTelemetryView(null)
-    expect(v).toEqual({ available: false, reason: null, summary: null, local: null })
+  it('is empty (no local, no turns) before the first payload', () => {
+    expect(deriveTelemetryView(null)).toEqual({ local: null, hasTurns: false })
   })
 
-  it('surfaces the Portkey summary + local aggregates when available', () => {
-    const t: Telemetry = {
-      portkey: { available: true, summary: { total_requests: 1284, cache_hit_rate: 0.62, top_model: 'opus-4-8' } },
-      local: LOCAL,
-    }
-    const v = deriveTelemetryView(t)
-    expect(v.available).toBe(true)
-    expect(v.reason).toBeNull()
-    expect(v.summary?.top_model).toBe('opus-4-8')
+  it('surfaces the local aggregates + hasTurns once turns have been captured', () => {
+    const v = deriveTelemetryView({ local: LOCAL } satisfies Telemetry)
     expect(v.local).toEqual(LOCAL)
+    expect(v.hasTurns).toBe(true)
   })
 
-  it('maps the unavailable reason to a human label but keeps the real local aggregates', () => {
-    const t: Telemetry = { portkey: { available: false, reason: 'no_key' }, local: LOCAL }
-    const v = deriveTelemetryView(t)
-    expect(v.available).toBe(false)
-    expect(v.reason).toMatch(/no Portkey key/i)
-    expect(v.summary).toBeNull()
-    expect(v.local).toEqual(LOCAL) // local is always real, even when Portkey is dark
-  })
-
-  it('treats available-but-summary-missing as unavailable (no contract to render)', () => {
-    const t: Telemetry = { portkey: { available: true }, local: LOCAL }
-    expect(deriveTelemetryView(t).available).toBe(false)
-  })
-
-  it('passes an unknown reason code through verbatim', () => {
-    const t: Telemetry = { portkey: { available: false, reason: 'http_503' }, local: LOCAL }
-    expect(deriveTelemetryView(t).reason).toBe('http_503')
+  it('reports hasTurns=false when no turns are captured yet, but keeps the real local aggregates', () => {
+    const v = deriveTelemetryView({ local: { ...LOCAL, turns_total: 0 } } satisfies Telemetry)
+    expect(v.hasTurns).toBe(false)
+    expect(v.local?.activity_events_total).toBe(42)
   })
 })

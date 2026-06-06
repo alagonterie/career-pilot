@@ -14,9 +14,9 @@
  *
  * The synthetic generator (buildSyntheticEvent / insertSyntheticEvent) inserts
  * one plausible `public_audit_trail` row at a time; the SSE tail (poll by seq,
- * §24.16) delivers it live with no push wiring. mockPortkeySummary /
- * mockContainerCount feed the two env-gated dev seams that fake the surfaces
- * which hit external services in prod (Portkey, `docker ps`).
+ * §24.16) delivers it live with no push wiring. mockContainerCount feeds the
+ * `PORTAL_MOCK_CONTAINERS` dev seam that fakes `docker ps` in prod. (The
+ * telemetry panels read the seeded turn rows directly — §24.47 — no Portkey seam.)
  *
  * This module is written to be reusable by a future *disclosed* deployed
  * "demo mode" (Phase 9/10) behind a system-mode + on-page banner.
@@ -39,6 +39,8 @@ export interface AuditSeed {
   cost_cents?: number | null;
   cache_hit?: 0 | 1;
   latency_ms?: number | null;
+  /** Per-turn details (duration_api_ms + model_usage) — drives the §24.47 telemetry lanes. */
+  details_json?: string | null;
   summary: string;
 }
 
@@ -46,9 +48,9 @@ export function insertAuditRow(db: Database.Database, row: AuditSeed): void {
   db.prepare(
     `INSERT INTO public_audit_trail
        (id, seq, ts, category, agent_name, proactive, application_ref,
-        model_used, tokens, cost_cents, cache_hit, latency_ms, summary)
+        model_used, tokens, cost_cents, cache_hit, latency_ms, details_json, summary)
      VALUES (@id, @seq, @ts, @category, @agent_name, @proactive, @application_ref,
-        @model_used, @tokens, @cost_cents, @cache_hit, @latency_ms, @summary)`,
+        @model_used, @tokens, @cost_cents, @cache_hit, @latency_ms, @details_json, @summary)`,
   ).run({
     id: `dev-${row.seq}`,
     seq: row.seq,
@@ -62,6 +64,7 @@ export function insertAuditRow(db: Database.Database, row: AuditSeed): void {
     cost_cents: row.cost_cents ?? null,
     cache_hit: row.cache_hit ?? 0,
     latency_ms: row.latency_ms ?? null,
+    details_json: row.details_json ?? null,
     summary: row.summary,
   });
 }
@@ -129,6 +132,15 @@ export function seedDeterministicBacklog(db: Database.Database): void {
     cost_cents: 6,
     cache_hit: 1,
     latency_ms: 2100,
+    // details_json drives the §24.47 telemetry lanes (cache rate, turn p50, top
+    // model) — fixed values so the /live visual baseline stays deterministic:
+    // cache_read 900 / (input 100 + read 900) = 90%; p50 = duration 2100ms.
+    details_json: JSON.stringify({
+      num_turns: 1,
+      duration_api_ms: 2100,
+      total_cost_usd: 0.06,
+      model_usage: { 'opus-4-8': { input: 100, output: 200, cache_read: 900, cache_creation: 0, cost_usd: 0.06 } },
+    }),
     summary: 'turn complete',
   });
 }
@@ -623,19 +635,6 @@ export function maybeAdvanceFunnel(db: Database.Database, state: GeneratorState)
 }
 
 // ── mock payloads for the env-gated dev seams ───────────────────────────────
-
-/** Fake Portkey analytics summary for PORTAL_MOCK_PORTKEY. Shape co-evolves with the Phase-7 /telemetry page. */
-export function mockPortkeySummary(): Record<string, unknown> {
-  return {
-    total_requests: 1284,
-    cache_hit_rate: 0.62,
-    p50_latency_ms: 920,
-    p95_latency_ms: 3400,
-    total_cost_usd: 4.17,
-    top_model: 'opus-4-8',
-    range: '1d',
-  };
-}
 
 /** Fake running-container count for PORTAL_MOCK_CONTAINERS. */
 export function mockContainerCount(): number {

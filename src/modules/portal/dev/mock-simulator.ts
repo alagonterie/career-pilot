@@ -6,7 +6,7 @@
  * Loaded ONLY via a dynamic import behind the `PORTAL_MOCK_SIMULATOR` env gate
  * in startSimulatorRun (src/modules/portal/simulator.ts) — never on a
  * production request path (mirrors the §24.26 fake-everything-transparently
- * seams: PORTAL_MOCK_PORTKEY / PORTAL_MOCK_CONTAINERS). It drives a
+ * seam: PORTAL_MOCK_CONTAINERS). It drives a
  * deterministic `trace`/`chat`/`task` sequence onto the run's `simulator:<id>`
  * SSE topic *exactly as* the portal channel adapter's deliver() would (push +
  * accumulator), so the frontend sees a real streaming run with no LLM/container.

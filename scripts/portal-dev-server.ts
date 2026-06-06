@@ -8,10 +8,10 @@
  * it — one command (`pnpm dev:mock`) for a live, animating local portal.
  *
  * MOCK MODE — every surface is faked, transparently: the audit/funnel/simulator
- * data is seeded; the two surfaces that hit external services in prod (Portkey
- * analytics, the `docker ps` container count) are faked through the env-gated
- * dev seams (PORTAL_MOCK_PORTKEY / PORTAL_MOCK_CONTAINERS) so every UI element
- * renders populated. This is a DEV TOOL, never the deployed site.
+ * data is seeded (the telemetry panels read the seeded turn rows directly —
+ * §24.47); the `docker ps` container count is faked through the env-gated
+ * PORTAL_MOCK_CONTAINERS seam so every UI element renders populated. This is a
+ * DEV TOOL, never the deployed site.
  *
  * Tunables (env, with defaults): PORTAL_MOCK_API_PORT=3010,
  * PORTAL_MOCK_FRONTEND_PORT=3000, PORTAL_MOCK_EVENT_MS=4000.
@@ -26,7 +26,6 @@ import {
   insertSyntheticEvent,
   maybeAdvanceFunnel,
   mockContainerCount,
-  mockPortkeySummary,
   newGeneratorState,
   seedDeterministicSimulatorRun,
   seedRichFixture,
@@ -42,7 +41,7 @@ const frontendDir = path.join(repoRoot, 'frontend');
 
 async function main(): Promise<void> {
   // Set the env-gated dev seams BEFORE startPortalApi so the handlers see them.
-  process.env.PORTAL_MOCK_PORTKEY = JSON.stringify(mockPortkeySummary());
+  // (Telemetry panels read the seeded turn rows directly — no Portkey seam, §24.47.)
   process.env.PORTAL_MOCK_CONTAINERS = String(mockContainerCount());
   // §24.31: scripted, container-free simulator runs (no LLM/Docker locally).
   process.env.PORTAL_MOCK_SIMULATOR = process.env.PORTAL_MOCK_SIMULATOR ?? '1';

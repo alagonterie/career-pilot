@@ -96,9 +96,9 @@ function LivePage() {
 
         {/* top stat row — `grid-auto-rows` floors every panel to the MAX loaded
             row height so loading→ok never shifts (§24.36 Tier-2), regardless of
-            whether LLM-telemetry loads connected (taller metrics) or not (shorter
-            "not connected" copy). 196px = the connected height; the grid already
-            equalizes the row, this pins its floor across states + data. */}
+            whether LLM-telemetry has captured turns (taller metric lanes) or is
+            awaiting the first (shorter pending copy). 196px = the populated
+            height; the grid equalizes the row, this pins its floor across states. */}
         <div className="order-3 grid grid-cols-1 gap-4 [grid-auto-rows:minmax(196px,auto)] sm:grid-cols-2 lg:order-2 lg:grid-cols-4">
           <SystemStatusPanel mode={mode} arch={arch} status={archStatus} />
           <SessionsPanel arch={arch} status={archStatus} />
