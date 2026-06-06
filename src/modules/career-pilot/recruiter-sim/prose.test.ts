@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HAIKU_EST_COST_USD, enrichBody, portkeyConfigured, sanitizeProse } from './prose.js';
 import type { InjectEmailIntent } from './types.js';
@@ -18,7 +18,11 @@ const intent: InjectEmailIntent = {
   calendar: null,
 };
 
-const SAVED = { key: process.env.PORTKEY_API_KEY, bypass: process.env.PORTKEY_BYPASS };
+const SAVED = {
+  key: process.env.PORTKEY_API_KEY,
+  bypass: process.env.PORTKEY_BYPASS,
+  env: process.env.ENVIRONMENT,
+};
 
 describe('recruiter-sim prose', () => {
   beforeEach(() => {
@@ -26,10 +30,13 @@ describe('recruiter-sim prose', () => {
     delete process.env.PORTKEY_BYPASS;
   });
   afterEach(() => {
+    vi.unstubAllGlobals();
     if (SAVED.key === undefined) delete process.env.PORTKEY_API_KEY;
     else process.env.PORTKEY_API_KEY = SAVED.key;
     if (SAVED.bypass === undefined) delete process.env.PORTKEY_BYPASS;
     else process.env.PORTKEY_BYPASS = SAVED.bypass;
+    if (SAVED.env === undefined) delete process.env.ENVIRONMENT;
+    else process.env.ENVIRONMENT = SAVED.env;
   });
 
   it('portkeyConfigured reflects the key + bypass flag', () => {
@@ -52,6 +59,26 @@ describe('recruiter-sim prose', () => {
     const res = await enrichBody(intent, HAIKU_EST_COST_USD / 2);
     expect(res.usedLlm).toBe(false);
     expect(res.body).toBe(intent.deterministicBody);
+  });
+
+  it('sends the §24.46 observability headers when enriching (metadata + trace id)', async () => {
+    process.env.PORTKEY_API_KEY = 'pk-test';
+    process.env.ENVIRONMENT = 'dev';
+    let headers: Record<string, string> = {};
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        headers = init.headers as Record<string, string>;
+        return {
+          ok: true,
+          json: async () => ({ choices: [{ message: { content: 'A nicely rewritten confirmation email body.' } }] }),
+        } as unknown as Response;
+      }),
+    );
+    const res = await enrichBody(intent, 1, intent.appId ?? undefined);
+    expect(res.usedLlm).toBe(true);
+    expect(headers['x-portkey-trace-id']).toBe('sim-1'); // intent.appId → groups the app's emails
+    expect(JSON.parse(headers['x-portkey-metadata'])).toEqual({ environment: 'dev', surface: 'recruiter-sim' });
   });
 
   it('sanitizeProse trims, strips a Subject line and surrounding quotes, and caps length', () => {

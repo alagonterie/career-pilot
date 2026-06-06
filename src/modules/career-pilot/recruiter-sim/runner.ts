@@ -106,7 +106,8 @@ async function executeInject(
   const app = intent.appId ? (nextState.apps.find((a) => a.appId === intent.appId) ?? null) : null;
 
   const budgetRemaining = Math.max(0, knobs.dailyBudgetUsd - dailySpentUsd);
-  const prose = await enrichBody(intent, budgetRemaining);
+  // Trace by application so an app's ATS emails group into one Portkey trace (§24.46).
+  const prose = await enrichBody(intent, budgetRemaining, intent.appId ?? undefined);
   dailySpentUsd += prose.estCostUsd;
 
   const result = await insertEmail(intent, prose.body, devAccount, app?.lastMessageId ?? null);

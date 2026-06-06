@@ -37,4 +37,34 @@ describe('buildClaudeContainerEnv', () => {
     });
     expect(env.ANTHROPIC_CUSTOM_HEADERS).toBe('x-portkey-provider: @anthropic-default');
   });
+
+  it('appends the §24.46 observability headers (trace id + metadata) from the spawn context', () => {
+    const env = buildClaudeContainerEnv(
+      { ANTHROPIC_BASE_URL: 'https://api.portkey.ai', PORTKEY_AI_PROVIDER: 'anthropic-default' },
+      { sessionId: 'sess-abc', agentGroup: 'career-pilot', environment: 'dev' },
+    );
+    const lines = env.ANTHROPIC_CUSTOM_HEADERS.split('\n');
+    expect(lines).toContain('x-portkey-provider: @anthropic-default');
+    expect(lines).toContain('x-portkey-trace-id: sess-abc');
+    const metaLine = lines.find((l) => l.startsWith('x-portkey-metadata: '));
+    expect(metaLine).toBeDefined();
+    expect(JSON.parse(metaLine!.replace('x-portkey-metadata: ', ''))).toEqual({
+      environment: 'dev',
+      agent_group: 'career-pilot',
+      session_id: 'sess-abc',
+    });
+  });
+
+  it('omits the observability headers when no context is given (existing behavior)', () => {
+    const env = buildClaudeContainerEnv({
+      ANTHROPIC_BASE_URL: 'https://api.portkey.ai',
+      PORTKEY_AI_PROVIDER: 'anthropic-default',
+    });
+    expect(env.ANTHROPIC_CUSTOM_HEADERS).not.toContain('x-portkey-trace-id');
+    expect(env.ANTHROPIC_CUSTOM_HEADERS).not.toContain('x-portkey-metadata');
+  });
+
+  it('contributes nothing when no base URL is set, even with a context', () => {
+    expect(buildClaudeContainerEnv({}, { sessionId: 'sess-abc', environment: 'dev' })).toEqual({});
+  });
 });

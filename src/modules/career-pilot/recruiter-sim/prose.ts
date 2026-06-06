@@ -18,6 +18,7 @@
  * header — that header returns 400 "Invalid provider passed".)
  */
 import { log } from '../../../log.js';
+import { buildPortkeyMetadata } from '../../../portkey.js';
 import type { InjectEmailIntent } from './types.js';
 
 const HAIKU_MODEL = 'claude-haiku-4-5';
@@ -50,15 +51,21 @@ export function sanitizeProse(text: string): string {
   return out.slice(0, 1500);
 }
 
-async function callHaiku(prompt: string): Promise<string> {
+async function callHaiku(prompt: string, traceId?: string): Promise<string> {
   const base = process.env.PORTKEY_BASE_URL || 'https://api.portkey.ai/v1';
   const provider = process.env.PORTKEY_AI_PROVIDER || 'anthropic-default';
+  // Observability headers (§24.46): tag the surface + group the application's
+  // emails into one trace. No PII (env / surface / app-id slugs only).
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    'x-portkey-api-key': process.env.PORTKEY_API_KEY as string,
+  };
+  const metadata = buildPortkeyMetadata({ environment: process.env.ENVIRONMENT, surface: 'recruiter-sim' });
+  if (Object.keys(metadata).length > 0) headers['x-portkey-metadata'] = JSON.stringify(metadata);
+  if (traceId) headers['x-portkey-trace-id'] = traceId;
   const res = await fetch(`${base}/chat/completions`, {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-portkey-api-key': process.env.PORTKEY_API_KEY as string,
-    },
+    headers,
     body: JSON.stringify({
       model: `@${provider}/${HAIKU_MODEL}`,
       max_tokens: 320,
@@ -78,12 +85,16 @@ async function callHaiku(prompt: string): Promise<string> {
  * is configured AND there is budget left, otherwise the deterministic backbone.
  * Never throws.
  */
-export async function enrichBody(intent: InjectEmailIntent, budgetRemainingUsd: number): Promise<ProseResult> {
+export async function enrichBody(
+  intent: InjectEmailIntent,
+  budgetRemainingUsd: number,
+  traceId?: string,
+): Promise<ProseResult> {
   const deterministic: ProseResult = { body: intent.deterministicBody, usedLlm: false, estCostUsd: 0 };
   if (!portkeyConfigured() || budgetRemainingUsd < HAIKU_EST_COST_USD) return deterministic;
   try {
     const prompt = `${intent.prosePrompt}\n\nDraft to rewrite (keep the facts, improve the wording):\n${intent.deterministicBody}`;
-    const body = await callHaiku(prompt);
+    const body = await callHaiku(prompt, traceId);
     return { body, usedLlm: true, estCostUsd: HAIKU_EST_COST_USD };
   } catch (err) {
     log.warn('recruiter-sim: prose enrich failed, using deterministic body', { err });

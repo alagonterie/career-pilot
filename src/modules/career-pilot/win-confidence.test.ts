@@ -72,6 +72,28 @@ describe('scoreWinConfidence', () => {
     expect(view.win_confidence).toBe(0);
   });
 
+  it('sends the §24.46 observability headers (metadata + trace id) on the scoring call', async () => {
+    const prevEnv = process.env.ENVIRONMENT;
+    process.env.ENVIRONMENT = 'dev';
+    let headers: Record<string, string> = {};
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        headers = init.headers as Record<string, string>;
+        return {
+          ok: true,
+          json: async () => ({ choices: [{ message: { content: '{"a1": {"score": 50, "reason": "ok"}}' } }] }),
+        } as unknown as Response;
+      }),
+    );
+    seedApp('a1', 'SCREENING');
+    await scoreWinConfidence(getDb());
+    expect(JSON.parse(headers['x-portkey-metadata'])).toEqual({ environment: 'dev', surface: 'win-confidence' });
+    expect(headers['x-portkey-trace-id']).toMatch(/^win-confidence-/);
+    if (prevEnv === undefined) delete process.env.ENVIRONMENT;
+    else process.env.ENVIRONMENT = prevEnv;
+  });
+
   it('clamps out-of-range scores + ignores non-numeric ones', async () => {
     seedApp('a1', 'FINAL');
     seedApp('a2', 'APPLIED');

@@ -13,13 +13,28 @@
  *   - ANTHROPIC_CUSTOM_HEADERS    — `x-portkey-provider` (the AI Provider slug
  *     that holds the Anthropic key) + `x-portkey-config` (the Config that
  *     forwards `anthropic-beta`, so Claude Code's prompt caching survives the
- *     gateway hop — a load-bearing cost factor)
+ *     gateway hop — a load-bearing cost factor) + the observability headers
+ *     `x-portkey-trace-id` (the session id, grouping the turn's orchestrator +
+ *     subagent fan-out into one Portkey trace) and `x-portkey-metadata`
+ *     (environment / agent_group / session_id, so the dashboard is segmentable)
  *
  * Without `ANTHROPIC_BASE_URL` set this contributes nothing (a standard install
- * hitting api.anthropic.com directly).
+ * hitting api.anthropic.com directly). See STRATEGY.md §24.46 for the
+ * observability headers.
  */
 import { readEnvFile } from '../env.js';
+import { buildPortkeyMetadata } from '../portkey.js';
 import { registerProviderContainerConfig } from './provider-container-registry.js';
+
+/** Per-spawn observability context for the Portkey routing headers (§24.46). */
+export interface ClaudePortkeyObservability {
+  /** Session id → the Portkey trace id (groups the session's LLM fan-out). */
+  sessionId?: string;
+  /** Agent group folder → the `agent_group` metadata tag (owner vs sandbox). */
+  agentGroup?: string;
+  /** Deploy environment → the `environment` metadata tag. */
+  environment?: string;
+}
 
 /**
  * Build the container env for the Claude provider from the host `.env` values.
@@ -27,7 +42,10 @@ import { registerProviderContainerConfig } from './provider-container-registry.j
  * configured. The Portkey headers are only added when a base URL is present;
  * `x-portkey-api-key` is intentionally NOT here (OneCLI injects it on the wire).
  */
-export function buildClaudeContainerEnv(dotenv: Record<string, string | undefined>): Record<string, string> {
+export function buildClaudeContainerEnv(
+  dotenv: Record<string, string | undefined>,
+  obs?: ClaudePortkeyObservability,
+): Record<string, string> {
   const env: Record<string, string> = {};
   if (!dotenv.ANTHROPIC_BASE_URL) return env;
 
@@ -45,12 +63,33 @@ export function buildClaudeContainerEnv(dotenv: Record<string, string | undefine
   if (dotenv.PORTKEY_CONFIG_ID) {
     headers.push(`x-portkey-config: ${dotenv.PORTKEY_CONFIG_ID}`);
   }
+
+  // Observability headers (§24.46). The session id is the Portkey trace id, so a
+  // turn's orchestrator + subagent fan-out groups into one trace (the per-request
+  // granularity the per-turn SDK rollup can't give); metadata tags env + group so
+  // owner-vs-sandbox spend is separable. Non-secret, no PII.
+  if (obs?.sessionId) headers.push(`x-portkey-trace-id: ${obs.sessionId}`);
+  const metadata = buildPortkeyMetadata({
+    environment: obs?.environment,
+    agent_group: obs?.agentGroup,
+    session_id: obs?.sessionId,
+  });
+  if (Object.keys(metadata).length > 0) {
+    headers.push(`x-portkey-metadata: ${JSON.stringify(metadata)}`);
+  }
+
   if (headers.length > 0) env.ANTHROPIC_CUSTOM_HEADERS = headers.join('\n');
 
   return env;
 }
 
-registerProviderContainerConfig('claude', () => {
+registerProviderContainerConfig('claude', (ctx) => {
   const dotenv = readEnvFile(['ANTHROPIC_BASE_URL', 'PORTKEY_AI_PROVIDER', 'PORTKEY_CONFIG_ID']);
-  return { env: buildClaudeContainerEnv(dotenv) };
+  return {
+    env: buildClaudeContainerEnv(dotenv, {
+      sessionId: ctx.sessionId,
+      agentGroup: ctx.agentGroupFolder,
+      environment: ctx.hostEnv.ENVIRONMENT,
+    }),
+  };
 });

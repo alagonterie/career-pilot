@@ -25,8 +25,12 @@ export interface VolumeMount {
 export interface ProviderContainerContext {
   /** Per-session host directory: `<DATA_DIR>/v2-sessions/<session_id>`. */
   sessionDir: string;
+  /** The session id — e.g. a Portkey trace id grouping the session's LLM calls. */
+  sessionId: string;
   /** Agent group ID, for any per-group logic. */
   agentGroupId: string;
+  /** Agent group folder (e.g. `career-pilot` / `career-pilot-sandbox`) — per-group tagging. */
+  agentGroupFolder: string;
   /** `process.env` at spawn time — pull passthrough values from here. */
   hostEnv: NodeJS.ProcessEnv;
 }
