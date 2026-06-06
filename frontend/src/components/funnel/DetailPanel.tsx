@@ -89,7 +89,14 @@ export function DetailPanel({ app, onClose }: { app: FunnelApplication | null; o
               </div>
               <span className="font-mono text-sm tabular-nums text-foreground">{win}%</span>
             </div>
-            <p className="text-[11px] text-muted-foreground">A low-rigor heuristic — not a promise.</p>
+            {app.win_confidence_rationale ? (
+              <p data-testid="win-rationale" className="text-sm leading-relaxed text-foreground/90">
+                {app.win_confidence_rationale}
+              </p>
+            ) : null}
+            <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+              AI estimate from the recruiter signals — not a promise.
+            </p>
           </section>
         ) : null}
 

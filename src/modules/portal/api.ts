@@ -152,6 +152,7 @@ interface FunnelViewRow {
   stage_entered_at: string | null;
   last_activity_at: string | null;
   win_confidence: number | null;
+  win_confidence_rationale: string | null;
   published_learning: string | null;
 }
 
@@ -159,7 +160,8 @@ function handleFunnel(res: http.ServerResponse, cors: Record<string, string>): v
   const rows = getDb()
     .prepare(
       `SELECT application_id, application_ref, public_state, role_title, status, stage,
-              applied_at, stage_entered_at, last_activity_at, win_confidence, published_learning
+              applied_at, stage_entered_at, last_activity_at, win_confidence,
+              win_confidence_rationale, published_learning
          FROM public_funnel_view`,
     )
     .all() as FunnelViewRow[];

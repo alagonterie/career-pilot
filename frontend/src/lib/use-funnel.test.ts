@@ -15,6 +15,7 @@ function app(p: Partial<FunnelApplication> = {}): FunnelApplication {
     stage_entered_at: '2026-01-10T00:00:00Z',
     last_activity_at: null,
     win_confidence: null,
+    win_confidence_rationale: null,
     published_learning: null,
     days_in_stage: 3,
     days_in_pipeline: 10,

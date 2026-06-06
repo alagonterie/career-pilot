@@ -41,6 +41,7 @@ function app(p: Partial<FunnelApplication> & { application_ref: string; stage: s
     stage_entered_at: null,
     last_activity_at: null,
     win_confidence: null,
+    win_confidence_rationale: null,
     published_learning: null,
     days_in_stage: null,
     days_in_pipeline: null,
