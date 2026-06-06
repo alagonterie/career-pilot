@@ -82,6 +82,7 @@ interface AppRow {
   role_title: string | null;
   status: string;
   win_confidence: number | null;
+  win_confidence_rationale: string | null;
   applied_at: string | null;
   last_activity_at: string | null;
   created_at: string | null;
@@ -121,7 +122,7 @@ export function upsertPublicFunnelView(db: Database.Database, applicationId: str
     const app = db
       .prepare(
         `SELECT id, company_name, obfuscated_label, public_state, role_title,
-                status, win_confidence, applied_at, last_activity_at, created_at
+                status, win_confidence, win_confidence_rationale, applied_at, last_activity_at, created_at
            FROM applications
           WHERE id = ?`,
       )
@@ -169,28 +170,35 @@ export function upsertPublicFunnelView(db: Database.Database, applicationId: str
       log.warn('upsertPublicFunnelView: published learning lookup failed', { applicationId, err });
     }
 
+    // win_confidence_rationale: the LLM's one-liner, sanitized like a learning
+    // (Pass 1 PII + Pass 2 company redaction) before it lands on the public view.
+    const winRationale = app.win_confidence_rationale
+      ? sanitize(app.win_confidence_rationale, { application_id: applicationId, db })
+      : null;
+
     db.prepare(
       `INSERT INTO public_funnel_view (
          application_id, application_ref, public_state, role_title, status, stage,
          applied_at, stage_entered_at, last_activity_at, win_confidence,
-         published_learning, updated_at
+         win_confidence_rationale, published_learning, updated_at
        ) VALUES (
          @application_id, @application_ref, @public_state, @role_title, @status, @stage,
          @applied_at, @stage_entered_at, @last_activity_at, @win_confidence,
-         @published_learning, @updated_at
+         @win_confidence_rationale, @published_learning, @updated_at
        )
        ON CONFLICT(application_id) DO UPDATE SET
-         application_ref    = excluded.application_ref,
-         public_state       = excluded.public_state,
-         role_title         = excluded.role_title,
-         status             = excluded.status,
-         stage              = excluded.stage,
-         applied_at         = excluded.applied_at,
-         stage_entered_at   = excluded.stage_entered_at,
-         last_activity_at   = excluded.last_activity_at,
-         win_confidence     = excluded.win_confidence,
-         published_learning = excluded.published_learning,
-         updated_at         = excluded.updated_at`,
+         application_ref          = excluded.application_ref,
+         public_state             = excluded.public_state,
+         role_title               = excluded.role_title,
+         status                   = excluded.status,
+         stage                    = excluded.stage,
+         applied_at               = excluded.applied_at,
+         stage_entered_at         = excluded.stage_entered_at,
+         last_activity_at         = excluded.last_activity_at,
+         win_confidence           = excluded.win_confidence,
+         win_confidence_rationale = excluded.win_confidence_rationale,
+         published_learning       = excluded.published_learning,
+         updated_at               = excluded.updated_at`,
     ).run({
       application_id: app.id,
       application_ref: applicationRef ?? app.obfuscated_label ?? app.id,
@@ -202,6 +210,7 @@ export function upsertPublicFunnelView(db: Database.Database, applicationId: str
       stage_entered_at: stageEnteredAt,
       last_activity_at: app.last_activity_at ?? null,
       win_confidence: app.win_confidence ?? null,
+      win_confidence_rationale: winRationale,
       published_learning: publishedLearning,
       updated_at: new Date().toISOString(),
     });

@@ -21,6 +21,8 @@ export interface FunnelApplication {
   stage_entered_at: string | null
   last_activity_at: string | null
   win_confidence: number | null
+  /** A one-sentence Gen-AI rationale for the win_confidence score (sanitized). */
+  win_confidence_rationale: string | null
   published_learning: string | null
   days_in_stage: number | null
   days_in_pipeline: number | null

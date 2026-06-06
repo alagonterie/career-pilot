@@ -41,7 +41,7 @@ async function callHaikuJson(prompt: string): Promise<string> {
     headers: { 'content-type': 'application/json', 'x-portkey-api-key': process.env.PORTKEY_API_KEY as string },
     body: JSON.stringify({
       model: `@${provider}/${HAIKU_MODEL}`,
-      max_tokens: 500,
+      max_tokens: 1000,
       messages: [{ role: 'user', content: prompt }],
     }),
     signal: AbortSignal.timeout(20_000),
@@ -71,11 +71,13 @@ export async function scoreWinConfidence(db: Database.Database): Promise<WinConf
   try {
     const closedRows = db
       .prepare(
-        "SELECT id FROM applications WHERE upper(status) IN ('REJECTED','WITHDRAWN') AND (win_confidence IS NULL OR win_confidence <> 0)",
+        "SELECT id FROM applications WHERE upper(status) IN ('REJECTED','WITHDRAWN') AND (win_confidence IS NULL OR win_confidence <> 0 OR win_confidence_rationale IS NULL)",
       )
       .all() as Array<{ id: string }>;
     for (const r of closedRows) {
-      db.prepare('UPDATE applications SET win_confidence = 0 WHERE id = ?').run(r.id);
+      db.prepare(
+        "UPDATE applications SET win_confidence = 0, win_confidence_rationale = 'Application closed — no longer active.' WHERE id = ?",
+      ).run(r.id);
       upsertPublicFunnelView(db, r.id);
       closed++;
     }
@@ -112,9 +114,10 @@ export async function scoreWinConfidence(db: Database.Database): Promise<WinConf
     return `- id "${a.id}": ${a.role_title ?? 'a role'} at ${a.company_name}, stage ${a.status}. Recruiter signals: ${sig}.`;
   });
   const prompt = [
-    'You rate how likely each job application is to result in an OFFER, as an integer 0–100.',
+    'You rate how likely each job application is to result in an OFFER (0–100) and explain why.',
     "Weigh the stage reached and the recruiter's signals — enthusiasm, momentum, specificity. An application already at the OFFER stage is ~95–100; early or quiet ones are lower.",
-    'Return ONLY a JSON object mapping each id to its integer score. No prose, no code fence.',
+    'Return ONLY a JSON object mapping each id to {"score": <integer 0–100>, "reason": "<one concise sentence (~140 chars max) citing the funnel signals — the stage reached + recruiter momentum/enthusiasm. Do NOT name the company or any person.>"}.',
+    'No prose outside the JSON object, no code fence.',
     '',
     'Applications:',
     ...lines,
@@ -130,12 +133,19 @@ export async function scoreWinConfidence(db: Database.Database): Promise<WinConf
 
   let scored = 0;
   for (const a of active) {
-    const raw = parsed[a.id];
-    const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN;
+    const entry = parsed[a.id];
+    if (!entry || typeof entry !== 'object') continue;
+    const e = entry as { score?: unknown; reason?: unknown };
+    const n = typeof e.score === 'number' ? e.score : typeof e.score === 'string' ? Number(e.score) : NaN;
     if (!Number.isFinite(n)) continue;
     const clamped = Math.max(0, Math.min(100, Math.round(n)));
+    const reason = typeof e.reason === 'string' && e.reason.trim().length > 0 ? e.reason.trim().slice(0, 240) : null;
     try {
-      db.prepare('UPDATE applications SET win_confidence = ? WHERE id = ?').run(clamped, a.id);
+      db.prepare('UPDATE applications SET win_confidence = ?, win_confidence_rationale = ? WHERE id = ?').run(
+        clamped,
+        reason,
+        a.id,
+      );
       upsertPublicFunnelView(db, a.id);
       scored++;
     } catch (err) {

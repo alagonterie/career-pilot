@@ -20,6 +20,7 @@ function app(p: Partial<FunnelApplication> & { application_ref: string }): Funne
     stage_entered_at: '2026-05-01T00:00:00Z',
     last_activity_at: null,
     win_confidence: null,
+    win_confidence_rationale: null,
     published_learning: null,
     days_in_stage: 4,
     days_in_pipeline: 12,
@@ -129,12 +130,27 @@ describe('DetailPanel', () => {
     expect(screen.queryByTestId('funnel-detail')).not.toBeInTheDocument()
   })
 
-  it('shows the anonymized facts + the labeled win-confidence heuristic', () => {
+  it('shows the anonymized facts + the labeled win-confidence estimate', () => {
     render(<DetailPanel app={APPS[4]} onClose={() => {}} />)
     const dialog = screen.getByRole('dialog', { name: 'Wayne Enterprises' })
     expect(dialog).toBeInTheDocument()
     expect(screen.getByText('84%')).toBeInTheDocument()
-    expect(screen.getByText(/low-rigor heuristic/i)).toBeInTheDocument()
+    expect(screen.getByText(/AI estimate/i)).toBeInTheDocument()
+  })
+
+  it('renders the Gen-AI rationale for the win-confidence score when present', () => {
+    render(
+      <DetailPanel
+        app={app({
+          application_ref: 'x',
+          stage: 'offer',
+          win_confidence: 97,
+          win_confidence_rationale: 'Offer extended after a strong final round — essentially decided.',
+        })}
+        onClose={() => {}}
+      />,
+    )
+    expect(screen.getByTestId('win-rationale')).toHaveTextContent('Offer extended after a strong final round')
   })
 
   it('closes via the close button and Escape', () => {

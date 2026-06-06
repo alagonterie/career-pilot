@@ -32,6 +32,7 @@ import { migration122 } from './122-audit-source-fe.js';
 import { migration123 } from './123-audit-seq.js';
 import { migration124 } from './124-public-funnel-view.js';
 import { migration125 } from './125-funnel-events-proactive.js';
+import { migration126 } from './126-win-confidence-rationale.js';
 
 export interface Migration {
   version: number;
@@ -71,6 +72,7 @@ const migrations: Migration[] = [
   migration123,
   migration124,
   migration125,
+  migration126,
 ];
 
 export function runMigrations(db: Database.Database): void {
