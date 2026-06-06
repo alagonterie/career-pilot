@@ -4327,6 +4327,66 @@ The 9.3b recruiter-sim is tuned today by editing `preferences` over SSH (`q.ts`)
 
 ---
 
+#### 24.43 Dev-env controls — model tier, on-demand curator sweep, location onboarding
+
+Three dev-ergonomics improvements surfaced reviewing the live dev env (the §24.42 inspector + the 9.3b sim running end-to-end). All three sharpen the watch-it-work dev loop without touching prod behavior.
+
+**Recon (against the as-built pipeline).**
+- *Model choice is already per-spawn, just not controllable.* The orchestrator model is `container_configs.model` (NULL today → the SDK default, latest Opus); every subagent declares `model: opus` in frontmatter. Both resolve through Claude Code's model aliases, which `applyClaudeTestOverrides` (`src/container-config.ts`) already retargets via `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL` env + `config.model` when `CLAUDE_TEST_MODE=1`. `materializeContainerJson` runs on every spawn and reads `getConfig`, so a `preferences`-tier knob can drive the same overlay at runtime — no redeploy.
+- *The funnel-curator runs on a recurring task, not a tight loop.* `ensureFunnelCuratorTask` inserts a `messages_in` series (`[scheduled trigger: funnel-curator]`, recurrence = `funnel_curator_cron`, default daily 07:30). The sim seeds raw `applications` + injects ATS email; only the curator sweep → orchestrator `update_application` promotes an app onto `public_funnel_view`. So the public board lags the sim's world until the next cron fire — the observed divergence (the sim had an offer + 2 in-flight + 2 ghosts; the board showed 2 rejections).
+- *Onboarding collects 6 fields, not location.* The interview walk (persona + `ONBOARDING_FIELD_ORDER` in `dev-inspector.ts`) is `full_name → target_roles → comp_floor → master_resume → bio → why_this_exists`. `location_pref` is rendered into the persona + weighed for relevance but never collected; `skills` likewise (left out by choice — it overlaps the master resume).
+- *No approval gate exists on funnel moves.* `handleUpdateApplication` writes any status (incl. OFFER/REJECTED) straight through + refreshes the board; the only planned approval-gating is the future `send_outreach_email`. "Accurate representation by default" is already the design — so the board-divergence fix is purely about sweep timing (24.43c), not unlocking a gate.
+
+**Decisions (locked).**
+- **Dev model tier is a single `preferences` selector, dev-gated, applied at spawn.** `dev_model_tier ∈ {default, sonnet, haiku}`: `default` = no overlay (real Opus orchestrator + subagents); `sonnet` = Opus aliases → Sonnet (keep Haiku); `haiku` = everything → Haiku. `materializeContainerJson` applies the overlay only when `ENVIRONMENT==='dev'` and the tier ≠ `default`, reusing the `applyClaudeTestOverrides` shape (env redirects + `config.model`) for both groups. Takes effect on the next container spawn (fresh session / `reset:dev`) — surfaced on the knob like the cron note. Prod is untouched (gate + default value).
+- **On-demand sweep is a one-shot enqueue of the existing curator trigger, not a new code path.** A dev action `POST /api/dev/sweep` inserts a single (non-recurring) `[scheduled trigger: funnel-curator]` `messages_in` row for the owner group — identical to what the cron fires and what messaging the bot does, just one click. Dev-gated like the rest of `/api/dev/*`. No new agent capability; it only changes *when* the existing sweep runs.
+- **Onboarding gains `location_pref` (skills stays out).** Append `location_pref` to the interview after `comp_floor` (persona walk + `ONBOARDING_FIELD_ORDER`); `fieldFilled` gets a JSON-object non-empty check; `normalizeProfileValue` already coerces it. Onboarding completion becomes 7/7. `skills` is deliberately not added — it overlaps the master resume and the owner opted to leave it optional.
+
+**Sub-milestone decomposition (each its own commit).**
+| Sub | Scope |
+|---|---|
+| 24.43a (this drill-in) | Spec. |
+| 24.43b | Dev model tier: `dev_model_tier` default + the overlay in `materializeContainerJson` + the `models`-group enum knob (KNOB_SPECS + `enum` KnobType + validation + the select control on `/dev`). Host + frontend tests. |
+| 24.43c | On-demand sweep: `POST /api/dev/sweep` (dev-gated enqueue) + a "Sweep & convert now" button on `/dev`. Host + frontend tests. |
+| 24.43d | `location_pref` onboarding: persona walk + `ONBOARDING_FIELD_ORDER` + `fieldFilled`; backfill the live dev profile. |
+
+**Definition of done.**
+1. With `dev_model_tier=haiku` on dev, a fresh session's orchestrator + subagents run on Haiku (verified via the activity feed's `model_used`); `default` restores Opus; prod (non-dev) ignores the knob entirely (host test on the overlay gate).
+2. The "Sweep & convert now" button enqueues one funnel-curator trigger; within one orchestrator turn the sim's unconverted apps (the offer + in-flight) appear on `/funnel` with their real statuses (no approval prompt).
+3. Onboarding asks for `location_pref` in order and records it; `/api/dev/persona` reports 7/7 when filled; the live dev profile is backfilled.
+4. No prod behavior change; `/api/dev/*` stays 404 off-dev; the public pages + E2E paths untouched.
+
+**Spec deltas.** This §24.43; the §24.42 `DEV_INSPECTOR_WRITABLE_KEYS` set grows by `dev_model_tier`; the new `POST /api/dev/sweep` is the first dev *action* (vs knob write) — still dev-gated, still non-destructive (it can only trigger the agent's own scheduled work). Memory: [[status_current]], [[dev_access_ergonomics]].
+
+---
+
+#### 24.44 Route the agent runtime through Portkey — gateway parity (resolves a §24.43 drift)
+
+Reviewing dev LLM spend surfaced a spec-vs-reality drift: the locked decision is "Portkey is the LLM gateway; the Anthropic key lives in Portkey's vault only," but only the **host-side** calls (the recruiter-sim prose + lead-scoring, via `prose.ts` → `api.portkey.ai/v1/chat/completions`) actually route through Portkey. The **agent runtime** (the container's Claude Code: orchestrator + every subagent — where the Opus spend is) calls `api.anthropic.com` directly, credentialed by OneCLI, because `ANTHROPIC_BASE_URL` is unset. So Portkey is blind to the real work, the portal's Portkey-analytics panel reflects only the sim, and there's no gateway-level caching / fallback / governance on the agent path.
+
+**Owner decision (2026-06-05): close the drift toward full Portkey routing — the agent runtime goes through Portkey too, in both dev and prod (parity).** Rationale: unified observability is a *showcase* asset (the `/architecture` story + the currently half-empty Portkey panel), semantic caching is real cost savings, gateway fallback keeps the public surface up, and dev/prod parity means dev exercises the real request path. Start on Portkey's **free tier** — the gateway keeps routing past the 10k-log cap (it just stops *recording* logs; the agent never throttles) — and upgrade to Production ($49/mo: 100k logs + **semantic caching** + 30-day retention) reactively when observability or caching savings justify it.
+
+**The verified recipe (Portkey's Claude Code integration, primary docs).**
+- `ANTHROPIC_BASE_URL=https://api.portkey.ai` (no `/v1`).
+- `ANTHROPIC_AUTH_TOKEN=placeholder` — the SDK sends `Authorization: Bearer`; OneCLI rewrites it on the wire. The container never holds the Portkey key.
+- `ANTHROPIC_CUSTOM_HEADERS` (newline-separated, **non-secret**): `x-portkey-provider: @anthropic-prod` (+ `x-portkey-config: <id>`). The provider slug names a Portkey **AI Provider** that holds the real Anthropic key — so the Anthropic credential lives in Portkey's vault (the original invariant, restored) and the container holds neither key.
+- A Portkey **Config** with `forward_headers: ["anthropic-beta"]` — **load-bearing**: Claude Code's prompt caching + beta features ride the `anthropic-beta` header; without forwarding it through Portkey we lose prompt-cache hits (a major cost factor). The config also carries caching / retry / fallback policy.
+- **OneCLI** injects `x-portkey-api-key: <PORTKEY_API_KEY>` (a generic secret: host-pattern `api.portkey.ai`, header-name `x-portkey-api-key`) — so the **Portkey** key is vaulted in OneCLI, never in the container env. Two vaults, defense-in-depth: OneCLI holds the Portkey key, Portkey holds the Anthropic key, the container holds neither.
+
+**Split of work.**
+- *Owner (Portkey dashboard — only the account holder can):* (1) create an Anthropic **AI Provider** (note its slug, e.g. `@anthropic-prod`) holding the real Anthropic key; (2) create a **Config** with `forward_headers: ["anthropic-beta"]` (+ desired caching / retry / fallback) and note its ID; (3) confirm the workspace `PORTKEY_API_KEY`.
+- *Host (code + box):* extend the `claude.ts` provider shim (or container-config) to emit `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN=placeholder` + `ANTHROPIC_CUSTOM_HEADERS` (provider slug + config id, read from env so they're not hardcoded); register the OneCLI `x-portkey-api-key` secret for `api.portkey.ai`; set `ANTHROPIC_BASE_URL` in the dev `.env` (then prod); ensure `import './claude.js'` is loaded in `providers/index.ts`.
+
+**Definition of done.**
+1. An owner agent turn (orchestrator + a subagent) appears in Portkey's logs with the right model / tokens / cost / cache-hit; the portal's Portkey-analytics panel reflects real agent work, not just the sim.
+2. The container env holds neither the Anthropic key nor the Portkey key (both vaulted: Portkey's AI Provider / OneCLI); a `docker logs onecli` check confirms `x-portkey-api-key` injection on `api.portkey.ai`.
+3. Prompt caching still works through Portkey (cache_hit telemetry non-zero on a repeated-context turn) — i.e. `anthropic-beta` is forwarded.
+4. Dev and prod both route the agent through Portkey (parity); `PORTKEY_BYPASS=true` remains the documented escape hatch.
+
+**Spec deltas.** This §24.44; the CLAUDE.md locked-decision "LLM gateway" + "Credential vault" rows get a clarifying note (Portkey routes the agent runtime too; OneCLI vaults the Portkey key, Portkey's AI Provider vaults the Anthropic key); open-Q #4 below is updated with the log-billing reality. Memory: [[decision_architecture]], [[status_current]].
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
@@ -4335,7 +4395,7 @@ The 9.3b recruiter-sim is tuned today by editing `preferences` over SSH (`q.ts`)
 
 3. **TanStack Start version pin:** ~~RC churn risk~~ — **resolved:** v1.0 shipped (2026-03). Pin the exact v1 minor we scaffold with; don't auto-update; re-evaluate upgrades at end of Phase 7. (Canonical stack captured in §24.23.)
 
-4. **Portkey free tier ceiling:** 10k req/mo. Each agent turn = ~3-5 LLM calls (orchestrator + 1-3 subagents). 100 turns/day = 12-15k/mo. We'll likely need Portkey Pro within weeks. Budget $99/mo or stick with free until we hit the wall — start free, upgrade reactively.
+4. **Portkey free tier ceiling:** ✅ RESOLVED (§24.44, 2026-06-05) — and the premise was wrong. Portkey bills on **recorded logs, not requests**: the free Developer tier caps at 10k *logs*/mo (3-day retention), but **the gateway keeps routing past the cap — it just stops recording new logs**. So the agent never throttles on the free tier; we only lose observability beyond 10k logs. Production is **$49/mo** (not $99): 100k logs + **semantic caching** + 30-day retention + alerts. Plan: route everything through Portkey on free first (§24.44), upgrade to Production reactively when observability/caching savings justify it.
 
 5. **What's the URL for the public Telegram bot for visitors?** PORTAL.md §5.7 mentions one as an alternative contact path. Do we actually want a public Telegram bot, or drop it and rely only on the contact form? Recommendation: drop for v1 (the contact form covers it).
 
