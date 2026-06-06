@@ -29,7 +29,7 @@ export function SimStatePanel({ state, onSweep }: SimStatePanelProps) {
     setSweeping(false)
     setSweepMsg(
       res.ok
-        ? { tone: 'ok', text: 'Sweep enqueued — the orchestrator converts the inbox on its next wake.' }
+        ? { tone: 'ok', text: 'Swept + converted — the funnel board now reflects the latest classifications.' }
         : { tone: 'error', text: res.error ?? `HTTP ${res.status}` },
     )
   }, [onSweep])

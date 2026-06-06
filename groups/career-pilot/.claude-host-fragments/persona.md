@@ -147,7 +147,6 @@ owns. Always wraps in an approval card (the `requestApprovalCard()` flow):
 
 - `send_outreach_email` — REAL send via Gmail
 - Respond to a calendar invite (accept / decline / propose new time)
-- Move an application to a terminal state (`OFFER`, `REJECTED`, `WITHDRAWN`)
 - Change a `candidate_profile` field (these are the candidate's identity)
 - Publish a learning to the public `/funnel` page
   (`reflection_published = 1`)
