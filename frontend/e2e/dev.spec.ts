@@ -93,12 +93,13 @@ const PERSONA = {
       { field: 'full_name', filled: false },
       { field: 'target_roles', filled: false },
       { field: 'comp_floor', filled: false },
+      { field: 'location_pref', filled: false },
       { field: 'master_resume', filled: false },
       { field: 'bio', filled: false },
       { field: 'why_this_exists', filled: false },
     ],
     filledCount: 0,
-    totalCount: 6,
+    totalCount: 7,
     complete: false,
     nextField: 'full_name',
   },
@@ -148,7 +149,7 @@ test.describe('/dev — dev inspector + sim controls (§24.42c)', () => {
     await expect(page.getByTestId('sim-next-sim-1')).toContainText('onsite_invite')
 
     // Persona panel: onboarding mode (next = full_name) + the rendered sentinel.
-    await expect(page.getByTestId('onboarding-badge')).toContainText('0/6')
+    await expect(page.getByTestId('onboarding-badge')).toContainText('0/7')
     await expect(page.getByTestId('onboarding-full_name')).toContainText('next')
     await expect(page.getByTestId('candidate-md')).toContainText('Onboarding mode')
 

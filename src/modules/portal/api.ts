@@ -40,6 +40,7 @@ import { loadState, simStatePath } from '../career-pilot/recruiter-sim/runner.js
 import { relayContactSubmission, type ContactInput } from './contact-relay.js';
 import {
   applyDevControl,
+  applyDevSweep,
   applyKnobWrite,
   buildDevKnobs,
   buildDevPersonaFromDb,
@@ -535,6 +536,11 @@ async function handleDevControl(
   json(res, out.status, out.body, cors);
 }
 
+function handleDevSweep(res: http.ServerResponse, cors: Record<string, string>): void {
+  const out = applyDevSweep();
+  json(res, out.status, out.body, cors);
+}
+
 // ── request router ───────────────────────────────────────────────────────
 
 async function requestHandler(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -588,6 +594,7 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
       if (method === 'POST' && path === '/api/dev/knobs') return await handleDevKnobsWrite(req, res, cors);
       if (method === 'GET' && path === '/api/dev/persona') return handleDevPersona(res, cors);
       if (method === 'POST' && path === '/api/dev/control') return await handleDevControl(req, res, cors);
+      if (method === 'POST' && path === '/api/dev/sweep') return handleDevSweep(res, cors);
     }
 
     json(res, 404, { error: 'not_found', path }, cors);

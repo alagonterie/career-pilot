@@ -6,10 +6,16 @@
  * (knobs read, sim-state join, preference persistence). The HTTP-level
  * `ENVIRONMENT==='dev'` 404 gate (DoD #1) is in dev-inspector-api.test.ts.
  */
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { createAgentGroup } from '../../db/agent-groups.js';
 import { closeDb, getDb, initTestDb } from '../../db/connection.js';
 import { runMigrations } from '../../db/migrations/index.js';
+import { ensureSchema, openInboundDb } from '../../db/session-db.js';
 import { getConfig } from '../../get-config.js';
 import type { CandidateProfile } from '../career-pilot/render-persona.js';
 import { SIM_KNOB_KEYS } from '../career-pilot/recruiter-sim/knobs.js';
@@ -17,11 +23,13 @@ import type { SimApp, SimState } from '../career-pilot/recruiter-sim/types.js';
 
 import {
   applyDevControl,
+  applyDevSweep,
   applyKnobWrite,
   buildDevKnobs,
   buildDevState,
   computeOnboardingProgress,
   DEV_INSPECTOR_WRITABLE_KEYS,
+  enqueueSweepTask,
   ONBOARDING_FIELD_ORDER,
   simUpcoming,
   validateKnobWrite,
@@ -333,12 +341,25 @@ describe('computeOnboardingProgress', () => {
     expect(p.nextField).toBe('target_roles');
   });
 
+  it('asks for location_pref after comp_floor, and treats an empty {} as unfilled', () => {
+    const base = { full_name: 'Jane Doe', target_roles: '["Backend Engineer"]', comp_floor: 180000 };
+    // comp_floor filled but location_pref absent → location_pref is next.
+    expect(computeOnboardingProgress(makeProfile(base)).nextField).toBe('location_pref');
+    // an empty object is not a populated preference.
+    expect(computeOnboardingProgress(makeProfile({ ...base, location_pref: '{}' })).nextField).toBe('location_pref');
+    // a real object fills it → next is master_resume.
+    expect(
+      computeOnboardingProgress(makeProfile({ ...base, location_pref: '{"remote":true,"cities":["NYC"]}' })).nextField,
+    ).toBe('master_resume');
+  });
+
   it('marks complete when every onboarding field is populated', () => {
     const p = computeOnboardingProgress(
       makeProfile({
         full_name: 'Jane Doe',
         target_roles: '["Backend Engineer"]',
         comp_floor: 180000,
+        location_pref: '{"remote":true,"cities":["NYC"]}',
         master_resume: 'resume text',
         bio: 'bio text',
         why_this_exists: 'because',
@@ -376,5 +397,45 @@ describe('applyDevControl (§24.43e pause LLM spend)', () => {
     expect(applyDevControl(db, null).status).toBe(400);
     expect(applyDevControl(db, { action: 'killswitch' }).status).toBe(400); // not reachable here
     expect(getPauseState()).toBe('active'); // nothing mutated
+  });
+});
+
+describe('on-demand sweep (§24.43c)', () => {
+  it('enqueueSweepTask inserts a one-shot funnel-curator trigger row', () => {
+    const tmpDir = path.join(os.tmpdir(), `nanoclaw-cp-sweep-test-${process.pid}`);
+    const inboundPath = path.join(tmpDir, 'inbound.db');
+    fs.mkdirSync(tmpDir, { recursive: true });
+    ensureSchema(inboundPath, 'inbound');
+    const inDb = openInboundDb(inboundPath);
+    try {
+      inDb.exec('DELETE FROM messages_in');
+      const id = enqueueSweepTask(inDb);
+      const row = inDb
+        .prepare('SELECT kind, status, recurrence, content, series_id FROM messages_in WHERE id = ?')
+        .get(id) as { kind: string; status: string; recurrence: string | null; content: string; series_id: string };
+      expect(row.kind).toBe('task');
+      expect(row.status).toBe('pending');
+      expect(row.recurrence).toBeNull(); // one-shot — won't clone
+      expect(row.series_id).toBe(id); // its own series, not 'funnel-curator'
+      expect((JSON.parse(row.content) as { prompt: string }).prompt).toBe('[scheduled trigger: funnel-curator]');
+    } finally {
+      inDb.close();
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('applyDevSweep → 500 when the owner group is absent', () => {
+    expect(applyDevSweep().status).toBe(500);
+  });
+
+  it('applyDevSweep → 409 when the owner group has no active session', () => {
+    createAgentGroup({
+      id: 'ag-owner',
+      name: 'Career Pilot',
+      folder: 'career-pilot',
+      agent_provider: null,
+      created_at: '2026-06-06T00:00:00Z',
+    });
+    expect(applyDevSweep().status).toBe(409);
   });
 });

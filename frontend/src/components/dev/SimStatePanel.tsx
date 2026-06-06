@@ -1,22 +1,55 @@
+import * as React from 'react'
+
 import { Badge } from '~/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
-import type { DevStateResponse } from '~/lib/use-dev-inspector'
+import { cn } from '~/lib/utils'
+import type { DevStateResponse, KnobWriteResult } from '~/lib/use-dev-inspector'
 
 interface SimStatePanelProps {
   state: DevStateResponse | null
+  /** When provided, renders a "Sweep & convert now" action (§24.43c). */
+  onSweep?: () => Promise<KnobWriteResult>
 }
 
 /** Read-only view of the recruiter-sim's live state + the applications it seeded
- * (24.42c). Joins each sim app to its DB row so you see the curator's advance. */
-export function SimStatePanel({ state }: SimStatePanelProps) {
+ * (24.42c). Joins each sim app to its DB row so you see the curator's advance.
+ * With `onSweep`, adds a button to convert the sim's inbox to board moves now. */
+export function SimStatePanel({ state, onSweep }: SimStatePanelProps) {
   const apps = state?.apps ?? []
   const dbStatusById = new Map((state?.applications ?? []).map((a) => [a.id, a.status]))
 
+  const [sweeping, setSweeping] = React.useState(false)
+  const [sweepMsg, setSweepMsg] = React.useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
+
+  const doSweep = React.useCallback(async () => {
+    if (!onSweep) return
+    setSweeping(true)
+    setSweepMsg(null)
+    const res = await onSweep()
+    setSweeping(false)
+    setSweepMsg(
+      res.ok
+        ? { tone: 'ok', text: 'Sweep enqueued — the orchestrator converts the inbox on its next wake.' }
+        : { tone: 'error', text: res.error ?? `HTTP ${res.status}` },
+    )
+  }, [onSweep])
+
   return (
     <Card data-testid="sim-state-panel">
-      <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
+      <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-3">
         <CardTitle className="text-base">Sim state</CardTitle>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {onSweep ? (
+            <button
+              type="button"
+              data-testid="sweep-now"
+              disabled={sweeping}
+              onClick={() => void doSweep()}
+              className="rounded-md border border-border px-2.5 py-1 text-xs font-semibold transition-colors hover:bg-muted disabled:opacity-50"
+            >
+              ⟳ Sweep &amp; convert now
+            </button>
+          ) : null}
           <Badge variant={state?.enabled ? 'default' : 'secondary'} data-testid="sim-enabled-badge">
             {state?.enabled ? 'running' : 'idle'}
           </Badge>
@@ -26,6 +59,14 @@ export function SimStatePanel({ state }: SimStatePanelProps) {
         </div>
       </CardHeader>
       <CardContent className="pt-0">
+        {sweepMsg ? (
+          <p
+            data-testid="sweep-status"
+            className={cn('mb-2 text-[11px]', sweepMsg.tone === 'ok' ? 'text-muted-foreground' : 'text-destructive')}
+          >
+            {sweepMsg.text}
+          </p>
+        ) : null}
         {apps.length === 0 ? (
           <p className="py-4 text-sm text-muted-foreground">
             No simulated applications in flight. Flip <code className="font-mono">recruiter_sim_enabled</code> on (dev

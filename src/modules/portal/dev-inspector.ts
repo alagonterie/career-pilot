@@ -23,7 +23,12 @@
  */
 import type Database from 'better-sqlite3';
 
+import { getAgentGroupByFolder } from '../../db/agent-groups.js';
+import { nextEvenSeq } from '../../db/session-db.js';
+import { findSessionByAgentGroup } from '../../db/sessions.js';
 import { getConfig, getConfigDefault } from '../../get-config.js';
+import { log } from '../../log.js';
+import { openInboundDb } from '../../session-manager.js';
 import { type CandidateProfile, readCandidateProfile, renderPersona } from '../career-pilot/render-persona.js';
 import { SIM_KNOB_KEYS } from '../career-pilot/recruiter-sim/knobs.js';
 import { STAGE_CLASSIFICATIONS } from '../career-pilot/recruiter-sim/templates.js';
@@ -430,6 +435,60 @@ export function applyDevControl(db: Database.Database, raw: unknown): DevControl
   return { status: 400, body: { error: `unknown action: ${String(action)} (expected "pause" | "resume")` } };
 }
 
+// ── on-demand funnel-curator sweep (§24.43c) ─────────────────────────────────
+
+const SWEEP_PROMPT = '[scheduled trigger: funnel-curator]';
+
+export interface DevSweepOutcome {
+  status: number;
+  body: unknown;
+}
+
+/**
+ * Insert a ONE-SHOT funnel-curator trigger row into an inbound DB: the same
+ * sentinel the daily cron fires, but `recurrence=NULL` + `process_after=now` so
+ * it runs once, immediately. `series_id` is the row's own id (a one-shot series,
+ * so it never collides with the recurring `funnel-curator` series or its clone
+ * logic). Takes the inbound DB → unit-testable. Returns the row id.
+ */
+export function enqueueSweepTask(inDb: Database.Database): string {
+  const id = `sweep-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  inDb
+    .prepare(
+      `INSERT INTO messages_in (id, seq, timestamp, status, tries, process_after, recurrence, kind, platform_id, channel_type, thread_id, content, series_id)
+       VALUES (@id, @seq, datetime('now'), 'pending', 0, datetime('now'), NULL, 'task', NULL, NULL, NULL, @content, @id)`,
+    )
+    .run({ id, seq: nextEvenSeq(inDb), content: JSON.stringify({ prompt: SWEEP_PROMPT, script: null }) });
+  return id;
+}
+
+/**
+ * Enqueue an on-demand funnel-curator sweep for the owner group (§24.43c). The
+ * host-sweep picks up the `task` row on its next tick and wakes the orchestrator,
+ * which runs the curator sweep → `update_application` → `public_funnel_view` —
+ * converting the sim's inbound mail into board moves without waiting for the
+ * daily cron. Needs an active owner session (created the first time the owner
+ * messages the bot); 409 with a hint otherwise. Inert while the system is
+ * halted/paused — the host-sweep's pause gate suppresses the proactive wake (so
+ * "Pause LLM spend" also pauses sweeps, by design).
+ */
+export function applyDevSweep(): DevSweepOutcome {
+  const group = getAgentGroupByFolder('career-pilot');
+  if (!group) return { status: 500, body: { error: 'owner group (folder "career-pilot") not found' } };
+  const session = findSessionByAgentGroup(group.id);
+  if (!session) {
+    return { status: 409, body: { error: 'no active owner session yet — message the dev bot once, then sweep' } };
+  }
+  const inDb = openInboundDb(group.id, session.id);
+  try {
+    const taskId = enqueueSweepTask(inDb);
+    log.info('dev: on-demand funnel-curator sweep enqueued', { taskId, group: group.id, session: session.id });
+    return { status: 200, body: { enqueued: true, taskId, sessionId: session.id } };
+  } finally {
+    inDb.close();
+  }
+}
+
 // ── persona / onboarding ──────────────────────────────────────────────────────
 
 /** The onboarding interview order (one field per turn) — mirrors render-persona's sentinel. */
@@ -437,6 +496,7 @@ export const ONBOARDING_FIELD_ORDER = [
   'full_name',
   'target_roles',
   'comp_floor',
+  'location_pref',
   'master_resume',
   'bio',
   'why_this_exists',
@@ -452,10 +512,23 @@ function jsonArrayNonEmpty(raw: string | null): boolean {
   }
 }
 
+/** A populated location preference: a non-empty JSON object (not null / `{}` / array). */
+function jsonObjectNonEmpty(raw: string | null): boolean {
+  if (!raw) return false;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) && Object.keys(parsed).length > 0;
+  } catch {
+    return false;
+  }
+}
+
 function fieldFilled(profile: CandidateProfile, field: string): boolean {
   switch (field) {
     case 'target_roles':
       return jsonArrayNonEmpty(profile.target_roles);
+    case 'location_pref':
+      return jsonObjectNonEmpty(profile.location_pref);
     case 'comp_floor':
       return profile.comp_floor != null;
     default:
