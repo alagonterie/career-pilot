@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { configFromDb } from './container-config.js';
+import { applyDevModelTier, configFromDb, type ContainerConfig } from './container-config.js';
 import type { AgentGroup, ContainerConfigRow } from './types.js';
 
 function row(overrides: Partial<ContainerConfigRow> = {}): ContainerConfigRow {
@@ -73,5 +73,51 @@ describe('configFromDb — disallowedTools', () => {
   it('returns undefined when filtering leaves an empty array', () => {
     const cfg = configFromDb(row({ disallowed_tools: '[42, null, true]' }), TEST_GROUP);
     expect(cfg.disallowedTools).toBeUndefined();
+  });
+});
+
+describe('applyDevModelTier (§24.43 dev model overlay)', () => {
+  function baseConfig(): ContainerConfig {
+    return { mcpServers: {}, packages: { apt: [], npm: [] }, additionalMounts: [], skills: 'all' };
+  }
+
+  it('is a no-op for the default tier — real models kept', () => {
+    const cfg = baseConfig();
+    applyDevModelTier(cfg, 'default');
+    expect(cfg.model).toBeUndefined();
+    expect(cfg.env).toBeUndefined();
+  });
+
+  it('is a no-op for an unknown tier (defends the gate)', () => {
+    const cfg = baseConfig();
+    applyDevModelTier(cfg, 'gpt-5');
+    expect(cfg.model).toBeUndefined();
+    expect(cfg.env).toBeUndefined();
+  });
+
+  it('sonnet tier: opus alias + orchestrator → Sonnet, Haiku kept', () => {
+    const cfg = baseConfig();
+    applyDevModelTier(cfg, 'sonnet');
+    expect(cfg.model).toBe('claude-sonnet-4-6');
+    expect(cfg.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-sonnet-4-6');
+    expect(cfg.env?.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('claude-sonnet-4-6');
+    expect(cfg.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('claude-haiku-4-5');
+  });
+
+  it('haiku tier: orchestrator + every alias → Haiku', () => {
+    const cfg = baseConfig();
+    applyDevModelTier(cfg, 'haiku');
+    expect(cfg.model).toBe('claude-haiku-4-5');
+    expect(cfg.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-haiku-4-5');
+    expect(cfg.env?.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('claude-haiku-4-5');
+    expect(cfg.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('claude-haiku-4-5');
+  });
+
+  it('preserves any pre-existing env when applying a tier', () => {
+    const cfg = baseConfig();
+    cfg.env = { FOO: 'bar' };
+    applyDevModelTier(cfg, 'haiku');
+    expect(cfg.env?.FOO).toBe('bar');
+    expect(cfg.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-haiku-4-5');
   });
 });

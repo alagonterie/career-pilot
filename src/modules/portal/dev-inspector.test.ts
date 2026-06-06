@@ -138,6 +138,13 @@ describe('validateKnobWrite', () => {
     expect(validateKnobWrite('funnel_curator_cron', '* * * *').ok).toBe(false); // 4 fields
     expect(validateKnobWrite('funnel_curator_cron', 42).ok).toBe(false); // not a string
   });
+
+  it('validates an enum against its options (dev_model_tier)', () => {
+    expect(validateKnobWrite('dev_model_tier', 'haiku')).toMatchObject({ ok: true, stored: 'haiku', value: 'haiku' });
+    expect(validateKnobWrite('dev_model_tier', 'default')).toMatchObject({ ok: true, value: 'default' });
+    expect(validateKnobWrite('dev_model_tier', 'gpt-5').ok).toBe(false); // not an allowed option
+    expect(validateKnobWrite('dev_model_tier', 42).ok).toBe(false); // not a string
+  });
 });
 
 // ── applyKnobWrite (persists to the preferences tier) ─────────────────────────

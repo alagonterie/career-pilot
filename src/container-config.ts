@@ -12,8 +12,10 @@ import fs from 'fs';
 import path from 'path';
 
 import { GROUPS_DIR } from './config.js';
+import { getConfig } from './get-config.js';
 import { getContainerConfig } from './db/container-configs.js';
 import { getAgentGroup } from './db/agent-groups.js';
+import { getDb } from './db/connection.js';
 import type { AgentGroup, ContainerConfigRow } from './types.js';
 
 export interface McpServerConfig {
@@ -138,6 +140,13 @@ export function materializeContainerJson(agentGroupId: string): ContainerConfig 
     applyOllamaTestOverrides(config);
   } else if (process.env.CLAUDE_TEST_MODE === '1' && group.folder === 'career-pilot') {
     applyClaudeTestOverrides(config);
+  } else if (process.env.ENVIRONMENT === 'dev') {
+    // §24.43 dev model tier: a runtime, dev-only lever to drop the orchestrator +
+    // subagents off the (expensive) default Opus without a redeploy. No-op unless
+    // the `dev_model_tier` preference is `sonnet`/`haiku`. Applies to both groups;
+    // prod (ENVIRONMENT!=='dev') never reaches this branch. The test modes above
+    // take precedence (they pin a specific model for their own purposes).
+    applyDevModelTier(config, getConfig<string>(getDb(), 'dev_model_tier', 'default'));
   }
 
   // Forward fixture-mode selectors to the container so funnel-curator's
@@ -252,4 +261,44 @@ function applyClaudeTestOverrides(config: ContainerConfig): void {
     ANTHROPIC_DEFAULT_SONNET_MODEL: sonnetModel,
   };
   config.model = sonnetModel;
+}
+
+/**
+ * Apply the dev-only model-tier overlay (§24.43) in place. A runtime lever (the
+ * `dev_model_tier` preference, set from the `/dev` inspector) to retarget the
+ * orchestrator's own model AND every subagent's `model: opus` alias to a cheaper
+ * tier so a dev session doesn't burn Opus rates — no redeploy; picked up on the
+ * next container spawn. Mirrors `applyClaudeTestOverrides` (env alias redirects +
+ * `config.model`); the alias redirects also catch Haiku-internal calls
+ * (WebFetch/WebSearch summarization). Works whether the agent hits
+ * `api.anthropic.com` directly or routes through Portkey (§24.44) — Claude Code
+ * resolves the alias client-side before the request.
+ *
+ * - `default` (or any unknown value) → no-op: the real models (Opus orchestrator
+ *   + subagents).
+ * - `sonnet` → Opus aliases + the orchestrator model → Sonnet; Haiku kept.
+ * - `haiku` → everything (orchestrator + all aliases) → Haiku: cheapest, for
+ *   plumbing / loop runs where output quality doesn't matter.
+ */
+export function applyDevModelTier(config: ContainerConfig, tier: string): void {
+  const SONNET = 'claude-sonnet-4-6';
+  const HAIKU = 'claude-haiku-4-5';
+  if (tier === 'sonnet') {
+    config.env = {
+      ...(config.env ?? {}),
+      ANTHROPIC_DEFAULT_OPUS_MODEL: SONNET,
+      ANTHROPIC_DEFAULT_SONNET_MODEL: SONNET,
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: HAIKU,
+    };
+    config.model = SONNET;
+  } else if (tier === 'haiku') {
+    config.env = {
+      ...(config.env ?? {}),
+      ANTHROPIC_DEFAULT_OPUS_MODEL: HAIKU,
+      ANTHROPIC_DEFAULT_SONNET_MODEL: HAIKU,
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: HAIKU,
+    };
+    config.model = HAIKU;
+  }
+  // 'default'/unknown → no-op (real models).
 }

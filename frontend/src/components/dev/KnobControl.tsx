@@ -94,6 +94,8 @@ export function KnobControl({ knob, onWrite, onReset }: KnobControlProps) {
         <BooleanToggle id={knob.key} value={value === true} onToggle={(v) => void commit(v)} />
       ) : knob.type === 'number' ? (
         <NumberInput id={knob.key} knob={knob} value={value} setValue={setValue} commit={commit} />
+      ) : knob.type === 'enum' ? (
+        <EnumSelect id={knob.key} options={knob.options ?? []} value={String(value)} onSelect={(v) => void commit(v)} />
       ) : (
         <CronInput id={knob.key} value={String(value)} setValue={setValue} commit={commit} />
       )}
@@ -151,6 +153,54 @@ function BooleanToggle({ id, value, onToggle }: { id: string; value: boolean; on
       />
       {value ? 'ON' : 'OFF'}
     </button>
+  )
+}
+
+/**
+ * A segmented control for an `enum` knob (e.g. the dev model tier). Commits the
+ * picked option immediately, like the boolean toggle. `radiogroup` semantics so
+ * it's keyboard/AT-navigable. Wraps on narrow screens.
+ */
+function EnumSelect({
+  id,
+  options,
+  value,
+  onSelect,
+}: {
+  id: string
+  options: string[]
+  value: string
+  onSelect: (v: string) => void
+}) {
+  return (
+    <div
+      id={`knob-input-${id}`}
+      role="radiogroup"
+      aria-label={`${id} options`}
+      className="inline-flex w-fit flex-wrap gap-1 rounded-md border border-border bg-muted/40 p-0.5"
+    >
+      {options.map((opt) => {
+        const active = opt === value
+        return (
+          <button
+            key={opt}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            data-testid={`knob-option-${id}-${opt}`}
+            onClick={() => onSelect(opt)}
+            className={cn(
+              'rounded px-2.5 py-1 font-mono text-xs font-semibold transition-colors',
+              active
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+            )}
+          >
+            {opt}
+          </button>
+        )
+      })}
+    </div>
   )
 }
 

@@ -36,8 +36,8 @@ export function isDevEnv(): boolean {
 
 // ── the write allow-list + per-knob validation specs ─────────────────────────
 
-export type KnobType = 'boolean' | 'number' | 'cron';
-export type KnobGroup = 'sim' | 'pacing' | 'budget' | 'polling';
+export type KnobType = 'boolean' | 'number' | 'cron' | 'enum';
+export type KnobGroup = 'sim' | 'pacing' | 'budget' | 'polling' | 'models';
 
 export interface KnobSpec {
   type: KnobType;
@@ -47,12 +47,17 @@ export interface KnobSpec {
   min?: number;
   max?: number;
   integer?: boolean;
+  /** Allowed values, for `type: 'enum'`. */
+  options?: string[];
   /** Surfaced to the UI — e.g. cron changes only take effect on the next reclone. */
   note?: string;
 }
 
 const CRON_NOTE =
   'Saved immediately, but the running recurring task keeps its old cadence until its series is re-bootstrapped (next fresh session / reset:dev) — the bootstrap skips an existing task and the cron is copied onto the queued row at insert.';
+
+const MODEL_TIER_NOTE =
+  'Retargets the orchestrator + every subagent model for cost (dev only). Applies on the next container spawn (a fresh session / reset:dev), not mid-session. default = real Opus · sonnet = Opus→Sonnet (Haiku kept) · haiku = everything→Haiku.';
 
 /**
  * The curated knob set the dev inspector may write. The `recruiter_sim_*` keys
@@ -117,6 +122,14 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     min: 10,
     max: 86_400,
   },
+  // ── dev model tier (§24.43) ──
+  dev_model_tier: {
+    type: 'enum',
+    group: 'models',
+    label: 'Dev model tier',
+    options: ['default', 'sonnet', 'haiku'],
+    note: MODEL_TIER_NOTE,
+  },
 };
 
 export const DEV_INSPECTOR_WRITABLE_KEYS = Object.keys(KNOB_SPECS);
@@ -167,6 +180,14 @@ export function validateKnobWrite(key: string, value: unknown): ValidationResult
     if (spec.min != null && n < spec.min) return { ok: false, error: `${key} must be ≥ ${spec.min}` };
     if (spec.max != null && n > spec.max) return { ok: false, error: `${key} must be ≤ ${spec.max}` };
     return { ok: true, stored: String(n), value: n };
+  }
+
+  if (spec.type === 'enum') {
+    const opts = spec.options ?? [];
+    if (typeof value !== 'string' || !opts.includes(value)) {
+      return { ok: false, error: `${key} must be one of: ${opts.join(', ')}` };
+    }
+    return { ok: true, stored: value, value };
   }
 
   // cron
@@ -265,6 +286,8 @@ export interface KnobView {
   min: number | null;
   max: number | null;
   integer: boolean;
+  /** Allowed values for an `enum` knob (drives the select); null otherwise. */
+  options: string[] | null;
   note: string | null;
 }
 
@@ -283,6 +306,7 @@ export function buildDevKnobs(db: Database.Database): { knobs: KnobView[] } {
       min: spec.min ?? null,
       max: spec.max ?? null,
       integer: spec.integer ?? false,
+      options: spec.options ?? null,
       note: spec.note ?? null,
     };
   });

@@ -9,8 +9,8 @@ import { usePolledJson, type PollStatus } from './use-polled-json'
  * poll. Writes go through `postKnob`.
  */
 
-export type KnobType = 'boolean' | 'number' | 'cron'
-export type KnobGroup = 'sim' | 'pacing' | 'budget' | 'polling'
+export type KnobType = 'boolean' | 'number' | 'cron' | 'enum'
+export type KnobGroup = 'sim' | 'pacing' | 'budget' | 'polling' | 'models'
 
 /** One writable knob + its current value and validation metadata (`GET /api/dev/knobs`). */
 export interface DevKnob {
@@ -26,6 +26,8 @@ export interface DevKnob {
   min: number | null
   max: number | null
   integer: boolean
+  /** Allowed values for an `enum` knob (drives the select); null otherwise. */
+  options: string[] | null
   note: string | null
 }
 
