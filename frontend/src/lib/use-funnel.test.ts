@@ -5,6 +5,7 @@ import { deriveStatTiles, useFunnel, type FunnelApplication, type FunnelResponse
 
 function app(p: Partial<FunnelApplication> = {}): FunnelApplication {
   return {
+    application_id: 'acme',
     application_ref: 'acme',
     public_state: 'obfuscated',
     role_title: 'Senior Software Engineer',

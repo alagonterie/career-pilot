@@ -33,6 +33,7 @@ const LOCAL = {
 
 function app(p: Partial<FunnelApplication> & { application_ref: string; stage: string }): FunnelApplication {
   return {
+    application_id: p.application_ref,
     public_state: 'obfuscated',
     role_title: null,
     status: 'APPLIED',

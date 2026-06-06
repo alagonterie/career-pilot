@@ -31,6 +31,7 @@ import { getConfig, getConfigDefault } from '../../get-config.js';
 import { log } from '../../log.js';
 import { openInboundDb } from '../../session-manager.js';
 import { applyFunnelFromEmailEvents } from '../career-pilot/funnel-apply.js';
+import { scoreWinConfidence } from '../career-pilot/win-confidence.js';
 import { type CandidateProfile, readCandidateProfile, renderPersona } from '../career-pilot/render-persona.js';
 import { SIM_KNOB_KEYS } from '../career-pilot/recruiter-sim/knobs.js';
 import { STAGE_CLASSIFICATIONS } from '../career-pilot/recruiter-sim/templates.js';
@@ -475,9 +476,12 @@ export function enqueueSweepTask(inDb: Database.Database): string {
  *      persist auto-converts via the same path (funnel-actions hook). Skipped (no
  *      error) when there's no active owner session yet, or while halted/paused.
  */
-export function applyDevSweep(): DevSweepOutcome {
+export async function applyDevSweep(): Promise<DevSweepOutcome> {
   const db = getDb();
   const applied = applyFunnelFromEmailEvents(db);
+  // Score win_confidence with intelligence AFTER the convert (it reads the
+  // just-applied stages). Best-effort + Portkey-gated — never throws.
+  const wc = await scoreWinConfidence(db);
 
   let sweepEnqueued = false;
   const group = getAgentGroupByFolder('career-pilot');
@@ -492,8 +496,11 @@ export function applyDevSweep(): DevSweepOutcome {
     }
   }
 
-  log.info('dev: sweep & convert', { converted: applied.converted, sweepEnqueued });
-  return { status: 200, body: { converted: applied.converted, changes: applied.changes, sweepEnqueued } };
+  log.info('dev: sweep & convert', { converted: applied.converted, scored: wc.scored, sweepEnqueued });
+  return {
+    status: 200,
+    body: { converted: applied.converted, changes: applied.changes, scored: wc.scored, sweepEnqueued },
+  };
 }
 
 // ── persona / onboarding ──────────────────────────────────────────────────────

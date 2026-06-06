@@ -64,7 +64,7 @@ export function FunnelBoard({
                 }
               >
                 {items.map((a) => (
-                  <motion.div key={a.application_ref} layout layoutId={a.application_ref}>
+                  <motion.div key={a.application_id} layout layoutId={a.application_id}>
                     <FunnelCard app={a} onSelect={() => onSelect(a)} />
                   </motion.div>
                 ))}
@@ -84,7 +84,7 @@ export function FunnelBoard({
           </h2>
           <div className="flex flex-wrap gap-2 opacity-70">
             {offboard.map((a) => (
-              <div key={a.application_ref} className="min-w-[10rem] flex-1 sm:max-w-[14rem]">
+              <div key={a.application_id} className="min-w-[10rem] flex-1 sm:max-w-[14rem]">
                 <FunnelCard app={a} onSelect={() => onSelect(a)} />
               </div>
             ))}

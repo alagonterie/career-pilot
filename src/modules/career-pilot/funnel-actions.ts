@@ -34,6 +34,7 @@ import type Database from 'better-sqlite3';
 import { getAgentGroup } from '../../db/agent-groups.js';
 import { getDb } from '../../db/connection.js';
 import { applyFunnelFromEmailEvents } from './funnel-apply.js';
+import { scoreWinConfidence } from './win-confidence.js';
 import { insertMessage } from '../../db/session-db.js';
 import { log } from '../../log.js';
 import type { Session } from '../../types.js';
@@ -480,6 +481,11 @@ export async function handlePersistFunnelState(
       } catch (applyErr) {
         log.error('applyFunnelFromEmailEvents after persist threw', { applyErr });
       }
+      // Re-score win_confidence with intelligence — fire-and-forget so the LLM
+      // call never blocks or fails the persist response.
+      void scoreWinConfidence(db).catch((scoreErr) => {
+        log.error('scoreWinConfidence after persist failed', { scoreErr });
+      });
     }
   } catch (err) {
     log.error('handlePersistFunnelState failed', { err });
