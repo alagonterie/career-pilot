@@ -19,6 +19,7 @@
 import type Database from 'better-sqlite3';
 
 import { log } from '../../log.js';
+import { buildPortkeyMetadata } from '../../portkey.js';
 import { upsertPublicFunnelView } from '../portal/public-funnel-view.js';
 
 import { readCandidateProfile } from './render-persona.js';
@@ -37,12 +38,20 @@ export interface WinConfidenceResult {
   closed: number;
 }
 
-async function callHaikuJson(prompt: string): Promise<string> {
+async function callHaikuJson(prompt: string, traceId?: string): Promise<string> {
   const base = process.env.PORTKEY_BASE_URL || 'https://api.portkey.ai/v1';
   const provider = process.env.PORTKEY_AI_PROVIDER || 'anthropic-default';
+  // Observability headers (§24.46): tag the surface + group the sweep's call.
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    'x-portkey-api-key': process.env.PORTKEY_API_KEY as string,
+  };
+  const metadata = buildPortkeyMetadata({ environment: process.env.ENVIRONMENT, surface: 'win-confidence' });
+  if (Object.keys(metadata).length > 0) headers['x-portkey-metadata'] = JSON.stringify(metadata);
+  if (traceId) headers['x-portkey-trace-id'] = traceId;
   const res = await fetch(`${base}/chat/completions`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-portkey-api-key': process.env.PORTKEY_API_KEY as string },
+    headers,
     body: JSON.stringify({
       model: `@${provider}/${HAIKU_MODEL}`,
       max_tokens: 1000,
@@ -164,7 +173,7 @@ export async function scoreWinConfidence(db: Database.Database): Promise<WinConf
 
   let parsed: Record<string, unknown>;
   try {
-    parsed = extractJsonObject(await callHaikuJson(prompt));
+    parsed = extractJsonObject(await callHaikuJson(prompt, `win-confidence-${Date.now()}`));
   } catch (err) {
     log.warn('scoreWinConfidence: LLM scoring failed, leaving scores unchanged', { err });
     return { scored: 0, closed };

@@ -3303,7 +3303,7 @@ Building the full batch engine now (state column + migration, a new scheduled tr
 **What this is.** `GET /api/telemetry` (the `/live` LLM-telemetry + cost/cache panels) and `GET /api/architecture` (the `/architecture` page's live node status). The first Phase 5 milestone that reaches **outside the DB** — Portkey's analytics REST API and Docker. Both degrade gracefully per PORTAL §10 (never error on a missing dependency).
 
 **`GET /api/telemetry`** → `{ portkey, local }`, cached 30s (PORTAL §11):
-- `portkey`: from `src/modules/portal/portkey-analytics.ts`. Source = `GET https://api.portkey.ai/v1/analytics/summary?range=1d` with header `x-portkey-api-key: $PORTKEY_API_KEY`. When `PORTKEY_BYPASS=true`, `PORTKEY_API_KEY` is unset, or the fetch errors/times out → `{ available: false, reason }` (the frontend renders `—`, PORTAL §10). When live → `{ available: true, summary: <response> }`. **Field-level normalization (cache rate, p50/p95, top model) is calibrated against a real response in a later pass** — there is no live Portkey in dev, so 5.3 ships the raw passthrough + the tested degraded path rather than bluffing Portkey's schema.
+- `portkey`: from `src/modules/portal/portkey-analytics.ts`. Source = `GET https://api.portkey.ai/v1/analytics/summary?range=1d` with header `x-portkey-api-key: $PORTKEY_API_KEY`. When `PORTKEY_BYPASS=true`, `PORTKEY_API_KEY` is unset, or the fetch errors/times out → `{ available: false, reason }` (the frontend renders `—`, PORTAL §10). When live → `{ available: true, summary: <response> }`. **Field-level normalization (cache rate, p50/p95, top model) is calibrated against a real response in a later pass** — there is no live Portkey in dev, so 5.3 ships the raw passthrough + the tested degraded path rather than bluffing Portkey's schema. *(Reconciled §24.46: Portkey is now live in the deployed dev env as of §24.44 — the calibration pass can run against real responses there.)*
 - `local`: reliably-computable aggregates — `{ simulator_runs_total, activity_events_total, activity_events_24h }` (from `simulator_runs` + `public_audit_trail`). Today's-spend/cache-savings come from Portkey, not local, since `public_audit_trail.cost_cents` is null until the trace-capture phase.
 
 **`GET /api/architecture`** → `{ sessions, containers, backend }`, short cache (~5s) on the Docker call:
@@ -4408,6 +4408,48 @@ The §24.44 dev model-tier knob (running the agent on **Haiku** to cut spend) su
 2. The `/live` trace renders a turn seal only when it seals ≥1 action since the last turn; a run of bare turns collapses; a turns-only window shows the quiet state, not stacked rules nor a false "no match".
 3. Frontend unit + tsc + format green: `use-activity-stream.test` (exclude-before-cap + cap-after-exclude), `log-stream.test` (collapse + turns-only → quiet), existing `LiveTicker`/`LogStream` cases still pass.
 4. Spec deltas: this §24.45; PORTAL §5.1 (ticker excludes turns at ingestion) + §5.2 (a seal must seal something). Memory: [[status_current]].
+
+---
+
+#### 24.46 Portkey observability enrichment — metadata, trace correlation, budget governance
+
+§24.44 routed the agent runtime through Portkey, so the gateway now sees the real work (the owner is exercising it in the **deployed dev env**, not local). But the project sends nothing that makes those logs *navigable*: every request lands as a flat, untagged, uncorrelated row. A single owner turn fans out into many gateway calls (orchestrator loop + each subagent + tool-result continuations) that Portkey records as independent logs with no link between them, and there's no way to tell owner spend from sandbox, dev from prod, or agent from sim in the dashboard. Three additive enrichments fix that. All are **HTTP headers only** (no `portkey-ai` SDK — the gateway *is* the integration), all inherit the existing `PORTKEY_BYPASS` / no-key gate, and **none replace `public_audit_trail`**.
+
+**Privacy boundary (load-bearing).** Portkey logs raw prompts/responses — real company names, recruiter identities, candidate PII. It is the **operator's private deep-dive surface**, never piped to the public portal. The sanitized `public_audit_trail` stays the *audience* surface (the `/live` `/funnel` panels). These enrichments sharpen the operator side only; metadata *values* must themselves stay PII-free (they're the most likely thing to leak into an export later) — session ids and group/env slugs, never names or emails.
+
+| Part | Enrichment | Mechanism | Carries |
+|---|---|---|---|
+| **A** | Custom metadata | `x-portkey-metadata` (JSON header) | `environment`, `agent_group`, `session_id`, `surface` |
+| **B** | Trace correlation | `x-portkey-trace-id` (header) | the `session_id` |
+| **C** | Budget + alerts | Portkey budget config + admin API | wires the §24.18 killswitch tail |
+
+**A — Metadata (`x-portkey-metadata`).** A JSON object of string values (≤128 chars each; reserved key `_user` powers user-level analytics — unused here). Tags every call so the dashboard is segmentable:
+- `environment` — `dev` / `prod` (from `hostEnv.ENVIRONMENT`).
+- `agent_group` — the agent group folder (`career-pilot` / `career-pilot-sandbox`), so the public-simulator (sandbox) spend is separable from real owner spend — a genuine governance need given the public surface.
+- `session_id` — ties a dashboard row back to a session.
+- `surface` (host-side only) — `recruiter-sim` / `rank-leads` / `win-confidence`, so host-side sim/scoring spend is distinguishable from the agent runtime.
+
+Wiring: host-side fetch calls (`prose.ts`, `win-confidence.ts`, lead-scoring) add the header inline. The agent runtime adds it via `ANTHROPIC_CUSTOM_HEADERS` in the `claude.ts` provider shim — which **already receives a `ProviderContainerContext`** (`sessionDir` basename → `session_id`, `agentGroupId` → group, `hostEnv` → environment) but currently ignores it; this increment makes the registration consume `ctx`.
+
+**B — Trace correlation (`x-portkey-trace-id`).** This is the one thing local telemetry structurally cannot give: the §24.34 capture attributes cost per-*turn* and per-*model*, never per-*subagent* or per-*request* (the SDK rolls subagent usage into the parent `result`). Sending a shared trace id groups a session's fan-out into one Portkey trace with per-request spans, each metered with authoritative gateway cost/latency/tokens/cache — more authoritative than the SDK *estimate* the local lane carries.
+
+The clean unit is the **session**: `x-portkey-trace-id: <session_id>`, injected at spawn (the id is in scope via `sessionDir`). This both groups the session's calls and lines the Portkey trace up **1:1 with the local audit trail's session** — an operator can pivot from a portal event straight to the full gateway trace. Host-side calls set a trace id too (e.g. a recruiter-sim run id) so a sim run's prose calls group.
+
+*Honest scope limit.* True per-subagent **span labeling** (`x-portkey-span-name` / `x-portkey-parent-span-id`) needs distinct headers per request, which Claude Code's static spawn-env mechanism cannot vary mid-session. So this increment delivers trace *grouping* + authoritative per-request metering, **not** auto per-subagent span names — that would need the SDK to expose dynamic per-request headers or a header-injecting egress proxy. Deferred; revisit only if grouped-but-unlabeled spans prove insufficient. (W3C `traceparent` is also accepted and takes *lower* precedence than `x-portkey-*`; we use the native header — no version/flags to construct.)
+
+**C — Budget + alerts (wire the §24.18 killswitch tail).** Configure a Portkey **budget + alert** on the AI Provider / API key so spend is capped *at the gateway* — defense-in-depth against the local `owner_daily_llm_budget_usd`, which is a *soft* cap (advisory; the agent can run past it). Then un-stub `zeroPortkeyBudget()` (`killswitch-external.ts`), which §24.18 deliberately left `NOT_WIRED` pending an admin key.
+- *Owner (dashboard):* set a budget + alert thresholds; provision a Portkey **admin key** (distinct from the gateway `PORTKEY_API_KEY`), vaulted in OneCLI / host env.
+- *Host:* implement `zeroPortkeyBudget()` against the budget admin endpoint, gated on the admin key — preserving the §24.18 best-effort contract (never throws; loud `NOT_WIRED` line + `wired:false` when the key is absent; `wired/ok` set when the call succeeds).
+
+**Definition of done.**
+1. **A:** an owner agent turn and a host-side sim call both appear in Portkey with `x-portkey-metadata` populated; the dashboard filters owner-vs-sandbox and agent-vs-sim spend. The `claude.ts` registration consumes `ctx` (no longer `() =>`); a host unit test asserts the built headers carry `environment` / `agent_group` / `session_id` from a synthetic context and omit the header under `PORTKEY_BYPASS`/no-key.
+2. **B:** all gateway calls in one session share an `x-portkey-trace-id` equal to the `session_id` and render as a single Portkey trace; the id matches the session in `public_audit_trail`. Host-side calls in one sim run share a trace id. Unit test asserts the trace header derives from the session context and is bypass-gated.
+3. **C:** with a Portkey admin key configured, `/killswitch` zeroes the AI-Provider budget and the reply states it was revoked; without the key it logs `NOT_WIRED` and reports manual-rotation (the §24.18 contract is unbroken). A budget + alert exists in the dashboard.
+4. No `portkey-ai` SDK dependency added; no PORTAL change (the public panel still shows the aggregate — enrichment is operator-side); host suite + tsc clean.
+
+**Spec deltas.** This §24.46. Reconcile the now-stale "no live Portkey in dev" in **§24.17** (line ~3306) + the §24.34 framing — Portkey is live in the deployed dev env as of §24.44, so the calibration pass can run against real responses there. **§24.18** killswitch external-tail: `zeroPortkeyBudget` moves from permanently-`NOT_WIRED` to wired-when-admin-key-present. CLAUDE.md "LLM gateway" locked row gains a one-line note (metadata + trace-id + budget ride the same gateway, headers only). No new `config/defaults.json` tunables (headers are derived; budget thresholds live in the Portkey dashboard, owner-managed). Memory: [[portkey_routing]], [[decision_architecture]], [[status_current]].
+
+**`PORTKEY_BYPASS` note (the owner's question).** Audited: the flag is **not** dead and **not** local-only — it's a runtime branch (`portkey-analytics.ts`, the host-side `portkeyConfigured()` gates), shipped in `.env.example` + `bootstrap-vm.sh` (default `false`), and the documented recovery lever (RECOVERY.md §8, NANOCLAW_INTERNALS.md §Δ5). **Keep it.** The enrichment headers above inherit its gate (no `x-portkey-*` when bypassing). One forward consideration, out of scope here: now that the agent runs through Portkey and Portkey's own Config can fall back at the gateway, the *agent-runtime* arm of bypass (swap `ANTHROPIC_BASE_URL` → direct Anthropic) is increasingly belt-and-suspenders next to the *host-side* arm (skip optional enrichment). A future cleanup could split the one flag into its two distinct meanings — but it's cheap to keep as-is and is the tested escape hatch.
 
 ---
 

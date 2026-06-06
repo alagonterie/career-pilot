@@ -260,7 +260,9 @@ function resolveProviderContribution(
   const contribution = fn
     ? fn({
         sessionDir: sessionDir(agentGroup.id, session.id),
+        sessionId: session.id,
         agentGroupId: agentGroup.id,
+        agentGroupFolder: agentGroup.folder,
         hostEnv: process.env,
       })
     : {};
