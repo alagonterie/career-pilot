@@ -1,12 +1,21 @@
 import { createFileRoute } from '@tanstack/react-router'
 
 import { KnobControls } from '~/components/dev/KnobControls'
+import { PauseSpendControl } from '~/components/dev/PauseSpendControl'
 import { PersonaPanel } from '~/components/dev/PersonaPanel'
 import { SimStatePanel } from '~/components/dev/SimStatePanel'
 import { StateNote } from '~/components/states'
 import { Skeleton } from '~/components/ui/skeleton'
 import { seo } from '~/lib/seo'
-import { postKnob, resetAllKnobs, resetKnob, useDevKnobs, useDevPersona, useDevState } from '~/lib/use-dev-inspector'
+import {
+  postDevControl,
+  postKnob,
+  resetAllKnobs,
+  resetKnob,
+  useDevKnobs,
+  useDevPersona,
+  useDevState,
+} from '~/lib/use-dev-inspector'
 
 // The dev-only inspector + sim-control surface (§24.42c). Lives in the `(ops)`
 // group (shared header/rail) but is NOT in the public nav — it's reached by
@@ -36,6 +45,7 @@ function DevInspectorPage() {
   const onWrite = (key: string, value: boolean | number | string) => postKnob(API_BASE, key, value)
   const onReset = (key: string) => resetKnob(API_BASE, key)
   const onResetAll = () => resetAllKnobs(API_BASE)
+  const onControl = (action: 'pause' | 'resume') => postDevControl(API_BASE, action)
 
   // Cold 404 on the knobs feed = not the dev stack → the whole surface is
   // unavailable (and no PII is reachable). This is the prod-degradation path.
@@ -70,6 +80,8 @@ function DevInspectorPage() {
         </div>
       ) : (
         <>
+          <PauseSpendControl pauseState={state.data?.pauseState} onControl={onControl} />
+
           <section className="flex flex-col gap-3">
             <h2 className="font-mono text-xs uppercase tracking-widest text-foreground">Controls</h2>
             {knobs.data ? (

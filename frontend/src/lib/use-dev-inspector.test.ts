@@ -66,7 +66,7 @@ describe('useDevKnobs', () => {
 
 describe('useDevState', () => {
   it('fetches the sim state from /api/dev/state', async () => {
-    const body: DevStateResponse = { enabled: true, lastSeedAtMs: 1, apps: [], applications: [] }
+    const body: DevStateResponse = { enabled: true, lastSeedAtMs: 1, pauseState: 'active', apps: [], applications: [] }
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => res(body)),
