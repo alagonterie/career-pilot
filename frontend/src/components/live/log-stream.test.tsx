@@ -97,6 +97,34 @@ describe('LogStream', () => {
     expect(screen.getByTestId('trace-empty')).toHaveTextContent(/no events match/i)
   })
 
+  it('collapses bare/consecutive turn seals — a turn renders only when it seals ≥1 action (§24.35 Pass C)', () => {
+    const turn = (seq: number) => ev({ seq, category: 'turn', summary: 'turn complete', model_used: 'haiku-4-5' })
+    render(
+      <LogStream
+        status="open"
+        count={6}
+        events={[
+          EVENTS[0], // action → sealed by the turn below
+          turn(10), // seals the action above → kept
+          turn(11), // bare → dropped
+          turn(12), // bare → dropped
+          EVENTS[1], // action
+          turn(13), // seals → kept
+        ]}
+      />,
+    )
+    expect(screen.getAllByTestId('trace-line')).toHaveLength(2) // the two actions
+    expect(screen.getAllByTestId('trace-turn')).toHaveLength(2) // only the two sealing turns
+  })
+
+  it('a window of only turns collapses to the quiet state — no stacked empty rules', () => {
+    const turn = (seq: number) => ev({ seq, category: 'turn', summary: 'turn complete' })
+    render(<LogStream events={[turn(1), turn(2), turn(3)]} status="open" count={3} />)
+    expect(screen.queryByTestId('trace-turn')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('trace-line')).not.toBeInTheDocument()
+    expect(screen.getByTestId('trace-empty')).toHaveTextContent(/no agent activity/i)
+  })
+
   it('renders a category=turn row as a batch-sealing separator, not an action line (§24.35 Pass C)', () => {
     const turn = ev({
       seq: 9,

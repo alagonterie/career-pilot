@@ -40,7 +40,7 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
 function LivePage() {
   const { arch, mode, status: archStatus } = useArchitecture(API_BASE)
   const { data: funnel, status: funnelStatus } = useFunnel(API_BASE)
-  const { events, status, count } = useActivityStream(API_BASE, 60)
+  const { events, status, count } = useActivityStream(API_BASE, { limit: 60 })
   const { data: telemetry, status: telemetryStatus } = useTelemetry(API_BASE)
 
   const view = deriveTelemetryView(telemetry)
