@@ -1,8 +1,9 @@
 /**
- * Integration tests for the Sub-milestone 5.3 telemetry + architecture
- * endpoints (STRATEGY.md §24.17). Driven over `fetch` against an ephemeral
- * server. Portkey is forced into bypass (no network) and Docker is treated as
- * optional, so the tests are deterministic on any dev machine.
+ * Integration tests for the /api/telemetry + /api/architecture endpoints
+ * (STRATEGY.md §24.17, telemetry source reworked to local per-turn data in
+ * §24.47). Driven over `fetch` against an ephemeral server. Telemetry is sourced
+ * entirely from the local turn rows (no Portkey network call); Docker is treated
+ * as optional, so the tests are deterministic on any dev machine.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -19,7 +20,6 @@ beforeEach(async () => {
   const db = initTestDb();
   runMigrations(db);
   db.pragma('foreign_keys = OFF'); // isolate leaf-row seeds (sessions FK → agent_groups)
-  process.env.PORTKEY_BYPASS = 'true';
   _resetTelemetryCache();
   const { port } = await startPortalApi({ host: '127.0.0.1', port: 0 });
   base = `http://127.0.0.1:${port}`;
@@ -28,7 +28,6 @@ beforeEach(async () => {
 afterEach(async () => {
   await stopPortalApi();
   closeDb();
-  delete process.env.PORTKEY_BYPASS;
   _resetTelemetryCache();
 });
 
@@ -45,13 +44,21 @@ function seedAudit(seq: number, ts: string): void {
     .run(`pat-${seq}`, seq, ts);
 }
 
-function seedTurn(seq: number, ts: string, costCents: number): void {
+function seedTurn(seq: number, ts: string, costCents: number, model?: string, details?: string): void {
   getDb()
     .prepare(
-      `INSERT INTO public_audit_trail (id, seq, ts, category, cost_cents, summary)
-       VALUES (?, ?, ?, 'turn', ?, 'turn complete')`,
+      `INSERT INTO public_audit_trail (id, seq, ts, category, cost_cents, model_used, details_json, summary)
+       VALUES (?, ?, ?, 'turn', ?, ?, ?, 'turn complete')`,
     )
-    .run(`pat-turn-${seq}`, seq, ts, costCents);
+    .run(`pat-turn-${seq}`, seq, ts, costCents, model ?? null, details ?? null);
+}
+
+/** A turn details_json carrying duration + model_usage (the §24.47 derived lanes). */
+function turnDetails(durationMs: number, cacheRead: number, input: number): string {
+  return JSON.stringify({
+    duration_api_ms: durationMs,
+    model_usage: { 'claude-haiku-4-5': { input, output: 100, cache_read: cacheRead, cache_creation: 0 } },
+  });
 }
 
 function seedSession(id: string, status: string, containerStatus: string): void {
@@ -69,7 +76,7 @@ const daysAgoIso = (n: number): string => new Date(Date.now() - n * 86_400_000).
 // ── /api/telemetry ──────────────────────────────────────────────────────────
 
 describe('GET /api/telemetry', () => {
-  it('reports Portkey unavailable under bypass + correct local aggregates', async () => {
+  it('returns local aggregates only — no Portkey field, no network call (§24.47)', async () => {
     seedSimRun('s1');
     seedSimRun('s2');
     seedAudit(1, nowIso());
@@ -77,7 +84,7 @@ describe('GET /api/telemetry', () => {
     seedAudit(3, daysAgoIso(2)); // outside 24h
 
     const body = (await (await fetch(`${base}/api/telemetry`)).json()) as {
-      portkey: { available: boolean; reason?: string };
+      portkey?: unknown;
       local: {
         simulator_runs_total: number;
         activity_events_total: number;
@@ -85,11 +92,42 @@ describe('GET /api/telemetry', () => {
       };
     };
 
-    expect(body.portkey.available).toBe(false);
-    expect(body.portkey.reason).toBe('bypass');
+    expect(body.portkey).toBeUndefined();
     expect(body.local.simulator_runs_total).toBe(2);
     expect(body.local.activity_events_total).toBe(3);
     expect(body.local.activity_events_24h).toBe(2);
+  });
+
+  it('derives cache-hit rate, turn p50, and top model from the turn rows (§24.47)', async () => {
+    // Two turns: 90% cache (900 read / 1000 prompt) and 50% (100/200) → aggregate
+    // 1000/1200 ≈ 0.833; durations 1000 & 3000 → p50 = 1000 (nearest-rank).
+    seedTurn(20, nowIso(), 6, 'claude-haiku-4-5', turnDetails(1000, 900, 100));
+    seedTurn(21, nowIso(), 4, 'claude-haiku-4-5', turnDetails(3000, 100, 100));
+
+    const body = (await (await fetch(`${base}/api/telemetry`)).json()) as {
+      local: { cache_hit_rate: number; turn_p50_ms: number; turn_p95_ms: number; top_model: string; turns_24h: number };
+    };
+    expect(body.local.cache_hit_rate).toBeCloseTo(1000 / 1200, 5);
+    expect(body.local.turn_p50_ms).toBe(1000);
+    expect(body.local.turn_p95_ms).toBe(3000);
+    expect(body.local.top_model).toBe('claude-haiku-4-5');
+    expect(body.local.turns_24h).toBe(2);
+  });
+
+  it('leaves the derived lanes null when no turn details have been captured (§24.47)', async () => {
+    seedAudit(1, nowIso()); // a funnel row — no turn telemetry
+    const body = (await (await fetch(`${base}/api/telemetry`)).json()) as {
+      local: {
+        cache_hit_rate: number | null;
+        turn_p50_ms: number | null;
+        top_model: string | null;
+        turns_total: number;
+      };
+    };
+    expect(body.local.turns_total).toBe(0);
+    expect(body.local.cache_hit_rate).toBeNull();
+    expect(body.local.turn_p50_ms).toBeNull();
+    expect(body.local.top_model).toBeNull();
   });
 
   it('sums per-turn cost into the local aggregate (§24.34)', async () => {

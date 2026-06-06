@@ -59,10 +59,12 @@ export function Panel({
 }
 
 /** A single big-number readout. */
-function Metric({ value, label }: { value: string; label: string }) {
+function Metric({ value, label, testId }: { value: string; label: string; testId?: string }) {
   return (
     <div className="flex flex-col">
-      <span className="font-mono text-2xl font-semibold tabular-nums text-foreground">{value}</span>
+      <span data-testid={testId} className="font-mono text-2xl font-semibold tabular-nums text-foreground">
+        {value}
+      </span>
       <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{label}</span>
     </div>
   )
@@ -167,10 +169,12 @@ export function ContainerPoolPanel({ arch, status }: { arch: ArchitectureData | 
   )
 }
 
-/** LLM TELEMETRY — Portkey lanes when available, else the honest "not connected"
- * state; the always-real local aggregates render unconditionally (§24.29). */
+/** LLM TELEMETRY — derived from the local per-turn capture (§24.34/§24.47): cache
+ * hit rate + turn-latency p50 + top model, aggregated over captured turns; the
+ * always-real local activity aggregates render unconditionally. Honest labels —
+ * "turns" (not raw gateway requests), "turn p50" (whole turn, not per-request). */
 export function TelemetryPanel({ view, status }: { view: TelemetryView; status?: PollStatus }) {
-  const s = view.summary
+  const local = view.local
   if (status === 'loading') {
     return (
       <Panel title="LLM telemetry">
@@ -187,28 +191,27 @@ export function TelemetryPanel({ view, status }: { view: TelemetryView; status?:
   }
   return (
     <Panel title="LLM telemetry">
-      {view.available && s ? (
+      {view.hasTurns && local ? (
         <>
           <div className="grid grid-cols-3 gap-3">
-            {s.cache_hit_rate != null ? (
-              <Metric value={`${Math.round(s.cache_hit_rate * 100)}%`} label="cache hit" />
+            {local.cache_hit_rate != null ? (
+              <Metric value={`${Math.round(local.cache_hit_rate * 100)}%`} label="cache hit" />
             ) : null}
-            {s.total_requests != null ? <Metric value={s.total_requests.toLocaleString()} label="req 24h" /> : null}
-            {s.p50_latency_ms != null ? <Metric value={`${s.p50_latency_ms}ms`} label="p50" /> : null}
+            <Metric value={local.turns_total.toLocaleString()} label="turns" />
+            {local.turn_p50_ms != null ? <Metric value={`${local.turn_p50_ms}ms`} label="turn p50" /> : null}
           </div>
-          {s.top_model ? (
+          {local.top_model ? (
             <p className="font-mono text-[11px] text-muted-foreground">
-              top model: <span className="text-foreground">{s.top_model}</span>
+              top model: <span className="text-foreground">{local.top_model}</span>
             </p>
           ) : null}
         </>
       ) : (
-        <p data-testid="telemetry-unavailable" className="font-mono text-xs text-muted-foreground">
-          Portkey analytics not connected{view.reason ? ` — ${view.reason}` : ''}. Live LLM telemetry lands with the
-          capture phase.
+        <p data-testid="telemetry-pending" className="font-mono text-xs text-muted-foreground">
+          Awaiting the first captured agent turn. Metrics are summed from per-turn SDK usage (estimated).
         </p>
       )}
-      {view.local ? (
+      {local ? (
         // The local aggregates are real but wall-clock-windowed (and would shift
         // if a parallel test pushed an audit row); `live-volatile` lets the
         // visual baseline mask the whole line — the numbers are covered by tests.
@@ -216,19 +219,20 @@ export function TelemetryPanel({ view, status }: { view: TelemetryView; status?:
           data-testid="live-volatile"
           className="flex flex-wrap gap-x-4 gap-y-1 border-t border-border pt-2 font-mono text-[11px] text-muted-foreground"
         >
-          <span>{view.local.activity_events_24h} events / 24h</span>
-          <span>{view.local.activity_events_total} total</span>
-          <span>{view.local.simulator_runs_total} sim runs</span>
+          <span>{local.activity_events_24h} events / 24h</span>
+          <span>{local.activity_events_total} total</span>
+          <span>{local.simulator_runs_total} sim runs</span>
         </div>
       ) : null}
     </Panel>
   )
 }
 
-/** COST & CACHE — Portkey-sourced spend when available, else the honest pending
- * state (the "~$X/day" tagline renders only with a real number — §24.29). */
+/** COST & CACHE — the estimated agent spend summed from the per-turn capture
+ * (§24.34/§24.47) + the cache-hit rate. cost is an SDK *estimate* (labeled
+ * "est"), not a billed number; the headline is lifetime, the bottom line carries
+ * the windowed "today" detail (masked in the visual baseline — wall-clock). */
 export function CostCachePanel({ view, status }: { view: TelemetryView; status?: PollStatus }) {
-  const s = view.summary
   const local = view.local
   if (status === 'loading') {
     return (
@@ -246,34 +250,35 @@ export function CostCachePanel({ view, status }: { view: TelemetryView; status?:
   }
   return (
     <Panel title="Cost & cache" className="min-h-[175px]">
-      {view.available && s && s.total_cost_usd != null ? (
+      {view.hasTurns && local ? (
         <>
-          <Metric value={`$${s.total_cost_usd.toFixed(2)}`} label="spend today" />
-          {s.cache_hit_rate != null ? (
+          <Metric
+            testId="local-spend"
+            value={`$${(local.turn_cost_cents_total / 100).toFixed(2)}`}
+            label="spend · est"
+          />
+          {local.cache_hit_rate != null ? (
             <p className="font-mono text-[11px] text-muted-foreground">
-              {Math.round(s.cache_hit_rate * 100)}% of calls served from cache.
+              {Math.round(local.cache_hit_rate * 100)}% of prompt tokens served from cache.
             </p>
           ) : null}
         </>
       ) : (
-        <p data-testid="cost-unavailable" className="font-mono text-xs text-muted-foreground">
-          Portkey cost analytics not connected{view.reason ? ` — ${view.reason}` : ''}. The local estimate below is
-          summed from captured per-turn SDK usage.
+        <p data-testid="cost-pending" className="font-mono text-xs text-muted-foreground">
+          No agent spend captured yet — the estimate sums per-turn SDK usage as turns land.
         </p>
       )}
       {local ? (
-        // Always-real local spend, summed over the per-turn telemetry rows
-        // (§24.34) — present even when Portkey is unavailable. cost_cents is an
-        // SDK estimate (not billing; Portkey is the calibrated source when
-        // connected). Wall-clock-windowed → `live-volatile` so the visual
-        // baseline masks it; the value is covered by the unit + E2E tests.
+        // The windowed "today" detail is wall-clock-windowed (and would shift if a
+        // parallel test pushed a turn row); `live-volatile` lets the visual
+        // baseline mask the line — the values are covered by the unit + E2E tests.
         <div
           data-testid="live-volatile"
           className="flex flex-wrap gap-x-4 gap-y-1 border-t border-border pt-2 font-mono text-[11px] text-muted-foreground"
         >
-          <span data-testid="local-spend">${(local.turn_cost_cents_total / 100).toFixed(2)} est</span>
+          <span>${(local.turn_cost_cents_24h / 100).toFixed(2)} today</span>
           <span>
-            {local.turns_total} turn{local.turns_total === 1 ? '' : 's'}
+            {local.turns_total} turn{local.turns_total === 1 ? '' : 's'} total
           </span>
         </div>
       ) : null}

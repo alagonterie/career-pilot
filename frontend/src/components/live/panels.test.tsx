@@ -27,8 +27,13 @@ const LOCAL = {
   activity_events_total: 3,
   activity_events_24h: 1,
   turns_total: 2,
+  turns_24h: 1,
   turn_cost_cents_total: 10,
   turn_cost_cents_24h: 4,
+  cache_hit_rate: 0.66,
+  turn_p50_ms: 15000,
+  turn_p95_ms: 31000,
+  top_model: 'claude-haiku-4-5',
 }
 
 function app(p: Partial<FunnelApplication> & { application_ref: string; stage: string }): FunnelApplication {
@@ -90,51 +95,36 @@ describe('SessionsPanel + ContainerPoolPanel', () => {
 })
 
 describe('TelemetryPanel', () => {
-  it('renders the honest "not connected" state + the real local aggregates when unavailable', () => {
-    const view: TelemetryView = { available: false, reason: 'no Portkey key configured', summary: null, local: LOCAL }
+  it('renders the local-derived lanes (cache hit, turn p50, top model) when turns exist (§24.47)', () => {
+    const view: TelemetryView = { local: LOCAL, hasTurns: true }
     render(<TelemetryPanel view={view} />)
-    expect(screen.getByTestId('telemetry-unavailable')).toHaveTextContent(/not connected/i)
-    expect(screen.getByText('3 total')).toBeInTheDocument()
+    expect(screen.getByText('66%')).toBeInTheDocument()
+    expect(screen.getByText('15000ms')).toBeInTheDocument()
+    expect(screen.getByText(/claude-haiku-4-5/)).toBeInTheDocument()
+    expect(screen.getByText('3 total')).toBeInTheDocument() // local activity line still renders
   })
 
-  it('renders Portkey lanes when available', () => {
-    const view: TelemetryView = {
-      available: true,
-      reason: null,
-      summary: { total_requests: 1284, cache_hit_rate: 0.62, p50_latency_ms: 920, top_model: 'opus-4-8' },
-      local: LOCAL,
-    }
+  it('shows the honest "awaiting first turn" state when no turns are captured', () => {
+    const view: TelemetryView = { local: { ...LOCAL, turns_total: 0 }, hasTurns: false }
     render(<TelemetryPanel view={view} />)
-    expect(screen.getByText('62%')).toBeInTheDocument()
-    expect(screen.getByText('1,284')).toBeInTheDocument()
-    expect(screen.getByText(/opus-4-8/)).toBeInTheDocument()
+    expect(screen.getByTestId('telemetry-pending')).toBeInTheDocument()
+    expect(screen.getByText('3 total')).toBeInTheDocument() // local aggregates still render
   })
 })
 
 describe('CostCachePanel', () => {
-  it('shows spend when available', () => {
-    const view: TelemetryView = {
-      available: true,
-      reason: null,
-      summary: { total_cost_usd: 4.17, cache_hit_rate: 0.62 },
-      local: null,
-    }
+  it('shows the estimated spend + cache line from local turn data when turns exist (§24.47)', () => {
+    const view: TelemetryView = { local: LOCAL, hasTurns: true }
     render(<CostCachePanel view={view} />)
-    expect(screen.getByText('$4.17')).toBeInTheDocument()
+    expect(screen.getByTestId('local-spend')).toHaveTextContent('$0.10') // 10 cents total, est
+    expect(screen.getByText(/66% of prompt tokens/)).toBeInTheDocument()
+    expect(screen.getByText('2 turns total')).toBeInTheDocument()
   })
 
-  it('shows the honest pending state when unavailable', () => {
-    const view: TelemetryView = { available: false, reason: 'bypass', summary: null, local: null }
+  it('shows the honest pending state when no turns are captured', () => {
+    const view: TelemetryView = { local: { ...LOCAL, turns_total: 0 }, hasTurns: false }
     render(<CostCachePanel view={view} />)
-    expect(screen.getByTestId('cost-unavailable')).toBeInTheDocument()
-  })
-
-  it('shows the always-real local spend estimate even when Portkey is unavailable (§24.34)', () => {
-    const view: TelemetryView = { available: false, reason: 'no Portkey key configured', summary: null, local: LOCAL }
-    render(<CostCachePanel view={view} />)
-    expect(screen.getByTestId('cost-unavailable')).toBeInTheDocument()
-    expect(screen.getByTestId('local-spend')).toHaveTextContent('$0.10 est') // 10 cents
-    expect(screen.getByText('2 turns')).toBeInTheDocument()
+    expect(screen.getByTestId('cost-pending')).toBeInTheDocument()
   })
 })
 

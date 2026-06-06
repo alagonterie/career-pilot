@@ -3,10 +3,10 @@ import { expect, test } from '@playwright/test'
 
 // /live composes the funnel + architecture data + the SSE trace + /api/telemetry
 // into the aggregate ops dashboard (§24.29). The E2E server seeds the backlog,
-// funnel, sessions, and a fixed container count; Portkey is intentionally NOT
-// mocked here, so the telemetry/cost panels render the honest "not connected"
-// state. Correctness rests on semantic assertions + a11y + the console/network
-// gate; the live-tail (a new pushed row) is already covered by smoke.spec.
+// funnel, sessions, and a fixed container count; the telemetry/cost panels render
+// from the seeded per-turn rows (§24.47 — local-sourced, no Portkey API).
+// Correctness rests on semantic assertions + a11y + the console/network gate; the
+// live-tail (a new pushed row) is already covered by smoke.spec.
 function ignorable(url: string): boolean {
   return (
     url.includes('/api/architecture') ||
@@ -42,8 +42,10 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
     // Container pool: fixed PORTAL_MOCK_CONTAINERS=2 of capacity 4.
     await expect(page.getByText('2 / 4')).toBeVisible()
 
-    // Telemetry is honestly unavailable (no Portkey mock in E2E) — the decision.
-    await expect(page.getByTestId('telemetry-unavailable')).toBeVisible()
+    // Telemetry is local-sourced from the seeded turn row (§24.47): the LLM
+    // telemetry panel shows the cache-hit lane + top model, both real.
+    await expect(page.getByText('cache hit')).toBeVisible()
+    await expect(page.getByText('top model:')).toBeVisible()
 
     // The trace stream replays the seeded backlog over SSE.
     const trace = page.getByTestId('trace-stream')
@@ -61,9 +63,9 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
     // batch-sealing separator carrying the real metrics (model from model_used),
     // not a peer action line.
     await expect(trace.getByTestId('trace-turn')).toContainText('opus-4-8')
-    // COST & CACHE shows the always-real local spend estimate (Portkey is
-    // unavailable in E2E, so this local sum over the turn rows is the number).
-    await expect(page.getByTestId('local-spend')).toHaveText('$0.06 est')
+    // COST & CACHE shows the est spend summed over the turn rows (§24.47); the
+    // "est" qualifier now lives in the metric label, so the value is just "$0.06".
+    await expect(page.getByTestId('local-spend')).toHaveText('$0.06')
 
     // A filter chip narrows the stream: System = non-subagent events only, so the
     // single research-company line disappears.
