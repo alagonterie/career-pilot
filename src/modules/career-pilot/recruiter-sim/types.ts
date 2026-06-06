@@ -106,6 +106,8 @@ export interface SeedApplicationIntent {
   companyName: string;
   obfuscatedLabel: string;
   roleTitle: string;
+  /** A short synthetic JD ("what the role asks") so win_confidence can score fit. */
+  jdText: string;
   appliedAtMs: number;
 }
 

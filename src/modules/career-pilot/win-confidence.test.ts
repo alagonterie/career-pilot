@@ -101,4 +101,44 @@ describe('scoreWinConfidence', () => {
     expect(winOf('a-reject')).toBe(0); // closed zeroing runs before the LLM
     expect(res).toEqual({ scored: 0, closed: 1 });
   });
+
+  it('blends fit (candidate profile + the role JD) with momentum in the prompt', async () => {
+    getDb()
+      .prepare(
+        'INSERT INTO candidate_profile (id, target_roles, skills, comp_floor, updated_at) VALUES (1, \'["Staff Software Engineer"]\', \'["Go","Kubernetes"]\', 180000, datetime(\'now\'))',
+      )
+      .run();
+    getDb()
+      .prepare(
+        "INSERT INTO applications (id, company_name, obfuscated_label, public_state, role_title, jd_text, status, applied_at, last_activity_at, created_at) VALUES ('a1','Co','ai-a','obfuscated','Platform Engineer','Kubernetes, IaC, distributed systems','SCREENING',datetime('now'),datetime('now'),datetime('now'))",
+      )
+      .run();
+
+    let body = '';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: unknown, opts?: { body?: string }) => {
+        body = String(opts?.body ?? '');
+        return {
+          ok: true,
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  content: '{"a1": {"score": 58, "reason": "Strong fit on Kubernetes; momentum at screening."}}',
+                },
+              },
+            ],
+          }),
+        } as unknown as Response;
+      }),
+    );
+
+    await scoreWinConfidence(getDb());
+    expect(body).toContain('Staff Software Engineer'); // candidate target role → the fit prior
+    expect(body).toContain('Kubernetes'); // candidate skill + the JD ask → fit
+    expect(body).toContain('SCREENING'); // the stage → momentum
+    expect(winOf('a1')).toBe(58);
+    expect(rationaleOf('a1')).toContain('fit');
+  });
 });
