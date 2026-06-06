@@ -8,6 +8,10 @@ import { usePolledJson, type PollStatus } from './use-polled-json'
  * `public_state === 'public'` (the reveal tier, PORTAL §5.4).
  */
 export interface FunnelApplication {
+  /** Opaque, unique per-application id — the stable React key + motion layoutId.
+   * (`application_ref` is the obfuscated label and is shared across a company's
+   * multiple applications, so it must NOT be used as a key.) */
+  application_id: string
   application_ref: string
   public_state: string
   role_title: string | null

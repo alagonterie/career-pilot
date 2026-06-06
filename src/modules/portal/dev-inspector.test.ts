@@ -424,14 +424,14 @@ describe('on-demand sweep (§24.43c)', () => {
     }
   });
 
-  it('applyDevSweep returns 200 + converts from email_events; no owner session → not enqueued', () => {
-    const out = applyDevSweep();
+  it('applyDevSweep returns 200 + converts from email_events; no owner session → not enqueued', async () => {
+    const out = await applyDevSweep();
     expect(out.status).toBe(200);
     expect((out.body as { converted: number }).converted).toBe(0); // nothing seeded
     expect((out.body as { sweepEnqueued: boolean }).sweepEnqueued).toBe(false);
   });
 
-  it('applyDevSweep does not enqueue a curator pass when the owner group has no active session', () => {
+  it('applyDevSweep does not enqueue a curator pass when the owner group has no active session', async () => {
     createAgentGroup({
       id: 'ag-owner',
       name: 'Career Pilot',
@@ -439,6 +439,6 @@ describe('on-demand sweep (§24.43c)', () => {
       agent_provider: null,
       created_at: '2026-06-06T00:00:00Z',
     });
-    expect((applyDevSweep().body as { sweepEnqueued: boolean }).sweepEnqueued).toBe(false);
+    expect(((await applyDevSweep()).body as { sweepEnqueued: boolean }).sweepEnqueued).toBe(false);
   });
 });

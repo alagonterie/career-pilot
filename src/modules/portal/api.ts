@@ -142,6 +142,7 @@ function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
 // ── route handlers ───────────────────────────────────────────────────────
 
 interface FunnelViewRow {
+  application_id: string;
   application_ref: string;
   public_state: string;
   role_title: string | null;
@@ -157,7 +158,7 @@ interface FunnelViewRow {
 function handleFunnel(res: http.ServerResponse, cors: Record<string, string>): void {
   const rows = getDb()
     .prepare(
-      `SELECT application_ref, public_state, role_title, status, stage,
+      `SELECT application_id, application_ref, public_state, role_title, status, stage,
               applied_at, stage_entered_at, last_activity_at, win_confidence, published_learning
          FROM public_funnel_view`,
     )
@@ -536,8 +537,8 @@ async function handleDevControl(
   json(res, out.status, out.body, cors);
 }
 
-function handleDevSweep(res: http.ServerResponse, cors: Record<string, string>): void {
-  const out = applyDevSweep();
+async function handleDevSweep(res: http.ServerResponse, cors: Record<string, string>): Promise<void> {
+  const out = await applyDevSweep();
   json(res, out.status, out.body, cors);
 }
 
@@ -594,7 +595,7 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
       if (method === 'POST' && path === '/api/dev/knobs') return await handleDevKnobsWrite(req, res, cors);
       if (method === 'GET' && path === '/api/dev/persona') return handleDevPersona(res, cors);
       if (method === 'POST' && path === '/api/dev/control') return await handleDevControl(req, res, cors);
-      if (method === 'POST' && path === '/api/dev/sweep') return handleDevSweep(res, cors);
+      if (method === 'POST' && path === '/api/dev/sweep') return await handleDevSweep(res, cors);
     }
 
     json(res, 404, { error: 'not_found', path }, cors);

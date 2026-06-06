@@ -11,6 +11,7 @@ import { StatTiles } from './StatTiles'
 
 function app(p: Partial<FunnelApplication> & { application_ref: string }): FunnelApplication {
   return {
+    application_id: p.application_ref, // tests use unique refs; an explicit application_id in `p` overrides
     public_state: 'obfuscated',
     role_title: 'Senior Software Engineer',
     status: 'APPLIED',
@@ -42,6 +43,23 @@ describe('FunnelBoard', () => {
       expect(screen.getByRole('region', { name: title })).toBeInTheDocument()
     }
     expect(screen.getByText('[fintech-a]')).toBeInTheDocument()
+  })
+
+  it('renders two applications that share an obfuscated label (distinct ids, no key/layoutId collision)', () => {
+    // Two roles at one company → same application_ref, different application_id.
+    // Keying by application_id (not the ref) keeps both cards; the old
+    // ref-keyed version collided and glitched the motion layout animation.
+    render(
+      <FunnelBoard
+        apps={[
+          app({ application_id: 'id-1', application_ref: 'series-b-ai', stage: 'screening' }),
+          app({ application_id: 'id-2', application_ref: 'series-b-ai', stage: 'screening' }),
+        ]}
+        onSelect={() => {}}
+      />,
+    )
+    const col = screen.getByTestId('funnel-col-screening')
+    expect(within(col).getAllByText('[series-b-ai]')).toHaveLength(2)
   })
 
   it('obfuscates by default but reveals the public application with its real name', () => {
