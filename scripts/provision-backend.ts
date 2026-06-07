@@ -33,8 +33,10 @@ import path from 'path';
 import { DATA_DIR } from '../src/config.js';
 import { createAgentGroup, getAgentGroupByFolder } from '../src/db/agent-groups.js';
 import { closeDb, initDb } from '../src/db/connection.js';
+import { ensureContainerConfig, updateContainerConfigJson } from '../src/db/container-configs.js';
 import { runMigrations } from '../src/db/migrations/index.js';
 import { initGroupFilesystem } from '../src/group-init.js';
+import { OWNER_DISALLOWED_TOOLS } from '../src/modules/career-pilot/owner-disallowed-tools.js';
 import { ensureSandboxGroup, SANDBOX_FOLDER } from './init-sandbox-group.js';
 import type { AgentGroup } from '../src/types.js';
 
@@ -51,22 +53,26 @@ function genId(prefix: string): string {
  * owner channel is Telegram, paired separately by a human).
  */
 function ensureOwnerGroup(): AgentGroup {
-  const existing = getAgentGroupByFolder(OWNER_FOLDER);
-  if (existing) {
-    initGroupFilesystem(existing); // idempotent; reconciles the persona files
-    console.log(`  owner agent group exists: ${existing.id} (${OWNER_FOLDER})`);
-    return existing;
+  let ag = getAgentGroupByFolder(OWNER_FOLDER);
+  if (ag) {
+    initGroupFilesystem(ag); // idempotent; reconciles the persona files
+    console.log(`  owner agent group exists: ${ag.id} (${OWNER_FOLDER})`);
+  } else {
+    createAgentGroup({
+      id: genId('ag'),
+      name: OWNER_AGENT_NAME,
+      folder: OWNER_FOLDER,
+      agent_provider: null,
+      created_at: new Date().toISOString(),
+    });
+    ag = getAgentGroupByFolder(OWNER_FOLDER)!;
+    initGroupFilesystem(ag);
+    console.log(`  created owner agent group: ${ag.id} (${OWNER_FOLDER})`);
   }
-  createAgentGroup({
-    id: genId('ag'),
-    name: OWNER_AGENT_NAME,
-    folder: OWNER_FOLDER,
-    agent_provider: null,
-    created_at: new Date().toISOString(),
-  });
-  const ag = getAgentGroupByFolder(OWNER_FOLDER)!;
-  initGroupFilesystem(ag);
-  console.log(`  created owner agent group: ${ag.id} (${OWNER_FOLDER})`);
+  // Owner tool-palette trim (§24.49d). Always reconcile so re-runs pick up edits
+  // to OWNER_DISALLOWED_TOOLS (mirrors the sandbox's Layer-1 disallow reconcile).
+  ensureContainerConfig(ag.id);
+  updateContainerConfigJson(ag.id, 'disallowed_tools', OWNER_DISALLOWED_TOOLS);
   return ag;
 }
 
