@@ -506,6 +506,16 @@ export function buildProviderSubprocessEnv(
 ): Record<string, string | undefined> {
   return {
     ENABLE_PROMPT_CACHING_1H: '1',
+    // §24.49e Lever 4 (HYPOTHESIS — under live box-test, not yet confirmed):
+    // each spawn fires a background "conversation summarization for --resume"
+    // model call (CC costs doc, "Background token usage") — a per-spawn Haiku
+    // request (tools:[], a json_schema title) that's pure waste for our
+    // non-interactive agent. The CC docs document NO clean disable for it; this
+    // is the candidate kill switch (it also disables auto-update + error
+    // reporting — all undesirable in a headless container, so it's safe to set).
+    // Gated on Portkey evidence: if the summarization call survives a deploy,
+    // this is the wrong flag and gets reverted. Override `=0` to A/B it.
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
     ...(optionsEnv ?? {}),
     CLAUDE_CODE_AUTO_COMPACT_WINDOW,
   };
