@@ -48,6 +48,35 @@ const MCP_TOOLS_HOST_SUBPATH = path.join('container', 'agent-runner', 'src', 'mc
 const COMPOSED_HEADER = '<!-- Composed at spawn — do not edit. Edit CLAUDE.local.md for per-group content. -->';
 
 /**
+ * Built-in module fragments whose ENTIRE instructional surface is a set of MCP
+ * tools a group can disallow. When every tool a fragment documents is in the
+ * group's `disallowed_tools`, the fragment is dead text — the agent can't call
+ * anything it describes — so we skip importing it (mirrors the `cli_scope` skip
+ * for `cli.instructions.md`). Keyed by module name (the `<name>` in
+ * `<name>.instructions.md`); values are the `mcp__nanoclaw__<tool>` names that
+ * module documents, verified against the instruction sources:
+ *   - `agents.instructions.md`   documents only `create_agent`
+ *   - `self-mod.instructions.md` documents only `install_packages` + `add_mcp_server`
+ * §24.49e — compounds with the §24.49d owner-palette trim (the owner disallows
+ * all three, so both fragments drop out of its composed CLAUDE.md).
+ */
+export const MODULE_FRAGMENT_GATED_TOOLS: Record<string, readonly string[]> = {
+  agents: ['mcp__nanoclaw__create_agent'],
+  'self-mod': ['mcp__nanoclaw__install_packages', 'mcp__nanoclaw__add_mcp_server'],
+};
+
+/**
+ * Whether a built-in module fragment is dead for a group given its disallowed
+ * tools — true only when the module is gated AND every tool it documents is
+ * disallowed (a partial disallow leaves a reachable tool, so the fragment
+ * stays). Pure; exported for direct unit testing.
+ */
+export function moduleFragmentDisabledByPalette(moduleName: string, disallowedTools: ReadonlySet<string>): boolean {
+  const gated = MODULE_FRAGMENT_GATED_TOOLS[moduleName];
+  return gated !== undefined && gated.every((tool) => disallowedTools.has(tool));
+}
+
+/**
  * Regenerate `groups/<folder>/CLAUDE.md` from the shared base, enabled skill
  * fragments, and MCP server fragments declared in `container.json`. Creates
  * an empty `CLAUDE.local.md` if missing.
@@ -93,6 +122,9 @@ export function composeGroupClaudeMd(group: AgentGroup): void {
   // use that module's MCP tools (schedule_task, install_packages, etc.).
   // Skip cli.instructions.md when cli_scope is disabled.
   const cliDisabled = configRow?.cli_scope === 'disabled';
+  // §24.49e: skip a module fragment whose entire tool surface this group
+  // disallows (disallowed_tools is NOT NULL DEFAULT '[]', so always valid JSON).
+  const disallowedTools = new Set<string>(configRow ? (JSON.parse(configRow.disallowed_tools) as string[]) : []);
   const mcpToolsHostDir = path.join(process.cwd(), MCP_TOOLS_HOST_SUBPATH);
   if (fs.existsSync(mcpToolsHostDir)) {
     for (const entry of fs.readdirSync(mcpToolsHostDir)) {
@@ -100,6 +132,7 @@ export function composeGroupClaudeMd(group: AgentGroup): void {
       if (!match) continue;
       const moduleName = match[1];
       if (moduleName === 'cli' && cliDisabled) continue;
+      if (moduleFragmentDisabledByPalette(moduleName, disallowedTools)) continue;
       desired.set(`module-${moduleName}.md`, {
         type: 'symlink',
         content: `${SHARED_MCP_TOOLS_CONTAINER_BASE}/${entry}`,
