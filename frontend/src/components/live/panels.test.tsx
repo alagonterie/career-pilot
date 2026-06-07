@@ -95,13 +95,14 @@ describe('SessionsPanel + ContainerPoolPanel', () => {
 })
 
 describe('TelemetryPanel', () => {
-  it('renders the local-derived lanes (cache hit, turn p50, top model) when turns exist (§24.47)', () => {
+  it('renders the local-derived lanes (turns, p50/p95 in seconds, top model) when turns exist (§24.47)', () => {
     const view: TelemetryView = { local: LOCAL, hasTurns: true }
     render(<TelemetryPanel view={view} />)
-    expect(screen.getByText('66%')).toBeInTheDocument()
-    expect(screen.getByText('15000ms')).toBeInTheDocument()
+    expect(screen.getByText('15.0s')).toBeInTheDocument() // p50, seconds-formatted (fits the cell)
+    expect(screen.getByText('31.0s')).toBeInTheDocument() // p95
     expect(screen.getByText(/claude-haiku-4-5/)).toBeInTheDocument()
     expect(screen.getByText('3 total')).toBeInTheDocument() // local activity line still renders
+    expect(screen.queryByText('66%')).not.toBeInTheDocument() // cache lives in the Cost panel only
   })
 
   it('shows the honest "awaiting first turn" state when no turns are captured', () => {
@@ -118,7 +119,7 @@ describe('CostCachePanel', () => {
     render(<CostCachePanel view={view} />)
     expect(screen.getByTestId('local-spend')).toHaveTextContent('$0.10') // 10 cents total, est
     expect(screen.getByText(/66% of prompt tokens/)).toBeInTheDocument()
-    expect(screen.getByText('2 turns total')).toBeInTheDocument()
+    expect(screen.getByText('$0.04 today')).toBeInTheDocument()
   })
 
   it('shows the honest pending state when no turns are captured', () => {

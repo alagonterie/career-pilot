@@ -4479,7 +4479,7 @@ The clean unit is the **session**: `x-portkey-trace-id: <session_id>`, injected 
 
 **Definition of done.**
 1. `/api/telemetry` returns `{ local }` with the derived fields and makes no network call to Portkey.
-2. `/live` "LLM telemetry" shows cache-hit %, turns 24h, turn p50, top model; "Cost & cache" shows spend (est) + cache line — both from local turn data, both labeled honestly; the "not connected" copy is gone.
+2. `/live` "LLM telemetry" shows turns + turn p50/p95 (seconds-formatted to fit the cell) + top model; "Cost & cache" shows spend (est) + the cache-hit line — local-sourced, honestly labeled, **no duplication across the two panels** (cache lives only in Cost & cache; turns only in LLM telemetry); the "not connected" copy is gone.
 3. Host + frontend unit suites green; the `/live` E2E asserts the populated lanes (not the removed `telemetry-unavailable`).
 4. Spec deltas: this §24.47; §24.17 + §24.46 reconciliations (Portkey analytics API is Enterprise-gated → local-sourced). Memory: [[status_current]], [[portkey_routing]].
 
