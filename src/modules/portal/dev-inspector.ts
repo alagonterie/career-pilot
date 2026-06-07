@@ -35,6 +35,7 @@ import { applyFunnelFromEmailEvents } from '../career-pilot/funnel-apply.js';
 import { scoreWinConfidence } from '../career-pilot/win-confidence.js';
 import { type CandidateProfile, readCandidateProfile, renderPersona } from '../career-pilot/render-persona.js';
 import { SIM_KNOB_KEYS } from '../career-pilot/recruiter-sim/knobs.js';
+import { reconcileState } from '../career-pilot/recruiter-sim/runner.js';
 import { STAGE_CLASSIFICATIONS } from '../career-pilot/recruiter-sim/templates.js';
 import type { SimApp, SimState } from '../career-pilot/recruiter-sim/types.js';
 import { FUNNEL_DATA_TABLES, SESSION_TABLES, clearSessionTranscripts, wipeTables } from './dev/app-data-reset.js';
@@ -374,7 +375,13 @@ export function buildDevState(
   pauseState: PauseState;
 } {
   const enabled = getConfig<boolean>(db, 'recruiter_sim_enabled');
-  const ids = state.apps.map((a) => a.appId);
+  // Drop sidecar apps whose `applications` row is gone (e.g. just after an
+  // /api/dev/reset funnel-data/everything wipe, §24.48) so the panel shows the
+  // sim's real working set — the same reconcile `runOneTick` applies before it
+  // acts, so the display matches behavior instead of showing ghost rows until the
+  // next tick re-saves the sidecar.
+  const live = reconcileState(db, state);
+  const ids = live.apps.map((a) => a.appId);
   let applications: SimApplicationRow[] = [];
   if (ids.length > 0) {
     const placeholders = ids.map(() => '?').join(',');
@@ -385,12 +392,12 @@ export function buildDevState(
       )
       .all(...ids) as SimApplicationRow[];
   }
-  const apps: SimAppView[] = state.apps.map((a) => ({
+  const apps: SimAppView[] = live.apps.map((a) => ({
     ...a,
     totalStages: STAGE_CLASSIFICATIONS.length,
     upcoming: simUpcoming(a),
   }));
-  return { enabled, lastSeedAtMs: state.lastSeedAtMs, apps, applications, pauseState: getPauseState() };
+  return { enabled, lastSeedAtMs: live.lastSeedAtMs, apps, applications, pauseState: getPauseState() };
 }
 
 // ── dev "Pause LLM spend" control (§24.43e) ──────────────────────────────────
