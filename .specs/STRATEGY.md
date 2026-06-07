@@ -4485,6 +4485,36 @@ The clean unit is the **session**: `x-portkey-trace-id: <session_id>`, injected 
 
 ---
 
+#### 24.48 Dev reset controls — scoped + per-field, on `/dev` (extends §24.42)
+
+The dev loop is iterative: drive the sim, onboard the candidate over Telegram (the bootstrap conversation: `full_name → target_roles → comp_floor → master_resume → bio → why_this_exists → location_pref`), watch the funnel fill, then **reset and repeat**. The only reset today is `scripts/reset-dev.ts` (§24.41) — **CLI/CI-only**, and it deliberately *preserves* `candidate_profile` + conversation, so it cannot take the agent back to *pre-onboarding*. The owner wants reset reachable from `/dev`, and **finer control** — reset one part (e.g. "the resume" = the `master_resume` field) without nuking everything.
+
+**Reversed lean, with a hard boundary.** §24.42 set a "destructive ops stay on CI / Telegram" lean for the inspector. This section **reverses it for app-data only** — accepted because the surface is already hard-gated (`isDevEnv()` → 404 on any non-dev stack) and every scope here is **reversible-on-reseed**. The boundary is non-negotiable and matches `reset-dev.ts`'s existing exclusions: **credentials / OneCLI vault / Telegram pairing / GCP infra are never reachable from the web** — those stay CLI/CI. The `APP_DATA_TABLES` allow-list in `reset-dev.ts` is the single source of truth; the endpoint and the script share it (factored into `FUNNEL_DATA_TABLES` + `SESSION_TABLES`) so they never drift.
+
+**Scopes** — `POST /api/dev/reset` takes exactly one of `{ scope }` / `{ field }`:
+
+| Input | Clears | Halts? |
+|---|---|---|
+| `scope: 'funnel-data'` | app/funnel tables **minus** `sessions` (applications, funnel_*, public_*, learnings, job_leads, simulator_runs, email_events, *_sync_state) | no |
+| `scope: 'conversation'` | `sessions` rows + `data/v2-sessions/*` transcripts (→ crons re-bootstrap next session) | **yes** |
+| `scope: 'profile'` | `DELETE FROM candidate_profile` (→ onboarding restarts) | no |
+| `scope: 'everything'` | funnel-data + profile + conversation (true pre-bootstrap) | **yes** |
+| `field: <onboarding field>` | `UPDATE candidate_profile SET <field>=NULL WHERE id=1` (per-step re-test) | no |
+
+Per-field allow-list = `ONBOARDING_FIELD_ORDER`; any other field → 400 (mirrors the knob allow-list discipline). Each destructive action runs through a typed-confirm gate in the UI.
+
+**Halt-first for session-clearing scopes.** `reset-dev.ts` assumes the host unit is *stopped*; on the live `/dev` stack the host is *running* with a possibly-open session, so clearing `sessions` + transcript dirs (incl. the inbound DBs the session-manager holds) live is the one hazard. For `conversation` / `everything`, the endpoint **halts first** — `executeControlCommand('/halt', …)` (the same call `applyDevControl` uses) freezes spawns and kills any running container so nothing is mid-write — then wipes, and leaves the system **halted**. The response carries `halted: true`; the UI surfaces "halted — Resume to bring the agent back," and the owner's next Telegram message starts a fresh session that re-bootstraps the crons and begins onboarding. `funnel-data` + per-field are pure DB ops, safe live, no halt.
+
+**Definition of done.**
+1. `POST /api/dev/reset` 404s off the dev stack; on dev, each scope/field clears exactly its rows and returns `{ scope|field, cleared, halted }`; unknown scope/field → 400 (nothing written).
+2. `conversation`/`everything` leave `pause_state='halted'` with the running container killed; `funnel-data`/per-field do not halt.
+3. `reset-dev.ts` behavior is byte-identical after the shared-const refactor (it imports `FUNNEL_DATA_TABLES`+`SESSION_TABLES` rather than its own list).
+4. `/dev` shows the Reset block with the four scopes + the per-onboarding-field row (driven by onboarding progress), each behind a typed-confirm gate; the header copy no longer claims destructive ops are CI/Telegram-only.
+5. Host + frontend unit suites green; live dev-box loop validated (per-field resume reset; funnel-data; everything → halt → Resume → re-onboard) — this is the step that confirms the session-manager tolerates a live wipe.
+6. Spec deltas: this §24.48; the §24.42 "destructive ops off web" lean is now **scoped-reversed** (app-data on `/dev`; creds/infra still CLI/CI). Memory: [[status_current]], [[dev_access_ergonomics]].
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
