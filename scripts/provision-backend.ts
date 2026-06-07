@@ -43,6 +43,18 @@ import type { AgentGroup } from '../src/types.js';
 const OWNER_FOLDER = 'career-pilot';
 const OWNER_AGENT_NAME = 'Career Pilot';
 
+// §24.49e: the owner never invokes a skill (the Skill tool is disallowed via
+// OWNER_DISALLOWED_TOOLS). Drop ALL bundled skills from discovery so they leave
+// the per-turn skill-descriptions block — frontend-engineer / agent-browser /
+// slack-formatting / vercel-cli / whatsapp-formatting / self-customize / welcome /
+// onecli-gateway are dead weight for a job-search agent (onboarding is the
+// persona's job, not the `welcome` skill). `[]` = none (vs the prior `'all'`).
+// Claude Code's OWN built-ins (/init, /loop, /review, …) aren't per-group
+// removable and stay. The two CLAUDE.md skill-instruction fragments
+// (onecli-gateway, whatsapp-formatting) are a separate composer path and are
+// unaffected by this selection.
+const OWNER_SKILLS: string[] = [];
+
 function genId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -69,10 +81,12 @@ function ensureOwnerGroup(): AgentGroup {
     initGroupFilesystem(ag);
     console.log(`  created owner agent group: ${ag.id} (${OWNER_FOLDER})`);
   }
-  // Owner tool-palette trim (§24.49d). Always reconcile so re-runs pick up edits
-  // to OWNER_DISALLOWED_TOOLS (mirrors the sandbox's Layer-1 disallow reconcile).
+  // Owner context trim (§24.49d tool palette + §24.49e skills). Always reconcile
+  // so re-runs pick up edits to OWNER_DISALLOWED_TOOLS / OWNER_SKILLS (mirrors the
+  // sandbox's Layer-1 disallow reconcile).
   ensureContainerConfig(ag.id);
   updateContainerConfigJson(ag.id, 'disallowed_tools', OWNER_DISALLOWED_TOOLS);
+  updateContainerConfigJson(ag.id, 'skills', OWNER_SKILLS);
   return ag;
 }
 
