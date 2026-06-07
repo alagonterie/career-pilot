@@ -476,6 +476,8 @@ This is also where the visitor learns that the public side of the system is genu
 >
 > **Refinement (STRATEGY §24.45).** A seal must *seal something*: a `turn` row renders only when ≥1 action line has appeared since the previous turn. A run of bare/consecutive turns — silent direct replies, cheap-out curator sweeps, action-light Haiku turns — collapses to nothing instead of stacking as a wall of empty rules (the "strange-looking activity" the owner saw once the §24.44 tier shifted to Haiku). A window of *only* turns reads as the quiet "no agent activity yet" state, not a no-match.
 
+> **Build note (dimensional stability, STRATEGY §24.36).** The four top stat panels share one height-equalized grid row with a `minmax(196px, auto)` floor. The floor was calibrated to the LIVE-mode `System status` height, but in **SHADOW mode** (`live_mode: false` — the dev/pre-prod default) the shared `ModeBanner` rendered an inline explainer sentence that wrapped in the cramped panel cell, pushing `System status` to ~214px and dragging the whole equalized row (all four panels) past the floor on load. Fix: `ModeBanner` takes a `compact` flag (used only by the `/live` `SystemStatusPanel`) that moves the shadow note + any pause `reason:` line to the chips' tooltips instead of inline prose, so the panel's height is **mode-independent** and the 196 floor binds in both LIVE and SHADOW. The roomy `/architecture` header keeps the explainers inline (default, non-compact). Chosen over simply raising the floor (which would calibrate to one mode and leave dead space in the other). The LIVE-mode visual baseline is unaffected (compact == non-compact when there's no shadow/reason prose).
+
 ---
 
 ### 5.3 `/simulator` — Recruiter Simulator
