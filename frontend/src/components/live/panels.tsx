@@ -97,7 +97,10 @@ export function SystemStatusPanel({
         <PanelOffline />
       ) : (
         <>
-          <ModeBanner mode={mode} />
+          {/* compact: shadow/pause-reason explainers ride the chips' tooltips so
+              this panel's height is mode-independent and doesn't outgrow the
+              equalized stat row in SHADOW mode (§24.36). */}
+          <ModeBanner mode={mode} compact />
           <div className="flex items-center gap-2">
             <span
               aria-hidden="true"

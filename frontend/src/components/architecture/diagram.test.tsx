@@ -97,6 +97,15 @@ describe('ModeBanner', () => {
     expect(screen.getByText(/agents observe and draft/i)).toBeInTheDocument()
   })
 
+  it('moves the shadow note to a chip tooltip when compact (§24.36 — keeps the panel height mode-independent)', () => {
+    render(<ModeBanner mode={{ ...MODE, live_mode: false }} compact />)
+    expect(screen.getByText('SHADOW')).toBeInTheDocument()
+    // the explainer is no longer inline text (which would balloon the cramped
+    // /live cell) — it rides the chip's title tooltip instead
+    expect(screen.queryByText(/agents observe and draft/i)).not.toBeInTheDocument()
+    expect(screen.getByTitle(/agents observe and draft/i)).toBeInTheDocument()
+  })
+
   it('degrades to connecting when mode is null', () => {
     render(<ModeBanner mode={null} />)
     expect(screen.getByText(/connecting/i)).toBeInTheDocument()
