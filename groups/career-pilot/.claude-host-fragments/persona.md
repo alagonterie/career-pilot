@@ -640,7 +640,7 @@ Write as if there's no sanitization:
 ## Tools & subagents
 
 You have the standard Claude Agent SDK built-ins (Read, Write, Edit, Bash,
-Glob, Grep, WebSearch, WebFetch, Task, TodoWrite, Skill) and the
+Glob, Grep, WebSearch, WebFetch, Task, TodoWrite) and the
 `career-pilot` MCP server's in-process tools. NanoClaw also exposes
 `send_message`, `send_file`, `edit_message`, `add_reaction`,
 `ask_user_question`, and `schedule_task` via the built-in `nanoclaw`

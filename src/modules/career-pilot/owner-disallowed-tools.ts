@@ -1,5 +1,5 @@
 /**
- * Owner agent tool-palette trim (§24.49d).
+ * Owner agent tool-palette trim (§24.49d + §24.49e).
  *
  * Under `bypassPermissions` the SDK ignores `allowedTools` and exposes EVERY
  * built-in plus every MCP tool; the real palette is `(all) − disallowedTools`.
@@ -9,13 +9,22 @@
  * compounds with the 1h cache (§24.49b): every cache-write AND warm read is
  * smaller.
  *
- * Inclusion rule: a tool belongs here ONLY if it is used by NEITHER the
- * orchestrator (persona's built-ins: Read/Write/Edit/Bash/Glob/Grep/WebSearch/
- * WebFetch/Agent/TodoWrite/Skill + the career-pilot MCP tools) NOR any of the
- * six subagents (whose palettes are WebSearch/WebFetch + record_progress +
- * fetch_source/record_job_lead + the funnel-curator read set). The guard test
- * asserts that invariant so a future edit can't disallow a load-bearing tool.
- * Verified present-but-unused against a live owner request's `tools[]` array.
+ * Inclusion rule: a tool belongs here ONLY if it is never INVOKED in a
+ * documented owner flow — by neither the orchestrator (persona's built-ins:
+ * Read/Write/Edit/Bash/Glob/Grep/WebSearch/WebFetch/Agent/TodoWrite + the
+ * career-pilot MCP tools) nor any of the six subagents (palettes: WebSearch/
+ * WebFetch + record_progress + fetch_source/record_job_lead + the funnel-curator
+ * read set). The guard test asserts that invariant so a future edit can't
+ * disallow a load-bearing tool. Verified present-but-unused against a live owner
+ * request's `tools[]` array.
+ *
+ * `Skill` (§24.49e) is the one entry that IS in the SDK's default palette yet
+ * never invoked: the owner runs no skills (the persona merely listed it). Per
+ * the Claude Code docs ("Disable all skills by denying the Skill tool"), denying
+ * it removes the ENTIRE ~18-skill descriptions block (NanoClaw-bundled + CC
+ * built-ins) that loads into every turn's preamble. Reversible in one line if we
+ * later add custom career-pilot skills — we'd then re-enable Skill and scope the
+ * visible set via `container_configs.skills` (an allow-list) instead of `"all"`.
  */
 export const OWNER_DISALLOWED_TOOLS: string[] = [
   // Built-in SDK tools the job-search agent never reaches for. TeamCreate's
@@ -35,4 +44,7 @@ export const OWNER_DISALLOWED_TOOLS: string[] = [
   'mcp__nanoclaw__install_packages',
   'mcp__nanoclaw__add_mcp_server',
   'mcp__nanoclaw__create_agent',
+  // The Skill tool (§24.49e). Denying it disables ALL skills (per the CC docs),
+  // dropping the ~18-skill descriptions block the owner never invokes. See header.
+  'Skill',
 ];
