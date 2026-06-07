@@ -21,7 +21,11 @@ const TOOLS_IN_USE = [
   'Agent',
   'Task',
   'TodoWrite',
-  'Skill',
+  // NOTE: `Skill` is intentionally NOT here. The owner has the Skill tool in its
+  // default palette but never INVOKES a skill (the persona only listed it), so
+  // §24.49e disallows it to drop the whole skills-descriptions block. If a
+  // future custom-skills refactor makes the owner actually invoke a skill, move
+  // `Skill` back here AND remove it from OWNER_DISALLOWED_TOOLS together.
   // MCP tools the orchestrator + subagents use
   'mcp__nanoclaw__record_progress',
   'mcp__nanoclaw__fetch_source',
@@ -48,7 +52,7 @@ const TOOLS_IN_USE = [
 ];
 
 describe('OWNER_DISALLOWED_TOOLS', () => {
-  it('is exactly the audited 12-tool trim', () => {
+  it('is exactly the audited 13-tool trim (12 from §24.49d + Skill from §24.49e)', () => {
     expect([...OWNER_DISALLOWED_TOOLS].sort()).toEqual(
       [
         'Monitor',
@@ -56,6 +60,7 @@ describe('OWNER_DISALLOWED_TOOLS', () => {
         'PushNotification',
         'RemoteTrigger',
         'SendMessage',
+        'Skill',
         'TaskOutput',
         'TaskStop',
         'TeamCreate',
