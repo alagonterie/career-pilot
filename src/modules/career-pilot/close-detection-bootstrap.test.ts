@@ -203,7 +203,8 @@ describe('ensureCloseDetectionTask', () => {
     expect(row.id).not.toBe('close-detection');
     const content = JSON.parse(row.content) as { prompt: string; script: string | null };
     expect(content.prompt).toBe('[scheduled trigger: close-detection]');
-    expect(content.script).toBeNull();
+    // §24.49c: the task now carries the pre-wake eligibility gate, not null.
+    expect(content.script).toBe('bun /app/src/career-pilot/check-eligibility.ts close-detection');
   });
 
   it('is idempotent — no duplicate insert on second call', () => {

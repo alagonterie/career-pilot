@@ -4553,6 +4553,25 @@ Per-field allow-list = `ONBOARDING_FIELD_ORDER`; any other field → 400 (mirror
 4. A before/after cost note from Portkey `usage` (the local §24.34 capture only records `record_*`-bearing turns — not the cron skips this targets, so it can't measure the win).
 5. Spec deltas: this §24.49; §847 + §1240 reconciled (1h cache wired, not just declared). Memory: [[status_current]], [[portkey_routing]].
 
+###### 24.49c drill-in — pre-wake eligibility gates (design)
+
+**Mechanism (reuses the existing `script` primitive).** A `kind='task'` row's `content.script` runs in the container via `applyPreTaskScripts` (poll-loop `MODULE-HOOK:scheduling-pre-task`) BEFORE the provider call; its last stdout line must be JSON `{ wakeAgent, data? }`. `wakeAgent:false` ⇒ the fire is dropped with **zero** model call (the agent never sees the task). Both bootstraps already insert `script: null`; 24.49c gives killer-match + close-detection a real script.
+
+**The reachability constraint (a gap in the lever's "cheap DB check" wording).** The container cannot read the central `data/v2.db` directly — the host's long-lived WAL connection precludes cross-mount sharing (see `container/agent-runner/src/career-pilot/action.ts`). So the gate can't just query the DB; it round-trips through the existing `sendAction` channel: the script runs a tiny bun CLI (`check-eligibility.ts <trigger>`) that calls a new **read-only** host action and prints `{ wakeAgent }`.
+
+**Eligibility = the exact criteria the woken turn would act on** (factored into shared WHERE-clause builders so the gate and the work cannot drift):
+- **killer-match** → the `handleClaimKillerMatches` SELECT (`killer_match_pushed_at IS NULL`, not closed, `rules_score ≥ killer_match_min_rules_score`, `source ∈` allow-list, `source_posted_at` within `recency_window_hours`, not email-linked). The gate runs it **read-only** (EXISTS/COUNT, **no** `killer_match_pushed_at` mutation — the claim stays the woken turn's job, so the gate never claims-without-alerting).
+- **close-detection** → the `handleCloseStaleLeads` WHERE (`closed_at IS NULL AND application_id IS NULL AND last_seen_at < now − close_detection_threshold_days`), as a COUNT.
+Both turns are **no-ops when their count is 0** (persona: killer-match "total===0 → silent skip… most fires return zero"; close-detection just notes `closed_count` incl. zero) — so skipping the wake is behavior-preserving. The gate shares the action's criteria, so it can only ever skip a fire the turn would have no-op'd.
+
+**New host action `career_pilot.check_trigger_eligibility { trigger }`** (owner-only, in `job-lead-actions.ts`) → `{ eligible: boolean, count }`. Extract the killer-match / close-detection WHERE clauses into shared builders so `claim` / `close` and the count are one source of truth.
+
+**Fail-safe = fail-OPEN.** `applyPreTaskScripts` treats script error / no-output / invalid-JSON as skip (`wakeAgent=false`) — the WRONG default for us (a transient round-trip failure would silently drop a real killer-match). So the CLI catches its own errors and prints `{ wakeAgent:true }` (wake on doubt); only a confirmed `eligible:false` prints `{ wakeAgent:false }`. (Infra-level fail-closed only if `bun` itself can't run the script — in which case the agent-runner is dead anyway.)
+
+**Standalone-test-first** (the scheduling-module convention): (1) host count handler — integration test vs a seeded in-memory DB (eligible vs empty per trigger; assert it does NOT mutate `killer_match_pushed_at` / `closed_at`); (2) container CLI — bun test mocking `sendAction` (ok/eligible → `wakeAgent:true`; ok/empty → `false`; error/timeout → fail-open `true`); (3) bootstraps — assert the `script` is now the CLI invocation, not `null`. Then wire into `ensureKillerMatchTask` + `ensureCloseDetectionTask`.
+
+**DoD (24.49c):** on the box, a killer-match fire with no eligible leads produces **no new Portkey log** (zero model call); a fire with an eligible lead still wakes and pushes. Considered-and-rejected alternative: a host-side pre-spawn gate (skips the container spawn too) — rejected because it forks NanoClaw core (`host-sweep`), violating the locked "don't fork upstream" rule; the container `script` is the upstream-sanctioned hook.
+
 ---
 
 ## Part VI: Open questions

@@ -21,6 +21,7 @@ import {
   handleUpdateProfileField,
 } from './actions.js';
 import {
+  handleCheckTriggerEligibility,
   handleClaimKillerMatches,
   handleCloseStaleLeads,
   handleDiscoverAtsBoard,
@@ -75,6 +76,7 @@ registerOwnerOnly('career_pilot.get_lead_summaries_for_ranking', handleGetLeadSu
 registerOwnerOnly('career_pilot.write_llm_scores', handleWriteLlmScores);
 registerOwnerOnly('career_pilot.claim_killer_matches', handleClaimKillerMatches);
 registerOwnerOnly('career_pilot.close_stale_leads', handleCloseStaleLeads);
+registerOwnerOnly('career_pilot.check_trigger_eligibility', handleCheckTriggerEligibility);
 registerOwnerOnly('career_pilot.gmail_query_delta', handleGmailQueryDelta);
 registerOwnerOnly('career_pilot.calendar_query_delta', handleCalendarQueryDelta);
 registerOwnerOnly('career_pilot.persist_funnel_state', handlePersistFunnelState);

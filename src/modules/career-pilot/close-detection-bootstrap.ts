@@ -24,6 +24,8 @@ import { nextEvenSeq } from '../../db/session-db.js';
 import { log } from '../../log.js';
 import type { AgentGroup, Session } from '../../types.js';
 
+import { preWakeScript } from './pre-wake-script.js';
+
 const SERIES_ID = 'close-detection';
 const TASK_PROMPT = '[scheduled trigger: close-detection]';
 
@@ -95,7 +97,7 @@ export function ensureCloseDetectionTask(
       seq: nextEvenSeq(inDb),
       processAfter: nextFireAt,
       recurrence: prefs.cronExpr,
-      content: JSON.stringify({ prompt: TASK_PROMPT, script: null }),
+      content: JSON.stringify({ prompt: TASK_PROMPT, script: preWakeScript('close-detection') }),
       seriesId: SERIES_ID,
     });
   log.info('close-detection task inserted', {

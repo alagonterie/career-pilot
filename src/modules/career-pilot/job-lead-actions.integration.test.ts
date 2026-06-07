@@ -18,7 +18,7 @@ import { runMigrations } from '../../db/migrations/index.js';
 import { ensureSchema, openInboundDb } from '../../db/session-db.js';
 import type { Session } from '../../types.js';
 
-import { handleClaimKillerMatches, handleCloseStaleLeads } from './job-lead-actions.js';
+import { handleCheckTriggerEligibility, handleClaimKillerMatches, handleCloseStaleLeads } from './job-lead-actions.js';
 
 const tmpDir = path.join(os.tmpdir(), `nanoclaw-cp-jla-test-${process.pid}`);
 const inboundPath = path.join(tmpDir, 'inbound.db');
@@ -515,5 +515,93 @@ describe('handleCloseStaleLeads', () => {
     if (!res.frame.ok) throw new Error('unreachable');
     expect(res.frame.data.closed_count).toBe(0);
     expect(res.frame.data.threshold_days).toBe(14);
+  });
+});
+
+// ── handleCheckTriggerEligibility (§24.49c) ────────────────────────────────
+
+async function callEligibility(
+  trigger: unknown,
+): Promise<ResponseFrame<{ trigger: string; eligible: boolean; count: number; reason?: string }>> {
+  const requestId = `req-${Math.random().toString(36).slice(2, 10)}`;
+  await handleCheckTriggerEligibility(
+    { action: 'career_pilot.check_trigger_eligibility', requestId, payload: { trigger } },
+    FAKE_SESSION,
+    inDb,
+  );
+  return readResponse(requestId) as ResponseFrame<{
+    trigger: string;
+    eligible: boolean;
+    count: number;
+    reason?: string;
+  }>;
+}
+
+describe('handleCheckTriggerEligibility', () => {
+  it('killer-match: eligible=true with a count when an eligible lead exists', async () => {
+    seedLead({ id: 'km-eligible', company: 'Anthropic', rules_score: 95, source_posted_at: freshTimestamp(1) });
+    seedLead({ id: 'km-lowscore', company: 'Linear', rules_score: 80, source_posted_at: freshTimestamp(1) });
+    const res = await callEligibility('killer-match');
+    if (!res.frame.ok) throw new Error('unreachable');
+    expect(res.frame.data).toMatchObject({ trigger: 'killer-match', eligible: true });
+    expect(res.frame.data.count).toBe(1);
+  });
+
+  it('killer-match: eligible=false when only ineligible leads exist', async () => {
+    seedLead({ id: 'km-old', company: 'Discord', rules_score: 96, source_posted_at: freshTimestamp(10) });
+    seedLead({ id: 'km-low', company: 'Linear', rules_score: 80, source_posted_at: freshTimestamp(1) });
+    const res = await callEligibility('killer-match');
+    if (!res.frame.ok) throw new Error('unreachable');
+    expect(res.frame.data).toMatchObject({ trigger: 'killer-match', eligible: false, count: 0 });
+  });
+
+  it('killer-match: the gate is READ-ONLY — does not claim (killer_match_pushed_at stays NULL)', async () => {
+    seedLead({ id: 'km-eligible', company: 'Anthropic', rules_score: 95, source_posted_at: freshTimestamp(1) });
+    await callEligibility('killer-match');
+    const row = getDb().prepare('SELECT killer_match_pushed_at FROM job_leads WHERE id = ?').get('km-eligible') as {
+      killer_match_pushed_at: string | null;
+    };
+    expect(row.killer_match_pushed_at).toBeNull();
+  });
+
+  it('killer-match: eligible=false with a reason when source_allow_list is empty', async () => {
+    setPreference('killer_match_source_allow_list', '[]');
+    seedLead({ id: 'km-eligible', company: 'Anthropic', rules_score: 95, source_posted_at: freshTimestamp(1) });
+    const res = await callEligibility('killer-match');
+    if (!res.frame.ok) throw new Error('unreachable');
+    expect(res.frame.data).toMatchObject({ eligible: false, count: 0 });
+    expect(res.frame.data.reason).toMatch(/allow_list/);
+  });
+
+  it('close-detection: eligible=true with a count when stale leads exist', async () => {
+    seedJobLeadForClose({ id: 'stale-1', last_seen_at: daysAgoIso(20) });
+    seedJobLeadForClose({ id: 'fresh-1', last_seen_at: daysAgoIso(5) });
+    const res = await callEligibility('close-detection');
+    if (!res.frame.ok) throw new Error('unreachable');
+    expect(res.frame.data).toMatchObject({ trigger: 'close-detection', eligible: true });
+    expect(res.frame.data.count).toBe(1);
+  });
+
+  it('close-detection: eligible=false when nothing is stale', async () => {
+    seedJobLeadForClose({ id: 'fresh-1', last_seen_at: daysAgoIso(5) });
+    const res = await callEligibility('close-detection');
+    if (!res.frame.ok) throw new Error('unreachable');
+    expect(res.frame.data).toMatchObject({ trigger: 'close-detection', eligible: false, count: 0 });
+  });
+
+  it('close-detection: the gate is READ-ONLY — does not close (closed_at stays NULL)', async () => {
+    seedJobLeadForClose({ id: 'stale-1', last_seen_at: daysAgoIso(20) });
+    await callEligibility('close-detection');
+    const row = getDb().prepare('SELECT closed_at FROM job_leads WHERE id = ?').get('stale-1') as {
+      closed_at: string | null;
+    };
+    expect(row.closed_at).toBeNull();
+  });
+
+  it('rejects an unknown trigger with BAD_ARGS', async () => {
+    const res = await callEligibility('daily-briefing');
+    expect(res.frame.ok).toBe(false);
+    if (res.frame.ok) throw new Error('unreachable');
+    expect(res.frame.error.code).toBe('BAD_ARGS');
   });
 });

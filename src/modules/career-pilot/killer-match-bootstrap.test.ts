@@ -203,7 +203,8 @@ describe('ensureKillerMatchTask', () => {
     expect(row.id).not.toBe('killer-match');
     const content = JSON.parse(row.content) as { prompt: string; script: string | null };
     expect(content.prompt).toBe('[scheduled trigger: killer-match]');
-    expect(content.script).toBeNull();
+    // §24.49c: the task now carries the pre-wake eligibility gate, not null.
+    expect(content.script).toBe('bun /app/src/career-pilot/check-eligibility.ts killer-match');
   });
 
   it('is idempotent — no duplicate insert on second call', () => {
