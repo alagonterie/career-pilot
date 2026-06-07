@@ -844,7 +844,7 @@ Recovery from killswitch is intentionally manual — `/resume` doesn't work. Own
 | Portal Turnstile site key | `.env` (frontend, public) | Frontend `/contact` form | No (env injection) |
 | Portal Turnstile secret | `.env` (host) | `/api/contact` validation | No |
 
-Container env on session start contains only OneCLI connection vars + the Portkey base URL + `ENABLE_PROMPT_CACHING_1H=1`. Everything else is injected at request time by OneCLI.
+Container env on session start contains only OneCLI connection vars + the Portkey base URL + `ENABLE_PROMPT_CACHING_1H=1` (now wired — §24.49b: the host `buildClaudeContainerEnv` forwards the box-`.env` value into the container, and the in-container provider defaults it ON via `buildProviderSubprocessEnv`). Everything else is injected at request time by OneCLI.
 
 **Portkey terminology note:** We use Portkey's **Model Catalog** (Integrations + AI Providers — see [STRATEGY § Setup notes](#)) which replaced the deprecated Virtual Keys concept in early 2026. An "AI Provider" is the workspace-scoped slug (e.g. `@anthropic-prod`) that maps to a vaulted Integration holding the actual Anthropic API key. Reference: [Portkey upgrade guide](https://portkey.ai/docs/support/upgrade-to-model-catalog).
 
@@ -1237,7 +1237,7 @@ The host has a runtime helper `getConfig(key, fallback?)` that reads from the ri
 | Container | CPU limit per session | 1.0 | preferences |
 | Container | Idle timeout | 30 min | preferences |
 | Container | Max concurrent | 4 | preferences |
-| Cache | Prompt cache TTL strategy | 1-hour | `.env` (`ENABLE_PROMPT_CACHING_1H`) |
+| Cache | Prompt cache TTL strategy | 1-hour | `.env` (`ENABLE_PROMPT_CACHING_1H`, wired §24.49b) |
 | Sanitization | LLM review threshold (chars) | 1000 | preferences |
 | Sanitization | LLM review aggressiveness | high | preferences |
 | Telegram | Quiet hours | 22:00-07:00 local | preferences |
@@ -4539,7 +4539,7 @@ Per-field allow-list = `ONBOARDING_FIELD_ORDER`; any other field → 400 (mirror
 
 **Decomposition.**
 - **24.49a** (this drill-in) — spec + measurement baseline.
-- **24.49b** — Lever 1: wire `ENABLE_PROMPT_CACHING_1H=1`; verify on the box via a Portkey `usage` re-check (`ephemeral_1h` populated, repeat cron fires show `cache_read>0`). If the pinned SDK ignores it, escalate as its own finding (don't bump the SDK pin unilaterally — locked).
+- **24.49b** — Lever 1: wire `ENABLE_PROMPT_CACHING_1H=1`. **✅ CODE LANDED** — the in-container provider defaults it ON (`buildProviderSubprocessEnv`, immune to the host-`.env` forwarding gap), the host `buildClaudeContainerEnv` forwards the box-`.env` value as an override hook, and bootstrap-vm.sh writes `=1`. **Box validation PENDING:** a Portkey `usage` re-check (`ephemeral_1h` populated on the cache-creation call, a *subsequent* cron fire showing `cache_read>0` against the 1h pool). If the pinned SDK `^0.2.128` / CC image ignores the flag, escalate as its own finding (don't bump the SDK pin unilaterally — locked).
 - **24.49c** — Lever 2: per-trigger pre-wake scripts (killer-match + close-detection), each tested standalone first (module-scheduling.md rule) then wired into the bootstraps.
 - **24.49d** — Lever 3: the owner-palette `extraDisallowedTools` audit + list (one-line rationale per removed tool).
 - **24.49e** — Levers 4/5: skills/title-gen flag investigation; persona lazy-load decided under [[decision_persona_skill_refactor]] at that point.

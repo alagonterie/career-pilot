@@ -123,6 +123,11 @@ PORTKEY_AI_PROVIDER=${CP_PORTKEY_AI_PROVIDER}
 PORTKEY_CONFIG_ID=${CP_PORTKEY_CONFIG_ID}
 PORTKEY_BYPASS=false
 ANTHROPIC_BASE_URL=https://api.portkey.ai
+# 1-hour prompt-cache TTL (§24.49) — keeps the ~55K static preamble warm across
+# scheduled cron fires >5min apart (the default 5m ephemeral cache expires
+# between them). Forwarded into the container by src/providers/claude.ts; set to
+# 0 to disable without an image rebuild.
+ENABLE_PROMPT_CACHING_1H=1
 ${anthropic_line}
 TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
 EOF

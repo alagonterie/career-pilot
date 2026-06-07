@@ -52,6 +52,14 @@ export function buildClaudeContainerEnv(
   env.ANTHROPIC_BASE_URL = dotenv.ANTHROPIC_BASE_URL;
   env.ANTHROPIC_AUTH_TOKEN = 'placeholder';
 
+  // 1-hour prompt cache (§24.49). The container provider defaults this ON; we
+  // forward the box .env value (bootstrap writes `=1`) only when present so it
+  // stays an override hook — set `=0` to disable the 1h cache without rebuilding
+  // the image. Absent → the container's default `1` applies.
+  if (dotenv.ENABLE_PROMPT_CACHING_1H) {
+    env.ENABLE_PROMPT_CACHING_1H = dotenv.ENABLE_PROMPT_CACHING_1H;
+  }
+
   // Portkey routing headers (§24.44). Newline-separated `Name: value` pairs, per
   // Portkey's Claude Code integration. The slug names the AI Provider (Anthropic
   // key holder) — reuses `PORTKEY_AI_PROVIDER`, the same slug the host-side sim
@@ -84,7 +92,12 @@ export function buildClaudeContainerEnv(
 }
 
 registerProviderContainerConfig('claude', (ctx) => {
-  const dotenv = readEnvFile(['ANTHROPIC_BASE_URL', 'PORTKEY_AI_PROVIDER', 'PORTKEY_CONFIG_ID']);
+  const dotenv = readEnvFile([
+    'ANTHROPIC_BASE_URL',
+    'PORTKEY_AI_PROVIDER',
+    'PORTKEY_CONFIG_ID',
+    'ENABLE_PROMPT_CACHING_1H',
+  ]);
   return {
     env: buildClaudeContainerEnv(dotenv, {
       sessionId: ctx.sessionId,

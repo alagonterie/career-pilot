@@ -488,6 +488,30 @@ function transcriptStartMs(transcriptPath: string): number | null {
 const CLAUDE_CODE_AUTO_COMPACT_WINDOW = process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW || '165000';
 
 /**
+ * Build the env handed to the Claude Code subprocess (`sdkQuery({ options: { env } })`).
+ * Pure (no I/O) so it's unit-testable, mirroring the host-side buildClaudeContainerEnv.
+ *
+ * ENABLE_PROMPT_CACHING_1H (§24.49): the ~55K-token static preamble (persona +
+ * skills + tool schemas) is only worth writing if it CACHES across turns. The
+ * default 5-minute ephemeral cache expires between the scheduled cron fires
+ * (killer-match runs every 30min), so each fire was re-writing the whole preamble
+ * cold. The 1-hour cache keeps it warm across fires <1h apart (and across
+ * sessions — the preamble prefix is byte-identical per group). Default ON;
+ * `optionsEnv` (which is `{ ...process.env }` at the call site, so it carries the
+ * box .env value the host forwards) overrides it via the spread — e.g. set
+ * ENABLE_PROMPT_CACHING_1H=0 in the box .env to disable without an image rebuild.
+ */
+export function buildProviderSubprocessEnv(
+  optionsEnv?: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+  return {
+    ENABLE_PROMPT_CACHING_1H: '1',
+    ...(optionsEnv ?? {}),
+    CLAUDE_CODE_AUTO_COMPACT_WINDOW,
+  };
+}
+
+/**
  * Stale-session detection. Matches Claude Code's error text when a
  * resumed session can't be found — missing transcript .jsonl, unknown
  * session ID, etc.
@@ -514,10 +538,7 @@ export class ClaudeProvider implements AgentProvider {
     this.effort = options.effort;
     this.extraDisallowedTools = options.extraDisallowedTools ?? [];
     this.emitTrace = options.emitTrace ?? false;
-    this.env = {
-      ...(options.env ?? {}),
-      CLAUDE_CODE_AUTO_COMPACT_WINDOW,
-    };
+    this.env = buildProviderSubprocessEnv(options.env);
   }
 
   isSessionInvalid(err: unknown): boolean {

@@ -67,4 +67,22 @@ describe('buildClaudeContainerEnv', () => {
   it('contributes nothing when no base URL is set, even with a context', () => {
     expect(buildClaudeContainerEnv({}, { sessionId: 'sess-abc', environment: 'dev' })).toEqual({});
   });
+
+  it('forwards ENABLE_PROMPT_CACHING_1H from .env so the container default can be overridden (§24.49)', () => {
+    expect(
+      buildClaudeContainerEnv({ ANTHROPIC_BASE_URL: 'https://api.portkey.ai', ENABLE_PROMPT_CACHING_1H: '1' })
+        .ENABLE_PROMPT_CACHING_1H,
+    ).toBe('1');
+    // an explicit off value rides through verbatim (disable without an image rebuild)
+    expect(
+      buildClaudeContainerEnv({ ANTHROPIC_BASE_URL: 'https://api.portkey.ai', ENABLE_PROMPT_CACHING_1H: '0' })
+        .ENABLE_PROMPT_CACHING_1H,
+    ).toBe('0');
+  });
+
+  it('omits ENABLE_PROMPT_CACHING_1H when .env does not set it (container default applies)', () => {
+    expect(buildClaudeContainerEnv({ ANTHROPIC_BASE_URL: 'https://api.portkey.ai' })).not.toHaveProperty(
+      'ENABLE_PROMPT_CACHING_1H',
+    );
+  });
 });
