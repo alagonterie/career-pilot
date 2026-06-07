@@ -40,6 +40,7 @@ import { loadState, simStatePath } from '../career-pilot/recruiter-sim/runner.js
 import { relayContactSubmission, type ContactInput } from './contact-relay.js';
 import {
   applyDevControl,
+  applyDevReset,
   applyDevSweep,
   applyKnobWrite,
   buildDevKnobs,
@@ -548,6 +549,21 @@ async function handleDevSweep(res: http.ServerResponse, cors: Record<string, str
   json(res, out.status, out.body, cors);
 }
 
+async function handleDevReset(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  cors: Record<string, string>,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch {
+    return json(res, 400, { error: 'invalid JSON body' }, cors);
+  }
+  const out = applyDevReset(getDb(), body);
+  json(res, out.status, out.body, cors);
+}
+
 // ── request router ───────────────────────────────────────────────────────
 
 async function requestHandler(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -602,6 +618,7 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
       if (method === 'GET' && path === '/api/dev/persona') return handleDevPersona(res, cors);
       if (method === 'POST' && path === '/api/dev/control') return await handleDevControl(req, res, cors);
       if (method === 'POST' && path === '/api/dev/sweep') return await handleDevSweep(res, cors);
+      if (method === 'POST' && path === '/api/dev/reset') return await handleDevReset(req, res, cors);
     }
 
     json(res, 404, { error: 'not_found', path }, cors);

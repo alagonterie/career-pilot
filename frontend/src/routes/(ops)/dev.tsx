@@ -3,12 +3,14 @@ import { createFileRoute } from '@tanstack/react-router'
 import { KnobControls } from '~/components/dev/KnobControls'
 import { PauseSpendControl } from '~/components/dev/PauseSpendControl'
 import { PersonaPanel } from '~/components/dev/PersonaPanel'
+import { ResetControl } from '~/components/dev/ResetControl'
 import { SimStatePanel } from '~/components/dev/SimStatePanel'
 import { StateNote } from '~/components/states'
 import { Skeleton } from '~/components/ui/skeleton'
 import { seo } from '~/lib/seo'
 import {
   postDevControl,
+  postDevReset,
   postDevSweep,
   postKnob,
   resetAllKnobs,
@@ -16,6 +18,7 @@ import {
   useDevKnobs,
   useDevPersona,
   useDevState,
+  type DevResetBody,
 } from '~/lib/use-dev-inspector'
 
 // The dev-only inspector + sim-control surface (§24.42c). Lives in the `(ops)`
@@ -48,6 +51,7 @@ function DevInspectorPage() {
   const onResetAll = () => resetAllKnobs(API_BASE)
   const onControl = (action: 'pause' | 'resume') => postDevControl(API_BASE, action)
   const onSweep = () => postDevSweep(API_BASE)
+  const onDataReset = (body: DevResetBody) => postDevReset(API_BASE, body)
 
   // Cold 404 on the knobs feed = not the dev stack → the whole surface is
   // unavailable (and no PII is reachable). This is the prod-degradation path.
@@ -63,9 +67,9 @@ function DevInspectorPage() {
           </span>
         </div>
         <p className="text-sm text-muted-foreground">
-          Tune the recruiter sim and the proactive-loop pacing, and inspect the candidate/persona state that drives the
-          agent. Light-control only — destructive ops stay on CI / Telegram. This surface is served only on the dev
-          stack.
+          Tune the recruiter sim and the proactive-loop pacing, inspect the candidate/persona state that drives the
+          agent, and run scoped app-data resets to re-test flows. Credential, pairing, and infra wipes stay on CI. This
+          surface is served only on the dev stack.
         </p>
       </header>
 
@@ -99,6 +103,11 @@ function DevInspectorPage() {
           <section className="flex flex-col gap-3">
             <h2 className="font-mono text-xs uppercase tracking-widest text-foreground">Persona</h2>
             <PersonaPanel persona={persona.data} />
+          </section>
+
+          <section className="flex flex-col gap-3">
+            <h2 className="font-mono text-xs uppercase tracking-widest text-foreground">Reset</h2>
+            <ResetControl persona={persona.data} onReset={onDataReset} />
           </section>
         </>
       )}
