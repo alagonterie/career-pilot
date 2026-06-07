@@ -98,8 +98,8 @@ describe('TelemetryPanel', () => {
   it('renders the local-derived lanes (turns, p50/p95 in seconds, top model) when turns exist (§24.47)', () => {
     const view: TelemetryView = { local: LOCAL, hasTurns: true }
     render(<TelemetryPanel view={view} />)
-    expect(screen.getByText('15.0s')).toBeInTheDocument() // p50, seconds-formatted (fits the cell)
-    expect(screen.getByText('31.0s')).toBeInTheDocument() // p95
+    expect(screen.getByText('15s')).toBeInTheDocument() // p50, whole seconds (fits the cell)
+    expect(screen.getByText('31s')).toBeInTheDocument() // p95
     expect(screen.getByText(/claude-haiku-4-5/)).toBeInTheDocument()
     expect(screen.getByText('3 total')).toBeInTheDocument() // local activity line still renders
     expect(screen.queryByText('66%')).not.toBeInTheDocument() // cache lives in the Cost panel only

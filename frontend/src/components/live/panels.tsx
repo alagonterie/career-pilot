@@ -71,9 +71,9 @@ function Metric({ value, label, testId }: { value: string; label: string; testId
 }
 
 /** Compact latency readout — turn durations are seconds-scale, so render ≥1s as
- * "12.3s" (keeps the value inside its grid cell) and sub-second as "840ms". */
+ * whole seconds ("12s" — decimals aren't worth the width) and sub-second as "840ms". */
 function fmtLatency(ms: number): string {
-  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`
+  return ms >= 1000 ? `${Math.round(ms / 1000)}s` : `${ms}ms`
 }
 
 /** SYSTEM STATUS — reuses the architecture ModeBanner (mode + pause ladder) plus
