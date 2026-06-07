@@ -4540,7 +4540,7 @@ Per-field allow-list = `ONBOARDING_FIELD_ORDER`; any other field → 400 (mirror
 **Decomposition.**
 - **24.49a** (this drill-in) — spec + measurement baseline.
 - **24.49b** — Lever 1: wire `ENABLE_PROMPT_CACHING_1H=1`. **✅ DONE + LIVE-VALIDATED (2026-06-07, `1898bfe`).** Implementation: the in-container provider defaults it ON (`buildProviderSubprocessEnv`, immune to the host-`.env` forwarding gap), the host `buildClaudeContainerEnv` forwards the box-`.env` value as an override hook (`readEnvFile` allow-list extended), and bootstrap-vm.sh writes `=1`. **Box proof:** (a) a fresh container's `docker run` env carries `ENABLE_PROMPT_CACHING_1H=1` (forwarding chain end-to-end, Portkey-independent); (b) two post-deploy turns' Portkey `usage` closed both DoD halves — turn A (cold) wrote the whole preamble to the **1h** pool (`cache_creation.ephemeral_1h_input_tokens=58235`, `ephemeral_5m=0` — previously `ephemeral_1h=0` was the drift), turn B (>5min later) **read it back** (`cache_read_input_tokens=58302`, `cache_creation=151` for just the new delta). CC `2.1.116` honors the flag through the Portkey hop — no SDK-pin escalation needed. Mechanic: the 1h TTL refreshes on each read, and killer-match fires every 30min (`< 1h`), so the prefix is written ~once then read ~30×/day at 0.1× (≈8× cheaper blended; ≈12× on each warm read).
-- **24.49c** — Lever 2: per-trigger pre-wake scripts (killer-match + close-detection), each tested standalone first (module-scheduling.md rule) then wired into the bootstraps.
+- **24.49c** — Lever 2: per-trigger pre-wake scripts (killer-match + close-detection), each tested standalone first (module-scheduling.md rule) then wired into the bootstraps. **✅ DONE + LIVE-VALIDATED** (`1c0cb26`) — see the 24.49c drill-in DoD below for the box proof.
 - **24.49d** — Lever 3: the owner-palette `extraDisallowedTools` audit + list (one-line rationale per removed tool).
 - **24.49e** — Levers 4/5: skills/title-gen flag investigation; persona lazy-load decided under [[decision_persona_skill_refactor]] at that point.
 
@@ -4548,7 +4548,7 @@ Per-field allow-list = `ONBOARDING_FIELD_ORDER`; any other field → 400 (mirror
 
 **Definition of done.**
 1. `ENABLE_PROMPT_CACHING_1H=1` reaches the provider env AND a live Portkey `usage` re-check shows `ephemeral_1h` populated + repeat cron fires reading from cache — closing the §847/§1240 drift.
-2. killer-match (+ close-detection) carry a pre-wake `script`; a no-eligible-work fire makes **zero** model calls (verified: no new Portkey log).
+2. killer-match (+ close-detection) carry a pre-wake `script`; a no-eligible-work fire makes **zero** model calls (verified: no new Portkey log). **✅ DONE — §24.49c, box-validated 2026-06-07.**
 3. The owner `extraDisallowedTools` list lands; the request-body size drops measurably.
 4. A before/after cost note from Portkey `usage` (the local §24.34 capture only records `record_*`-bearing turns — not the cron skips this targets, so it can't measure the win).
 5. Spec deltas: this §24.49; §847 + §1240 reconciled (1h cache wired, not just declared). Memory: [[status_current]], [[portkey_routing]].
@@ -4570,7 +4570,7 @@ Both turns are **no-ops when their count is 0** (persona: killer-match "total===
 
 **Standalone-test-first** (the scheduling-module convention): (1) host count handler — integration test vs a seeded in-memory DB (eligible vs empty per trigger; assert it does NOT mutate `killer_match_pushed_at` / `closed_at`); (2) container CLI — bun test mocking `sendAction` (ok/eligible → `wakeAgent:true`; ok/empty → `false`; error/timeout → fail-open `true`); (3) bootstraps — assert the `script` is now the CLI invocation, not `null`. Then wire into `ensureKillerMatchTask` + `ensureCloseDetectionTask`.
 
-**DoD (24.49c):** on the box, a killer-match fire with no eligible leads produces **no new Portkey log** (zero model call); a fire with an eligible lead still wakes and pushes. Considered-and-rejected alternative: a host-side pre-spawn gate (skips the container spawn too) — rejected because it forks NanoClaw core (`host-sweep`), violating the locked "don't fork upstream" rule; the container `script` is the upstream-sanctioned hook.
+**DoD (24.49c) — ✅ DONE + LIVE-VALIDATED (2026-06-07, `1c0cb26`).** On the box, the 19:00 UTC killer-match fire (empty pool) ran the full chain with ZERO model call, proven from `docker logs` + the session DBs: `[task-script] running script …` → `[career-pilot] sendAction: career_pilot.check_trigger_eligibility (cp-…9znva3)` → host response `frame:{ok:true,data:{trigger:"killer-match",eligible:false,count:0}}` (same requestId) → `task … skipped: wakeAgent=false` → `[poll-loop] Pre-task script skipped 1 follow-up task(s)`. No agent turn, no Portkey log — the novel bash→bun→`sendAction`→host round-trip works in the pre-task window. (Arming gotcha learned: an already-live session keeps its `script:null` task — `hasLiveKillerMatchTask` skips re-bootstrap — so a fresh session is required; the §24.48 `conversation` reset forces it.) Considered-and-rejected alternative: a host-side pre-spawn gate (skips the container spawn too) — rejected because it forks NanoClaw core (`host-sweep`), violating the locked "don't fork upstream" rule; the container `script` is the upstream-sanctioned hook.
 
 ---
 
