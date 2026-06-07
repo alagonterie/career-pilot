@@ -31,7 +31,7 @@ import { log } from '../../log.js';
 import * as payloadCache from '../../scrape-jobs/payload-cache.js';
 import { getAdapter } from '../../scrape-jobs/sources.js';
 import { filterTargets } from '../../scrape-jobs/targets.js';
-import type { JobLeadPayload, PostingSummary, Source, SourcePriority, TargetEntry } from '../../scrape-jobs/types.js';
+import type { JobLeadPayload, PostingSummary, Source, SourcePriority } from '../../scrape-jobs/types.js';
 import type { Session } from '../../types.js';
 
 import { computeFingerprint } from './lead-fingerprint.js';
@@ -617,6 +617,41 @@ function readKillerMatchActionPrefs(db: Database.Database): KillerMatchPreferenc
   };
 }
 
+/**
+ * The killer-match eligibility WHERE clause + its bound params — the single
+ * source of truth shared by `claim_killer_matches` (which adds the projection,
+ * ORDER/LIMIT, and the `killer_match_pushed_at` UPDATE) and the read-only
+ * `check_trigger_eligibility` gate (§24.49c, which only COUNTs). Factoring this
+ * out means the pre-wake gate can never drift from what the woken turn acts on.
+ * `now` is injected so the cutoff and the caller's claim-stamp share one instant.
+ *
+ * §24.9 suppression: skip leads with any inbox activity already linked to them
+ * (the candidate has engaged — re-alerting would be noisy). The funnel-curator
+ * writes those linkages into email_events.
+ */
+export function buildKillerMatchEligibilityClause(
+  prefs: KillerMatchPreferences,
+  now: Date,
+): { whereSql: string; params: Record<string, unknown> } {
+  const cutoff = new Date(now.getTime() - prefs.recencyWindowHours * 60 * 60 * 1000).toISOString();
+  const placeholders = prefs.sourceAllowList.map((_, i) => `@src_${i}`).join(', ');
+  const params: Record<string, unknown> = { min_rules_score: prefs.minRulesScore, cutoff };
+  prefs.sourceAllowList.forEach((src, i) => {
+    params[`src_${i}`] = src;
+  });
+  const whereSql = `killer_match_pushed_at IS NULL
+        AND closed_at IS NULL
+        AND rules_score >= @min_rules_score
+        AND source IN (${placeholders})
+        AND source_posted_at IS NOT NULL
+        AND source_posted_at >= @cutoff
+        AND id NOT IN (
+          SELECT DISTINCT linked_job_lead_id FROM email_events
+          WHERE linked_job_lead_id IS NOT NULL
+        )`;
+  return { whereSql, params };
+}
+
 export async function handleClaimKillerMatches(
   content: Record<string, unknown>,
   _session: Session,
@@ -638,36 +673,15 @@ export async function handleClaimKillerMatches(
     }
 
     const now = new Date();
-    const cutoff = new Date(now.getTime() - prefs.recencyWindowHours * 60 * 60 * 1000).toISOString();
     const nowIso = now.toISOString();
-    const placeholders = prefs.sourceAllowList.map((_, i) => `@src_${i}`).join(', ');
-    const params: Record<string, unknown> = {
-      min_rules_score: prefs.minRulesScore,
-      cutoff,
-      now: nowIso,
-      limit: prefs.maxPerFire,
-    };
-    prefs.sourceAllowList.forEach((src, i) => {
-      params[`src_${i}`] = src;
-    });
+    const { whereSql, params: whereParams } = buildKillerMatchEligibilityClause(prefs, now);
+    const params: Record<string, unknown> = { ...whereParams, now: nowIso, limit: prefs.maxPerFire };
 
-    // §24.9 suppression: skip leads with any inbox activity already linked
-    // to them (the candidate has engaged — re-alerting would be noisy). The
-    // funnel-curator writes these linkages into email_events.
     const selectSql = `
       SELECT id, title, company, source, source_url, apply_url, rules_score,
              source_posted_at, first_seen_at, rules_score_reasons
       FROM job_leads
-      WHERE killer_match_pushed_at IS NULL
-        AND closed_at IS NULL
-        AND rules_score >= @min_rules_score
-        AND source IN (${placeholders})
-        AND source_posted_at IS NOT NULL
-        AND source_posted_at >= @cutoff
-        AND id NOT IN (
-          SELECT DISTINCT linked_job_lead_id FROM email_events
-          WHERE linked_job_lead_id IS NOT NULL
-        )
+      WHERE ${whereSql}
       ORDER BY rules_score DESC, first_seen_at DESC
       LIMIT @limit
     `;
@@ -732,6 +746,26 @@ function readCloseDetectionThresholdDays(db: Database.Database): number {
   return getConfig<number>(db, 'close_detection_threshold_days');
 }
 
+/**
+ * The close-detection eligibility WHERE clause + its bound params — the single
+ * source of truth shared by `close_stale_leads` (the UPDATE) and the read-only
+ * `check_trigger_eligibility` gate (§24.49c, which only COUNTs). `record_job_lead`'s
+ * UPSERT advances `last_seen_at` on re-encounter, so a stale `last_seen_at`
+ * directly implies the posting is no longer being scraped. Promoted leads
+ * (`application_id` set) are excluded — the application history outweighs the
+ * pool-cleanliness signal.
+ */
+export function buildCloseStaleEligibilityClause(
+  thresholdDays: number,
+  now: Date,
+): { whereSql: string; params: Record<string, unknown> } {
+  const cutoff = new Date(now.getTime() - thresholdDays * 86_400_000).toISOString();
+  const whereSql = `closed_at IS NULL
+            AND application_id IS NULL
+            AND last_seen_at < @cutoff`;
+  return { whereSql, params: { cutoff } };
+}
+
 export async function handleCloseStaleLeads(
   content: Record<string, unknown>,
   _session: Session,
@@ -742,19 +776,17 @@ export async function handleCloseStaleLeads(
     const db = getDb();
     const thresholdDays = readCloseDetectionThresholdDays(db);
     const now = new Date();
-    const cutoffMs = now.getTime() - thresholdDays * 86_400_000;
-    const cutoff = new Date(cutoffMs).toISOString();
     const nowIso = now.toISOString();
+    const { whereSql, params } = buildCloseStaleEligibilityClause(thresholdDays, now);
+    const cutoff = params.cutoff as string;
 
     const result = db
       .prepare(
         `UPDATE job_leads
             SET closed_at = @now, closed_reason = 'stale'
-          WHERE closed_at IS NULL
-            AND application_id IS NULL
-            AND last_seen_at < @cutoff`,
+          WHERE ${whereSql}`,
       )
-      .run({ now: nowIso, cutoff });
+      .run({ now: nowIso, ...params });
 
     const closedCount = result.changes;
     if (closedCount > 0) {
@@ -767,6 +799,66 @@ export async function handleCloseStaleLeads(
     });
   } catch (err) {
     log.error('handleCloseStaleLeads failed', { err });
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
+// ── check_trigger_eligibility (§24.49c) ────────────────────────────────────
+//
+// Read-only pre-wake gate for the scheduled triggers. The container's
+// pre-task script round-trips here BEFORE the agent turn; `eligible:false`
+// lets the script return `{wakeAgent:false}` so a no-work fire makes ZERO
+// model calls. Shares the EXACT WHERE clauses the woken turn would act on
+// (buildKillerMatchEligibilityClause / buildCloseStaleEligibilityClause), so
+// the gate can only ever skip a fire the turn would have no-op'd. NEVER
+// mutates — the killer-match claim + the stale-lead close stay the turn's job.
+
+type TriggerKind = 'killer-match' | 'close-detection';
+
+export async function handleCheckTriggerEligibility(
+  content: Record<string, unknown>,
+  _session: Session,
+  inDb: Database.Database,
+): Promise<void> {
+  const requestId = reqId(content);
+  const trigger = payload(content).trigger as TriggerKind | undefined;
+
+  try {
+    const db = getDb();
+
+    if (trigger === 'killer-match') {
+      const prefs = readKillerMatchActionPrefs(db);
+      // Empty allow-list ⇒ claim would fire nothing (mirrors handleClaimKillerMatches).
+      if (prefs.sourceAllowList.length === 0) {
+        writeResponse(inDb, requestId, {
+          ok: true,
+          data: { trigger, eligible: false, count: 0, reason: 'source_allow_list is empty' },
+        });
+        return;
+      }
+      const { whereSql, params } = buildKillerMatchEligibilityClause(prefs, new Date());
+      const row = db.prepare(`SELECT COUNT(*) AS n FROM job_leads WHERE ${whereSql}`).get(params) as { n: number };
+      writeResponse(inDb, requestId, { ok: true, data: { trigger, eligible: row.n > 0, count: row.n } });
+      return;
+    }
+
+    if (trigger === 'close-detection') {
+      const thresholdDays = readCloseDetectionThresholdDays(db);
+      const { whereSql, params } = buildCloseStaleEligibilityClause(thresholdDays, new Date());
+      const row = db.prepare(`SELECT COUNT(*) AS n FROM job_leads WHERE ${whereSql}`).get(params) as { n: number };
+      writeResponse(inDb, requestId, { ok: true, data: { trigger, eligible: row.n > 0, count: row.n } });
+      return;
+    }
+
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'BAD_ARGS', message: 'trigger must be one of: killer-match, close-detection' },
+    });
+  } catch (err) {
+    log.error('handleCheckTriggerEligibility failed', { err });
     writeResponse(inDb, requestId, {
       ok: false,
       error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },
