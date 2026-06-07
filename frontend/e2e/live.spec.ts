@@ -43,9 +43,9 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
     await expect(page.getByText('2 / 4')).toBeVisible()
 
     // Telemetry is local-sourced from the seeded turn row (§24.47): the LLM
-    // telemetry panel shows the cache-hit lane + top model, both real.
-    await expect(page.getByText('cache hit')).toBeVisible()
+    // telemetry panel shows the top model; cache lives in the Cost & cache panel.
     await expect(page.getByText('top model:')).toBeVisible()
+    await expect(page.getByText(/of prompt tokens served from cache/)).toBeVisible()
 
     // The trace stream replays the seeded backlog over SSE.
     const trace = page.getByTestId('trace-stream')

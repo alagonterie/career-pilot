@@ -70,6 +70,12 @@ function Metric({ value, label, testId }: { value: string; label: string; testId
   )
 }
 
+/** Compact latency readout — turn durations are seconds-scale, so render ≥1s as
+ * "12.3s" (keeps the value inside its grid cell) and sub-second as "840ms". */
+function fmtLatency(ms: number): string {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`
+}
+
 /** SYSTEM STATUS — reuses the architecture ModeBanner (mode + pause ladder) plus
  * a backend-health dot. UPTIME / LAST-DEPLOY need a host field no endpoint
  * exposes yet, so they're omitted rather than faked (§24.29). */
@@ -169,10 +175,11 @@ export function ContainerPoolPanel({ arch, status }: { arch: ArchitectureData | 
   )
 }
 
-/** LLM TELEMETRY — derived from the local per-turn capture (§24.34/§24.47): cache
- * hit rate + turn-latency p50 + top model, aggregated over captured turns; the
- * always-real local activity aggregates render unconditionally. Honest labels —
- * "turns" (not raw gateway requests), "turn p50" (whole turn, not per-request). */
+/** LLM TELEMETRY — derived from the local per-turn capture (§24.34/§24.47): turn
+ * count + latency p50/p95 + top model, aggregated over captured turns; the
+ * always-real local activity aggregates render unconditionally. (Cache lives in
+ * the Cost & cache panel — no duplication.) Honest labels — "turns" (not raw
+ * gateway requests), "turn p50/p95" (whole turn, not per-request). */
 export function TelemetryPanel({ view, status }: { view: TelemetryView; status?: PollStatus }) {
   const local = view.local
   if (status === 'loading') {
@@ -194,11 +201,9 @@ export function TelemetryPanel({ view, status }: { view: TelemetryView; status?:
       {view.hasTurns && local ? (
         <>
           <div className="grid grid-cols-3 gap-3">
-            {local.cache_hit_rate != null ? (
-              <Metric value={`${Math.round(local.cache_hit_rate * 100)}%`} label="cache hit" />
-            ) : null}
             <Metric value={local.turns_total.toLocaleString()} label="turns" />
-            {local.turn_p50_ms != null ? <Metric value={`${local.turn_p50_ms}ms`} label="turn p50" /> : null}
+            {local.turn_p50_ms != null ? <Metric value={fmtLatency(local.turn_p50_ms)} label="turn p50" /> : null}
+            {local.turn_p95_ms != null ? <Metric value={fmtLatency(local.turn_p95_ms)} label="turn p95" /> : null}
           </div>
           {local.top_model ? (
             <p className="font-mono text-[11px] text-muted-foreground">
@@ -277,9 +282,6 @@ export function CostCachePanel({ view, status }: { view: TelemetryView; status?:
           className="flex flex-wrap gap-x-4 gap-y-1 border-t border-border pt-2 font-mono text-[11px] text-muted-foreground"
         >
           <span>${(local.turn_cost_cents_24h / 100).toFixed(2)} today</span>
-          <span>
-            {local.turns_total} turn{local.turns_total === 1 ? '' : 's'} total
-          </span>
         </div>
       ) : null}
     </Panel>
