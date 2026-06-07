@@ -4515,6 +4515,46 @@ Per-field allow-list = `ONBOARDING_FIELD_ORDER`; any other field → 400 (mirror
 
 ---
 
+#### 24.49 Agent context-cost reduction — the cron cache-miss problem
+
+**Problem (measured 2026-06-07).** Routing the owner agent on Haiku (§24.44) made the per-turn **static preamble** the dominant cost: persona + the ~18 injected Claude Code skills + the *eager* MCP tool schemas (`tools[]` ≈ half) + the CC base system prompt ≈ **~55K input tokens every turn** (an onboarding "Hey" turn's request body was 209KB). That's fine *if it caches* — but it doesn't, for the case that fires most.
+
+**Evidence — Portkey response `usage` from a 10am killer-match cron fire:**
+- Turn's **1st model call = full cache MISS**: `cache_read_input_tokens=0`, `cache_creation_input_tokens=55168` (only `ephemeral_5m`; `ephemeral_1h=0`). Re-wrote the whole 55K preamble fresh (~$0.069) + 1411 output, just to find an empty pool and silently skip ≈ **$0.076/fire**.
+- Turn's **2nd call = cache HIT**: `cache_read_input_tokens=55168`. So caching works *within* a turn; the waste is only ever the turn's **first** call.
+
+**Root cause:** only the **5-minute** ephemeral cache is active, and killer-match fires every 30min (`*/30 7-22`). 30min ≫ 5min ⇒ the cache is always expired by the next fire ⇒ each fire re-writes 55K that nothing reads. ≈ 32 fires/day × $0.076 ≈ **~$2.40/day re-writing a cold cache** (~$70/mo), almost entirely no-op skips.
+
+**The load-bearing miss — a spec-vs-code drift.** `ENABLE_PROMPT_CACHING_1H=1` (1-hour cache TTL) is specified in **three** places — §847, §1240, AGENT_SDK_PATTERNS §2 — but a repo-wide grep finds it **only in `.specs/`, never in code**: the container provider (`container/agent-runner/src/providers/claude.ts`) builds `this.env` from `options.env` + `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and nothing sets the flag; `scripts/bootstrap-vm.sh` (which regenerates the box `.env`) doesn't write it. The live `ephemeral_1h=0` confirms it: **the 1-hour cache we designed for was never wired.** With it on, the cache refreshes on use and the fires are <1h apart, so the preamble stays warm across fires — and across sessions, since the preamble prefix is byte-identical per agent group — ⇒ misses become reads (~12× cheaper preamble).
+
+**Ranked levers** (all config/host-side; none fork the upstream Claude provider — the §6 / locked anti-pattern):
+
+| # | Lever | Mechanism (grounded) | Effort | Win |
+|---|---|---|---|---|
+| 1 | **Wire the 1h cache** | set `ENABLE_PROMPT_CACHING_1H=1` in the env that reaches the provider (`options.env` → `this.env`, provider:517) + bootstrap-vm.sh; verify the pinned SDK `^0.2.128` honors it (populates `ephemeral_1h`, fires read from cache) | tiny | ~12× cheaper preamble on every warm cron fire + reactive turn |
+| 2 | **Pre-wake `script` gate** | the task-row `script` field exists + is `null` (bootstraps insert it); a cheap DB check returns `{wakeAgent:false}` ⇒ **zero model call**. killer-match: "any eligible killer-match leads?"; close-detection: "any stale leads?" | small/trigger | eliminates the *majority* of fires outright (most return nothing) |
+| 3 | **Trim the owner tool palette** | `extraDisallowedTools` (bare names) — already the load-bearing sandbox mechanism (provider:581); audit built-ins/MCP tools the owner never calls (Team*, NotebookEdit, RemoteTrigger, PushNotification, install_packages, add_mcp_server, …) and disallow | small + audit | shrinks the ~55K (tools ≈ half) ⇒ every write *and* read cheaper |
+| 4 | **Restrict skills + kill the title-gen** | ~18 CC skills injected each turn (mostly irrelevant); the SDK also fires a separate tiny Haiku **session-title** call per spawn (`tools:[]`, json_schema title) — 100% waste for a non-interactive agent. Find the flags (provider sets `settingSources:['project','user','local']` — `user`/`local` may pull skills) | investigation | trims the skills block + one Haiku call/session |
+| 5 | **Lazy-load the persona's worked-examples** | move the four scheduled-trigger handlers' worked examples + the subagent-chaining examples out of the always-loaded persona into on-demand fragments/skills | large | biggest single text cut, but reopens [[decision_persona_skill_refactor]] + edits a *runtime* artifact |
+
+**Decomposition.**
+- **24.49a** (this drill-in) — spec + measurement baseline.
+- **24.49b** — Lever 1: wire `ENABLE_PROMPT_CACHING_1H=1`; verify on the box via a Portkey `usage` re-check (`ephemeral_1h` populated, repeat cron fires show `cache_read>0`). If the pinned SDK ignores it, escalate as its own finding (don't bump the SDK pin unilaterally — locked).
+- **24.49c** — Lever 2: per-trigger pre-wake scripts (killer-match + close-detection), each tested standalone first (module-scheduling.md rule) then wired into the bootstraps.
+- **24.49d** — Lever 3: the owner-palette `extraDisallowedTools` audit + list (one-line rationale per removed tool).
+- **24.49e** — Levers 4/5: skills/title-gen flag investigation; persona lazy-load decided under [[decision_persona_skill_refactor]] at that point.
+
+**Risks / interactions.** None of 1–4 forks the provider. Lever 5 reopens the deferred persona-vs-skill refactor and edits a *runtime* spec artifact — handle under that decision's gate. The SDK pin (`^0.2.128`, locked) bounds Lever 1.
+
+**Definition of done.**
+1. `ENABLE_PROMPT_CACHING_1H=1` reaches the provider env AND a live Portkey `usage` re-check shows `ephemeral_1h` populated + repeat cron fires reading from cache — closing the §847/§1240 drift.
+2. killer-match (+ close-detection) carry a pre-wake `script`; a no-eligible-work fire makes **zero** model calls (verified: no new Portkey log).
+3. The owner `extraDisallowedTools` list lands; the request-body size drops measurably.
+4. A before/after cost note from Portkey `usage` (the local §24.34 capture only records `record_*`-bearing turns — not the cron skips this targets, so it can't measure the win).
+5. Spec deltas: this §24.49; §847 + §1240 reconciled (1h cache wired, not just declared). Memory: [[status_current]], [[portkey_routing]].
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
