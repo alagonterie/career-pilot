@@ -296,6 +296,25 @@ describe('buildDevState', () => {
     expect(out.apps).toEqual([]);
     expect(out.applications).toEqual([]);
   });
+
+  it('drops a sidecar app whose applications row is gone (post-reset display reconcile, §24.48)', () => {
+    // One sim app has a live DB row; the other is an orphan (its row was cleared by
+    // a reset) — the panel must show only the live one, matching runOneTick's reconcile.
+    getDb()
+      .prepare(
+        `INSERT INTO applications (id, company_name, obfuscated_label, role_title, status, applied_at, created_at)
+         VALUES ('sim-app-1', 'Meridian Labs', 'ai-a', 'Senior Software Engineer', 'screening', '2026-05-09T00:00:00Z', '2026-05-09T00:00:00Z')`,
+      )
+      .run();
+    const state: SimState = {
+      apps: [makeSimApp({ appId: 'sim-app-1' }), makeSimApp({ appId: 'orphan-app' })],
+      lastSeedAtMs: 5,
+    };
+
+    const out = buildDevState(getDb(), state);
+    expect(out.apps.map((a) => a.appId)).toEqual(['sim-app-1']); // orphan dropped
+    expect(out.applications).toHaveLength(1);
+  });
 });
 
 // ── simUpcoming ───────────────────────────────────────────────────────────────
