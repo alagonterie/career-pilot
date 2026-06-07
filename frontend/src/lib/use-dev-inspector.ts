@@ -197,6 +197,81 @@ export function postDevSweep(baseUrl: string): Promise<KnobWriteResult> {
   return postDev(baseUrl, {}, '/api/dev/sweep')
 }
 
+// ── reset controls (§24.48) ────────────────────────────────────────────────
+
+/** The four grouped reset scopes (one of these OR a single profile field). */
+export type DevResetScope = 'funnel-data' | 'conversation' | 'profile' | 'everything'
+
+/** Reset request: exactly one of a grouped `scope` or a single onboarding `field`. */
+export type DevResetBody = { scope: DevResetScope } | { field: string }
+
+/** UI metadata for each scope button — label, what it clears, and whether it halts the agent. */
+export interface ResetScopeMeta {
+  scope: DevResetScope
+  label: string
+  clears: string
+  halts: boolean
+}
+
+export const RESET_SCOPES: ResetScopeMeta[] = [
+  {
+    scope: 'funnel-data',
+    label: 'Funnel data',
+    clears: 'Applications, funnel, leads, email events. Keeps your profile + chat.',
+    halts: false,
+  },
+  {
+    scope: 'conversation',
+    label: 'Conversation',
+    clears: 'Chat session + transcripts, so the agent forgets and re-onboards. Halts the agent.',
+    halts: true,
+  },
+  {
+    scope: 'profile',
+    label: 'Profile',
+    clears: 'Wipes the candidate profile → onboarding restarts. Keeps funnel + chat.',
+    halts: false,
+  },
+  {
+    scope: 'everything',
+    label: 'Everything',
+    clears: 'Funnel + profile + conversation — a true pre-bootstrap clean slate. Halts the agent.',
+    halts: true,
+  },
+]
+
+/** The reset response, parsed: `cleared` row counts + whether the agent was halted. */
+export interface DevResetResult extends KnobWriteResult {
+  cleared?: Record<string, number>
+  halted?: boolean
+}
+
+/**
+ * Run a scoped or per-field reset (§24.48). Parses the success body so the
+ * control can show what was cleared + whether the agent halted (session-clearing
+ * scopes halt first). Server re-validates the scope/field allow-list — a bad
+ * input returns `{ ok: false }` with the reason.
+ */
+export async function postDevReset(baseUrl: string, body: DevResetBody): Promise<DevResetResult> {
+  try {
+    const res = await fetch(`${baseUrl}/api/dev/reset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    let parsed: { error?: string; cleared?: Record<string, number>; halted?: boolean } = {}
+    try {
+      parsed = (await res.json()) as typeof parsed
+    } catch {
+      // non-JSON body
+    }
+    if (!res.ok) return { ok: false, status: res.status, error: parsed.error }
+    return { ok: true, status: res.status, cleared: parsed.cleared, halted: parsed.halted }
+  } catch (err) {
+    return { ok: false, status: 0, error: err instanceof Error ? err.message : 'network error' }
+  }
+}
+
 // ── pure view helpers ─────────────────────────────────────────────────────────
 
 /** A friendlier title for an onboarding field key (e.g. `full_name` → "Full name"). */

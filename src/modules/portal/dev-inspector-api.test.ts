@@ -40,6 +40,14 @@ async function postKnob(body: unknown): Promise<Response> {
   });
 }
 
+async function postReset(body: unknown): Promise<Response> {
+  return fetch(`${base}/api/dev/reset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
 describe('/api/dev/* — hard gate (ENVIRONMENT !== "dev")', () => {
   beforeEach(() => {
     delete process.env.ENVIRONMENT;
@@ -52,6 +60,8 @@ describe('/api/dev/* — hard gate (ENVIRONMENT !== "dev")', () => {
     }
     const post = await postKnob({ key: 'recruiter_sim_enabled', value: true });
     expect(post.status).toBe(404);
+    const reset = await postReset({ scope: 'everything' });
+    expect(reset.status).toBe(404); // reset is invisible off the dev stack too
   });
 
   it('also 404s when ENVIRONMENT is production', async () => {
@@ -118,5 +128,20 @@ describe('/api/dev/* — on the dev stack', () => {
   it('POST /api/dev/knobs rejects an out-of-range value (400)', async () => {
     const res = await postKnob({ key: 'recruiter_sim_max_concurrent', value: 999 });
     expect(res.status).toBe(400);
+  });
+
+  it('POST /api/dev/reset { scope: "funnel-data" } returns 200 with the cleared shape', async () => {
+    const res = await postReset({ scope: 'funnel-data' });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { scope: string; cleared: Record<string, number>; halted: boolean };
+    expect(body.scope).toBe('funnel-data');
+    expect(body.halted).toBe(false);
+    expect(typeof body.cleared).toBe('object');
+  });
+
+  it('POST /api/dev/reset rejects an unknown scope + an ambiguous body (400)', async () => {
+    expect((await postReset({ scope: 'nuke-everything' })).status).toBe(400);
+    expect((await postReset({ scope: 'profile', field: 'bio' })).status).toBe(400);
+    expect((await postReset({})).status).toBe(400);
   });
 });

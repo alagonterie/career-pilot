@@ -23,6 +23,7 @@
  */
 import type Database from 'better-sqlite3';
 
+import { DATA_DIR } from '../../config.js';
 import { getAgentGroupByFolder } from '../../db/agent-groups.js';
 import { getDb } from '../../db/connection.js';
 import { nextEvenSeq } from '../../db/session-db.js';
@@ -36,6 +37,7 @@ import { type CandidateProfile, readCandidateProfile, renderPersona } from '../c
 import { SIM_KNOB_KEYS } from '../career-pilot/recruiter-sim/knobs.js';
 import { STAGE_CLASSIFICATIONS } from '../career-pilot/recruiter-sim/templates.js';
 import type { SimApp, SimState } from '../career-pilot/recruiter-sim/types.js';
+import { FUNNEL_DATA_TABLES, SESSION_TABLES, clearSessionTranscripts, wipeTables } from './dev/app-data-reset.js';
 import { executeControlCommand } from './kill-switch.js';
 import { getPauseState, type PauseState } from './system-modes.js';
 
@@ -436,6 +438,105 @@ export function applyDevControl(db: Database.Database, raw: unknown): DevControl
   }
 
   return { status: 400, body: { error: `unknown action: ${String(action)} (expected "pause" | "resume")` } };
+}
+
+// ── dev reset controls (§24.48) ──────────────────────────────────────────────
+
+export type DevResetScope = 'funnel-data' | 'conversation' | 'profile' | 'everything';
+
+const RESET_SCOPES: DevResetScope[] = ['funnel-data', 'conversation', 'profile', 'everything'];
+
+export interface DevResetOutcome {
+  status: number;
+  body: unknown;
+}
+
+/**
+ * DELETE the single candidate_profile row. Safe: `update_profile_field` re-creates
+ * id=1 on the next onboarding write (`INSERT … VALUES (1, …) ON CONFLICT DO NOTHING`
+ * then UPDATE — see career-pilot/actions.ts), so the agent re-onboards cleanly.
+ */
+function deleteCandidateProfile(db: Database.Database): number {
+  try {
+    return db.prepare('DELETE FROM candidate_profile').run().changes;
+  } catch {
+    return 0; // table only exists after migration 105
+  }
+}
+
+/** NULL one onboarding field on the single-row candidate_profile (per-field re-test). */
+function nullProfileField(db: Database.Database, field: string): number {
+  try {
+    return db
+      .prepare(`UPDATE candidate_profile SET ${field} = NULL, updated_at = ? WHERE id = 1`)
+      .run(new Date().toISOString()).changes;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * The dev "Reset" control (§24.48). Takes EXACTLY ONE of `{ scope }` / `{ field }`:
+ *
+ *   scope: 'funnel-data'  → clear the funnel/app tables (keeps profile + chat). No halt.
+ *   scope: 'conversation' → halt + kill container, clear `sessions` + transcripts,
+ *                           sim off. Leaves halted (the crons re-bootstrap next session).
+ *   scope: 'profile'      → DELETE candidate_profile → onboarding restarts. No halt.
+ *   scope: 'everything'   → funnel-data + profile + conversation (true pre-bootstrap). Halts.
+ *   field: <onboarding>   → NULL that one profile field (re-test one onboarding step). No halt.
+ *
+ * Session-clearing scopes HALT FIRST so no container is mid-write when its session
+ * + inbound DB vanish (§24.48). 400 on any invalid/ambiguous input — nothing is
+ * written in that case. Dev-gated upstream by `isDevEnv()` in api.ts.
+ */
+export function applyDevReset(db: Database.Database, raw: unknown): DevResetOutcome {
+  if (typeof raw !== 'object' || raw === null) {
+    return { status: 400, body: { error: 'expected a JSON object { scope } or { field }' } };
+  }
+  const body = raw as { scope?: unknown; field?: unknown };
+  const hasScope = typeof body.scope === 'string';
+  const hasField = typeof body.field === 'string';
+  if (hasScope === hasField) {
+    return { status: 400, body: { error: 'provide exactly one of "scope" or "field"' } };
+  }
+
+  // Per-field profile reset (no halt — must not freeze the agent to re-test one step).
+  if (hasField) {
+    const field = body.field as string;
+    if (!(ONBOARDING_FIELD_ORDER as readonly string[]).includes(field)) {
+      return { status: 400, body: { error: `field not resettable: ${field}` } };
+    }
+    return { status: 200, body: { field, cleared: { [field]: nullProfileField(db, field) }, halted: false } };
+  }
+
+  // Scoped reset.
+  const scope = body.scope as string;
+  if (!RESET_SCOPES.includes(scope as DevResetScope)) {
+    return { status: 400, body: { error: `unknown scope: ${scope}` } };
+  }
+  const s = scope as DevResetScope;
+  const clearsSessions = s === 'conversation' || s === 'everything';
+
+  // Halt BEFORE any wipe for session-clearing scopes — kills any running container
+  // so nothing is mid-write when its session + inbound DB vanish — and turn the sim
+  // off (it's host-side, ignores pause_state, and would keep re-seeding the board we
+  // just cleared). Mirrors applyDevControl's pause.
+  let halted = false;
+  if (clearsSessions) {
+    executeControlCommand('/halt', `dev: reset (${s})`, 'dev-inspector');
+    writePreference(db, 'recruiter_sim_enabled', 'false');
+    halted = true;
+  }
+
+  const tables: string[] = [];
+  if (s === 'funnel-data' || s === 'everything') tables.push(...FUNNEL_DATA_TABLES);
+  if (clearsSessions) tables.push(...SESSION_TABLES);
+
+  const cleared: Record<string, number> = tables.length > 0 ? wipeTables(db, tables) : {};
+  if (clearsSessions) cleared.transcripts = clearSessionTranscripts(DATA_DIR);
+  if (s === 'profile' || s === 'everything') cleared.candidate_profile = deleteCandidateProfile(db);
+
+  return { status: 200, body: { scope: s, cleared, halted } };
 }
 
 // ── on-demand funnel-curator sweep (§24.43c) ─────────────────────────────────

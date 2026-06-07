@@ -6,6 +6,7 @@ import type { DevKnob, DevPersonaResponse, DevStateResponse } from '~/lib/use-de
 import { KnobControls } from './KnobControls'
 import { PauseSpendControl } from './PauseSpendControl'
 import { PersonaPanel } from './PersonaPanel'
+import { ResetControl } from './ResetControl'
 import { SimStatePanel } from './SimStatePanel'
 
 const ok = async () => ({ ok: true as const, status: 200 })
@@ -350,5 +351,86 @@ describe('PauseSpendControl', () => {
     expect(screen.getByText(/recover via SSH/i)).toBeInTheDocument()
     expect(screen.queryByTestId('pause-spend-resume')).not.toBeInTheDocument()
     expect(screen.queryByTestId('pause-spend-pause')).not.toBeInTheDocument()
+  })
+})
+
+describe('ResetControl (§24.48)', () => {
+  const okReset = async () => ({ ok: true as const, status: 200, cleared: {}, halted: false })
+
+  function personaWith(filled: Record<string, boolean>): DevPersonaResponse {
+    const order = [
+      'full_name',
+      'target_roles',
+      'comp_floor',
+      'location_pref',
+      'master_resume',
+      'bio',
+      'why_this_exists',
+    ]
+    return {
+      profile: null,
+      candidateMd: '# Jane Doe',
+      onboarding: {
+        fields: order.map((field) => ({ field, filled: filled[field] ?? false })),
+        filledCount: Object.values(filled).filter(Boolean).length,
+        totalCount: order.length,
+        complete: false,
+        nextField: null,
+      },
+    }
+  }
+
+  it('renders the four scope buttons + per-field buttons; empty fields are disabled', () => {
+    render(<ResetControl persona={personaWith({ full_name: true, master_resume: true })} onReset={vi.fn(okReset)} />)
+    for (const scope of ['funnel-data', 'conversation', 'profile', 'everything']) {
+      expect(screen.getByTestId(`reset-scope-${scope}`)).toBeInTheDocument()
+    }
+    expect(screen.getByTestId('reset-field-master_resume')).toBeEnabled()
+    expect(screen.getByTestId('reset-field-bio')).toBeDisabled() // not filled → nothing to clear
+  })
+
+  it('gates a scope reset behind a typed confirm, then calls onReset with the scope', async () => {
+    const onReset = vi.fn(okReset)
+    render(<ResetControl persona={personaWith({})} onReset={onReset} />)
+
+    fireEvent.click(screen.getByTestId('reset-scope-funnel-data'))
+    const go = screen.getByTestId('reset-confirm-go')
+    expect(go).toBeDisabled() // no confirm typed yet
+
+    fireEvent.change(screen.getByTestId('reset-confirm-input'), { target: { value: 'funnel-data' } })
+    expect(go).toBeEnabled()
+    fireEvent.click(go)
+    await waitFor(() => expect(onReset).toHaveBeenCalledWith({ scope: 'funnel-data' }))
+  })
+
+  it('per-field reset calls onReset with { field } and shows the result', async () => {
+    const onReset = vi.fn(okReset)
+    render(<ResetControl persona={personaWith({ master_resume: true })} onReset={onReset} />)
+
+    fireEvent.click(screen.getByTestId('reset-field-master_resume'))
+    fireEvent.change(screen.getByTestId('reset-confirm-input'), { target: { value: 'master_resume' } })
+    fireEvent.click(screen.getByTestId('reset-confirm-go'))
+    await waitFor(() => expect(onReset).toHaveBeenCalledWith({ field: 'master_resume' }))
+    await waitFor(() => expect(screen.getByTestId('reset-status')).toHaveTextContent(/reset master resume/i))
+  })
+
+  it('surfaces the halted note when a session-clearing scope returns halted', async () => {
+    const onReset = vi.fn(async () => ({ ok: true as const, status: 200, halted: true }))
+    render(<ResetControl persona={personaWith({})} onReset={onReset} />)
+
+    fireEvent.click(screen.getByTestId('reset-scope-everything'))
+    fireEvent.change(screen.getByTestId('reset-confirm-input'), { target: { value: 'everything' } })
+    fireEvent.click(screen.getByTestId('reset-confirm-go'))
+    await waitFor(() => expect(screen.getByTestId('reset-status')).toHaveTextContent(/halted/i))
+  })
+
+  it('cancel dismisses the confirm without calling onReset', () => {
+    const onReset = vi.fn(okReset)
+    render(<ResetControl persona={personaWith({})} onReset={onReset} />)
+    fireEvent.click(screen.getByTestId('reset-scope-profile'))
+    expect(screen.getByTestId('reset-confirm')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('reset-confirm-cancel'))
+    expect(screen.queryByTestId('reset-confirm')).not.toBeInTheDocument()
+    expect(onReset).not.toHaveBeenCalled()
   })
 })

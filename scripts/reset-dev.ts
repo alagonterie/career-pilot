@@ -36,28 +36,14 @@ import path from 'path';
 
 import { DATA_DIR } from '../src/config.js';
 import { closeDb, initDb } from '../src/db/connection.js';
-
-// The career-pilot DOMAIN tables — the application/funnel/learning state a reset
-// clears so a flow can re-run from scratch. This is an explicit ALLOW-LIST: a
-// reset only ever DELETEs from these, never drops or touches the NanoClaw core
+// The career-pilot DOMAIN tables this reset clears — the SINGLE source of truth,
+// shared with the dev inspector's scoped `/api/dev/reset` (§24.48) so the two
+// never drift. It's an explicit ALLOW-LIST: never the NanoClaw core
 // (permissions/messaging = pairing), config (preferences/system_modes), the
-// persona (candidate_profile), or schema_version. When a new career-pilot domain
-// table lands, ADD IT HERE.
-const APP_DATA_TABLES = [
-  'applications',
-  'funnel_events',
-  'funnel_curator_output',
-  'public_funnel_view',
-  'public_audit_trail',
-  'learnings',
-  'job_leads',
-  'simulator_runs',
-  'email_events',
-  'gmail_sync_state',
-  'calendar_sync_state',
-  // Conversation sessions (the DB rows; the JSONL transcripts are cleared below).
-  'sessions',
-];
+// persona (candidate_profile), or schema_version. New domain table → add it in
+// src/modules/portal/dev/app-data-reset.ts. (`sessions` is last; the JSONL
+// transcripts are cleared below.)
+import { APP_DATA_TABLES } from '../src/modules/portal/dev/app-data-reset.js';
 
 function main(): void {
   const allowProduction = process.argv.includes('--allow-production');
@@ -112,9 +98,7 @@ function main(): void {
       if (!dryRun) fs.rmSync(path.join(sessionsDir, entry), { recursive: true, force: true });
     }
   }
-  console.log(
-    `  ${dryRun ? 'would clear' : 'cleared'} ${sessionEntries} session transcript(s) under ${sessionsDir}`,
-  );
+  console.log(`  ${dryRun ? 'would clear' : 'cleared'} ${sessionEntries} session transcript(s) under ${sessionsDir}`);
 
   console.log('');
   console.log(

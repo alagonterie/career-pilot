@@ -23,6 +23,7 @@ import type { SimApp, SimState } from '../career-pilot/recruiter-sim/types.js';
 
 import {
   applyDevControl,
+  applyDevReset,
   applyDevSweep,
   applyKnobWrite,
   buildDevKnobs,
@@ -440,5 +441,148 @@ describe('on-demand sweep (§24.43c)', () => {
       created_at: '2026-06-06T00:00:00Z',
     });
     expect(((await applyDevSweep()).body as { sweepEnqueued: boolean }).sweepEnqueued).toBe(false);
+  });
+});
+
+// ── applyDevReset (§24.48) ────────────────────────────────────────────────────
+
+describe('applyDevReset (§24.48 dev reset controls)', () => {
+  function seedProfile(): void {
+    getDb()
+      .prepare(
+        `INSERT INTO candidate_profile (id, full_name, master_resume, updated_at)
+         VALUES (1, 'Jane Doe', 'master resume text', '2026-06-06T00:00:00Z')`,
+      )
+      .run();
+  }
+
+  function seedApplication(): void {
+    getDb()
+      .prepare(
+        `INSERT INTO applications (id, company_name, obfuscated_label, role_title, status, applied_at, created_at)
+         VALUES ('app-1', 'Meridian Labs', 'ai-a', 'Senior Software Engineer', 'screening', '2026-05-09T00:00:00Z', '2026-05-09T00:00:00Z')`,
+      )
+      .run();
+  }
+
+  function seedSession(): void {
+    createAgentGroup({
+      id: 'ag-owner',
+      name: 'Career Pilot',
+      folder: 'career-pilot',
+      agent_provider: null,
+      created_at: '2026-06-06T00:00:00Z',
+    });
+    getDb()
+      .prepare(
+        `INSERT INTO sessions (id, agent_group_id, messaging_group_id, thread_id, agent_provider, status, container_status, last_active, created_at)
+         VALUES ('sess-1', 'ag-owner', NULL, NULL, NULL, 'active', 'stopped', '2026-06-06T00:00:00Z', '2026-06-06T00:00:00Z')`,
+      )
+      .run();
+  }
+
+  const profileExists = (): boolean =>
+    getDb().prepare('SELECT 1 FROM candidate_profile WHERE id = 1').get() !== undefined;
+  const appCount = (): number => (getDb().prepare('SELECT count(*) AS n FROM applications').get() as { n: number }).n;
+  const sessionCount = (): number => (getDb().prepare('SELECT count(*) AS n FROM sessions').get() as { n: number }).n;
+
+  it("'funnel-data' clears the board but keeps profile + sessions, no halt", () => {
+    seedProfile();
+    seedApplication();
+    seedSession();
+
+    const out = applyDevReset(getDb(), { scope: 'funnel-data' });
+    expect(out.status).toBe(200);
+    expect(out.body).toMatchObject({ scope: 'funnel-data', halted: false });
+    expect((out.body as { cleared: Record<string, number> }).cleared.applications).toBe(1);
+    expect(appCount()).toBe(0);
+    expect(profileExists()).toBe(true); // persona preserved
+    expect(sessionCount()).toBe(1); // conversation preserved
+    expect(getPauseState()).toBe('active'); // no halt
+  });
+
+  it("'profile' deletes the candidate_profile row (onboarding restarts), no halt, funnel intact", () => {
+    seedProfile();
+    seedApplication();
+
+    const out = applyDevReset(getDb(), { scope: 'profile' });
+    expect(out.status).toBe(200);
+    expect(out.body).toMatchObject({ scope: 'profile', halted: false });
+    expect((out.body as { cleared: Record<string, number> }).cleared.candidate_profile).toBe(1);
+    expect(profileExists()).toBe(false);
+    expect(appCount()).toBe(1); // funnel untouched
+    expect(getPauseState()).toBe('active');
+  });
+
+  it("'conversation' halts + turns the sim off + clears sessions, keeps profile", () => {
+    applyKnobWrite(getDb(), { key: 'recruiter_sim_enabled', value: true });
+    seedProfile();
+    seedSession();
+
+    const out = applyDevReset(getDb(), { scope: 'conversation' });
+    expect(out.status).toBe(200);
+    expect(out.body).toMatchObject({ scope: 'conversation', halted: true });
+    const cleared = (out.body as { cleared: Record<string, number> }).cleared;
+    expect(cleared.sessions).toBe(1);
+    expect(cleared).toHaveProperty('transcripts'); // dir absent in tests → 0, but present
+    expect(sessionCount()).toBe(0);
+    expect(profileExists()).toBe(true); // profile preserved by this scope
+    expect(getPauseState()).toBe('halted');
+    expect(getConfig<boolean>(getDb(), 'recruiter_sim_enabled')).toBe(false); // sim off
+  });
+
+  it("'everything' is true pre-bootstrap — clears funnel + profile + sessions, halts", () => {
+    seedProfile();
+    seedApplication();
+    seedSession();
+
+    const out = applyDevReset(getDb(), { scope: 'everything' });
+    expect(out.status).toBe(200);
+    expect(out.body).toMatchObject({ scope: 'everything', halted: true });
+    expect(appCount()).toBe(0);
+    expect(profileExists()).toBe(false);
+    expect(sessionCount()).toBe(0);
+    expect(getPauseState()).toBe('halted');
+  });
+
+  it('per-field reset NULLs one onboarding field, keeps the rest, no halt', () => {
+    seedProfile();
+
+    const out = applyDevReset(getDb(), { field: 'master_resume' });
+    expect(out.status).toBe(200);
+    expect(out.body).toMatchObject({ field: 'master_resume', halted: false });
+    expect((out.body as { cleared: Record<string, number> }).cleared.master_resume).toBe(1);
+    const row = getDb().prepare('SELECT full_name, master_resume FROM candidate_profile WHERE id = 1').get() as {
+      full_name: string | null;
+      master_resume: string | null;
+    };
+    expect(row.master_resume).toBeNull();
+    expect(row.full_name).toBe('Jane Doe'); // other fields untouched
+    expect(getPauseState()).toBe('active');
+  });
+
+  it('accepts every onboarding field for per-field reset', () => {
+    seedProfile();
+    for (const field of ONBOARDING_FIELD_ORDER) {
+      expect(applyDevReset(getDb(), { field }).status).toBe(200);
+    }
+  });
+
+  it('rejects a non-onboarding field (400) without touching the row', () => {
+    seedProfile();
+    // github_url is a real column but NOT an onboarding field → not resettable here.
+    expect(applyDevReset(getDb(), { field: 'github_url' }).status).toBe(400);
+    expect(applyDevReset(getDb(), { field: 'nonsense' }).status).toBe(400);
+    expect(profileExists()).toBe(true);
+  });
+
+  it('rejects ambiguous / empty / unknown input (400, no state change)', () => {
+    seedApplication();
+    expect(applyDevReset(getDb(), null).status).toBe(400);
+    expect(applyDevReset(getDb(), {}).status).toBe(400); // neither scope nor field
+    expect(applyDevReset(getDb(), { scope: 'profile', field: 'bio' }).status).toBe(400); // both
+    expect(applyDevReset(getDb(), { scope: 'nuke-everything' }).status).toBe(400); // unknown scope
+    expect(appCount()).toBe(1); // nothing wiped
+    expect(getPauseState()).toBe('active');
   });
 });
