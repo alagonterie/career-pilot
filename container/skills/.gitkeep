@@ -1,0 +1,9 @@
+# Reserved for career-pilot custom skills.
+#
+# NanoClaw's 8 bundled skills (frontend-engineer, agent-browser, slack-formatting,
+# vercel-cli, whatsapp-formatting, self-customize, welcome, onecli-gateway) were
+# removed here (§24.49e) — none are used by a job-search agent, and onecli-gateway
+# actively conflicted with our MCP-tool-mediated external access. This is a
+# DELIBERATE upstream divergence: a future /update-nanoclaw sync will try to
+# re-add them; re-delete. CC discovers skills from this dir via the /app/skills
+# bind-mount, so anything dropped here (with a SKILL.md) becomes an agent skill.
