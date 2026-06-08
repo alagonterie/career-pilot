@@ -61,8 +61,8 @@ describe('getConfig — defaults.json tier', () => {
   });
 
   it('returns arrays as arrays', () => {
-    // defaults.json: killer_match_source_allow_list = ["greenhouse","lever"]
-    expect(getConfig<string[]>(db, 'killer_match_source_allow_list')).toEqual(['greenhouse', 'lever']);
+    // defaults.json: killer_match_source_allow_list = ["greenhouse","lever","google_jobs"]
+    expect(getConfig<string[]>(db, 'killer_match_source_allow_list')).toEqual(['greenhouse', 'lever', 'google_jobs']);
   });
 
   it('returns nested objects as objects', () => {
@@ -102,7 +102,7 @@ describe('getConfig — preferences table tier', () => {
 
   it('falls back to the defaults.json value when a JSON override is malformed', () => {
     setPref('killer_match_source_allow_list', 'not json');
-    expect(getConfig<string[]>(db, 'killer_match_source_allow_list')).toEqual(['greenhouse', 'lever']);
+    expect(getConfig<string[]>(db, 'killer_match_source_allow_list')).toEqual(['greenhouse', 'lever', 'google_jobs']);
   });
 });
 

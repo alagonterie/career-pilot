@@ -14,7 +14,7 @@
  * Spec: STRATEGY.md §24.5 + .specs/research/PHASE_2_5_JOB_BOARDS.md §Q1.
  */
 import { log } from '../log.js';
-import type { JobLeadPayload, SourceAdapter, Source } from './types.js';
+import type { JobLeadPayload, SourceAdapter, Source, AtsSource } from './types.js';
 
 const GREENHOUSE_BASE = 'https://boards-api.greenhouse.io/v1/boards';
 const LEVER_BASE = 'https://api.lever.co/v0/postings';
@@ -290,12 +290,12 @@ function normalizeLever(j: LeverJob, site: string): JobLeadPayload {
 
 // ── Shared helpers ─────────────────────────────────────────────────────────
 
-const ADAPTERS: Record<Source, SourceAdapter> = {
+const ADAPTERS: Record<AtsSource, SourceAdapter> = {
   greenhouse: greenhouseAdapter,
   lever: leverAdapter,
 };
 
-export function getAdapter(source: Source): SourceAdapter {
+export function getAdapter(source: AtsSource): SourceAdapter {
   return ADAPTERS[source];
 }
 

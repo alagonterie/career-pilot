@@ -89,7 +89,7 @@ function toSummary(p: JobLeadPayload): PostingSummary {
 
 // ── record_job_lead ────────────────────────────────────────────────────────
 
-const VALID_SOURCES = new Set<Source>(['greenhouse', 'lever']);
+const VALID_SOURCES = new Set<Source>(['greenhouse', 'lever', 'google_jobs']);
 const VALID_STATUSES = new Set(['new', 'reviewed', 'queued', 'applied', 'rejected', 'archived']);
 
 export async function handleRecordJobLead(
@@ -1026,6 +1026,86 @@ export async function handleFetchSource(
     writeResponse(inDb, requestId, {
       ok: false,
       error: { code: 'FETCH_ERROR', message: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
+// ── stash_job_payloads (§24.50) ─────────────────────────────────────────────
+//
+// The container-side `search_jobs` tool fetches SerpApi (OneCLI injects the
+// api_key on the wire — the container never holds the key), normalizes results
+// to JobLeadPayload[], and forwards them here. We stash each in the SAME 1h
+// payload-cache that `fetch_source` populates (keyed by (source, source_job_id))
+// and return lightweight PostingSummary[] — the exact shape `fetch_source`
+// returns. The subagent then judges + records via the UNCHANGED `record_job_lead`
+// path, which re-hydrates from the cache and computes fingerprint + rules_score.
+// Net effect: the host stays system-of-record; only the fetch moved container-
+// side (where OneCLI can inject the query-param key). Unlike `fetch_source` this
+// is NOT an external fetch — it's a pure cache write, so no crawl-delay / ETag.
+
+const STASH_MAX = 300;
+
+export async function handleStashJobPayloads(
+  content: Record<string, unknown>,
+  _session: Session,
+  inDb: Database.Database,
+): Promise<void> {
+  const requestId = reqId(content);
+  const p = payload(content);
+  const payloads = p.payloads;
+
+  if (!Array.isArray(payloads) || payloads.length === 0) {
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'BAD_ARGS', message: 'payloads must be a non-empty array' },
+    });
+    return;
+  }
+  if (payloads.length > STASH_MAX) {
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'BAD_ARGS', message: `payloads capped at ${STASH_MAX} per call` },
+    });
+    return;
+  }
+
+  try {
+    const summaries: PostingSummary[] = [];
+    let skipped = 0;
+    for (const raw of payloads as JobLeadPayload[]) {
+      // Defensive: the container builds these, but a malformed entry must not
+      // poison the cache or crash the stash. Require the dedup key + the fields
+      // record_job_lead and toSummary read.
+      if (!raw || typeof raw !== 'object') {
+        skipped += 1;
+        continue;
+      }
+      const source = raw.source;
+      const sourceJobId = raw.source_job_id;
+      if (
+        !source ||
+        !VALID_SOURCES.has(source) ||
+        typeof sourceJobId !== 'string' ||
+        !sourceJobId ||
+        !raw.title ||
+        !raw.source_url
+      ) {
+        skipped += 1;
+        continue;
+      }
+      payloadCache.set(source, sourceJobId, raw);
+      summaries.push(toSummary(raw));
+    }
+
+    writeResponse(inDb, requestId, {
+      ok: true,
+      data: { summaries, stashed: summaries.length, skipped },
+    });
+  } catch (err) {
+    log.error('handleStashJobPayloads failed', { err });
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'STASH_ERROR', message: err instanceof Error ? err.message : String(err) },
     });
   }
 }

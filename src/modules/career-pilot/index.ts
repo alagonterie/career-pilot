@@ -29,6 +29,7 @@ import {
   handleGetLeadSummariesForRanking,
   handleQueryJobLeads,
   handleRecordJobLead,
+  handleStashJobPayloads,
   handleUpdateJobLeadStatus,
   handleWriteLlmScores,
 } from './job-lead-actions.js';
@@ -72,6 +73,7 @@ registerOwnerOnly('career_pilot.query_job_leads', handleQueryJobLeads);
 registerOwnerOnly('career_pilot.update_job_lead_status', handleUpdateJobLeadStatus);
 registerOwnerOnly('career_pilot.discover_ats_board', handleDiscoverAtsBoard);
 registerOwnerOnly('career_pilot.fetch_source', handleFetchSource);
+registerOwnerOnly('career_pilot.stash_job_payloads', handleStashJobPayloads);
 registerOwnerOnly('career_pilot.get_lead_summaries_for_ranking', handleGetLeadSummariesForRanking);
 registerOwnerOnly('career_pilot.write_llm_scores', handleWriteLlmScores);
 registerOwnerOnly('career_pilot.claim_killer_matches', handleClaimKillerMatches);

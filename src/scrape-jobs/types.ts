@@ -13,7 +13,15 @@
  * llm_score*, status, status_changed_at).
  */
 
-export type Source = 'greenhouse' | 'lever';
+export type Source = 'greenhouse' | 'lever' | 'google_jobs';
+
+/**
+ * Token-based ATS sources (the fallback poller). `google_jobs` is query-based,
+ * not token-based, so it is NOT an `AtsSource` — it has no board token and no
+ * host-side `SourceAdapter`. Use `AtsSource` for the seed-list / adapter path,
+ * `Source` for everything that records into `job_leads`.
+ */
+export type AtsSource = 'greenhouse' | 'lever';
 
 export type SourcePriority = 'A' | 'B' | 'C';
 
@@ -25,7 +33,7 @@ export type SourcePriority = 'A' | 'B' | 'C';
  */
 export interface TargetEntry {
   company: string;
-  source: Source;
+  source: AtsSource;
   token: string;
   priority: SourcePriority;
   notes?: string;
@@ -38,7 +46,7 @@ export interface TargetEntry {
  */
 export interface JobLeadPayload {
   source: Source;
-  source_board_token: string;
+  source_board_token: string | null; // NULL for non-ATS sources (e.g. google_jobs)
   source_job_id: string;
   source_url: string;
   apply_url?: string | null;
@@ -75,7 +83,7 @@ export interface JobLeadPayload {
  * (not the caller's concern).
  */
 export interface SourceAdapter {
-  source: Source;
+  source: AtsSource;
   list(token: string): Promise<JobLeadPayload[]>;
 }
 

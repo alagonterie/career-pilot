@@ -25,8 +25,10 @@ following checks, in increasing rigor:
   from `agents-src/scrape-jobs.md` + `_shared/subagent-preamble.md`
   include).
 - The rendered file's frontmatter contains `tools:
-  [mcp__nanoclaw__record_progress, mcp__nanoclaw__fetch_source,
-  mcp__nanoclaw__record_job_lead]` — exactly those three, no more.
+  [mcp__nanoclaw__record_progress, mcp__nanoclaw__search_jobs,
+  mcp__nanoclaw__fetch_source, mcp__nanoclaw__record_job_lead]` — exactly
+  those four, no more. (`search_jobs` = the primary Google-for-Jobs source;
+  `fetch_source` = the ATS fallback. STRATEGY.md §24.50.)
 - The rendered file does NOT exist in `groups/career-pilot-sandbox/`
   (the source isn't in that group → no render → orchestrator can't
   delegate to scrape-jobs from sandbox sessions; defense-in-depth per
@@ -35,14 +37,22 @@ following checks, in increasing rigor:
 ### 2. End-to-end wiring (automated — `--flow=scrape-jobs`)
 
 `pnpm test:e2e --flow=scrape-jobs --llm-provider=claude` exercises the
-full path: orchestrator dispatches scrape-jobs → subagent calls
-`fetch_source` → host fetches Greenhouse/Lever boards, stashes full
-`JobLeadPayload`s in the 1h in-process payload-cache, returns
-lightweight `PostingSummary[]` → subagent judges title + snippet,
-calls `record_job_lead({source, source_job_id})` for keepers → host
-re-hydrates the full payload from cache, computes `content_fingerprint`
-+ `rules_score`, UPSERTs into `job_leads` → orchestrator calls
-`query_job_leads` to surface results in Pattern B chat reply.
+full path. **Primary mode** (SerpApi key registered in OneCLI):
+orchestrator dispatches scrape-jobs → subagent composes a query from the
+profile + brief → calls `search_jobs` → container fetches `serpapi.com`
+keyless (OneCLI injects `api_key`), normalizes → host `stash_job_payloads`
+stashes full `JobLeadPayload`s in the 1h payload-cache and returns
+lightweight `PostingSummary[]` → subagent judges title + snippet, calls
+`record_job_lead({source:'google_jobs', source_job_id})` for keepers →
+host re-hydrates from cache, computes `content_fingerprint` +
+`rules_score`, UPSERTs into `job_leads` → orchestrator calls
+`query_job_leads` to surface results in a Pattern B reply.
+
+**Fallback mode** (no SerpApi key — the CI default): `search_jobs` returns
+`{ unavailable }` → the subagent calls `fetch_source` (Greenhouse/Lever) →
+same stash → `PostingSummary[]` → `record_job_lead` path. Assert leads
+still land. Everything downstream of the summary is shared between the two
+modes (§24.50).
 
 **`--llm-provider=ollama` is currently broken for this flow.** GLM-4.7-
 Flash emits `<Agent .../>` XML text instead of calling the Agent tool;
@@ -163,6 +173,10 @@ theory.
 Re-run this verification plan whenever any of the following changes:
 
 - `scrape-jobs.md` (this subagent's runtime contract) — re-run §1, §2, §3
+- The `search_jobs` MCP tool or `container/agent-runner/src/career-pilot/
+  serpapi-search.ts` (normalizer / `parseSalaryString` /
+  `parseRelativePostedAt`) — re-run the `serpapi-search` unit tests + §2
+  in both primary and fallback modes
 - Pre-record judgment rules — re-run §3, §4
 - The host-side `fetch_source` action or source adapters — re-run §2, §5
 - The `record_job_lead` host action or rules-score formula — re-run
