@@ -721,6 +721,28 @@ describe('proactive trace-capture (§24.24)', () => {
     expect(pub.proactive).toBe(1);
   });
 
+  it('record_progress redacts $-amounts (e.g. a comp floor) but keeps bare counts', async () => {
+    const c = {
+      requestId: `req-${Math.random().toString(36).slice(2, 8)}`,
+      payload: {
+        subagent_name: 'scrape-jobs',
+        stage: 'planning',
+        detail: 'Query: senior backend. Comp floor $165k. 19 postings.',
+      },
+    };
+    await handleRecordProgress(c, FAKE_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+
+    const pub = getDb()
+      .prepare(
+        `SELECT summary FROM public_audit_trail WHERE category = 'subagent_progress' AND agent_name = 'scrape-jobs'`,
+      )
+      .get() as { summary: string };
+    expect(pub.summary).toContain('[AMOUNT_REDACTED]');
+    expect(pub.summary).not.toContain('165');
+    expect(pub.summary).toContain('19 postings'); // bare counts must survive
+  });
+
   it('defaults to reactive (proactive=0) when no wake message is present', async () => {
     // No seedWake — only the beforeEach's trigger=0 response row exists.
     const c = actionContent('career_pilot.record_funnel_event', {

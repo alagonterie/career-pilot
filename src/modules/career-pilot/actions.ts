@@ -28,6 +28,7 @@ import { getConfig } from '../../get-config.js';
 import { insertMessage } from '../../db/session-db.js';
 import { log } from '../../log.js';
 import { mirrorFunnelEvent, resanitizeApplicationAuditTrail } from '../portal/public-audit.js';
+import { applyPass1 } from '../portal/sanitizer.js';
 import { isKnownApplicationStatus, upsertPublicFunnelView } from '../portal/public-funnel-view.js';
 import type { Session } from '../../types.js';
 
@@ -280,15 +281,20 @@ const PROGRESS_DETAIL_CAP = 200;
 const PROGRESS_PER_SESSION_CAP = 6;
 
 /**
- * Minimal PII sanitization for `record_progress` detail strings — the
- * Phase 2.3 stand-in for `src/modules/portal/sanitizer.ts`'s full
- * three-pass pipeline (Phase 3). Emails + phone-shaped digits get
- * redacted. Detail strings are short by construction (cap 200 chars) so
- * the inline regex pass is sufficient for the writer; the LLM
- * context-sensitivity pass is the Phase 3 add-on.
+ * PII sanitization for `record_progress` detail strings, which mirror to the
+ * public `/live` feed. Reuses the sanitizer's deterministic Pass 1 — emails,
+ * phones, SSNs, **$-prefixed monetary amounts**, and URL query PII — so
+ * progress traces get the SAME redaction the funnel mirror applies.
+ *
+ * Previously this stripped only emails + phones, which let candidate-private
+ * figures like a comp floor ("$165k") survive into public traces. Pass 1's
+ * money regex is correctly calibrated for this path: it redacts `$165k` but
+ * leaves bare counts ("19 postings", "28 events") intact. Pass 2 (company-name
+ * redaction) is intentionally NOT applied — scrape progress references the
+ * job market, not the candidate's tracked applications.
  */
 function sanitizeProgressDetail(raw: string): string {
-  return raw.replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '[email]').replace(/(?:\+?\d[\s.()-]?){9,}/g, '[phone]');
+  return applyPass1(raw);
 }
 
 export async function handleRecordProgress(
