@@ -331,8 +331,9 @@ CREATE TABLE job_leads (
   source              TEXT NOT NULL,             -- 'greenhouse' | 'lever' | 'ashby' | 'workday'
                                                  -- | 'hn-whoishiring' | 'yc-was' | 'linkedin-guest'
                                                  -- | 'remoteok' | 'remotive' | 'usajobs'
-                                                 -- | 'adzuna' | 'jsearch' | 'jsonld'
-                                                 -- v1.0: 'greenhouse' | 'lever' only
+                                                 -- | 'adzuna' | 'jsearch' | 'jsonld' | 'google_jobs'
+                                                 -- v1.0: 'greenhouse' | 'lever'; §24.50 adds 'google_jobs'
+                                                 -- (SerpApi, the PRIMARY source); ATS = down-fallback
   source_board_token  TEXT,                      -- the ATS board_token (NULL for non-ATS sources)
   source_job_id       TEXT NOT NULL,             -- Greenhouse `id`, Lever `id`, HN comment id, etc.
   source_url          TEXT NOT NULL,             -- canonical URL on source
@@ -4594,6 +4595,52 @@ Both turns are **no-ops when their count is 0** (persona: killer-match "total===
 **Sizing.** The descriptions block is ~18 skills × name+description ≈ order **1.5–3K tokens**; the build measures it the proven way — Portkey request `content-length` before/after the `Skill` deny (same as §24.49d/e-frag).
 
 **DoD (24.49e Lever 4) — partial DONE.** (1) ✅ `Skill` ∈ `OWNER_DISALLOWED_TOOLS`; guard test green with `Skill` out of `TOOLS_IN_USE`; persona no longer lists `Skill`; confirmed absent from a live request's `tools[]`. (2) ✅ The skills-descriptions block trimmed **18→10** by deleting the 8 NanoClaw-bundled skills from the vendored `container/skills/` (clone-and-customize, not the provider-fork anti-pattern) — that's the real `/app/skills` discovery source; the `disallowedTools`/`skills=[]`/settings-`deny` levers all missed it. The remaining 10 are CC's own built-ins baked into `claude.exe`, left in place (binary-patching = over-reach). `container/skills/` now reserved for custom skills. (3) ✅ Title-gen: confirmed gone (one Portkey log post-deploy); flag kept. (4) ✅ Spec/memory updated with the corrected findings. (5) ✅ The reversibility/refactor relationship captured.
+
+#### 24.50 Google Jobs (SerpApi) as the primary scrape source; ATS as a down-fallback
+
+**Why now / the problem.** Phase 2.5 (§24.5) built `scrape-jobs` on a curated seed list of Greenhouse/Lever board tokens (`groups/career-pilot/data/ats-targets.json`). `fetch_source` runs host-side, iterates those tokens, and returns *every* posting at those companies for the subagent to filter. Two structural limits: the lead universe is bounded by the hand-maintained token list (you only discover roles at companies already listed), and ATS-direct returns the full board (heavy sales/GTM noise). That does not match how the candidate searches by hand — LinkedIn/Indeed/company sites, aggregated and relevance-ranked by Google for Jobs. The owner's lived experience is that ATS-direct quality is materially below what they curate manually. So we invert the source model: a **Google Jobs API becomes the primary source**, and the ATS path demotes to an availability fallback.
+
+This **reverses** `.specs/research/PHASE_2_5_JOB_BOARDS.md` Q1 (ATS-direct primary; Google-Jobs/JSearch Tier B). The research's reasoning (legal floor, ATS density, zero cost) still holds — it just optimized for a different objective (breadth + legal-safety of *self-operated* scraping) than the owner's actual one (human-equivalent quality + zero curation overhead). Recorded in that file's dated reversal addendum.
+
+**Provider = SerpApi (`engine=google_jobs`).** Chosen over DataForSEO/SearchApi for cleanest docs + a free 250-search/mo tier that covers dev + low-cadence prod, plus a "US Legal Shield"; the per-candidate query volume is tiny so cost is near-irrelevant. The adapter sits behind a provider-neutral interface (`source='google_jobs'`, not `'serpapi'`) so a cheaper backend can swap in later without churning the dedup key or schema.
+
+**The call is container-side; the key lives in OneCLI.** SerpApi authenticates with an `api_key` query param. OneCLI injects credentials as **either** a header **or** a URL query param (`--param-name`), so we register the key with `--param-name api_key --host-pattern serpapi.com`; the container fetches `serpapi.com` **without** the key and OneCLI appends it on the wire. The container never holds the raw key — consistent with the locked "OneCLI is the sole credential path for non-LLM creds" decision (a host-side `.env`/GH-secret would have contradicted it). **SerpApi is NOT an LLM call → it does NOT route through Portkey** (the LLM gateway, §24.44); it's a plain OneCLI-proxied fetch to `serpapi.com`, distinct from the `ANTHROPIC_BASE_URL`→Portkey path.
+
+**Vehicle = first-party in-process MCP tool.** A new `search_jobs` tool in the agent-runner (mirrors the existing `rank_leads` container-side pattern), not a third-party stdio MCP server — we keep control of normalization, the host stays system-of-record, and the anti-fabrication guard survives.
+
+**Data path (host stays system-of-record; only the fetch moves container-side):**
+1. The subagent composes a natural-language `query` (from `target_roles`+`skills`+brief) + `location` (from `location_pref`) and calls `search_jobs({ query, location?, remote?, limit? })`.
+2. `search_jobs` fetches `serpapi.com` keyless (OneCLI injects `api_key`), normalizes each result → `JobLeadPayload`, and forwards the payloads to a thin host action (`stash_job_payloads`) that stashes them in the existing 1h payload-cache keyed by `('google_jobs', job_id)` and returns lightweight `PostingSummary[]` — the same shape `fetch_source` already returns.
+3. On SerpApi error/429/missing-key, `search_jobs` returns `{ unavailable, reason }`; the subagent falls back to the existing host-side `fetch_source` (ATS), which stashes into the same cache.
+4. The subagent judges summaries (unchanged) and calls `record_job_lead({ source, source_job_id })` for keepers (unchanged) — the host reads the cache, computes `content_fingerprint` + `rules_score`, UPSERTs. The `NOT_IN_CACHE` fabrication guard, fingerprint, and rules-score code are reused unchanged.
+
+ATS becomes a pure down-fallback (not an always-on parallel source): a company-scoped Google Jobs query handles "what's new at <target company>" at equal-or-better quality + broader coverage than the seed-list, so ATS's only durable role is the free/keyless/quota-free safety net (and it keeps the e2e runnable without a key).
+
+**Verified SerpApi `google_jobs` contract (live probe 2026-06-08 — ground truth, not docs).** 10 results/page; pagination via `serpapi_pagination.next_page_token`. Each `jobs_results[i]`:
+- `title`, `company_name`, `location` ("United States"/"Anywhere"/city), `via` (aggregator name), `share_link` (Google), `source_link` (canonical posting URL), `description` (full plain text), `apply_options[]` ({title, link}; `[0]` = primary), `job_id` (stable base64 — encodes job_title+company+htidocid+uule+gl+hl), `extensions[]` (display chips), `detected_extensions` { `posted_at`? *relative* "6 days ago" — **sometimes absent**, `salary`? a **string** "180K–240K a year" (en-dash), `schedule_type`?, `work_from_home`? true, `qualifications`? }.
+- **Normalization:** `source='google_jobs'`, `source_job_id=job_id`, `source_url=source_link` (fallback `share_link`), `apply_url=apply_options[0].link`, `company=company_name`, remote/workplace from `work_from_home`+location, `employment_type` from `schedule_type`, comp via `parseSalaryString(detected_extensions.salary)` (handles "K"/"M", en-dash range, "a year/an hour" → period), `source_posted_at = now − parseRelativePostedAt(posted_at)` (null when absent), `description_text` capped at `DESCRIPTION_TEXT_CAP`, `raw_payload` keeps `via`+`apply_options`+`source_link`. The `api_key` is never echoed in the response.
+
+**Dedup.** Google for Jobs already dedupes across boards (one card, multiple `apply_options`), so within-source dup is low; within-query re-polls dedup on `UNIQUE(source, source_job_id)` since `job_id` is stable for a fixed query+location. The cross-source SimHash cluster job stays deferred (§24.5). Note: `job_id` embeds the query's uule/gl/hl, so the same role under a different query yields a different `job_id` — acceptable for v1 with canonical queries; the embedded `htidocid` is a hardening option if cross-query dup ever bites.
+
+**Cost/cadence envelope.** One candidate, a few canonical role×location queries 1–2×/day fits the free 250/mo tier. Cadence stays config-driven (no cron change in this increment). The `filters[]` block exposes `uds` recency tokens ("Last 3 days" etc.) — a future "fresh scan" optimization for killer-match, not built here.
+
+**What lands:**
+1. Container: `career-pilot/serpapi-search.ts` (URL build, fetch, pagination, `normalizeGoogleJob`, `parseRelativePostedAt`, `parseSalaryString`) + the `search_jobs` MCP tool in `mcp-tools/scrape-jobs.ts`.
+2. Host: `Source` += `google_jobs` (`src/scrape-jobs/types.ts`); `SOURCE_MULTIPLIERS` += `google_jobs: 1.0` (`lead-rules-score.ts`); `VALID_SOURCES` += `google_jobs` (`job-lead-actions.ts`); new `stash_job_payloads` host action.
+3. Config: `killer_match_source_allow_list` += `google_jobs` (`config/defaults.json`); the §3 schema `source` comment += `google_jobs` (no migration — `source` is free `TEXT`, `source_board_token` already nullable).
+4. Subagent: `scrape-jobs.md` rewritten to the query model with the ATS fallback branch; re-rendered to `.claude/agents/`.
+5. Tests: unit (`normalizeGoogleJob`/`parseRelativePostedAt`/`parseSalaryString` against a real-probe fixture; `stash_job_payloads`; `search_jobs` unavailable branch) + e2e `--flow=scrape-jobs` (query mode w/ key; ATS fallback w/o key).
+6. Ops (dev box): `onecli secrets create --name SerpApi --type api_key --param-name api_key --host-pattern serpapi.com`; grant to the career-pilot group; confirm `serpapi.com` egress.
+
+**Out of scope:** cross-source SimHash dedup (deferred); cron/cadence changes; DataForSEO/SearchApi backends; the recruiter-sim wiring (deferred stretch — §24.40/9.3 seeds sim postings from this same adapter once the sim exists). **Adjacent (separate task):** `rank_leads`/`callHaiku` likely misses the `x-portkey-provider` header that the SDK receives via `ANTHROPIC_CUSTOM_HEADERS` — verify on dev-box Portkey logs and fix the raw-fetch path + the stale `api.anthropic.com` comment.
+
+**DoD:**
+1. `search_jobs` fetches SerpApi keyless through OneCLI (verified: `docker logs onecli` shows `serpapi.com … injections_applied=1`; the container env never carries the key).
+2. A `google_jobs` lead lands in `job_leads` via `search_jobs` → `record_job_lead` with non-null `content_fingerprint` + `rules_score` + an **absolute** `source_posted_at` (relative→absolute works; null when `posted_at` absent).
+3. Fallback: with no SerpApi secret, `search_jobs` returns `unavailable` and the subagent's `fetch_source` (ATS) path still lands leads.
+4. Unit tests green incl. `parseSalaryString` (en-dash range, K/M, period) + `parseRelativePostedAt` (days/weeks/hours/"today"/"yesterday"/"30+ days"/absent) against the real-probe fixture; host suite + container build + `format:check` clean.
+5. e2e `--flow=scrape-jobs` green in both modes (key present → google_jobs lead; absent → ATS fallback).
+6. Live dev-box loop: "refresh my job leads" fills the pool with `google_jobs` leads spanning companies NOT in `ats-targets.json`; killer-match recency works against the converted timestamps.
 
 ---
 
