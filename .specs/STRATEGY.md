@@ -4656,6 +4656,39 @@ ATS becomes a pure down-fallback (not an always-on parallel source): a company-s
 
 ---
 
+#### 24.51 Daily job-scrape cron (pool replenishment + Phase-3 foundation)
+
+**Why now / the problem.** §24.50 made `search_jobs` (Google Jobs) the primary scrape source, but scraping is still **only owner-message-driven** — `job_leads` grows when the candidate asks. Two consumers now depend on a *fresh* pool with no human in the loop: (a) the `killer-match` cron (every 30 min) surfaces standout postings, and (b) the recruiter-sim's realistic-pace observation run (§24.40 D17) seeds applications from recent open `job_leads` (~2-daily). With the pool only ~8 leads, a multi-day run staled or repeated within ~2 weeks (the Part-D pre-empt flagged in §24.40). This increment adds the **periodic scrape** that was always Phase 3's job — pulled forward, in its minimal "keep the pool fresh" form (proactive scrape *surfacing* stays Phase 3).
+
+**Shape = a 5th cron series, identical to the existing four.** The host already bootstraps `daily-briefing`/`killer-match`/`funnel-curator`/`close-detection` as recurring `messages_in` tasks (per `*-bootstrap.ts` + the host-sweep recurrence loop) — owner-group-gated in `container-runner.ts` (`agentGroup.folder === 'career-pilot'`, so the sandbox never gets it). `job-scrape` is the same pattern: a `scrape-jobs-bootstrap.ts` (clone of `funnel-curator-bootstrap.ts`) with `SERIES_ID='job-scrape'`, the prompt sentinel `[scheduled trigger: job-scrape]`, reading `job_scrape_enabled`/`job_scrape_cron`, `script:null` (no pre-wake gate v1). Per [[feedback-nanoclaw-infra-first]] this reuses the scheduling primitive — no parallel infra.
+
+**Behavior = quiet refresh; `killer-match` does the surfacing.** When the trigger fires, the orchestrator dispatches the `scrape-jobs` subagent with a brief to **compose a natural-language query covering the candidate's full `target_roles` set** (not a per-run role rotation — rotation would leave a role un-scraped for days; SerpApi's `q` is free-text/semantic, so one broad query (the subagent may split into 1–2 themed queries when roles span distant areas) covers them all), pull a healthy batch (paginate beyond the first 10), dedup, and keep the new keepers via `record_job_lead`. The handler emits **only an `<internal>` note** — no `<message>` to the candidate. New standout leads are surfaced through the existing `killer-match` path, so same-day latency from "posting appears" → "candidate notified" is ≤ ~1 day (daily scrape) + 30 min (killer-match). Re-scraping a still-open posting refreshes its `last_seen_at`, so scheduling the scrape **before** the 06:00 close-detection sweep keeps live postings from being prematurely closed.
+
+**Default cadence = daily.** `job_scrape_cron` default `0 5 * * *` (05:00 TZ-local — ahead of the 06:00 close-detection / 07:00+ killer-match / 07:30 curator / 08:00 briefing cascade, so the morning runs see a fresh pool). Owner-tunable from the /dev inspector (`job_scrape_cron` added to `KNOB_SPECS`, pacing group) and the `preferences` tier. Daily × a few SerpApi searches/run ≈ 30–90/mo — comfortably inside the free 250/mo tier; LLM cost is one orchestrator + one `scrape-jobs` subagent run/day (~$0.10–0.30).
+
+**Not dev-gated.** Unlike the recruiter-sim, a scrape cron is a real product capability (it *is* the Phase 3 scrape cron, minus proactive surfacing), so it ships ungated and carries forward to prod; `job_scrape_enabled` defaults `true` and can be turned off via the pref (matching the other crons' `_enabled` keys, which the inspector likewise leaves to the pref tier).
+
+**Rejected:** a host-side direct SerpApi call (like the sim's host calls) — the SerpApi key is injected container-side via OneCLI's proxy and the normalize/fingerprint/score path is container/host-owned; a host fetch would duplicate it and break the locked "fetch is container-side, OneCLI is the only credential path" decision (§24.50). A pre-wake eligibility gate ("skip when the pool is full") — deferred; at a daily cadence the saved runs don't justify the eligibility-handler plumbing.
+
+**What lands:**
+1. `src/modules/career-pilot/scrape-jobs-bootstrap.ts` (+ `ensureJobScrapeTask` call in `container-runner.ts`, owner-gated heartbeat block).
+2. `config/defaults.json`: `job_scrape_enabled: true`, `job_scrape_cron: "0 5 * * *"`.
+3. `src/modules/portal/dev-inspector.ts`: `job_scrape_cron` cron knob (pacing group → `DEV_INSPECTOR_WRITABLE_KEYS`).
+4. `groups/career-pilot/.claude-host-fragments/persona.md`: a `### Job-scrape (\`[scheduled trigger: job-scrape]\`)` handler section + the subagent-table trigger note.
+5. Tests: `scrape-jobs-bootstrap.test.ts` (mirrors `funnel-curator-bootstrap.test.ts`).
+
+**Out of scope:** proactive scrape *surfacing*/notifications (Phase 3 proper — killer-match already covers the surfacing need); the `job_leads`-freshness pre-wake gate; cross-source dedup (§24.5/§24.50, still deferred); any new SerpApi call site (the scrape reuses the §24.50 `search_jobs` path).
+
+**DoD:**
+1. `ensureJobScrapeTask` idempotently inserts a `job-scrape` recurring task on owner-group spawn; skips when one is live or `job_scrape_enabled=false`; honors `job_scrape_cron` (unit-tested, mirroring the curator bootstrap suite).
+2. The sandbox group never gets a `job-scrape` task (owner-folder gate).
+3. `job_scrape_cron` is writable from /dev and resolves through the config tiers; `DEV_INSPECTOR_WRITABLE_KEYS` grows by one with the `buildDevKnobs` length test still passing (dynamic).
+4. Persona has a `[scheduled trigger: job-scrape]` handler (full-target-role query, quiet `<internal>` note, no `<message>`); the unknown-trigger fallback no longer applies to it.
+5. Host suite + typecheck + `format:check` clean.
+6. Live dev-box (observation run): the daily fire refreshes `job_leads` with new `google_jobs` postings spanning roles across the target set; killer-match surfaces standouts the same day; the realistic-sim pool no longer staled over a multi-day run.
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.

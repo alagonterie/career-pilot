@@ -579,6 +579,58 @@ leads (threshold 14d). Pool now reflects only active postings.
 </internal>
 ```
 
+### Job-scrape (`[scheduled trigger: job-scrape]`)
+
+The host bootstrap keeps a recurring job-scrape task scheduled — by
+default once a day, early (before the morning cron cascade). When it
+fires, your turn input is exactly `[scheduled trigger: job-scrape]`.
+
+This is a background **pool refresh**: keep `job_leads` fresh so
+killer-match has new postings to match against and the funnel always
+reflects what's actually live. You don't scrape yourself — you
+dispatch the `scrape-jobs` subagent and let it write the leads.
+
+The one thing that matters in your brief: tell the subagent to cover
+the candidate's **full set of target roles in one pass**, not a single
+narrow query. The candidate's `target_roles` are in your loaded
+profile — name them. A daily scan should catch a good posting for
+*any* of those roles the day it appears, not rotate through them.
+
+**Workflow:**
+
+```
+1. Dispatch Agent({
+     subagent_type: "scrape-jobs",
+     description: "Daily pool refresh across all target roles",
+     prompt: "Scheduled daily refresh of the job-lead pool. Run a
+       broad scan covering ALL of my target roles — <list them from
+       the profile, e.g. Senior/Staff Backend, Platform,
+       Infrastructure, Developer Experience, Agent Systems>. Compose a
+       natural-language query (or split into a couple of themed
+       queries if the roles span distant areas) so a strong posting
+       for any of these surfaces. Pull a healthy batch (paginate past
+       the first page), dedup against what we already track, and
+       record the new keepers. Weight toward my strongest fit
+       (distributed-systems / backend in Go/Rust)."
+   })
+   → subagent scans, dedups, records new job_leads, returns a count.
+
+2. Silent. Emit ONLY an <internal> note with the count. NO <message>
+   block. The candidate doesn't need a "I scraped jobs" ping —
+   killer-match surfaces anything standout from the refreshed pool on
+   its own cadence. No quiet-hours / frequency-cap preflight (this
+   never emits to the candidate).
+```
+
+**Worked example reply (note the count, including zero):**
+
+```
+<internal>Job-scrape fired at 05:00 local. scrape-jobs added 4 new
+leads (2 backend, 1 platform, 1 infra), 11 already tracked. Pool
+refreshed — killer-match will surface any standouts.
+</internal>
+```
+
 ### Unknown trigger kinds
 
 If you receive `[scheduled trigger: <kind>]` for a kind that has no
@@ -663,7 +715,7 @@ context window with fetched HTML.
 | Tailor resume to a JD | `tailor-resume` | Any "tailor my resume", new application with JD captured |
 | Draft cold outreach | `draft-outreach` | Any "draft outreach to X", "email this recruiter" |
 | Prep for an interview | `prep-interview` | Calendar event matched, `"prep me for X"`, `"help me prepare for the <company> <round>"`, `"interview prep for <role>"` |
-| Scrape jobs from boards | `scrape-jobs` | "refresh job leads", "find new AI roles", "find roles at <company>", "scan job boards for <criteria>". "what's new at <company>" is the one trigger that optionally chains with `research-company` first — see chaining section. **Unique writer pattern** — produces durable backend state (`job_leads` rows), not human-readable text. |
+| Scrape jobs from boards | `scrape-jobs` | "refresh job leads", "find new AI roles", "find roles at <company>", "scan job boards for <criteria>"; also fires on its own daily via `[scheduled trigger: job-scrape]` (see that handler). "what's new at <company>" is the one trigger that optionally chains with `research-company` first — see chaining section. **Unique writer pattern** — produces durable backend state (`job_leads` rows), not human-readable text. |
 
 When constructing the delegation prompt, embed any candidate context the
 subagent needs to weight relevance (target_roles, skills, comp_floor,
