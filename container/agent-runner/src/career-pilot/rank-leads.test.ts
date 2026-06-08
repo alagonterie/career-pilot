@@ -11,6 +11,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   buildRankingPrompt,
   computeBriefHash,
+  parseAnthropicCustomHeaders,
   parseRankingResponse,
   RankLeadsError,
   type JobLeadForRanking,
@@ -26,6 +27,24 @@ const sampleLead: JobLeadForRanking = {
   description_text: 'Building agent infrastructure. Go, Rust, Python.',
   rules_score: 75,
 };
+
+describe('parseAnthropicCustomHeaders', () => {
+  it('parses newline-separated Name: value pairs (Portkey routing headers)', () => {
+    const h = parseAnthropicCustomHeaders('x-portkey-provider: @anthropic-prod\nx-portkey-config: cfg-1');
+    expect(h['x-portkey-provider']).toBe('@anthropic-prod');
+    expect(h['x-portkey-config']).toBe('cfg-1');
+  });
+
+  it('keeps colons inside values intact (x-portkey-metadata JSON)', () => {
+    const h = parseAnthropicCustomHeaders('x-portkey-metadata: {"environment":"dev","session_id":"s1"}');
+    expect(h['x-portkey-metadata']).toBe('{"environment":"dev","session_id":"s1"}');
+  });
+
+  it('returns {} when unset or empty', () => {
+    expect(parseAnthropicCustomHeaders(undefined)).toEqual({});
+    expect(parseAnthropicCustomHeaders('')).toEqual({});
+  });
+});
 
 describe('buildRankingPrompt', () => {
   it('includes brief, company, title, id, and JSON instruction', () => {
