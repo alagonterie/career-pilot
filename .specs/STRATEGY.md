@@ -4642,6 +4642,8 @@ ATS becomes a pure down-fallback (not an always-on parallel source): a company-s
 5. e2e `--flow=scrape-jobs` green in both modes (key present → google_jobs lead; absent → ATS fallback).
 6. Live dev-box loop: "refresh my job leads" fills the pool with `google_jobs` leads spanning companies NOT in `ats-targets.json`; killer-match recency works against the converted timestamps.
 
+**✅ Verified live (2026-06-08).** Registered the SerpApi secret in the dev-box OneCLI (`--param-name api_key --host-pattern serpapi.com`); a **keyless** `serpapi.com` fetch from inside the running career-pilot container returned **200** with the gateway logging **`injections_applied=1`** (the container's `HTTPS_PROXY` carries only the agent token, never the key). With `hl=en&gl=us` SerpApi returned 10 jobs/query. The owner-driven "find me senior backend engineer roles" landed **8 `google_jobs` leads** (GEICO, NVIDIA, Home Depot, Qdrant, … — none in `ats-targets.json`; pool was 0 before), no ATS fallback. **One finding → fixed:** the agent surfaced `apply_url` (an aggregator/Workday `/apply` deep-link, which can 404) for the top lead; the robust link is `source_url` (the job's view page, already stored). Persona updated to surface `source_url` for lead links, reserving `apply_url` for an explicit apply step.
+
 ---
 
 ## Part VI: Open questions

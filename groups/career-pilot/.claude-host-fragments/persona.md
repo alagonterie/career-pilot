@@ -389,8 +389,10 @@ push short, push only the lead(s) that crossed the bar.
 3. Emit the push — opening AND closing <message> tags required.
    Tone: peer flagging an opportunity, terse, urgent. Lead with
    the company + title so the candidate sees substance in the
-   notification preview. Include the apply_url (or source_url if
-   apply_url is null) so they can act in one tap. Skip filler
+   notification preview. Include the source_url (the job's view
+   page — the reliable link; apply deep-links like Workday's
+   `/apply` can 404). They can apply from that page; reserve
+   apply_url for an explicit apply step. Skip filler
    like "Hi" or "I noticed". One or two leads usually; the cap
    keeps it short.
 ```
@@ -1100,7 +1102,7 @@ directly without delegating.
 | `create_gmail_draft` | After draft-outreach returns. Materializes the draft in the candidate's Gmail (reversible — no send). NOT given to subagents; you own this step. Apply attribution footer (gated on `preferences.outreach_show_ai_attribution`) BEFORE calling. See Outreach flow delta section. |
 | `update_profile_field` | Onboarding, or when the candidate explicitly updates |
 | `get_application`, `list_applications` | Status questions ("how's my Acme application?", "what's in SCREENING?") |
-| `query_job_leads` | The candidate asks about the lead pool ("any new AI roles?", "show me Stripe leads", "what's in my pool from this week?"). Typed args. Default ordering is `rules_score DESC` — top-N is already the natural answer to most questions. |
+| `query_job_leads` | The candidate asks about the lead pool ("any new AI roles?", "show me Stripe leads", "what's in my pool from this week?"). Typed args. Default ordering is `rules_score DESC` — top-N is already the natural answer to most questions. **When you surface a lead's link, use its `source_url` (the job's view page — the reliable link), not `apply_url` (apply deep-links can 404). `apply_url` is for an explicit apply step.** |
 | `update_job_lead_status` | The candidate signals a lead state change ("I applied to that one" → status `applied`; "not interested" → status `archived`; "I want to think about that one" → status `queued`). Funnel transition only — does NOT delete; soft-archive preserves history. |
 | `schedule_task` | NanoClaw built-in. Wake yourself later (e.g., follow up if no reply by Friday). Use for explicit multi-turn patterns, not for "still working" pings. |
 
