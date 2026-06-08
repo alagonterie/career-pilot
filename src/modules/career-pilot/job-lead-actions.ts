@@ -36,6 +36,7 @@ import type { Session } from '../../types.js';
 
 import { computeFingerprint } from './lead-fingerprint.js';
 import { computeRulesScore, profileFromRow } from './lead-rules-score.js';
+import { isWithinQuietHours, readProactiveGateConfig, startOfLocalDayUtcIso } from './quiet-hours.js';
 
 // ── Response writer (mirrors actions.ts) ──────────────────────────────────
 
@@ -839,7 +840,39 @@ export async function handleCheckTriggerEligibility(
         });
         return;
       }
-      const { whereSql, params } = buildKillerMatchEligibilityClause(prefs, new Date());
+
+      // Proactive guardrails (§24.52): suppress off-hours / over-cap fires BEFORE
+      // the turn (zero model call). Host-enforced so they're a hard gate, not the
+      // agent's best effort. killer-match is the only frequent proactive messager
+      // and the only one that fires adjacent to the default quiet window.
+      const now = new Date();
+      const gate = readProactiveGateConfig(db);
+      if (isWithinQuietHours(now, gate.quietHours, gate.quietHoursTz)) {
+        writeResponse(inDb, requestId, {
+          ok: true,
+          data: { trigger, eligible: false, count: 0, reason: 'quiet_hours' },
+        });
+        return;
+      }
+      if (gate.capPerDay > 0) {
+        const cutoff = startOfLocalDayUtcIso(now, gate.quietHoursTz);
+        const pushedToday = (
+          db
+            .prepare(
+              'SELECT COUNT(*) AS n FROM job_leads WHERE killer_match_pushed_at IS NOT NULL AND killer_match_pushed_at >= ?',
+            )
+            .get(cutoff) as { n: number }
+        ).n;
+        if (pushedToday >= gate.capPerDay) {
+          writeResponse(inDb, requestId, {
+            ok: true,
+            data: { trigger, eligible: false, count: 0, reason: 'frequency_cap' },
+          });
+          return;
+        }
+      }
+
+      const { whereSql, params } = buildKillerMatchEligibilityClause(prefs, now);
       const row = db.prepare(`SELECT COUNT(*) AS n FROM job_leads WHERE ${whereSql}`).get(params) as { n: number };
       writeResponse(inDb, requestId, { ok: true, data: { trigger, eligible: row.n > 0, count: row.n } });
       return;

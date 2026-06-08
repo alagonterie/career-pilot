@@ -17,8 +17,8 @@
     "sanitization_audit_drop_on_unmatched_company": true,
     "sanitization_resanitize_on_application_update": true,
     "quiet_hours": "22:00-07:00",
-    "quiet_hours_tz": "America/New_York",
-    "telegram_proactive_frequency_cap_per_day": 8,
+    "quiet_hours_tz": "",
+    "telegram_proactive_frequency_cap_per_day": 0,
     "channel_pref_by_class": {
       "urgent": "telegram",
       "briefing": "telegram",

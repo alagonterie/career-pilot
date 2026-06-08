@@ -18,7 +18,21 @@ import { runMigrations } from '../../db/migrations/index.js';
 import { ensureSchema, openInboundDb } from '../../db/session-db.js';
 import type { Session } from '../../types.js';
 
+import { TIMEZONE } from '../../config.js';
 import { handleCheckTriggerEligibility, handleClaimKillerMatches, handleCloseStaleLeads } from './job-lead-actions.js';
+import { localMinutes } from './quiet-hours.js';
+
+/** Format minutes-since-midnight as "HH:MM" (wraps the day). */
+function fmtMin(min: number): string {
+  const m = ((Math.round(min) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
+/** A quiet-hours window (in the resolved system zone) guaranteed to include `now`. */
+function quietWindowIncludingNow(): string {
+  const cur = localMinutes(new Date(), TIMEZONE);
+  return `${fmtMin(cur - 2)}-${fmtMin(cur + 3)}`;
+}
 
 const tmpDir = path.join(os.tmpdir(), `nanoclaw-cp-jla-test-${process.pid}`);
 const inboundPath = path.join(tmpDir, 'inbound.db');
@@ -538,6 +552,15 @@ async function callEligibility(
 }
 
 describe('handleCheckTriggerEligibility', () => {
+  // The killer-match branch consults the §24.52 proactive gate (quiet hours +
+  // cap), which depends on wall-clock time via the default `quiet_hours`
+  // (22:00-07:00). Disable quiet hours for the base cases so they're
+  // deterministic regardless of when CI runs; the quiet-hours test sets its
+  // own inclusive window.
+  beforeEach(() => {
+    setPreference('quiet_hours', '');
+  });
+
   it('killer-match: eligible=true with a count when an eligible lead exists', async () => {
     seedLead({ id: 'km-eligible', company: 'Anthropic', rules_score: 95, source_posted_at: freshTimestamp(1) });
     seedLead({ id: 'km-lowscore', company: 'Linear', rules_score: 80, source_posted_at: freshTimestamp(1) });
@@ -571,6 +594,61 @@ describe('handleCheckTriggerEligibility', () => {
     if (!res.frame.ok) throw new Error('unreachable');
     expect(res.frame.data).toMatchObject({ eligible: false, count: 0 });
     expect(res.frame.data.reason).toMatch(/allow_list/);
+  });
+
+  it('killer-match: eligible=false reason=quiet_hours inside the configured window (§24.52)', async () => {
+    setPreference('quiet_hours', quietWindowIncludingNow());
+    seedLead({ id: 'km-eligible', company: 'Anthropic', rules_score: 95, source_posted_at: freshTimestamp(1) });
+    const res = await callEligibility('killer-match');
+    if (!res.frame.ok) throw new Error('unreachable');
+    expect(res.frame.data).toMatchObject({ trigger: 'killer-match', eligible: false, count: 0, reason: 'quiet_hours' });
+    // Read-only: the gate must not claim the lead.
+    const row = getDb().prepare('SELECT killer_match_pushed_at FROM job_leads WHERE id = ?').get('km-eligible') as {
+      killer_match_pushed_at: string | null;
+    };
+    expect(row.killer_match_pushed_at).toBeNull();
+  });
+
+  it('killer-match: eligible=false reason=frequency_cap when today’s pushes hit an enabled cap (§24.52)', async () => {
+    setPreference('telegram_proactive_frequency_cap_per_day', '1');
+    seedLead({
+      id: 'km-pushed',
+      company: 'Pushed',
+      rules_score: 95,
+      source_posted_at: freshTimestamp(2),
+      killer_match_pushed_at: freshTimestamp(1), // already pushed today
+    });
+    seedLead({ id: 'km-eligible', company: 'Fresh', rules_score: 95, source_posted_at: freshTimestamp(1) });
+    const res = await callEligibility('killer-match');
+    if (!res.frame.ok) throw new Error('unreachable');
+    expect(res.frame.data).toMatchObject({
+      trigger: 'killer-match',
+      eligible: false,
+      count: 0,
+      reason: 'frequency_cap',
+    });
+  });
+
+  it('killer-match: cap=0 (default) ignores prior pushes — eligible on a fresh lead (§24.52)', async () => {
+    seedLead({
+      id: 'km-pushed',
+      company: 'Pushed',
+      rules_score: 95,
+      source_posted_at: freshTimestamp(2),
+      killer_match_pushed_at: freshTimestamp(1),
+    });
+    seedLead({ id: 'km-eligible', company: 'Fresh', rules_score: 95, source_posted_at: freshTimestamp(1) });
+    const res = await callEligibility('killer-match');
+    if (!res.frame.ok) throw new Error('unreachable');
+    expect(res.frame.data).toMatchObject({ trigger: 'killer-match', eligible: true });
+  });
+
+  it('close-detection is NOT gated by quiet hours (silent housekeeping) (§24.52)', async () => {
+    setPreference('quiet_hours', quietWindowIncludingNow());
+    seedJobLeadForClose({ id: 'stale-1', last_seen_at: daysAgoIso(20) });
+    const res = await callEligibility('close-detection');
+    if (!res.frame.ok) throw new Error('unreachable');
+    expect(res.frame.data).toMatchObject({ trigger: 'close-detection', eligible: true, count: 1 });
   });
 
   it('close-detection: eligible=true with a count when stale leads exist', async () => {
