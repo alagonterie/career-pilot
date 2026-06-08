@@ -154,6 +154,32 @@ describe('renderPersona', () => {
     });
   });
 
+  describe('quiet hours section (§24.52)', () => {
+    const p = profile({ full_name: 'Jane Doe' });
+
+    it('renders the configured window + zone when provided', () => {
+      const out = renderPersona(p, { window: '22:00-07:00', tz: 'America/Denver' });
+      expect(out).toContain('## Quiet hours');
+      expect(out).toContain('22:00-07:00 (America/Denver)');
+    });
+
+    it('labels an empty zone as the system zone', () => {
+      const out = renderPersona(p, { window: '22:00-07:00', tz: '' });
+      expect(out).toContain('22:00-07:00 (system zone)');
+    });
+
+    it('omits the section when no quiet hours are given or the window is empty (disabled)', () => {
+      expect(renderPersona(p)).not.toContain('## Quiet hours');
+      expect(renderPersona(p, { window: '', tz: 'America/Denver' })).not.toContain('## Quiet hours');
+    });
+
+    it('never adds the section in onboarding mode (null profile)', () => {
+      const out = renderPersona(null, { window: '22:00-07:00', tz: 'America/Denver' });
+      expect(out).toContain('# Onboarding mode');
+      expect(out).not.toContain('## Quiet hours');
+    });
+  });
+
   describe('malformed JSON fields', () => {
     it('skips target_roles when JSON is malformed', () => {
       const out = renderPersona(profile({ full_name: 'Jane', target_roles: 'not json [' }));

@@ -419,4 +419,53 @@ export const createGmailDraft: McpToolDefinition = {
   },
 };
 
-registerTools([updateProfileField, updateApplication, recordFunnelEvent, getApplication, listApplications, recordProgress, createGmailDraft]);
+// ── set_preference (proactive guardrails, §24.52) ──────────────────────────
+
+const PROACTIVE_PREF_KEYS = ['quiet_hours', 'quiet_hours_tz', 'telegram_proactive_frequency_cap_per_day'] as const;
+
+export const setPreference: McpToolDefinition = {
+  tool: {
+    name: 'set_preference',
+    description:
+      'Set one of the candidate\'s proactive-messaging preferences when they ask in conversation (e.g. "don\'t ping me before 9", "mute alerts on weekends", "you can send up to 5 a day"). Translate their words into the key + value: quiet_hours = a "HH:MM-HH:MM" 24-hour window (or "" to disable); quiet_hours_tz = an IANA zone like "America/Denver" (or "" to follow the system zone); telegram_proactive_frequency_cap_per_day = a non-negative integer (0 = no cap). The host validates + persists it; quiet hours take effect immediately at the host gate. Confirm back what you set.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        key: {
+          type: 'string',
+          enum: [...PROACTIVE_PREF_KEYS],
+          description: 'Which preference to set.',
+        },
+        value: {
+          description:
+            'quiet_hours: "HH:MM-HH:MM" or "". quiet_hours_tz: an IANA zone or "". telegram_proactive_frequency_cap_per_day: an integer >= 0.',
+        },
+      },
+      required: ['key', 'value'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  async handler(args) {
+    const key = args.key as string;
+    if (!key || !PROACTIVE_PREF_KEYS.includes(key as (typeof PROACTIVE_PREF_KEYS)[number])) {
+      return err(`key must be one of: ${PROACTIVE_PREF_KEYS.join(', ')}`);
+    }
+    const res = await sendAction<{ key: string; value: string }>('career_pilot.set_preference', {
+      key,
+      value: args.value,
+    });
+    if (!res.ok) return actionErr('set_preference', res.error);
+    return ok(`Preference "${key}" set to "${res.data?.value}".`, { key, value: res.data?.value });
+  },
+};
+
+registerTools([
+  updateProfileField,
+  setPreference,
+  updateApplication,
+  recordFunnelEvent,
+  getApplication,
+  listApplications,
+  recordProgress,
+  createGmailDraft,
+]);
