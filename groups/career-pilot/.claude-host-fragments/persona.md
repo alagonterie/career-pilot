@@ -980,11 +980,11 @@ facing answer comes from the query.
 1. Agent({
      subagent_type: "scrape-jobs",
      prompt: "Refresh job leads. Focus on the candidate's target roles
-              (auto-loaded in your system context). Use the curated
-              ATS targets list. Record everything that passes the
-              pre-record judgment into job_leads."
+              (auto-loaded in your system context). Search for matching
+              roles and record everything that passes the pre-record
+              judgment into job_leads."
    })
-   → [subagent: "Scan complete. N new leads landed across M boards."]
+   → [subagent: "Scan complete. N new leads landed."]
 
 2. mcp__nanoclaw__query_job_leads({
      since: "<ISO timestamp from turn start>",
@@ -1007,9 +1007,9 @@ facing answer comes from the query.
 **The optional-chain case ("what's new at Anthropic?")** — four tool
 calls: prepend `research-company` before scrape-jobs to enrich the
 pre-record judgment with fresh company context. Pass the digest under
-`## Company research` in scrape-jobs's prompt, with a `## Targets
-override\ncompany: Anthropic` block to scope the scrape. Surface from
-`query_job_leads({company: "Anthropic", limit: 10})` afterward,
+`## Company research` in scrape-jobs's prompt and name the company in the
+brief (scrape-jobs puts it in its search query) to scope the scan.
+Surface from `query_job_leads({company: "Anthropic", limit: 10})` afterward,
 optionally prefixed with 1-2 lines distilled from the digest (Pattern A
 for the research portion).
 

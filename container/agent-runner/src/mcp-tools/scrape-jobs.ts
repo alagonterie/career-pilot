@@ -27,6 +27,7 @@ import {
   type JobLeadForRanking,
   type RankedLead,
 } from '../career-pilot/rank-leads.js';
+import { searchGoogleJobs, SearchJobsError } from '../career-pilot/serpapi-search.js';
 import { registerTools } from './server.js';
 import type { McpToolDefinition } from './types.js';
 
@@ -99,6 +100,83 @@ export const fetchSource: McpToolDefinition = {
   },
 };
 
+// ── search_jobs (§24.50) ─────────────────────────────────────────────────────
+
+export const searchJobs: McpToolDefinition = {
+  tool: {
+    name: 'search_jobs',
+    description:
+      "PRIMARY job source. Search Google for Jobs (via SerpApi) with a natural-language `query` + optional `location`/`remote`. Returns `{ summaries, total, provider: 'google_jobs' }` — each summary is `{ source, source_job_id, title, company, location_raw?, workplace_type?, snippet }`, the same shape fetch_source returns. Google aggregates LinkedIn/Indeed/company sites and dedupes across them, so results match what a human sees searching by hand. The full payload is stashed host-side (1h TTL) keyed by (source, source_job_id); to keep a posting call `record_job_lead({ source: 'google_jobs', source_job_id })`. If SerpApi is unavailable (rate-limited / not configured / down) the result is `{ unavailable: true, reason }` — when you see that, FALL BACK to fetch_source (the ATS poller). Each call costs SerpApi quota (~1 unit per 10 results); prefer a few targeted queries over deep pagination. Read-only — does NOT write to job_leads.",
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        query: {
+          type: 'string',
+          description:
+            'Natural-language search, e.g. "senior backend engineer" or "staff ML engineer Anthropic". Build it from the candidate\'s target_roles + skills + this run\'s brief. For a company-scoped watch ("what\'s new at X"), include the company name in the query.',
+        },
+        location: {
+          type: 'string',
+          description: 'Search origin, e.g. "United States" or "New York, NY". Optional — omit for a nationwide search.',
+        },
+        remote: {
+          type: 'boolean',
+          description: 'When true, biases toward remote roles (appends "remote" to the query if absent). Use when the candidate prefers remote.',
+        },
+        limit: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 30,
+          description: 'Max postings to return (default 10, cap 30). Each ~10 results = one SerpApi search against the monthly quota; keep modest.',
+        },
+      },
+      required: ['query'],
+    },
+    annotations: { readOnlyHint: true },
+  },
+  async handler(args) {
+    const query = args.query as string | undefined;
+    if (!query || typeof query !== 'string' || !query.trim()) {
+      return err('query is required (non-empty string)');
+    }
+    let payloads;
+    try {
+      payloads = await searchGoogleJobs({
+        query,
+        location: (args.location as string | undefined) ?? null,
+        remote: (args.remote as boolean | undefined) ?? null,
+        limit: (args.limit as number | undefined) ?? null,
+      });
+    } catch (e) {
+      const reason =
+        e instanceof SearchJobsError ? `${e.code}: ${e.message}` : e instanceof Error ? e.message : String(e);
+      return ok(`search_jobs unavailable (${reason}). Fall back to fetch_source (ATS) for this run.`, {
+        unavailable: true,
+        reason,
+      });
+    }
+    if (payloads.length === 0) {
+      return ok(
+        `search_jobs: 0 results for "${query}". SerpApi was reachable; the query returned nothing — try a broader query or fetch_source.`,
+        { summaries: [], total: 0, provider: 'google_jobs' },
+      );
+    }
+    // Forward payloads to the host stash action (same payload-cache fetch_source
+    // uses); record_job_lead re-hydrates from it. Host stays system-of-record.
+    const res = await sendAction<{ summaries: unknown[]; stashed: number; skipped: number }>(
+      'career_pilot.stash_job_payloads',
+      { payloads },
+    );
+    if (!res.ok) return actionErr('search_jobs', res.error);
+    const { summaries } = res.data;
+    return ok(`search_jobs: ${summaries.length} postings for "${query}" (google_jobs).`, {
+      summaries,
+      total: summaries.length,
+      provider: 'google_jobs',
+    });
+  },
+};
+
 // ── record_job_lead ────────────────────────────────────────────────────────
 
 export const recordJobLead: McpToolDefinition = {
@@ -109,7 +187,7 @@ export const recordJobLead: McpToolDefinition = {
     inputSchema: {
       type: 'object' as const,
       properties: {
-        source: { type: 'string', enum: ['greenhouse', 'lever'], description: 'ATS source identifier — must match a value returned by fetch_source.' },
+        source: { type: 'string', enum: ['greenhouse', 'lever', 'google_jobs'], description: 'Source identifier — must match a value returned by search_jobs (google_jobs) or fetch_source (greenhouse/lever).' },
         source_job_id: { type: 'string', description: 'Source-assigned stable job id, taken verbatim from a fetch_source summary.' },
       },
       required: ['source', 'source_job_id'],
@@ -149,7 +227,7 @@ export const queryJobLeads: McpToolDefinition = {
           enum: ['new', 'reviewed', 'queued', 'applied', 'rejected', 'archived'],
           description: 'Filter to one funnel status. Omit for any non-closed status.',
         },
-        source: { type: 'string', enum: ['greenhouse', 'lever'], description: 'Filter to one source.' },
+        source: { type: 'string', enum: ['greenhouse', 'lever', 'google_jobs'], description: 'Filter to one source.' },
         min_rules_score: {
           type: 'integer',
           minimum: 0,
@@ -442,4 +520,4 @@ export const closeStaleLeads: McpToolDefinition = {
   },
 };
 
-registerTools([fetchSource, recordJobLead, queryJobLeads, updateJobLeadStatus, discoverAtsBoard, rankLeads, queryKillerMatches, closeStaleLeads]);
+registerTools([searchJobs, fetchSource, recordJobLead, queryJobLeads, updateJobLeadStatus, discoverAtsBoard, rankLeads, queryKillerMatches, closeStaleLeads]);

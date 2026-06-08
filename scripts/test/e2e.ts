@@ -1841,8 +1841,10 @@ async function runScrapeJobs(): Promise<void> {
   }
   ok(`at least one scrape-jobs success: ${successfulScrapes.length}/${scrapeCalls.length}`);
 
-  // 2. fetch_source called ≥1 time inside the subagent. We look at the
-  // scrape-jobs subagent JSONL(s) for fetch_source tool_use blocks.
+  // 2. A source tool called ≥1 time inside the subagent. §24.50: search_jobs
+  // (SerpApi / google_jobs) is PRIMARY; fetch_source (Greenhouse/Lever ATS) is
+  // the down-fallback the subagent uses when search_jobs returns {unavailable}
+  // — the common local/CI case (no SerpApi key configured). We accept either.
   const allSubJsonls = listAllSubagentJsonls(jsonl);
   const scrapeSubJsonls = allSubJsonls
     .map((p) => ({ path: p, text: extractFinalAssistantText(p) ?? '' }))
@@ -1851,6 +1853,7 @@ async function runScrapeJobs(): Promise<void> {
     fail('no scrape-jobs subagent JSONLs found.');
   }
 
+  const searchJobsCalls: Array<{ subagentPath: string }> = [];
   const fetchSourceCalls: Array<{ subagentPath: string; postings_total?: number }> = [];
   const recordLeadCalls: Array<{ subagentPath: string; source_job_id?: string; source?: string }> = [];
   for (const sub of scrapeSubJsonls) {
@@ -1867,7 +1870,9 @@ async function runScrapeJobs(): Promise<void> {
         if (!block || typeof block !== 'object') continue;
         const b = block as ToolUseBlock;
         if (b.type !== 'tool_use') continue;
-        if (b.name === 'mcp__nanoclaw__fetch_source' || b.name === 'fetch_source') {
+        if (b.name === 'mcp__nanoclaw__search_jobs' || b.name === 'search_jobs') {
+          searchJobsCalls.push({ subagentPath: sub.path });
+        } else if (b.name === 'mcp__nanoclaw__fetch_source' || b.name === 'fetch_source') {
           fetchSourceCalls.push({ subagentPath: sub.path });
         } else if (b.name === 'mcp__nanoclaw__record_job_lead' || b.name === 'record_job_lead') {
           const input = (b.input ?? {}) as { source_job_id?: string; source?: string };
@@ -1877,20 +1882,24 @@ async function runScrapeJobs(): Promise<void> {
     }
   }
 
-  if (fetchSourceCalls.length === 0) {
+  const sourceCalls = searchJobsCalls.length + fetchSourceCalls.length;
+  if (sourceCalls === 0) {
     fail(
-      `scrape-jobs did not call fetch_source. ` +
-        'Subagent must call fetch_source to discover postings. Check the subagent prompt and tool palette.',
+      `scrape-jobs called neither search_jobs nor fetch_source. ` +
+        'It must call a source tool to discover postings. Check the subagent prompt and tool palette.',
     );
   }
-  ok(`scrape-jobs called fetch_source ${fetchSourceCalls.length} time(s)`);
+  ok(
+    `scrape-jobs called a source tool: search_jobs ${searchJobsCalls.length}×, ` +
+      `fetch_source ${fetchSourceCalls.length}× (ATS fallback)`,
+  );
 
   // 3. ≥1 record_job_lead call landed → ≥1 row in job_leads.
   if (recordLeadCalls.length === 0) {
     fail(
       `scrape-jobs did not call record_job_lead. ` +
         'Subagent must call record_job_lead for at least one fetched posting. ' +
-        'Likely cause: pre-record judgment dropped everything, OR fetch_source returned zero postings (live ATS boards may have nothing matching).',
+        'Likely cause: pre-record judgment dropped everything, OR the source (search_jobs, or the fetch_source fallback) returned zero postings.',
     );
   }
   ok(`scrape-jobs called record_job_lead ${recordLeadCalls.length} time(s)`);
