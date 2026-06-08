@@ -136,13 +136,39 @@ interface HaikuResponse {
 }
 
 /**
- * One-shot Haiku call. Routes through OneCLI's HTTPS_PROXY (set in the
- * container env by `applyContainerConfig`), which intercepts outbound to
- * api.anthropic.com and injects the registered Anthropic credential.
- *
- * `x-api-key: placeholder` is a stand-in — OneCLI overwrites it with the
- * real key on the wire. ANTHROPIC_BASE_URL is honored if set (e.g.,
- * Ollama test mode points it at the local Ollama Anthropic shim).
+ * Parse `ANTHROPIC_CUSTOM_HEADERS` (newline-separated `Name: value` pairs) into
+ * a header map. The host's `buildClaudeContainerEnv` (src/providers/claude.ts)
+ * sets this for Portkey routing — `x-portkey-provider` (the AI-Provider slug
+ * that holds the Anthropic key), `x-portkey-config`, and the observability
+ * trace/metadata headers. The Claude Code SDK consumes this env var natively;
+ * this hand-rolled Haiku fetch must replicate it, or Portkey gets no provider
+ * slug and can't route the call to Anthropic. Split on the FIRST colon so JSON
+ * values (x-portkey-metadata) survive intact. Exported for tests.
+ */
+export function parseAnthropicCustomHeaders(
+  raw: string | undefined = process.env.ANTHROPIC_CUSTOM_HEADERS,
+): Record<string, string> {
+  if (!raw) return {};
+  const out: Record<string, string> = {};
+  for (const line of raw.split('\n')) {
+    const idx = line.indexOf(':');
+    if (idx === -1) continue;
+    const name = line.slice(0, idx).trim();
+    if (name) out[name] = line.slice(idx + 1).trim();
+  }
+  return out;
+}
+
+/**
+ * One-shot Haiku call. Routes through OneCLI's HTTPS_PROXY (set in the container
+ * env), which injects the credential on the wire. In this project
+ * ANTHROPIC_BASE_URL points at Portkey (§24.44): OneCLI injects
+ * `x-portkey-api-key` for api.portkey.ai, and we forward the Portkey routing
+ * headers (`x-portkey-provider`, etc.) from `ANTHROPIC_CUSTOM_HEADERS` — the
+ * SAME headers the SDK sends — so this call routes identically. Without them
+ * Portkey has no AI-Provider slug and can't reach Anthropic. When
+ * ANTHROPIC_BASE_URL is unset (plain install / Ollama shim) base falls back to
+ * api.anthropic.com and the custom-headers map is empty.
  */
 async function callHaiku(systemPrompt: string, userPrompt: string): Promise<string> {
   const baseUrl = process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com';
@@ -154,6 +180,9 @@ async function callHaiku(systemPrompt: string, userPrompt: string): Promise<stri
       'Content-Type': 'application/json',
       'x-api-key': process.env.ANTHROPIC_API_KEY || 'placeholder',
       'anthropic-version': '2023-06-01',
+      // Portkey routing (x-portkey-provider, x-portkey-config, trace/metadata) —
+      // the same headers the SDK sends; without them Portkey can't route.
+      ...parseAnthropicCustomHeaders(),
     },
     body: JSON.stringify({
       model,
