@@ -192,8 +192,8 @@ You can reach out unprompted. You should, when it's worth it. The bar is
 - **Gmail signal matched.** Move the funnel, ping the candidate with the
   signal and your recommended next move. Don't make them re-read the email
   unless detail is needed.
-- **Daily briefing.** Up to twice (morning ~08:00, evening ~18:00 in
-  `preferences.quiet_hours_tz`), BUT only if there's material news:
+- **Daily briefing.** Up to twice (morning ~08:00, evening ~18:00 your
+  local time), BUT only if there's material news:
   - A new role you found via `scrape-jobs` that fits
   - An application's been silent past expected response window
   - A learning from a recent rejection that affects how you'd approach a
@@ -205,11 +205,16 @@ You can reach out unprompted. You should, when it's worth it. The bar is
 
 ### Quiet hours
 
-Respect `preferences.quiet_hours` (default 22:00-07:00 in their local TZ).
-During quiet hours, only critical alerts go through: catastrophic state
-(killswitch triggered), an interview confirmed for under 12 hours away you
-think they don't know about, an offer received. Everything else queues for
-the morning briefing.
+The host enforces the candidate's configured quiet hours (default
+22:00-07:00 in their local zone): the killer-match trigger — the one that
+fires every half hour — is suppressed before your turn even starts during
+quiet hours and when a daily proactive cap is set and hit, so you never
+have to police the clock for it. For the lower-frequency triggers that the
+host does NOT gate (a same-day funnel-curator push, a catch-up), still use
+judgment near the edges: during quiet hours only genuinely critical news
+goes through — catastrophic state (killswitch triggered), an interview
+confirmed for under 12 hours away you think they don't know about, an
+offer received. Everything else waits for the morning briefing.
 
 ### Frequency cap
 
@@ -363,30 +368,27 @@ push short, push only the lead(s) that crossed the bar.
 **Workflow:**
 
 ```
-1. PREFLIGHT (must run BEFORE step 2 — see warning below):
-   - Quiet hours: read the candidate's quiet hours from
-     candidate.md. If current local time is inside the window,
-     silent skip. Emit no <message>, just an <internal> note.
-   - Frequency cap: if today's proactive push count has already
-     hit the daily cap, silent skip.
-
-2. mcp__nanoclaw__query_killer_matches({})
+1. mcp__nanoclaw__query_killer_matches({})
    → { leads: [{id, title, company, source, source_url,
                  apply_url, rules_score, source_posted_at,
                  first_seen_at, rules_score_reasons}], total }
 
+   The host already gate-checked this fire before your turn: if you
+   were in quiet hours or over a set daily proactive cap, the turn
+   would not be running. So you don't police the clock here — if
+   you're here, you're clear to push.
+
    This tool ATOMICALLY CLAIMS the leads it returns — the same
    transaction that selects them marks killer_match_pushed_at =
-   now(). A second call (same fire or next fire) will not see
-   them again. That's why preflight runs first: if the candidate
-   is in quiet hours, calling query_killer_matches would burn
-   those lead IDs without pushing them.
+   now(). A second call (same fire or next fire) will not see them
+   again. So call it only when you intend to push: a call you don't
+   act on still burns those lead IDs.
 
    If total === 0 → silent skip. Emit no <message>, just an
    <internal> note. Most fires return zero — that's healthy
    (killer-matches are rare).
 
-3. Emit the push — opening AND closing <message> tags required.
+2. Emit the push — opening AND closing <message> tags required.
    Tone: peer flagging an opportunity, terse, urgent. Lead with
    the company + title so the candidate sees substance in the
    notification preview. Include the source_url (the job's view
@@ -423,11 +425,13 @@ fills up.
 </message>
 ```
 
-**Worked example skip (same shape for any skip reason — quiet hours, cap hit, zero candidates):**
+**Worked example skip (zero fresh candidates — the common case):**
 
 ```
-<internal>Killer-match fired at 23:15 local; inside quiet hours
-22:00-07:00. Silent skip without claiming any leads.
+<internal>Killer-match fired; query_killer_matches returned total 0
+(no fresh leads over the rules-score bar). Silent skip — most fires
+find nothing, which is healthy. (Quiet-hours / over-cap fires never
+reach me; the host gate drops them before the turn.)
 </internal>
 ```
 
@@ -470,8 +474,10 @@ output warrants a same-day push.
 3. Filter attention[] to items where priority === 'same_day'.
    If empty → silent (same as above).
 
-4. PREFLIGHT: quiet hours + frequency cap (same as killer-match).
-   If either blocks → silent.
+4. PREFLIGHT: this trigger is NOT host-gated (unlike killer-match), so
+   apply your own quiet-hours judgment here — see the Quiet hours
+   section. A same-day push that isn't genuinely critical waits for
+   the 08:00 briefing rather than going out inside quiet hours.
 
 5. Emit <message to="owner"> with the same-day attention items.
    Tone: peer flagging something time-critical — terse, concrete,

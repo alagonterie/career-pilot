@@ -4689,6 +4689,37 @@ ATS becomes a pure down-fallback (not an always-on parallel source): a company-s
 
 ---
 
+#### 24.52 Host-side proactive guardrails (quiet hours + frequency cap)
+
+**Why now / the problem.** Three `defaults.json` keys — `quiet_hours`, `quiet_hours_tz`, `telegram_proactive_frequency_cap_per_day` — were referenced in the persona as `preferences.X` (authoritative-looking) but read by **no code** and never injected into the agent's context, so editing them did nothing (a latent footgun: a future "mute me before 9" setting would silently no-op). The proactive guardrails were purely prompt-enforced (a hardcoded "22:00–07:00" in the persona + the agent's own clock-reading), with no hard guarantee and no real counter. `quiet_hours_tz`'s default was also a stale `America/New_York` (unrelated to the owner's zone), the same class of bug as the §-prior `TZ` fix.
+
+**Design principle (settled with the owner).** Split the one feature into three things by where each belongs: **policy** (the window, cap number, zone) → DB (`preferences`), the single source of truth a future settings-UI *and* an agent NL-tool both write; **enforcement** (is this send suppressed right now? cap hit?) → host-side, deterministic; **judgment** (is this 2am thing critical enough to break quiet hours?) → the agent (it *tags* criticality, it doesn't gate). The agent stops being the gatekeeper.
+
+**Seam = the killer-match pre-wake gate (§24.49c), not core delivery.** `src/delivery.ts` is channel-generic upstream NanoClaw — gating career-pilot policy there would pollute core. The clean career-pilot host seam is the read-only `check_trigger_eligibility` pre-wake gate that already runs BEFORE the killer-match turn. Killer-match is the only *frequent* proactive **messager** and the only messaging trigger that fires during/adjacent to the default quiet window (its `*/30 7-22` cron emits at 22:00/22:30, inside 22:00–07:00). So the gate gains two checks (killer-match branch only):
+- **Quiet hours:** if `now` (in the resolved TZ) is inside `quiet_hours` → `eligible:false, reason:'quiet_hours'` → `wakeAgent:false`, zero model call. Close-detection stays ungated (silent housekeeping — fine at 06:00); the daily briefing/curator fire mid-morning, outside the default window, and aren't pre-wake-gated (v1 boundary; widening quiet hours to overlap the morning crons would need them gated too — fast-follow).
+- **Frequency cap (optional, OFF by default):** when `telegram_proactive_frequency_cap_per_day > 0` and today's killer-match pushes (count of `job_leads.killer_match_pushed_at >= local-midnight`) ≥ cap → `eligible:false, reason:'frequency_cap'`. Reuses the existing `killer_match_pushed_at` stamp — no new table, no core change. Counts killer-match lead-pushes (the dominant proactive channel); a unified cross-trigger counter is a future refinement.
+
+The container's `eligibilityToWake` maps any clean `eligible:false` → `wakeAgent:false` regardless of `reason`, so no container change. Fail-open is preserved (a host hiccup wakes the turn).
+
+**Config (`defaults.json`):** `quiet_hours` stays `"22:00-07:00"`; `quiet_hours_tz` `"America/New_York"` → `""` (empty ⇒ host resolves to the system `TIMEZONE`, killing the stale-zone footgun — quiet hours follow the owner's zone for free); `telegram_proactive_frequency_cap_per_day` `8` → `0` (off). All three become **live** (read by `readProactiveGateConfig`).
+
+**Helper:** `src/modules/career-pilot/quiet-hours.ts` — pure `parseQuietHours`/`isWithinQuietHours(now, window, tz)` (handles the midnight wrap; empty/`start==end` window ⇒ never, a clean disable), `startOfLocalDayUtcIso(now, tz)`, `readProactiveGateConfig(db)` (resolves empty tz → `TIMEZONE`). Unit-tested.
+
+**Persona:** the dead `preferences.quiet_hours`/`preferences.quiet_hours_tz` references are removed; the killer-match preflight drops the agent's now-redundant quiet-hours/cap self-check (the host gate suppresses those fires before the turn — a running turn is clear to push) while keeping the load-bearing "`query_killer_matches` atomically claims" warning. Criticality-exception guidance (offer / interview <12h / killswitch) is retained for the non-gated paths.
+
+**NL-vs-UI (the SaaS shape).** Policy in `preferences` gives both for free: one canonical row, many writers — a future settings page writes it, and the agent writes the *same* row via a (gated) `set_preference`-style tool on "don't ping me before 9." The value must never live in the prompt or agent memory (two sources of truth that drift). The agent NL-tool is a thin wrapper, deferred.
+
+**Out of scope (fast-follow):** the criticality-tagged outbound gate for the non-killer-match triggers (needs a clean career-pilot send seam or an MCP send-tool — core delivery is off-limits); gating curator/briefing for widened quiet windows; the `set_preference` NL tool; a unified cross-trigger proactive counter.
+
+**DoD:**
+1. `isWithinQuietHours` unit tests: normal window, midnight-wrap, boundary minutes, a resolved TZ, empty/`start==end` ⇒ disabled.
+2. `check_trigger_eligibility` killer-match returns `eligible:false, reason:'quiet_hours'` inside the window and `reason:'frequency_cap'` when an enabled cap is hit; close-detection is unaffected.
+3. `quiet_hours_tz` empty ⇒ resolves to the system `TIMEZONE`; cap `0` ⇒ no cap check runs.
+4. No `src/delivery.ts` (core) change; container unchanged; persona's dead `preferences.quiet_hours*` references gone.
+5. Host suite + typecheck + `format:check` clean.
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
