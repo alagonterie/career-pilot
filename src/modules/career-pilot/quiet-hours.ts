@@ -79,6 +79,65 @@ export function isWithinQuietHours(now: Date, window: string, tz: string): boole
   return cur >= startMin || cur < endMin; // wraps midnight (e.g. 22:00-07:00)
 }
 
+/** Is `tz` a usable IANA zone? Empty string is allowed (means "the system zone"). */
+export function isValidTimezone(tz: string): boolean {
+  if (!tz) return true;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The proactive-guardrail preferences the candidate may set via natural language (set_preference). */
+export const PROACTIVE_PREF_KEYS = [
+  'quiet_hours',
+  'quiet_hours_tz',
+  'telegram_proactive_frequency_cap_per_day',
+] as const;
+export type ProactivePrefKey = (typeof PROACTIVE_PREF_KEYS)[number];
+
+/**
+ * Validate + normalize a `set_preference` write. The agent supplies a key from
+ * `PROACTIVE_PREF_KEYS` and a value parsed from the candidate's natural-language
+ * request; the host stores the normalized string form (or rejects it). Reversible
+ * and non-destructive — it only writes the `preferences` row.
+ */
+export function validateProactivePref(
+  key: string,
+  value: unknown,
+): { ok: true; key: ProactivePrefKey; value: string } | { ok: false; message: string } {
+  if (!(PROACTIVE_PREF_KEYS as readonly string[]).includes(key)) {
+    return { ok: false, message: `key must be one of: ${PROACTIVE_PREF_KEYS.join(', ')}` };
+  }
+  const k = key as ProactivePrefKey;
+
+  if (k === 'quiet_hours') {
+    const s = String(value ?? '').trim();
+    if (s !== '' && !parseQuietHours(s)) {
+      return { ok: false, message: 'quiet_hours must be "HH:MM-HH:MM" (24-hour) or "" to disable' };
+    }
+    return { ok: true, key: k, value: s };
+  }
+  if (k === 'quiet_hours_tz') {
+    const s = String(value ?? '').trim();
+    if (!isValidTimezone(s)) {
+      return {
+        ok: false,
+        message: 'quiet_hours_tz must be a valid IANA zone (e.g. America/Denver) or "" for the system zone',
+      };
+    }
+    return { ok: true, key: k, value: s };
+  }
+  // telegram_proactive_frequency_cap_per_day
+  const n = typeof value === 'number' ? value : Number(String(value ?? '').trim());
+  if (!Number.isInteger(n) || n < 0) {
+    return { ok: false, message: 'telegram_proactive_frequency_cap_per_day must be a non-negative integer (0 = off)' };
+  }
+  return { ok: true, key: k, value: String(n) };
+}
+
 /** UTC ISO of the most recent local midnight in `tz` — the cap's "today" boundary. */
 export function startOfLocalDayUtcIso(now: Date, tz: string): string {
   // Whole-minute zone offsets (true for all modern IANA zones) mean the

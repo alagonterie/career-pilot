@@ -23,6 +23,8 @@ import { getDb } from '../../db/connection.js';
 import { log } from '../../log.js';
 import type { AgentGroup } from '../../types.js';
 
+import { readProactiveGateConfig } from './quiet-hours.js';
+
 /** Mirror of the `candidate_profile` table row. All fields nullable except `id`/`updated_at`. */
 export interface CandidateProfile {
   id: 1;
@@ -73,7 +75,10 @@ const ONBOARDING_SENTINEL = [
  * agent-relevant field is null/empty. Otherwise renders the populated
  * sections only — null fields are silently skipped.
  */
-export function renderPersona(profile: CandidateProfile | null): string {
+export function renderPersona(
+  profile: CandidateProfile | null,
+  quietHours?: { window: string; tz: string } | null,
+): string {
   if (!profile) return ONBOARDING_SENTINEL;
 
   const targetRoles = parseJsonArray(profile.target_roles, 'target_roles');
@@ -146,6 +151,18 @@ export function renderPersona(profile: CandidateProfile | null): string {
     sections.push('## Links', links.join('\n'));
   }
 
+  // Quiet hours (§24.52): the configured proactive-quiet window, so the agent's
+  // own judgment for the host-ungated triggers (funnel-curator same-day push,
+  // catch-up) uses the real value rather than a hardcoded default. The host
+  // separately hard-gates killer-match on the same preference. Empty ⇒ omitted.
+  if (quietHours && quietHours.window.trim()) {
+    const zone = quietHours.tz.trim() || 'system zone';
+    sections.push(
+      '## Quiet hours',
+      `${quietHours.window.trim()} (${zone}) — no proactive pings during this window; outside it, reach out normally.`,
+    );
+  }
+
   return sections.join('\n\n') + '\n';
 }
 
@@ -202,7 +219,16 @@ function formatUsd(n: number): string {
  */
 export function renderPersonaForGroup(group: AgentGroup): void {
   const profile = readCandidateProfile();
-  const body = renderPersona(profile);
+  let quietHours: { window: string; tz: string } | null = null;
+  if (profile) {
+    try {
+      const cfg = readProactiveGateConfig(getDb());
+      quietHours = { window: cfg.quietHours, tz: cfg.quietHoursTz };
+    } catch (err) {
+      log.warn('render-persona: quiet-hours config read failed, omitting the section', { err });
+    }
+  }
+  const body = renderPersona(profile, quietHours);
 
   const fragmentsDir = path.join(GROUPS_DIR, group.folder, '.claude-host-fragments');
   if (!fs.existsSync(fragmentsDir)) {

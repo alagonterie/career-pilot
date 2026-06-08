@@ -30,6 +30,7 @@ import {
   handleRecordFunnelEvent,
   handleRecordProgress,
   handleRecordTurnTelemetry,
+  handleSetPreference,
   handleUpdateApplication,
   handleUpdateProfileField,
 } from './actions.js';
@@ -164,6 +165,59 @@ describe('handleUpdateProfileField', () => {
     if (!resp.frame.ok) {
       expect(resp.frame.error.code).toBe('BAD_FIELD');
     }
+  });
+});
+
+// ── set_preference (proactive guardrails, §24.52) ──────────────────────────
+
+describe('handleSetPreference', () => {
+  function readPref(key: string): string | undefined {
+    const row = getDb().prepare('SELECT value FROM preferences WHERE key = ?').get(key) as
+      | { value: string }
+      | undefined;
+    return row?.value;
+  }
+
+  it('persists a valid quiet_hours window to preferences', async () => {
+    const c = actionContent('career_pilot.set_preference', { key: 'quiet_hours', value: '23:00-08:00' });
+    await handleSetPreference(c, FAKE_SESSION, inDb);
+
+    const resp = readResponse(c.requestId);
+    expect(resp.frame.ok).toBe(true);
+    if (resp.frame.ok) expect(resp.frame.data).toMatchObject({ key: 'quiet_hours', value: '23:00-08:00' });
+    expect(readPref('quiet_hours')).toBe('23:00-08:00');
+  });
+
+  it('normalizes + persists a numeric cap', async () => {
+    const c = actionContent('career_pilot.set_preference', {
+      key: 'telegram_proactive_frequency_cap_per_day',
+      value: 5,
+    });
+    await handleSetPreference(c, FAKE_SESSION, inDb);
+
+    const resp = readResponse(c.requestId);
+    expect(resp.frame.ok).toBe(true);
+    expect(readPref('telegram_proactive_frequency_cap_per_day')).toBe('5');
+  });
+
+  it('rejects an invalid quiet_hours value (BAD_ARGS), writes nothing', async () => {
+    const c = actionContent('career_pilot.set_preference', { key: 'quiet_hours', value: 'whenever' });
+    await handleSetPreference(c, FAKE_SESSION, inDb);
+
+    const resp = readResponse(c.requestId);
+    expect(resp.frame.ok).toBe(false);
+    if (!resp.frame.ok) expect(resp.frame.error.code).toBe('BAD_ARGS');
+    expect(readPref('quiet_hours')).toBeUndefined();
+  });
+
+  it('rejects a non-whitelisted key (BAD_ARGS)', async () => {
+    const c = actionContent('career_pilot.set_preference', { key: 'live_mode', value: 'true' });
+    await handleSetPreference(c, FAKE_SESSION, inDb);
+
+    const resp = readResponse(c.requestId);
+    expect(resp.frame.ok).toBe(false);
+    if (!resp.frame.ok) expect(resp.frame.error.code).toBe('BAD_ARGS');
+    expect(readPref('live_mode')).toBeUndefined();
   });
 });
 

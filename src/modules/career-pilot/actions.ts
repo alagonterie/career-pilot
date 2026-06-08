@@ -32,6 +32,8 @@ import { applyPass1 } from '../portal/sanitizer.js';
 import { isKnownApplicationStatus, upsertPublicFunnelView } from '../portal/public-funnel-view.js';
 import type { Session } from '../../types.js';
 
+import { validateProactivePref } from './quiet-hours.js';
+
 // ── Response writer (shared by all handlers) ──
 
 type ActionFrame =
@@ -245,6 +247,47 @@ export async function handleUpdateProfileField(
     writeResponse(inDb, requestId, { ok: true, data: { field } });
   } catch (err) {
     log.error('handleUpdateProfileField failed', { field, err });
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
+// ── set_preference (proactive guardrails, §24.52) ──────────────────────────
+//
+// The candidate's natural-language path to adjust quiet hours / the proactive
+// cap ("don't ping me before 9", "mute alerts on weekends", "up to 5 a day").
+// The agent translates the request into a whitelisted key + value; the host
+// validates + normalizes (validateProactivePref) and writes the `preferences`
+// row — the same single source of truth a settings UI would write. Owner-only
+// (registered behind denyIfNotOwner). Reversible, non-destructive.
+
+export async function handleSetPreference(
+  content: Record<string, unknown>,
+  _session: Session,
+  inDb: Database.Database,
+): Promise<void> {
+  const requestId = reqId(content);
+  const p = payload(content);
+
+  const result = validateProactivePref(p.key as string, p.value);
+  if (!result.ok) {
+    writeResponse(inDb, requestId, { ok: false, error: { code: 'BAD_ARGS', message: result.message } });
+    return;
+  }
+
+  try {
+    getDb()
+      .prepare(
+        `INSERT INTO preferences (key, value, updated_at) VALUES (?, ?, ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run(result.key, result.value, new Date().toISOString());
+    log.info('career_pilot.set_preference', { key: result.key });
+    writeResponse(inDb, requestId, { ok: true, data: { key: result.key, value: result.value } });
+  } catch (err) {
+    log.error('handleSetPreference failed', { key: result.key, err });
     writeResponse(inDb, requestId, {
       ok: false,
       error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },
