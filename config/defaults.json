@@ -61,10 +61,12 @@
     "close_detection_cron": "0 6 * * *",
     "close_detection_threshold_days": 14,
     "recruiter_sim_enabled": false,
-    "recruiter_sim_tick_interval_sec": 20,
-    "recruiter_sim_min_step_sec": 30,
-    "recruiter_sim_max_step_sec": 150,
-    "recruiter_sim_seed_interval_sec": 90,
+    "recruiter_sim_job_source": "real",
+    "recruiter_sim_pace": "fast",
+    "recruiter_sim_pace_presets": {
+      "fast": { "tick_interval_sec": 20, "min_step_sec": 30, "max_step_sec": 150, "seed_interval_sec": 90, "backdate": true },
+      "realistic": { "tick_interval_sec": 3600, "min_step_sec": 86400, "max_step_sec": 604800, "seed_interval_sec": 172800, "backdate": false }
+    },
     "recruiter_sim_max_concurrent": 8,
     "recruiter_sim_screen_pass_rate": 0.4,
     "recruiter_sim_offer_probability": 0.25,

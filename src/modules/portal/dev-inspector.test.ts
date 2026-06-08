@@ -139,7 +139,7 @@ describe('validateKnobWrite', () => {
     expect(validateKnobWrite('recruiter_sim_offer_probability', 1.5).ok).toBe(false); // > max 1
     expect(validateKnobWrite('recruiter_sim_offer_probability', '0.4')).toMatchObject({ ok: true, value: 0.4 });
     expect(validateKnobWrite('gmail_poll_interval_sec', 5).ok).toBe(false); // < min 10
-    expect(validateKnobWrite('recruiter_sim_tick_interval_sec', 'abc').ok).toBe(false);
+    expect(validateKnobWrite('recruiter_sim_daily_budget_usd', 'abc').ok).toBe(false);
   });
 
   it('validates cron expressions structurally', () => {
@@ -156,6 +156,15 @@ describe('validateKnobWrite', () => {
     expect(validateKnobWrite('dev_model_tier', 'gpt-5').ok).toBe(false); // not an allowed option
     expect(validateKnobWrite('dev_model_tier', 42).ok).toBe(false); // not a string
   });
+
+  it('validates the recruiter-sim enum toggles (job source + pace)', () => {
+    expect(validateKnobWrite('recruiter_sim_job_source', 'real')).toMatchObject({ ok: true, value: 'real' });
+    expect(validateKnobWrite('recruiter_sim_job_source', 'synthetic')).toMatchObject({ ok: true });
+    expect(validateKnobWrite('recruiter_sim_job_source', 'bogus').ok).toBe(false);
+    expect(validateKnobWrite('recruiter_sim_pace', 'realistic')).toMatchObject({ ok: true, value: 'realistic' });
+    expect(validateKnobWrite('recruiter_sim_pace', 'fast')).toMatchObject({ ok: true });
+    expect(validateKnobWrite('recruiter_sim_pace', 'turbo').ok).toBe(false);
+  });
 });
 
 // ── applyKnobWrite (persists to the preferences tier) ─────────────────────────
@@ -170,8 +179,8 @@ describe('applyKnobWrite', () => {
   });
 
   it('persists a number and a cron', () => {
-    applyKnobWrite(getDb(), { key: 'recruiter_sim_tick_interval_sec', value: 7 });
-    expect(getConfig<number>(getDb(), 'recruiter_sim_tick_interval_sec')).toBe(7);
+    applyKnobWrite(getDb(), { key: 'recruiter_sim_max_concurrent', value: 5 });
+    expect(getConfig<number>(getDb(), 'recruiter_sim_max_concurrent')).toBe(5);
     applyKnobWrite(getDb(), { key: 'funnel_curator_cron', value: '*/3 * * * *' });
     expect(getConfig<string>(getDb(), 'funnel_curator_cron')).toBe('*/3 * * * *');
   });

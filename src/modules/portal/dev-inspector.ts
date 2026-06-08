@@ -81,10 +81,20 @@ const MODEL_TIER_NOTE =
 export const KNOB_SPECS: Record<string, KnobSpec> = {
   // ── the recruiter-sim dial (SIM_KNOB_KEYS) ──
   recruiter_sim_enabled: { type: 'boolean', group: 'sim', label: 'Sim enabled' },
-  recruiter_sim_tick_interval_sec: { type: 'number', group: 'sim', label: 'Tick interval (s)', min: 5, max: 3600 },
-  recruiter_sim_min_step_sec: { type: 'number', group: 'sim', label: 'Min step (s)', min: 1, max: 604_800 },
-  recruiter_sim_max_step_sec: { type: 'number', group: 'sim', label: 'Max step (s)', min: 1, max: 604_800 },
-  recruiter_sim_seed_interval_sec: { type: 'number', group: 'sim', label: 'Seed interval (s)', min: 5, max: 604_800 },
+  recruiter_sim_job_source: {
+    type: 'enum',
+    group: 'sim',
+    label: 'Job source',
+    options: ['real', 'synthetic'],
+    note: 'real → seed simulated applications from the scraped job_leads pool (real company/role/JD; falls back to synthetic when the pool is empty); synthetic → fictional companies.',
+  },
+  recruiter_sim_pace: {
+    type: 'enum',
+    group: 'sim',
+    label: 'Pace',
+    options: ['fast', 'realistic'],
+    note: 'fast → minutes (compressed; email dates backdated); realistic → real-life timing (days between steps, real-time dates) so the funnel unfolds day-to-day.',
+  },
   recruiter_sim_max_concurrent: {
     type: 'number',
     group: 'sim',

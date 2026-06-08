@@ -32,6 +32,18 @@ export interface SimKnobs {
   noiseRatio: number;
   /** Daily Haiku-spend cap for the prose, on top of the dev caps. */
   dailyBudgetUsd: number;
+  /** Job source (D16): 'real' seeds from the job_leads pool, 'synthetic' from the fictional set. */
+  jobSource: 'real' | 'synthetic';
+  /** Pace-preset date behavior (D17): true → backdate email dates (fast — compressed but
+   *  realistic-looking); false → real-time dates (realistic — the funnel unfolds in real wall-clock). */
+  backdate: boolean;
+}
+
+/** One real job drawn from the `job_leads` pool to seed a simulated application (D16). */
+export interface SeedJob {
+  company: string;
+  role: string;
+  jdText: string;
 }
 
 export type SimAppStatus = 'active' | 'ghosted' | 'closed';
