@@ -4,6 +4,8 @@
 **Date:** 2026-05-27.
 **Scope:** Answer the four open questions (Q1 source landscape, Q2 filter input model, Q3 dedup + schema, Q4 surfacing pattern) needed to spec the `scrape-jobs` subagent for Phase 2.5.
 
+> **⚠ Q1 REVERSAL (2026-06-08 — see STRATEGY.md §24.50).** This file recommended ATS-direct (Greenhouse/Lever) as the *primary* source with Google-Jobs/JSearch as Tier B. That is **reversed**: a **Google Jobs API (SerpApi `engine=google_jobs`) is now the primary source**, and ATS-direct demotes to a keyless/quota-free **down-fallback**. Why: the research optimized for breadth + the legal-safety of *self-operated* scraping; the owner's actual objective is *human-equivalent lead quality with zero curation overhead*. ATS-direct is bounded by the hand-curated `ats-targets.json` token list and returns whole boards (sales/GTM noise); Google for Jobs returns the same relevance-ranked, cross-board-deduped postings the candidate finds by hand on LinkedIn/Indeed/company sites. Verified 2026-06-08: SerpApi `google_jobs` is live (free 250/mo, "US Legal Shield"), and OneCLI injects the `api_key` as a query param (`--param-name`) so the container-side call never holds the key. The Q3 schema (`job_leads`, `content_fingerprint`) and Q4 pool-first surfacing are **unaffected** — only Q1's source-mix recommendation is superseded. Full design + the verified live contract live in STRATEGY §24.50.
+
 ---
 
 ## TL;DR
