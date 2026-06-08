@@ -24,6 +24,7 @@ import { STAGE_CLASSIFICATIONS, buildEmailContent, buildNoiseContent } from './t
 import type {
   InjectEmailIntent,
   SeedApplicationIntent,
+  SeedJob,
   SimApp,
   SimKnobs,
   SimOutcome,
@@ -149,12 +150,39 @@ function pickOutcome(knobs: SimKnobs, rng: () => number): SimOutcome {
   return rng() < knobs.offerProbability / total ? 'offer' : 'rejection';
 }
 
-/** Seed a new simulated application (returns the app state + the DB-seed intent). */
-function makeSeed(nowMs: number, rng: () => number): { app: SimApp; intent: SeedApplicationIntent } {
-  const { name, label } = pick(rng, COMPANIES);
-  const role = pick(rng, ROLES);
+/**
+ * Seed a new simulated application (returns the app state + the DB-seed intent).
+ * Real source (D16): pick a real job from the pool the runner supplied — the
+ * obfuscated label is left blank for the runner to derive (`<industry>-<letter>`
+ * is DB-stateful, so it can't be computed in this pure function). Synthetic
+ * source (or an empty pool): the fictional companies + a descriptive label.
+ * `backdate` (D17): fast pace backdates the applied date; realistic applies now.
+ */
+function makeSeed(
+  nowMs: number,
+  rng: () => number,
+  backdate: boolean,
+  seedJobs?: SeedJob[],
+): { app: SimApp; intent: SeedApplicationIntent } {
+  let name: string;
+  let role: string;
+  let label: string;
+  let jdText: string;
+  if (seedJobs && seedJobs.length > 0) {
+    const job = pick(rng, seedJobs);
+    name = job.company;
+    role = job.role;
+    jdText = job.jdText;
+    label = ''; // runner derives the obfuscated label for real-company apps
+  } else {
+    const company = pick(rng, COMPANIES);
+    name = company.name;
+    label = company.label;
+    role = pick(rng, ROLES);
+    jdText = jdForRole(role);
+  }
   const appId = `sim-${nowMs}-${Math.floor(rng() * 1e9).toString(36)}`;
-  const appliedAtMs = nowMs - randDaysMs(rng, SEED_BACKDATE_DAYS);
+  const appliedAtMs = backdate ? nowMs - randDaysMs(rng, SEED_BACKDATE_DAYS) : nowMs;
   const app: SimApp = {
     appId,
     company: name,
@@ -177,7 +205,7 @@ function makeSeed(nowMs: number, rng: () => number): { app: SimApp; intent: Seed
     companyName: name,
     obfuscatedLabel: label,
     roleTitle: role,
-    jdText: jdForRole(role),
+    jdText,
     appliedAtMs,
   };
   return { app, intent };
@@ -189,7 +217,9 @@ function makeSeed(nowMs: number, rng: () => number): { app: SimApp; intent: Seed
  */
 function stepApp(app: SimApp, knobs: SimKnobs, nowMs: number, rng: () => number): InjectEmailIntent {
   const stage = app.stageIndex;
-  const internalDateMs = Math.min(app.realCursorMs, nowMs); // never future-date
+  // Fast pace backdates along the realistic timeline cursor; realistic pace dates
+  // each email at ~now (the real wall-clock gaps build the days-in-stage). Never future-date.
+  const internalDateMs = knobs.backdate ? Math.min(app.realCursorMs, nowMs) : nowMs;
 
   // Terminal: past the linear stages → emit offer or rejection, then close.
   if (stage >= STAGE_CLASSIFICATIONS.length) {
@@ -236,7 +266,7 @@ function stepApp(app: SimApp, knobs: SimKnobs, nowMs: number, rng: () => number)
   return intent;
 }
 
-function makeNoiseInject(nowMs: number, rng: () => number): InjectEmailIntent {
+function makeNoiseInject(nowMs: number, rng: () => number, backdate: boolean): InjectEmailIntent {
   const content = buildNoiseContent(randInt(rng, 0, 3));
   return {
     type: 'inject_email',
@@ -249,7 +279,7 @@ function makeNoiseInject(nowMs: number, rng: () => number): InjectEmailIntent {
     subject: content.subject,
     deterministicBody: content.deterministicBody,
     prosePrompt: content.prosePrompt,
-    internalDateMs: nowMs - randInt(rng, 0, 48) * 60 * 60 * 1000,
+    internalDateMs: backdate ? nowMs - randInt(rng, 0, 48) * 60 * 60 * 1000 : nowMs,
     calendar: null,
   };
 }
@@ -261,6 +291,9 @@ export interface PlanTickInput {
   knobs: SimKnobs;
   nowMs: number;
   rng: () => number;
+  /** Real-job seed pool (D16) — the runner supplies it when jobSource==='real';
+   *  empty/undefined → makeSeed falls back to the synthetic set. */
+  seedJobs?: SeedJob[];
 }
 
 /**
@@ -277,7 +310,7 @@ export function planTick(input: PlanTickInput): TickPlan {
   // 1. Seed a new application if due and below capacity.
   const activeCount = apps.filter((a) => a.status === 'active').length;
   if (activeCount < knobs.maxConcurrent && nowMs - lastSeedAtMs >= knobs.seedIntervalSec * 1000) {
-    const { app, intent } = makeSeed(nowMs, rng);
+    const { app, intent } = makeSeed(nowMs, rng, knobs.backdate, input.seedJobs);
     apps.push(app);
     intents.push(intent);
     lastSeedAtMs = nowMs;
@@ -292,7 +325,7 @@ export function planTick(input: PlanTickInput): TickPlan {
 
   // 3. Occasional standalone noise (classifier-precision filler).
   if (rng() < knobs.noiseRatio) {
-    intents.push(makeNoiseInject(nowMs, rng));
+    intents.push(makeNoiseInject(nowMs, rng, knobs.backdate));
   }
 
   return { intents, nextState: { apps, lastSeedAtMs } };

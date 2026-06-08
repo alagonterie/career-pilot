@@ -20,11 +20,12 @@ import type Database from 'better-sqlite3';
 import { DATA_DIR } from '../../../config.js';
 import { getDb } from '../../../db/connection.js';
 import { log } from '../../../log.js';
+import { nextObfuscatedLabel } from '../actions.js';
 import { fetchDevAccount, insertCalendarEvent, insertEmail } from './inject.js';
 import { readSimKnobs } from './knobs.js';
 import { enrichBody } from './prose.js';
 import { emptySimState, planTick } from './scenario.js';
-import type { InjectEmailIntent, SeedApplicationIntent, SimKnobs, SimState } from './types.js';
+import type { InjectEmailIntent, SeedApplicationIntent, SeedJob, SimKnobs, SimState } from './types.js';
 
 const FIRST_TICK_DELAY_MS = 10_000;
 const MIN_TICK_INTERVAL_MS = 5_000;
@@ -95,6 +96,57 @@ export function seedApplicationRow(db: Database.Database, intent: SeedApplicatio
   );
 }
 
+// ── real-jobs source (D16) ─────────────────────────────────────────────────────
+
+/**
+ * Lightweight industry guess from a real role/JD, for the obfuscated label. The
+ * sim has no `analyze_jd`, so this keeps labels descriptive (`infra-a`, `ai-b`)
+ * instead of all `misc` — and, load-bearing, non-empty so the public mirror's
+ * Pass-2 actually redacts the real company name (it skips empty labels).
+ */
+export function simIndustryFromRole(role: string, jdText: string): string {
+  const hay = `${role} ${jdText}`.toLowerCase();
+  if (/\b(infra|infrastructure|platform|sre|reliability|devops|cloud|kubernetes)\b/.test(hay)) return 'infra';
+  if (/\b(ml|ai|llm)\b|machine learning|deep learning|generative ai|data scien/.test(hay)) return 'ai';
+  if (/\b(data|analytics|etl|warehouse|pipeline)\b/.test(hay)) return 'data';
+  if (/\b(security|appsec|infosec|cryptography)\b/.test(hay)) return 'security';
+  if (/\b(frontend|full-?stack|web|ui|react)\b/.test(hay)) return 'web';
+  if (/\b(mobile|ios|android)\b/.test(hay)) return 'mobile';
+  return 'swe';
+}
+
+/**
+ * Real-jobs seed pool (D16): recent open `job_leads` (any source), one per
+ * company, excluding companies already in flight. Empty → `makeSeed` falls back
+ * to the synthetic set, so the sim never stalls. Best-effort: returns [] on error.
+ */
+export function readRealSeedJobs(db: Database.Database, activeCompanies: Set<string>): SeedJob[] {
+  let rows: Array<{ company: string; title: string; description_text: string | null }>;
+  try {
+    rows = db
+      .prepare(
+        `SELECT company, title, description_text FROM job_leads
+          WHERE closed_at IS NULL AND company != ''
+          ORDER BY first_seen_at DESC
+          LIMIT 50`,
+      )
+      .all() as Array<{ company: string; title: string; description_text: string | null }>;
+  } catch (err) {
+    log.warn('recruiter-sim: readRealSeedJobs failed', { err });
+    return [];
+  }
+  const seen = new Set<string>();
+  const out: SeedJob[] = [];
+  for (const r of rows) {
+    const company = (r.company ?? '').trim();
+    const key = company.toLowerCase();
+    if (!company || !r.title || activeCompanies.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ company, role: r.title, jdText: (r.description_text ?? '').replace(/\s+/g, ' ').trim().slice(0, 400) });
+  }
+  return out;
+}
+
 // ── the tick ─────────────────────────────────────────────────────────────────
 
 async function executeInject(
@@ -149,11 +201,25 @@ async function runOneTick(db: Database.Database, knobs: SimKnobs): Promise<void>
 
   const file = simStatePath();
   const state = reconcileState(db, loadState(file));
-  const plan = planTick({ state, knobs, nowMs: Date.now(), rng: Math.random });
+  // Real-jobs source (D16): when toggled, seed from the scraped job_leads pool
+  // (excluding companies already in flight); 'synthetic' or an empty pool → the
+  // fictional set (makeSeed's fallback).
+  const activeCompanies = new Set(state.apps.filter((a) => a.status === 'active').map((a) => a.company.toLowerCase()));
+  const seedJobs = knobs.jobSource === 'real' ? readRealSeedJobs(db, activeCompanies) : undefined;
+  const plan = planTick({ state, knobs, nowMs: Date.now(), rng: Math.random, seedJobs });
 
   for (const intent of plan.intents) {
     if (intent.type === 'seed_application') {
       try {
+        // Real-company apps arrive with an empty label (makeSeed can't derive the
+        // DB-stateful <industry>-<letter>); assign one here so the public mirror
+        // obfuscates the real company name — an empty label would skip redaction.
+        if (intent.obfuscatedLabel === '') {
+          const label = nextObfuscatedLabel(simIndustryFromRole(intent.roleTitle, intent.jdText));
+          intent.obfuscatedLabel = label;
+          const app = plan.nextState.apps.find((a) => a.appId === intent.appId);
+          if (app) app.obfuscatedLabel = label;
+        }
         seedApplicationRow(db, intent);
       } catch (err) {
         log.warn('recruiter-sim: seed application failed', { err });

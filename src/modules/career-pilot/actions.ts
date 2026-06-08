@@ -771,7 +771,7 @@ function slugify(s: string): string {
  * are not safe — but UPSERTs are serialized through the host's single-writer
  * connection so we don't worry about it.
  */
-function nextObfuscatedLabel(industry: string): string {
+export function nextObfuscatedLabel(industry: string): string {
   const rows = getDb()
     .prepare('SELECT obfuscated_label FROM applications WHERE obfuscated_label LIKE ?')
     .all(`${industry}-%`) as Array<{ obfuscated_label: string }>;

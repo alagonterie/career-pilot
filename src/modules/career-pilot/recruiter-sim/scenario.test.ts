@@ -19,6 +19,8 @@ function knobs(overrides: Partial<SimKnobs> = {}): SimKnobs {
     ghostProbability: 0,
     noiseRatio: 0,
     dailyBudgetUsd: 1,
+    jobSource: 'synthetic',
+    backdate: true,
     ...overrides,
   };
 }
@@ -149,5 +151,46 @@ describe('recruiter-sim scenario', () => {
     // After 5 ticks the first app has closed (offer at tick 5); a second may seed.
     const active = state.apps.filter((a) => a.status === 'active').length;
     expect(active).toBeLessThanOrEqual(1);
+  });
+
+  it('seeds from the real-jobs pool when jobSource is real and a pool is supplied (D16)', () => {
+    const seedJobs = [{ company: 'GEICO', role: 'Senior Backend Engineer', jdText: 'Build and scale infra.' }];
+    const plan = planTick({
+      state: emptySimState(),
+      knobs: knobs({ jobSource: 'real' }),
+      nowMs: 1_000_000,
+      rng: mulberry32(1),
+      seedJobs,
+    });
+    const seed = plan.intents.find((i) => i.type === 'seed_application');
+    expect(seed?.type).toBe('seed_application');
+    if (seed?.type !== 'seed_application') return;
+    expect(seed.companyName).toBe('GEICO');
+    expect(seed.roleTitle).toBe('Senior Backend Engineer');
+    expect(seed.jdText).toContain('infra');
+    expect(seed.obfuscatedLabel).toBe(''); // the runner derives the <industry>-<letter> label
+  });
+
+  it('falls back to the synthetic set when jobSource is real but the pool is empty', () => {
+    const plan = planTick({
+      state: emptySimState(),
+      knobs: knobs({ jobSource: 'real' }),
+      nowMs: 1_000_000,
+      rng: mulberry32(1),
+      seedJobs: [],
+    });
+    const seed = plan.intents.find((i) => i.type === 'seed_application');
+    expect(seed?.type).toBe('seed_application');
+    if (seed?.type !== 'seed_application') return;
+    expect(seed.obfuscatedLabel.length).toBeGreaterThan(0); // synthetic companies carry a descriptive label
+  });
+
+  it('dates emails at ~now (not backdated) when backdate is off — the realistic pace', () => {
+    const now = 1_000_000_000_000;
+    const { injects } = runTicks(emptySimState(), knobs({ backdate: false }), 5, now);
+    for (const intent of injects) {
+      // realistic pace: each email is dated at its (per-tick) wall-clock time, never weeks in the past
+      expect(intent.internalDateMs).toBeGreaterThanOrEqual(now);
+    }
   });
 });

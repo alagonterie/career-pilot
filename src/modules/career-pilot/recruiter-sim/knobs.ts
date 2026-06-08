@@ -15,10 +15,8 @@ import type { SimKnobs } from './types.js';
 /** The full set of `recruiter_sim_*` keys (defaults live in config/defaults.json). */
 export const SIM_KNOB_KEYS = [
   'recruiter_sim_enabled',
-  'recruiter_sim_tick_interval_sec',
-  'recruiter_sim_min_step_sec',
-  'recruiter_sim_max_step_sec',
-  'recruiter_sim_seed_interval_sec',
+  'recruiter_sim_job_source',
+  'recruiter_sim_pace',
   'recruiter_sim_max_concurrent',
   'recruiter_sim_screen_pass_rate',
   'recruiter_sim_offer_probability',
@@ -28,13 +26,54 @@ export const SIM_KNOB_KEYS = [
   'recruiter_sim_daily_budget_usd',
 ] as const;
 
+/** A pace preset's timing bundle (config/defaults.json `recruiter_sim_pace_presets`). */
+interface PacePreset {
+  tick_interval_sec: number;
+  min_step_sec: number;
+  max_step_sec: number;
+  seed_interval_sec: number;
+  backdate: boolean;
+}
+
+/** Safe fallback if the presets object is missing/malformed — the current "fast" values. */
+const FALLBACK_PACE: PacePreset = {
+  tick_interval_sec: 20,
+  min_step_sec: 30,
+  max_step_sec: 150,
+  seed_interval_sec: 90,
+  backdate: true,
+};
+
+function isPacePreset(v: unknown): v is PacePreset {
+  if (!v || typeof v !== 'object') return false;
+  const p = v as Record<string, unknown>;
+  return (
+    typeof p.tick_interval_sec === 'number' &&
+    typeof p.min_step_sec === 'number' &&
+    typeof p.max_step_sec === 'number' &&
+    typeof p.seed_interval_sec === 'number' &&
+    typeof p.backdate === 'boolean'
+  );
+}
+
 export function readSimKnobs(db: Database.Database): SimKnobs {
+  // Pace is a preset selector (D17): resolve the timing bundle from
+  // `recruiter_sim_pace_presets[pace]`, falling back to `fast` then a hardcoded
+  // safe bundle. The four timing values are no longer individual knobs.
+  const pace = getConfig<string>(db, 'recruiter_sim_pace');
+  const presets = getConfig<Record<string, unknown>>(db, 'recruiter_sim_pace_presets') ?? {};
+  const candidate = presets[pace] ?? presets.fast;
+  const preset = isPacePreset(candidate) ? candidate : FALLBACK_PACE;
+  const jobSource = getConfig<string>(db, 'recruiter_sim_job_source') === 'synthetic' ? 'synthetic' : 'real';
+
   return {
     enabled: getConfig<boolean>(db, 'recruiter_sim_enabled'),
-    tickIntervalSec: getConfig<number>(db, 'recruiter_sim_tick_interval_sec'),
-    minStepSec: getConfig<number>(db, 'recruiter_sim_min_step_sec'),
-    maxStepSec: getConfig<number>(db, 'recruiter_sim_max_step_sec'),
-    seedIntervalSec: getConfig<number>(db, 'recruiter_sim_seed_interval_sec'),
+    jobSource,
+    tickIntervalSec: preset.tick_interval_sec,
+    minStepSec: preset.min_step_sec,
+    maxStepSec: preset.max_step_sec,
+    seedIntervalSec: preset.seed_interval_sec,
+    backdate: preset.backdate,
     maxConcurrent: getConfig<number>(db, 'recruiter_sim_max_concurrent'),
     screenPassRate: getConfig<number>(db, 'recruiter_sim_screen_pass_rate'),
     offerProbability: getConfig<number>(db, 'recruiter_sim_offer_probability'),

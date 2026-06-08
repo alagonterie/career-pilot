@@ -5,7 +5,15 @@ import path from 'path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { isRecruiterSimEnv, loadState, reconcileState, saveState, seedApplicationRow } from './runner.js';
+import {
+  isRecruiterSimEnv,
+  loadState,
+  readRealSeedJobs,
+  reconcileState,
+  saveState,
+  seedApplicationRow,
+  simIndustryFromRole,
+} from './runner.js';
 import type { SeedApplicationIntent, SimApp, SimState } from './types.js';
 
 function appsDb(): Database.Database {
@@ -117,5 +125,38 @@ describe('recruiter-sim runner helpers', () => {
       if (saved === undefined) delete process.env.ENVIRONMENT;
       else process.env.ENVIRONMENT = saved;
     }
+  });
+});
+
+describe('recruiter-sim real-jobs source (D16)', () => {
+  it('simIndustryFromRole maps roles to a descriptive, non-empty industry slug', () => {
+    expect(simIndustryFromRole('Senior Software Engineer - Infrastructure', '')).toBe('infra');
+    expect(simIndustryFromRole('ML Engineer', 'LLM and deep learning systems')).toBe('ai');
+    expect(simIndustryFromRole('Senior Backend Engineer', 'APIs and services')).toBe('swe');
+  });
+
+  it('readRealSeedJobs returns recent open leads — one per company, excluding closed + in-flight', () => {
+    const db = new Database(':memory:');
+    db.exec(
+      `CREATE TABLE job_leads (id TEXT PRIMARY KEY, company TEXT NOT NULL, title TEXT NOT NULL,
+        description_text TEXT, closed_at TEXT, first_seen_at TEXT NOT NULL);`,
+    );
+    const ins = db.prepare(
+      'INSERT INTO job_leads (id, company, title, description_text, closed_at, first_seen_at) VALUES (?,?,?,?,?,?)',
+    );
+    ins.run('l1', 'GEICO', 'Senior Backend Engineer', 'Build infra', null, '2026-06-08T10:00:00Z');
+    ins.run('l2', 'GEICO', 'Platform Engineer', 'Infra', null, '2026-06-08T09:00:00Z'); // dup company → deduped
+    ins.run('l3', 'NVIDIA', 'AI Infra Engineer', 'CUDA', null, '2026-06-08T08:00:00Z');
+    ins.run('l4', 'Stripe', 'Backend', 'Payments', '2026-06-07T00:00:00Z', '2026-06-08T07:00:00Z'); // closed
+    ins.run('l5', 'InFlightCo', 'Engineer', 'x', null, '2026-06-08T06:00:00Z'); // already in flight
+
+    const out = readRealSeedJobs(db, new Set(['inflightco']));
+    const companies = out.map((j) => j.company);
+    expect(companies).toContain('GEICO');
+    expect(companies).toContain('NVIDIA');
+    expect(companies).not.toContain('Stripe'); // closed
+    expect(companies).not.toContain('InFlightCo'); // in flight
+    expect(companies.filter((c) => c === 'GEICO')).toHaveLength(1); // one per company
+    expect(out.every((j) => j.role.length > 0)).toBe(true);
   });
 });
