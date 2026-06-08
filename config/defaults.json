@@ -60,6 +60,8 @@
     "close_detection_enabled": true,
     "close_detection_cron": "0 6 * * *",
     "close_detection_threshold_days": 14,
+    "job_scrape_enabled": true,
+    "job_scrape_cron": "0 5 * * *",
     "recruiter_sim_enabled": false,
     "recruiter_sim_job_source": "real",
     "recruiter_sim_pace": "fast",

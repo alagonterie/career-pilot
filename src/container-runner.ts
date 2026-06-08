@@ -30,6 +30,7 @@ import { initGroupFilesystem } from './group-init.js';
 import { ensureCloseDetectionTask } from './modules/career-pilot/close-detection-bootstrap.js';
 import { ensureDailyBriefingTask } from './modules/career-pilot/daily-briefing-bootstrap.js';
 import { ensureFunnelCuratorTask } from './modules/career-pilot/funnel-curator-bootstrap.js';
+import { ensureJobScrapeTask } from './modules/career-pilot/scrape-jobs-bootstrap.js';
 import { ensureKillerMatchTask } from './modules/career-pilot/killer-match-bootstrap.js';
 import { renderPersonaForGroup } from './modules/career-pilot/render-persona.js';
 import { getPauseState, type PauseState } from './modules/portal/system-modes.js';
@@ -334,6 +335,14 @@ function buildMounts(
             sessionId: session.id,
             recurrence: closeDetectionRes.recurrence,
             nextFireAt: closeDetectionRes.nextFireAt,
+          });
+        }
+        const jobScrapeRes = ensureJobScrapeTask(getDb(), inDb, agentGroup, session);
+        if (jobScrapeRes.action === 'inserted') {
+          log.info('Heartbeat bootstrap: job-scrape task scheduled', {
+            sessionId: session.id,
+            recurrence: jobScrapeRes.recurrence,
+            nextFireAt: jobScrapeRes.nextFireAt,
           });
         }
       } finally {

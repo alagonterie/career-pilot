@@ -121,6 +121,7 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
   close_detection_cron: { type: 'cron', group: 'pacing', label: 'Close detection cron', note: CRON_NOTE },
   killer_match_cron: { type: 'cron', group: 'pacing', label: 'Killer-match cron', note: CRON_NOTE },
   daily_briefing_time: { type: 'cron', group: 'pacing', label: 'Daily briefing cron', note: CRON_NOTE },
+  job_scrape_cron: { type: 'cron', group: 'pacing', label: 'Job-scrape cron', note: CRON_NOTE },
   // ── dev cost caps ──
   owner_daily_llm_budget_usd: {
     type: 'number',
