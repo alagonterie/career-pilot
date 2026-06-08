@@ -330,7 +330,10 @@ Call `mcp__nanoclaw__record_progress` 2-4 times per run. Pass
 - `judging` — mid-judgment if the batch is large (>20 postings)
 - `final-pass` — before returning (`N recorded, K skipped`)
 
-Keep `detail` short (≤80 chars), no PII. Host caps at 6 calls per run.
+Keep `detail` short (≤80 chars). No PII, and **never put candidate-private
+figures (the comp floor / salary numbers) in a `detail`** — these traces are
+mirrored to a public feed. The query + counts are fine; comp is not. Host
+caps at 6 calls per run.
 
 ---
 
