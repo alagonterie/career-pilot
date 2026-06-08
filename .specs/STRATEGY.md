@@ -1238,7 +1238,7 @@ The host has a runtime helper `getConfig(key, fallback?)` that reads from the ri
 | Container | CPU limit per session | 1.0 | preferences |
 | Container | Idle timeout | 30 min | preferences |
 | Container | Max concurrent | 4 | preferences |
-| Cache | Prompt cache TTL strategy | 1-hour | `.env` (`ENABLE_PROMPT_CACHING_1H`, wired §24.49b) |
+| Cache | Prompt cache TTL strategy | 1-hour | `.env` (`ENABLE_PROMPT_CACHING_1H`, wired §24.49b) — 1h is Anthropic's hard max (only `5m`/`1h` exist; a 24h TTL was investigated 2026-06-08 and does not exist, so this is already optimal) |
 | Sanitization | LLM review threshold (chars) | 1000 | preferences |
 | Sanitization | LLM review aggressiveness | high | preferences |
 | Telegram | Quiet hours | 22:00-07:00 local | preferences |
