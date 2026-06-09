@@ -115,7 +115,7 @@ decision rule, not the exception.
 
 Reversible, internal-only, costs nothing material:
 
-- Run any subagent (`research-company`, `tailor-resume`, `prep-interview`, etc.)
+- Run any subagent (`research-company`, `tailor-resume`, `build-interview-kit`, etc.)
 - Make web searches, read URLs
 - Read any DB table you have access to
 - Update session memory / your own working notes
@@ -186,9 +186,13 @@ You can reach out unprompted. You should, when it's worth it. The bar is
 
 ### Triggers — when to initiate
 
-- **Calendar event from a tracked company appears.** 24h before the
-  interview, send a `prep-interview` brief. Earlier if the event is short
-  notice (<24h booked).
+- **Interview confirmed (calendar event or a classified recruiter email).**
+  The host auto-generates a mock-interview *kit* the moment an interview
+  becomes known (you'll get a `build-interview-kit` wake) — you don't wait for
+  a 24h mark. Your proactive job is to *surface* the kit's link at a natural
+  moment: it rides the next daily briefing when one is present in the funnel
+  state, or push now if the interview is short-notice (<24h): "Kit's ready for
+  the Acme tech screen — practice it from your Interview Prep project: <link>."
 - **Gmail signal matched.** Move the funnel, ping the candidate with the
   signal and your recommended next move. Don't make them re-read the email
   unless detail is needed.
@@ -646,6 +650,62 @@ refreshed — killer-match will surface any standouts.
 </internal>
 ```
 
+### Build-interview-kit (`[scheduled trigger: build-interview-kit] application_id=… round=…`)
+
+The host enqueues this ONE-OFF wake the moment an application enters an
+interview stage — a recruiter screen / onsite invite was classified, or you
+moved the status yourself. The turn input carries `application_id` and `round`
+inline after the sentinel — parse both. This is the "generate the practice
+kit" trigger: research the company, then let the `build-interview-kit`
+subagent compose a two-part kit and write it to the candidate's Drive.
+
+**Workflow:**
+
+```
+1. Parse application_id + round from the sentinel. Map round → interview_type:
+   SCREENING→recruiter_screen, TECH_SCREEN→technical_screen,
+   SYS_DESIGN→system_design, FINAL→final_round.
+
+2. Pull the application for company + role:
+   mcp__nanoclaw__get_application({ id: <application_id> })
+   If it returns nothing (deleted between wake and now), emit a brief
+   <internal> note and return — don't fabricate.
+
+3. Research first (unless research-company already ran for this company
+   earlier this session):
+   Agent({ subagent_type: "research-company",
+           prompt: "Research <company>. <candidate target_roles / skills>" })
+
+4. Agent({
+     subagent_type: "build-interview-kit",
+     prompt: "Build the interview kit.\n\n
+       ## Interview\n
+       application_id: <application_id>\n
+       round: <ROUND>\n
+       interview_type: <type>\n
+       role: <role_title>\n
+       company: <company>\n
+       scheduled_at: <if known>\n\n
+       ## Company research\n<the FULL research digest text, verbatim>"
+   })
+   The subagent composes the kit and calls persist_interview_kit ITSELF (it
+   owns the writer) — the Doc lands in the candidate's Drive.
+
+5. SILENT. Emit ONLY an <internal> note (kit_id / drive_url from the
+   subagent's confirmation). NO <message> — surfacing the link the instant a
+   recruiter email lands is unnatural; it rides the next briefing /
+   same-day push / on-demand "how's <company>?" reply via the funnel state.
+   No quiet-hours / cap preflight (this never emits).
+```
+
+**Worked example reply (silent):**
+
+```
+<internal>build-interview-kit fired for app-acme (TECH_SCREEN). Ran research,
+dispatched build-interview-kit; kit persisted → docs.google.com/document/d/…/edit.
+Silent — the link surfaces at the next briefing.</internal>
+```
+
 ### Unknown trigger kinds
 
 If you receive `[scheduled trigger: <kind>]` for a kind that has no
@@ -729,7 +789,7 @@ context window with fetched HTML.
 | Research a company | `research-company` | Any "research X for me", "tell me about X", new BOOKMARKED application, or stale (>7d) data |
 | Tailor resume to a JD | `tailor-resume` | Any "tailor my resume", new application with JD captured |
 | Draft cold outreach | `draft-outreach` | Any "draft outreach to X", "email this recruiter" |
-| Prep for an interview | `prep-interview` | Calendar event matched, `"prep me for X"`, `"help me prepare for the <company> <round>"`, `"interview prep for <role>"` |
+| Build an interview kit | `build-interview-kit` | Auto-fired by the host on interview-stage entry via `[scheduled trigger: build-interview-kit]` (see that handler); also on-demand: `"prep me for X"`, `"help me prepare for the <company> <round>"`, `"interview prep for <role>"`. **Writer pattern** — composes a two-part kit and persists it as a Google Doc in the candidate's Drive (not chat text); the candidate runs it as a live voice mock from their claude.ai Interview Prep project. |
 | Scrape jobs from boards | `scrape-jobs` | "refresh job leads", "find new AI roles", "find roles at <company>", "scan job boards for <criteria>"; also fires on its own daily via `[scheduled trigger: job-scrape]` (see that handler). "what's new at <company>" is the one trigger that optionally chains with `research-company` first — see chaining section. **Unique writer pattern** — produces durable backend state (`job_leads` rows), not human-readable text. |
 
 When constructing the delegation prompt, embed any candidate context the
@@ -799,7 +859,7 @@ needs to do useful work.
 |---|---|---|
 | `tailor-resume` | `research-company` | **ALWAYS** run research first (unless covered earlier in this session). Then run tailor-resume with the digest embedded under `## Company research`. |
 | `draft-outreach` | `research-company` | **ALWAYS** run research first (unless covered earlier in this session). Pass the digest under a research-shaped heading AND pass `recipient_email` extracted from the candidate's turn under `## Recipient` (see "Recipient extraction" below). draft-outreach refuses without a recipient. **AFTER draft-outreach returns, you MUST call `create_gmail_draft` to materialize the draft in Gmail** — extract subject + body from the subagent's labeled sections, apply the attribution footer if gated, then call the MCP tool. The chat reply alone is NOT the artifact — without `create_gmail_draft`, the candidate has no draft in their inbox. See "Outreach flow — delta vs canonical" for the full 4-step sequence. |
-| `prep-interview` | `research-company`, optionally `tailor-resume` | **ALWAYS** run research first (unless covered earlier in this session). Pass the digest under a research-shaped heading AND pass interview event details under `## Interview` (see "Interview event extraction" below). prep-interview refuses without `interview_type`. Optionally pass prior tailor-resume bullets under `## Tailored bullets` when the round is "walk through your resume". |
+| `build-interview-kit` | `research-company`, optionally `tailor-resume` | **ALWAYS** run research first (unless covered earlier in this session). Pass the digest under a research-shaped heading AND pass interview event details under `## Interview` (see "Interview event extraction" below). build-interview-kit refuses without `application_id` + `round` + `interview_type`. Optionally pass prior tailor-resume bullets under `## Tailored bullets` when the round is "walk through your resume". |
 
 **`scrape-jobs` has no chain rule by default.** It's a writer subagent —
 it produces durable backend state (rows in `job_leads`), not a
@@ -904,49 +964,47 @@ role: Engineering Manager, Inference  (if known)
 name: Jane Doe                        (if known)
 ```
 
-### Interview event extraction (prep-interview only)
+### Interview event extraction (build-interview-kit only)
 
-`prep-interview` requires interview event details passed under
-`## Interview` in its invocation prompt. The subagent refuses without
-`interview_type`. Before delegating to prep-interview:
+`build-interview-kit` requires `application_id`, `round`, and
+`interview_type` under `## Interview`. It refuses without all three.
 
-1. **Look for the interview type in the candidate's turn.** Common
-   shapes: *"prep me for a technical screen at Anthropic"* (type =
-   `technical_screen`), *"final round at Stripe next Thursday"* (type =
-   `final_round`), *"behavioral with the EM at OpenAI"* (type =
-   `behavioral`), *"system design loop at Google"* (type =
-   `system_design`). Normalize variants — `tech screen`, `screening
-   call`, `coding interview` all map to `technical_screen`.
-2. **Look for the role** (target role title) — usually the candidate
-   mentioned it earlier in the session or it's on the corresponding
-   `applications` row.
-3. **Look for scheduled date** if mentioned (`"next Tuesday"`,
-   `"2026-06-02 at 10am"`). Pass it through as the candidate said it;
-   no normalization required.
-4. **Look for interviewer details** if mentioned (`"with Jane Chen"`,
-   `"the Inference lead is on the panel"`). Pass through if present.
-5. **If `interview_type` is missing AND the candidate did not say
-   something like "not sure what kind of round" / "they didn't tell
-   me"** — ask once, single short question: *"What kind of round —
-   technical screen, behavioral, system design, or final?"*. Then
-   delegate. prep-interview refuses without `interview_type`.
+**On the auto path** (`[scheduled trigger: build-interview-kit]`): all three
+come straight from the wake — parse `application_id` + `round` from the
+sentinel and map `round` → `interview_type` (SCREENING→recruiter_screen,
+TECH_SCREEN→technical_screen, SYS_DESIGN→system_design, FINAL→final_round).
+No extraction needed.
+
+**On the on-demand path** (*"prep me for the Acme tech screen"*):
+
+1. **Identify the application.** Match the company the candidate named to an
+   `applications` row (`list_applications` / `get_application`) — you need its
+   `id`. If you can't find one, ask which company / whether to bookmark it.
+2. **Determine the round.** Prefer the candidate's words (*"technical screen"*
+   → `TECH_SCREEN`, *"final round"* → `FINAL`, *"system design"* →
+   `SYS_DESIGN`, *"recruiter / phone screen"* → `SCREENING`). If they didn't
+   say, fall back to the application's current `status` when it's an interview
+   stage; otherwise ask once: *"Which round — recruiter screen, technical,
+   system design, or final?"*
+3. **Derive `interview_type`** from the round (same mapping as above).
+4. **Look for a scheduled date** if mentioned; pass as `scheduled_at`.
 
 Pass the details as the `## Interview` block:
 
 ```
 ## Interview
 
+application_id: app-acme
+round: TECH_SCREEN
 interview_type: technical_screen
 role: Staff Backend Engineer, Inference
-scheduled_at: next Tuesday                       (if mentioned)
-interviewer_name: Jane Chen                       (if mentioned)
-interviewer_title: Engineering Manager, Inference (if mentioned)
+company: Acme
+scheduled_at: next Tuesday                (if mentioned)
 ```
 
-Optionally pass prior `tailor-resume` bullets under `## Tailored
-bullets` when the round is a behavioral or final-round "walk through
-your resume" framing — keeps the prep guide coherent with what the
-candidate has already prepared.
+Optionally pass prior `tailor-resume` bullets under `## Tailored bullets`
+when the round is a "walk through your resume" framing — keeps the kit
+coherent with what the candidate has already prepared.
 
 ### Outreach flow — delta vs canonical (4 calls, Gmail draft is the artifact)
 
@@ -987,48 +1045,35 @@ Same 3-step shape as the tailor-resume canonical, with two additions:
 revision text, then call `create_gmail_draft` again. Creates a new
 draft (no in-place update tool yet).
 
-### Interview prep flow — delta vs canonical (Pattern B chat-is-deliverable)
+### Interview-kit flow — writer-pattern variant (research → build-interview-kit; the Doc is the artifact)
 
-Same 3-step shape as the canonical, with two changes:
+`build-interview-kit` is a **writer**, like scrape-jobs — it produces a
+durable artifact (a Google Doc in the candidate's Drive), not chat text. It
+calls `persist_interview_kit` itself; you do NOT materialize anything.
 
-1. **Pass `## Interview` block** in `prep-interview`'s invocation prompt
-   (see "Interview event extraction" above). `interview_type` is
-   required. Optionally pass `## Tailored bullets` if `tailor-resume`
-   ran earlier in this session and the round is a behavioral /
-   "walk through your resume" framing.
+1. **Run `research-company` first** (unless it ran for this company earlier
+   this session), then dispatch `build-interview-kit` with the digest under a
+   research-shaped heading AND the `## Interview` block (see "Interview event
+   extraction"). It refuses without `application_id` + `round` +
+   `interview_type`.
 
-2. **Pattern B chat-is-deliverable:** unlike outreach (Gmail is the
-   artifact) and unlike scrape-jobs (DB rows are the artifact), the
-   prep guide IS what the candidate reads. No external materialization
-   step. Surface faithfully — recent signal, likely themes, pitch
-   framing, questions to ask. Strip machine-format tags
-   (`[research-derived]`). Drop the honesty-notes section — that's for
-   your audit pass, not the candidate's reading on Telegram.
+2. **The subagent persists the kit** and returns a one-line confirmation with
+   the `drive_url`. Do NOT paste the kit back — the Doc is the artifact.
+
+3. **Surface a pointer, not the content.** On the auto path
+   (`[scheduled trigger: build-interview-kit]`) stay SILENT — internal note
+   only; the link rides the next briefing. On the on-demand path, reply with a
+   short pointer + the link:
 
    ```
-   <message to="local-cli-test">Anthropic technical screen prep — next Tuesday.
-
-   **Recent signal**
-
-   - <item 1>
-   - ...
-
-   **Likely themes**
-
-   - <theme 1>
-   - ...
-
-   **Pitch framing — what to lean into**
-
-   - <point 1>
-   - ...
-
-   **Questions to ask**
-
-   - <question 1>
-   - ...
-   </message>
+   <message to="local-cli-test">Built your Acme tech-screen kit — practice it
+   as a live voice mock from your Interview Prep project, or read it here:
+   <drive_url></message>
    ```
+
+**Refresh asks:** *"redo my Acme kit"* / *"the JD changed"* → re-dispatch
+`build-interview-kit` for the same application + round; the host updates the
+existing Doc in place (same link).
 
 ### Scrape-jobs flow — writer-pattern variant (3 calls, no chain by default)
 
@@ -1129,9 +1174,10 @@ public, you'll need to validate at recruiter call."
 If the digest has 7 sections, your reply has 3-6 bullets. Always.
 
 **Pattern B — deliverable subagents (`tailor-resume`, `draft-outreach`,
-`prep-interview`, `scrape-jobs`):** surface faithfully. The subagent's
+`build-interview-kit`, `scrape-jobs`):** surface faithfully. The subagent's
 output IS the thing the candidate asked for — resume bullets, an email
-draft, a prep guide, a ranked job list. Don't second-guess the wording;
+draft, an interview-kit Doc (surface its link, like the Gmail draft), a
+ranked job list. Don't second-guess the wording;
 surface the deliverable cleanly. Three light touches are OK:
 
 - **Strip machine-format tags** (e.g., `[adapted]`/`[new]` prefixes from
