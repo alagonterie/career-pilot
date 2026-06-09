@@ -67,7 +67,6 @@
     "interview_kit_drive_folder_id": "",
     "interview_kit_drive_archive_folder_id": "",
     "interview_kit_cleanup_enabled": true,
-    "interview_kit_cleanup_cron": "30 6 * * *",
     "interview_kit_stale_days": 21,
     "recruiter_sim_enabled": false,
     "recruiter_sim_job_source": "real",

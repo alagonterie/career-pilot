@@ -35,6 +35,7 @@ import type { JobLeadPayload, PostingSummary, Source, SourcePriority } from '../
 import type { Session } from '../../types.js';
 
 import { computeFingerprint } from './lead-fingerprint.js';
+import { runKitCleanupSweep } from './interview-kit-actions.js';
 import { computeRulesScore, profileFromRow } from './lead-rules-score.js';
 import { isWithinQuietHours, readProactiveGateConfig, startOfLocalDayUtcIso } from './quiet-hours.js';
 
@@ -798,6 +799,16 @@ export async function handleCloseStaleLeads(
       ok: true,
       data: { closed_count: closedCount, threshold_days: thresholdDays, cutoff },
     });
+
+    // §24.53: ride the daily housekeeping sweep — archive interview kits whose
+    // application is terminal or ghosted past the threshold (the backstop for
+    // the symmetric terminal-transition archive). Best-effort AFTER writeResponse
+    // (it touches Drive; must never block or fail the lead-close response).
+    if (getConfig<boolean>(db, 'interview_kit_cleanup_enabled', true)) {
+      void runKitCleanupSweep(db).catch((sweepErr) =>
+        log.error('interview-kit cleanup sweep (rode close-detection) failed', { sweepErr }),
+      );
+    }
   } catch (err) {
     log.error('handleCloseStaleLeads failed', { err });
     writeResponse(inDb, requestId, {

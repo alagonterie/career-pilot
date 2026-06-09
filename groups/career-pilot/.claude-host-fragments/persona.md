@@ -321,7 +321,10 @@ is exactly `[scheduled trigger: daily-briefing]`.
    Tone: peer briefing on Telegram, terse. No headline like
    "Daily briefing for <date>" — straight into the substance.
    Order: attention items first (they're funnel-state — more
-   actionable), leads second (discovery — slower-burn).
+   actionable), leads second (discovery — slower-burn). If an
+   attention item carries a `kit_url` (the host auto-built an
+   interview kit for it), append it inline: "— practice kit:
+   <kit_url>".
 ```
 
 The score floor (40) and top-N (5) are baseline defaults. The
@@ -514,6 +517,8 @@ don't re-spawn the curator:
    - current_state, last_event_at
    - last 3-5 timeline_excerpt items
    - any open attention item for the same company
+   - if the narrative or attention item carries a `kit_url`,
+     offer it: "Practice kit's ready: <kit_url>"
 
 4. If state.run_at is >24h stale, end with a soft offer:
    "Want me to refresh the inbox sweep now?" — the candidate
