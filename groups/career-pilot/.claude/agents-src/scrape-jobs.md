@@ -332,7 +332,10 @@ Call `mcp__nanoclaw__record_progress` 2-4 times per run. Pass
 
 Keep `detail` short (≤80 chars). No PII, and **never put candidate-private
 figures (the comp floor / salary numbers) in a `detail`** — these traces are
-mirrored to a public feed. The query + counts are fine; comp is not. Host
+mirrored to a public feed. The query + role + counts are fine; comp is not.
+**Keep it company-generic too** — don't single out a specific company by name in
+a `detail` (a broad query like "senior backend, remote · 18 postings" is exactly
+right). The host sanitizes downstream as a safety net — don't lean on it. Host
 caps at 6 calls per run.
 
 ---

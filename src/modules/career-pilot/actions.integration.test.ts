@@ -797,6 +797,31 @@ describe('proactive trace-capture (§24.24)', () => {
     expect(pub.summary).toContain('19 postings'); // bare counts must survive
   });
 
+  it('record_progress now redacts a tracked company name (centralized Pass 1+2, F2)', async () => {
+    // This describe's beforeEach seeds app-pro with company "Acme" (an
+    // obfuscated, non-public application; label misc-a). The OLD Pass-1-only
+    // `sanitizeProgressDetail` fork left that name in the public /live feed; the
+    // centralized pipeline routes progress through Pass 2, which now redacts it.
+    const c = {
+      requestId: `req-${Math.random().toString(36).slice(2, 8)}`,
+      payload: {
+        subagent_name: 'research-company',
+        stage: 'digging',
+        detail: 'researching Acme and its recent launches',
+      },
+    };
+    await handleRecordProgress(c, FAKE_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+
+    const pub = getDb()
+      .prepare(
+        `SELECT summary FROM public_audit_trail WHERE category = 'subagent_progress' AND agent_name = 'research-company'`,
+      )
+      .get() as { summary: string };
+    expect(pub.summary).toContain('[REDACTED:misc-a]');
+    expect(pub.summary).not.toContain('Acme');
+  });
+
   it('defaults to reactive (proactive=0) when no wake message is present', async () => {
     // No seedWake — only the beforeEach's trigger=0 response row exists.
     const c = actionContent('career_pilot.record_funnel_event', {

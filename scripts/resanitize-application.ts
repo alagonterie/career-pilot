@@ -114,7 +114,7 @@ if (candidates.length > 1) {
 }
 
 const app = candidates[0];
-const result = resanitizeApplicationAuditTrail(db, app.id);
+const result = await resanitizeApplicationAuditTrail(db, app.id);
 console.log(
   `Resanitized application ${app.id} (company="${app.company_name}", public_state=${app.public_state}, ` +
     `label=${app.obfuscated_label}): rewrote ${result.rewritten} row(s), deleted ${result.deleted} stale row(s).`,

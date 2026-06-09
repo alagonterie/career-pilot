@@ -17,6 +17,8 @@ import type Database from 'better-sqlite3';
 import { getDb } from '../../db/connection.js';
 import { log } from '../../log.js';
 
+import { applyPass3, pass3Active } from './sanitizer-pass3.js';
+
 export interface SanitizeOpts {
   application_id?: string;
   db?: Database.Database;
@@ -153,24 +155,45 @@ export function applyPass2(text: string, db: Database.Database): string {
   return redactCompanies(text, apps);
 }
 
-// ── Pass 3 stub ───────────────────────────────────────────────────────────
+// ── Public entry points ─────────────────────────────────────────────────────
 
 /**
- * No-op stub. Sub-milestone 4.2 will replace this with a Haiku LLM review
- * (or whichever architectural option from §24.10 we pick — Pass 3 can't
- * run host-side since OneCLI's credential injection only covers container
- * env).
+ * Deterministic sanitizer: Pass 1 (regex PII) + Pass 2 (DB company/alias
+ * replacement). Synchronous, never throws. This is the floor every public-bound
+ * string gets; callers that need an inline string (`published_learning`, the
+ * resanitize re-mirror, the anonymization demo) use it directly. Pass 3 (the
+ * async LLM layer) is added on top by `sanitizeForPublic`.
  */
-export function applyPass3(text: string, _opts: SanitizeOpts): string {
-  return text;
-}
-
-// ── Public entry point ────────────────────────────────────────────────────
-
 export function sanitize(raw: string, opts: SanitizeOpts = {}): string {
   const db = opts.db ?? getDb();
   let t = applyPass1(raw);
   t = applyPass2(t, db);
-  t = applyPass3(t, opts);
   return t;
+}
+
+/**
+ * Full public-mirror sanitizer: deterministic `sanitize()` then, when Pass 3 is
+ * active (enabled + Portkey reachable), the host-side semantic obfuscation layer
+ * (`applyPass3`).
+ *
+ * Returns `{ text, ok }`:
+ *   - Pass 3 inactive (CI / local-dev, no key) → `{ text: <deterministic>, ok: true }`
+ *     — today's behavior; the caller still runs its drop-on-leak net.
+ *   - Pass 3 active + succeeds → `{ text: <obfuscated>, ok: true }`.
+ *   - Pass 3 active + fails (any reason) → `{ text: <deterministic>, ok: false }`
+ *     — the caller WITHHOLDS the row (fail-safe, decided 2026-06-09). The private
+ *     truth is untouched.
+ *
+ * Never throws.
+ */
+export async function sanitizeForPublic(
+  raw: string,
+  opts: SanitizeOpts & { obfuscatedLabel?: string; traceId?: string } = {},
+): Promise<{ text: string; ok: boolean }> {
+  const db = opts.db ?? getDb();
+  const deterministic = sanitize(raw, opts);
+  if (!pass3Active(db)) return { text: deterministic, ok: true };
+  const refined = await applyPass3(deterministic, db, { obfuscatedLabel: opts.obfuscatedLabel }, opts.traceId);
+  if (refined === null) return { text: deterministic, ok: false };
+  return { text: refined, ok: true };
 }

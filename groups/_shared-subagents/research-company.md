@@ -153,9 +153,13 @@ own `subagent_name: "research-company"`. Reasonable stages:
 - `extracting-team-signals` — when pulling structured info from a careers/team page
 - `verifying-citations` — final pass before returning
 
-Keep `detail` short (≤80 chars), candidate-friendly, no PII (it gets
-regex-sanitized regardless). The host caps you at 6 calls per session-subagent
-run — over-call returns a RATE_LIMITED error you can safely ignore.
+Keep `detail` short (≤80 chars), candidate-friendly, no PII. **Keep it
+company-generic** — this mirrors to the PUBLIC activity feed, so say what you're
+*doing* ("digging into the company's recent launches"), not *who* ("researching
+Acme's MI300"). Don't name the company, its products, people, or events. The
+host sanitizes downstream as a safety net — don't lean on it; write generic in
+the first place. The host caps you at 6 calls per session-subagent run —
+over-call returns a RATE_LIMITED error you can safely ignore.
 
 ---
 
