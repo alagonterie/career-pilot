@@ -45,16 +45,17 @@
  *                           (stub mode); body honesty-grounded; record_
  *                           progress rows emitted; reply surfaces
  *                           draft_id pointer.
- *   --flow=prep-interview   Seeded profile + BOOKMARKED Anthropic row.
- *                           Full Phase 2.4 DoD: chained Task calls
- *                           (research-company → prep-interview);
- *                           prep-interview invocation prompt contains
- *                           ## Interview block with interview_type;
- *                           output produces ≥2 of 4 mandatory content
- *                           categories; output references research-
- *                           derived terms + candidate-profile terms;
- *                           orchestrator surfaces the prep guide
- *                           faithfully (Pattern B).
+ *   --flow=build-interview-kit
+ *                           Seeded profile + BOOKMARKED Anthropic row.
+ *                           §24.53 writer-pattern DoD: chained Task calls
+ *                           (research-company → build-interview-kit);
+ *                           build-interview-kit invocation prompt carries
+ *                           ## Interview with application_id + round +
+ *                           interview_type; an interview_kits row lands with
+ *                           a real Google Doc drive_url (the subagent's
+ *                           persist_interview_kit → host → Drive write —
+ *                           needs OneCLI connected to Drive); ≥1 record_
+ *                           progress row; reply points at the kit link.
  *   --flow=scrape-jobs      Seeded profile. NO bookmarked application.
  *                           Full Phase 2.5 v1.0 DoD: scrape-jobs subagent
  *                           dispatched, fetch_source called against real
@@ -163,10 +164,7 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..');
 // hazards. Calling `node tsx/dist/cli.mjs <script>` is portable and direct.
 const NODE_BIN = process.execPath;
 const TSX_CLI = path.join(REPO_ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs');
-const runTsx = (script: string, args: string[] = []): [string, string[]] => [
-  NODE_BIN,
-  [TSX_CLI, script, ...args],
-];
+const runTsx = (script: string, args: string[] = []): [string, string[]] => [NODE_BIN, [TSX_CLI, script, ...args]];
 
 // Strip ANSI escape sequences from a string so substring matching against
 // log lines is reliable regardless of TTY color settings.
@@ -182,7 +180,7 @@ type Flow =
   | 'research-company'
   | 'tailor-resume'
   | 'draft-outreach'
-  | 'prep-interview'
+  | 'build-interview-kit'
   | 'scrape-jobs'
   | 'daily-briefing'
   | 'killer-match'
@@ -199,7 +197,7 @@ const FLOWS: ReadonlySet<Flow> = new Set([
   'research-company',
   'tailor-resume',
   'draft-outreach',
-  'prep-interview',
+  'build-interview-kit',
   'scrape-jobs',
   'daily-briefing',
   'killer-match',
@@ -216,7 +214,7 @@ const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'research-company',
   'tailor-resume',
   'draft-outreach',
-  'prep-interview',
+  'build-interview-kit',
   'scrape-jobs',
   'daily-briefing',
   'killer-match',
@@ -432,10 +430,7 @@ async function teardownHost(h: HostHandle): Promise<void> {
   // down. Logs help diagnose why a chat turn timed out — without this,
   // `docker rm -f` discards the only record of what the agent was doing.
   try {
-    const ids = execSync(
-      'docker ps -a --filter "name=nanoclaw-v2-career-pilot" --format "{{.ID}}"',
-      { stdio: 'pipe' },
-    )
+    const ids = execSync('docker ps -a --filter "name=nanoclaw-v2-career-pilot" --format "{{.ID}}"', { stdio: 'pipe' })
       .toString()
       .trim()
       .split('\n')
@@ -506,7 +501,13 @@ async function chatTurn(text: string, timeoutMs = 300_000): Promise<string> {
     throw new Error(`chat turn exited ${result}\nstderr:\n${err}`);
   }
   const reply = out.trim();
-  console.log(`  < ${reply.split('\n').map((l) => `  ${l}`).join('\n').trimStart()}`);
+  console.log(
+    `  < ${reply
+      .split('\n')
+      .map((l) => `  ${l}`)
+      .join('\n')
+      .trimStart()}`,
+  );
   return reply;
 }
 
@@ -564,10 +565,7 @@ async function runResearchCompany(): Promise<void> {
     role_title: 'Staff Backend Engineer',
     obfuscated_label: 'ai-a',
   });
-  const reply = await chatTurn(
-    'research anthropic for me before i think about the application',
-    600_000,
-  );
+  const reply = await chatTurn('research anthropic for me before i think about the application', 600_000);
   if (reply.length === 0) fail('reply was empty');
 
   const jsonl = findLatestSessionJsonl();
@@ -1193,14 +1191,14 @@ async function runDraftOutreach(): Promise<void> {
   if (FORBIDDEN_SUBJECTS.test(subjectLine)) {
     fail(`subject is a forbidden placeholder phrase: "${subjectLine}"`);
   }
-  ok(`subject line valid (${subjectLine.length} chars): "${subjectLine.slice(0, 50)}${subjectLine.length > 50 ? '...' : ''}"`);
+  ok(
+    `subject line valid (${subjectLine.length} chars): "${subjectLine.slice(0, 50)}${subjectLine.length > 50 ? '...' : ''}"`,
+  );
 
   // Body word count. Strip markdown ([adapted]/[new] tags, asterisks,
   // backticks) before counting so the cap reflects "what the recipient
   // sees", not "what the drafter wrote with audit tags".
-  const bodyForCount = draftBodyRaw
-    .replace(/\[(?:adapted|new)\]/gi, '')
-    .replace(/[*_`]/g, '');
+  const bodyForCount = draftBodyRaw.replace(/\[(?:adapted|new)\]/gi, '').replace(/[*_`]/g, '');
   const bodyWords = bodyForCount.split(/\s+/).filter((w) => w.length > 0);
   if (bodyWords.length > 200) {
     console.error('  --- draft body (first 2000 chars) ---');
@@ -1270,9 +1268,7 @@ async function runDraftOutreach(): Promise<void> {
     'recipient',
     'justification',
   ]);
-  const researchOverlap = [...researchWords]
-    .filter((w) => bodyWordsLower.has(w))
-    .filter((w) => !COMMON.has(w));
+  const researchOverlap = [...researchWords].filter((w) => bodyWordsLower.has(w)).filter((w) => !COMMON.has(w));
   if (researchOverlap.length < 2) {
     console.error('  --- draft body (first 2000 chars) ---');
     console.error(draftBodyRaw.slice(0, 2000));
@@ -1288,15 +1284,15 @@ async function runDraftOutreach(): Promise<void> {
     console.error('  --- draft body (first 2000 chars) ---');
     console.error(draftBodyRaw.slice(0, 2000));
     console.error('  --- end ---');
-    fail('body references no candidate-profile term (Go|Rust|PostgreSQL|Kubernetes). Body must rest on candidate facts.');
+    fail(
+      'body references no candidate-profile term (Go|Rust|PostgreSQL|Kubernetes). Body must rest on candidate facts.',
+    );
   }
   ok(`body references ${researchOverlap.length} research-derived terms + at least 1 candidate-profile term`);
 
   // 5. create_gmail_draft tool_use observed with the right recipient,
   // returned a stub draft_id.
-  const gmailDraftCalls = listAllToolCallBlocks(jsonl).filter(
-    (b) => b.name === 'mcp__nanoclaw__create_gmail_draft',
-  );
+  const gmailDraftCalls = listAllToolCallBlocks(jsonl).filter((b) => b.name === 'mcp__nanoclaw__create_gmail_draft');
   if (gmailDraftCalls.length === 0) {
     const allCalls = listAllToolCalls(jsonl);
     console.error('  --- all orchestrator tool_use calls ---');
@@ -1371,7 +1367,10 @@ async function runDraftOutreach(): Promise<void> {
     );
   }
   ok(
-    `draft-outreach emitted ${progressRows.length} record_progress row(s) (stages: ${progressRows.slice(0, 4).map((r) => r.stage).join(', ')})` +
+    `draft-outreach emitted ${progressRows.length} record_progress row(s) (stages: ${progressRows
+      .slice(0, 4)
+      .map((r) => r.stage)
+      .join(', ')})` +
       `${progressRows.length === 1 ? ' — single emission within GLM run-variance, wiring proven' : ''}`,
   );
 
@@ -1379,9 +1378,7 @@ async function runDraftOutreach(): Promise<void> {
   // "Open Gmail" (or similar) and does NOT contain the full body verbatim.
   // The body is the canonical artifact in Gmail; chat reply is a pointer.
   const mentionsDraftIdOrGmail =
-    reply.includes(draftId) ||
-    /\bgmail\b/i.test(reply) ||
-    /\bdraft\s+(?:saved|created|id)/i.test(reply);
+    reply.includes(draftId) || /\bgmail\b/i.test(reply) || /\bdraft\s+(?:saved|created|id)/i.test(reply);
   if (!mentionsDraftIdOrGmail) {
     console.error('  --- orchestrator reply (first 2000 chars) ---');
     console.error(reply.slice(0, 2000));
@@ -1405,42 +1402,35 @@ async function runDraftOutreach(): Promise<void> {
   );
 }
 
-async function runPrepInterview(): Promise<void> {
-  header('Flow: prep-interview');
-  // Phase 2.4 full DoD per STRATEGY.md §24.4.
+async function runBuildInterviewKit(): Promise<void> {
+  header('Flow: build-interview-kit');
+  // §24.53 — the writer-pattern interview-kit flow (replaces the prep-interview
+  // chat-deliverable flow). Tier-4 / local-only.
   //
-  // Third chained-subagent flow. The orchestrator must:
-  //   - extract interview event details (interview_type, role,
-  //     scheduled_at) from the candidate's turn
+  // The orchestrator must:
+  //   - identify the seeded Anthropic application + extract the round
+  //     (technical screen → TECH_SCREEN) from the candidate's turn
   //   - invoke research-company first (about Anthropic)
-  //   - invoke prep-interview next, passing research digest +
-  //     ## Interview block carrying interview_type + role
-  //   - surface the prep guide faithfully (Pattern B, NOT the
-  //     outreach exception — the chat reply IS the artifact, there
-  //     is no external materialization step)
+  //   - invoke build-interview-kit next, passing the research digest + an
+  //     ## Interview block carrying application_id + round + interview_type
+  //   - the SUBAGENT itself calls persist_interview_kit, which the host
+  //     materializes as a Google Doc and records in interview_kits
   //
-  // 10+ in-test assertion blocks mapped to spec DoD items 1-9:
-  //   1. Both subagent types dispatched (research-company first),
-  //      ≥1 success per type.
-  //   2. prep-interview's invocation prompt has a research-shaped
-  //      heading AND an ## Interview section carrying interview_type.
-  //   3. Best prep-interview attempt produces at least 2 of the 4
-  //      mandatory content categories (recent signal / question
-  //      themes / pitch framing / questions to ask) — relaxed from
-  //      "all 4 required" per the §24.4 anticipated empirical
-  //      relaxation note.
-  //   4. Output references ≥3 distinctive research-derived words.
-  //   5. Output references ≥1 candidate-profile term (Go/Rust/
-  //      PostgreSQL/Kubernetes).
-  //   6. Output mentions the specific interview type (substring
-  //      match on technical screen / technical_screen, case-insens).
-  //   7. Output word count between 100 and 800.
-  //   8. ≥2 record_progress rows in public_audit_trail for
-  //      prep-interview keyed to this run.
-  //   9. Orchestrator's user-facing reply surfaces the prep guide
-  //      faithfully (≥200 chars OR contains ≥3 deliverable keywords).
+  // Assertions:
+  //   1. Both subagent types dispatched (research-company first), ≥1 success each.
+  //   2. build-interview-kit's invocation prompt carries application_id +
+  //      round (TECH_SCREEN) + interview_type under ## Interview.
+  //   3. An interview_kits row was written for the seeded application with a
+  //      REAL Google Doc drive_url — proving subagent → persist_interview_kit →
+  //      host → Drive end-to-end. NOTE: needs the local OneCLI connected to
+  //      Google Drive (drive.file); without it the host Drive write fails and
+  //      this asserts the failure with a clear hint.
+  //   4. ≥1 record_progress row for build-interview-kit.
+  //   5. The orchestrator's reply points at the kit (a Drive link / "kit"),
+  //      not the full kit text (writer pattern, like the outreach pointer).
+  const appId = 'app-e2e-anthropic-kit';
   seedBookmarkedApplication({
-    id: 'app-e2e-anthropic-4',
+    id: appId,
     company_name: 'Anthropic',
     role_title: 'Staff Backend Engineer',
     obfuscated_label: 'ai-a',
@@ -1451,9 +1441,8 @@ async function runPrepInterview(): Promise<void> {
       'Prep me for a technical screen at Anthropic for the Staff Backend Engineer role.',
       'Interview is next Tuesday.',
     ].join('\n'),
-    // 15-min ceiling, same as draft-outreach. Chained research-company
-    // + prep-interview + final reply has the same surface as the 2.3
-    // chain minus the create_gmail_draft call.
+    // 15-min ceiling. Chained research-company + build-interview-kit + the
+    // subagent's persist_interview_kit (host Drive write) + final reply.
     900_000,
   );
   if (reply.length === 0) fail('reply was empty');
@@ -1462,311 +1451,139 @@ async function runPrepInterview(): Promise<void> {
   if (!jsonl) fail('no session JSONL found under data/v2-sessions/');
 
   // 1. Both Task subagent_types dispatched (research-company first), ≥1
-  // success per type. Same retry-tolerant pattern as 2.2/2.3.
+  // success per type. Same retry-tolerant pattern as the other chained flows.
   const allTaskCalls = findAllSubagentDelegations(jsonl);
   const researchCalls = allTaskCalls.filter((c) => c.input?.subagent_type === 'research-company');
-  const prepCalls = allTaskCalls.filter((c) => c.input?.subagent_type === 'prep-interview');
-  if (researchCalls.length === 0 || prepCalls.length === 0) {
+  const kitCalls = allTaskCalls.filter((c) => c.input?.subagent_type === 'build-interview-kit');
+  if (researchCalls.length === 0 || kitCalls.length === 0) {
     const allCalls = listAllToolCalls(jsonl);
     console.error('  --- all orchestrator tool_use calls ---');
     if (allCalls.length === 0) console.error('  (none)');
     else for (const c of allCalls) console.error(`  ${c}`);
     fail(
       `orchestrator did not chain delegate — found ${researchCalls.length} research-company calls + ` +
-        `${prepCalls.length} prep-interview calls. Persona chain rule may need tightening.`,
+        `${kitCalls.length} build-interview-kit calls. Persona chain rule may need tightening.`,
     );
   }
   const firstResearchIdx = allTaskCalls.indexOf(researchCalls[0]);
-  const firstPrepIdx = allTaskCalls.indexOf(prepCalls[0]);
-  if (firstResearchIdx >= firstPrepIdx) {
+  const firstKitIdx = allTaskCalls.indexOf(kitCalls[0]);
+  if (firstResearchIdx >= firstKitIdx) {
     fail(
-      `Task ordering wrong: first research-company at index ${firstResearchIdx}, first prep-interview at ${firstPrepIdx}. ` +
+      `Task ordering wrong: first research-company at index ${firstResearchIdx}, first build-interview-kit at ${firstKitIdx}. ` +
         'Chain rule says research first.',
     );
   }
   ok(
-    `orchestrator chained Tasks (${researchCalls.length} research-company + ${prepCalls.length} prep-interview; research first)`,
+    `orchestrator chained Tasks (${researchCalls.length} research-company + ${kitCalls.length} build-interview-kit; research first)`,
   );
 
   const successfulResearch = researchCalls.filter((c) => taskCallSucceeded(jsonl, c));
-  const successfulPrep = prepCalls.filter((c) => taskCallSucceeded(jsonl, c));
+  const successfulKit = kitCalls.filter((c) => taskCallSucceeded(jsonl, c));
   if (successfulResearch.length === 0) {
     fail(
       `all ${researchCalls.length} research-company Task tool_results were errors. ` +
         'Check `name: research-company` in agent .md and SDK validation errors in subagent JSONLs.',
     );
   }
-  if (successfulPrep.length === 0) {
+  if (successfulKit.length === 0) {
     fail(
-      `all ${prepCalls.length} prep-interview Task tool_results were errors. ` +
-        'Most likely: subagent refused due to missing ## Interview block, or produced XML-shaped fake tool calls. ' +
-        'Check the prep-interview subagent JSONL.',
+      `all ${kitCalls.length} build-interview-kit Task tool_results were errors. ` +
+        'Most likely: subagent refused (missing ## Interview application_id/round/interview_type), or ' +
+        'persist_interview_kit failed (check the build-interview-kit subagent JSONL + the host Drive call).',
     );
   }
   ok(
-    `at least one success per subagent type: ${successfulResearch.length}/${researchCalls.length} research-company, ${successfulPrep.length}/${prepCalls.length} prep-interview`,
+    `at least one success per subagent type: ${successfulResearch.length}/${researchCalls.length} research-company, ${successfulKit.length}/${kitCalls.length} build-interview-kit`,
   );
 
-  // 2. prep-interview's invocation prompt has a research-shaped heading
-  // AND an ## Interview block carrying interview_type.
-  const prepCall = successfulPrep[0];
-  const prepPrompt = (prepCall.input?.prompt as string | undefined) ?? '';
-  // Heading shape is stylistic — same relaxation as 2.3 DoD #2; log
-  // presence/absence, do not fail on it. The load-bearing content
-  // check is the research-word-overlap below.
-  const RESEARCH_HEADING =
-    /(?:^|\n)\s*(?:#{2,3}\s+[^\n]*research|\*\*[^*\n]*research[^*\n]*\*\*|[^\n:]*\bresearch\b[^\n:]*:)/i;
-  const hasResearchHeading = RESEARCH_HEADING.test(prepPrompt);
-  // Interview-block detection: liberal — any heading containing
-  // "interview" (## Interview, ### Interview, **Interview:**) OR
-  // an interview_type marker inline (the GLM orchestrator paraphrases).
-  const INTERVIEW_HEADING = /(?:^|\n)\s*(?:#{2,3}\s+[^\n]*interview|\*\*[^*\n]*interview[^*\n]*\*\*)/i;
-  const hasInterviewHeading = INTERVIEW_HEADING.test(prepPrompt);
-  // The interview_type must propagate. Accept several variants:
-  // technical_screen | technical screen | tech screen | Technical Screen.
-  const TYPE_PATTERNS = [/technical[_\s-]?screen/i, /tech\s+screen/i];
-  const hasInterviewType = TYPE_PATTERNS.some((re) => re.test(prepPrompt));
-  if (!hasInterviewType) {
-    console.error('  --- prep-interview invocation prompt (first 2000 chars) ---');
-    console.error(prepPrompt.slice(0, 2000));
+  // 2. build-interview-kit's invocation prompt carries application_id + round
+  // (TECH_SCREEN) + interview_type under ## Interview.
+  const kitCall = successfulKit[0];
+  const kitPrompt = (kitCall.input?.prompt as string | undefined) ?? '';
+  const hasAppId = kitPrompt.includes(appId);
+  const hasRound = /\bTECH_SCREEN\b/i.test(kitPrompt);
+  const hasType = /technical_screen/i.test(kitPrompt);
+  if (!hasAppId || !hasRound || !hasType) {
+    console.error('  --- build-interview-kit invocation prompt (first 2000 chars) ---');
+    console.error(kitPrompt.slice(0, 2000));
     console.error('  --- end ---');
     fail(
-      `prep-interview invocation prompt does not contain interview_type. ` +
-        'Orchestrator must extract interview_type from the candidate turn and pass it under ## Interview.',
+      `build-interview-kit invocation prompt missing required fields ` +
+        `(application_id=${hasAppId}, round=${hasRound}, interview_type=${hasType}). ` +
+        'Orchestrator must pass all three under ## Interview.',
     );
   }
-  ok(
-    `prep-interview prompt contains interview_type${hasInterviewHeading ? ' (under interview heading)' : ' (inline)'}` +
-      `${hasResearchHeading ? ' and a research-shaped heading' : ' and research content is inlined (no heading)'}`,
-  );
+  ok('build-interview-kit prompt carries application_id + round (TECH_SCREEN) + interview_type');
 
-  // 3. Best prep-interview attempt content. Pick the subagent JSONL
-  // whose final assistant text best matches the four content categories.
-  // Same multi-research-JSONL filter pattern as draft-outreach.
-  // Match research-company's actual prompt shape: starts with "Research"
-  // + a capitalized word (the company name) at the very start of the
-  // invocation prompt. Case-sensitive. Excludes label-shaped uses like
-  // `Research digest context:` (lowercase 'digest'), `\nResearch shows
-  // that...`, `\nResearch findings:` that may appear INSIDE other
-  // subagents' prompts when the orchestrator paraphrases the digest.
-  // Earlier shape `/(?:^|\n)\s*Research\s+\S/i` over-matched and
-  // mis-classified draft-outreach invocations whose body included a
-  // "Research digest context:" label as research-company prompts.
-  const RESEARCH_PROMPT_SHAPE = /^Research\s+[A-Z]\w/;
-  const allSubJsonls = listAllSubagentJsonls(jsonl);
-  const researchSubJsonls = allSubJsonls.filter((p) => {
-    const prompt = getSubagentInvocationPrompt(p);
-    return prompt != null && RESEARCH_PROMPT_SHAPE.test(prompt);
-  });
-  const researchSubJsonl = researchSubJsonls[0] ?? null;
-  const researchSubJsonlSet = new Set(researchSubJsonls);
-  const prepSubJsonls = allSubJsonls
-    .filter((p) => !researchSubJsonlSet.has(p))
-    .map((p) => ({ path: p, text: extractFinalAssistantText(p) ?? '' }))
-    .filter((x) => x.text.length > 0);
-  if (prepSubJsonls.length === 0) {
-    fail('no prep-interview subagent JSONLs found (after excluding research-company).');
-  }
-  // The four mandatory content categories. The spec deliberately does
-  // not prescribe exact H2 names, so we detect each via a substring
-  // match on distinctive content words. Need at least 2 of 4 present
-  // (relaxed from "all 4" per the §24.4 anticipated relaxation note —
-  // GLM empirically merges or drops sections).
-  const SECTION_PATTERNS: Array<{ name: string; re: RegExp }> = [
-    { name: 'recent-signal', re: /\b(?:recent|signal|news|launch|funding|blog)\b/i },
-    { name: 'question-themes', re: /\b(?:theme|likely\s+question|will\s+ask|may\s+ask|probably\s+ask|expect\s+question)/i },
-    { name: 'pitch-framing', re: /\b(?:pitch|lean\s+into|framing|highlight|spine|lead\s+with)\b/i },
-    { name: 'questions-to-ask', re: /\b(?:questions?\s+to\s+ask|ask\s+(?:the\s+)?interviewer|ask\s+them)\b/i },
-  ];
-  const scoredPreps = prepSubJsonls
-    .map((x) => {
-      const matched = SECTION_PATTERNS.filter((s) => s.re.test(x.text)).map((s) => s.name);
-      return { ...x, matched, sectionCount: matched.length };
-    })
-    .sort((a, b) => b.sectionCount - a.sectionCount);
-  const bestPrep = scoredPreps[0];
-  if (bestPrep.sectionCount < 2) {
-    console.error('  --- best prep-interview final output (first 3000 chars) ---');
-    console.error(bestPrep.text.slice(0, 3000));
-    console.error('  --- end ---');
-    fail(
-      `best prep-interview attempt only matched ${bestPrep.sectionCount}/4 content categories ` +
-        `(matched: ${bestPrep.matched.join(', ') || 'none'}). Need at least 2 of 4.`,
-    );
-  }
-  ok(
-    `prep-interview produced ${bestPrep.sectionCount}/4 mandatory content categories: ${bestPrep.matched.join(', ')}`,
-  );
-
-  // 4. Output references ≥3 distinctive research-derived 6+-char words.
-  const researchOutput = researchSubJsonl ? extractFinalAssistantText(researchSubJsonl) : null;
-  if (!researchOutput) fail('research-company subagent has no final assistant text');
-  const researchWords = new Set(
-    (researchOutput.match(/\b[A-Za-z][A-Za-z0-9_+./-]{5,}\b/g) || []).map((w) => w.toLowerCase()),
-  );
-  const prepWordsLower = new Set(
-    (bestPrep.text.match(/\b[A-Za-z][A-Za-z0-9_+./-]{5,}\b/g) || []).map((w) => w.toLowerCase()),
-  );
-  const COMMON = new Set([
-    'anthropic',
-    'staff',
-    'backend',
-    'engineer',
-    'inference',
-    'distributed',
-    'observability',
-    'postgresql',
-    'systems',
-    'production',
-    'should',
-    'their',
-    'company',
-    'research',
-    'candidate',
-    'master',
-    'resume',
-    'engineering',
-    'platform',
-    'context',
-    'target',
-    'roles',
-    'skills',
-    'experience',
-    'requirements',
-    'highlights',
-    'summary',
-    'before',
-    'because',
-    'including',
-    'specific',
-    'interview',
-    'technical',
-    'screen',
-    'question',
-    'questions',
-    'theme',
-    'themes',
-    'recent',
-    'signal',
-    'framing',
-    'pitch',
-    'tuesday',
-    'scheduled',
-    'role',
-  ]);
-  const researchOverlap = [...researchWords]
-    .filter((w) => prepWordsLower.has(w))
-    .filter((w) => !COMMON.has(w));
-  if (researchOverlap.length < 3) {
-    console.error('  --- prep-interview output (first 3000 chars) ---');
-    console.error(bestPrep.text.slice(0, 3000));
-    console.error('  --- end ---');
-    console.error(`  --- research overlap (need >=3 distinctive): ${JSON.stringify(researchOverlap)} ---`);
-    fail(
-      `prep-interview output has only ${researchOverlap.length} distinctive research-derived words. ` +
-        'Output should reference signal from the research digest.',
-    );
-  }
-  ok(`prep-interview output references ${researchOverlap.length} distinctive research-derived terms`);
-
-  // 5. Output references ≥1 candidate-profile term.
-  const CANDIDATE_TERMS = /\b(Go|Golang|Rust|PostgreSQL|Postgres|Kubernetes)\b/i;
-  if (!CANDIDATE_TERMS.test(bestPrep.text)) {
-    console.error('  --- prep-interview output (first 3000 chars) ---');
-    console.error(bestPrep.text.slice(0, 3000));
-    console.error('  --- end ---');
-    fail('prep-interview output references no candidate-profile term (Go|Rust|PostgreSQL|Kubernetes). Output must rest on candidate facts.');
-  }
-  ok('prep-interview output references at least 1 candidate-profile term');
-
-  // 6. Output mentions the specific interview type.
-  const mentionsInterviewType = TYPE_PATTERNS.some((re) => re.test(bestPrep.text));
-  if (!mentionsInterviewType) {
-    console.error('  --- prep-interview output (first 3000 chars) ---');
-    console.error(bestPrep.text.slice(0, 3000));
-    console.error('  --- end ---');
-    fail('prep-interview output does not mention "technical screen". Output must acknowledge the specific round.');
-  }
-  ok('prep-interview output mentions the interview type');
-
-  // 7. Output word count between 100 and 800.
-  const prepWords = bestPrep.text
-    .replace(/\[(?:research-derived|inferred|adapted|new)\]/gi, '')
-    .replace(/[*_`#]/g, '')
-    .split(/\s+/)
-    .filter((w) => w.length > 0);
-  if (prepWords.length < 100) {
-    fail(`prep-interview output is ${prepWords.length} words (<100 — too thin). Subagent likely truncated or refused.`);
-  }
-  if (prepWords.length > 800) {
-    console.error('  --- prep-interview output (first 3000 chars) ---');
-    console.error(bestPrep.text.slice(0, 3000));
-    console.error('  --- end ---');
-    fail(`prep-interview output is ${prepWords.length} words (>800 — bloated). Hard cap exceeded.`);
-  }
-  ok(`prep-interview output word count valid (${prepWords.length} words, 100-800 range)`);
-
-  // 8. record_progress rows for prep-interview.
+  // 3. An interview_kits row was written for the seeded application, with a
+  // REAL Google Doc drive_url — proves subagent → persist_interview_kit → host
+  // → Drive end-to-end. Requires the local OneCLI connected to Google Drive.
   const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
   const Database = (await import('better-sqlite3')).default;
-  const db = new Database(dbPath, { readonly: true });
-  let progressRows: { stage: string; summary: string }[];
-  try {
-    progressRows = db
-      .prepare(
-        `SELECT json_extract(details_json, '$.stage') AS stage, summary
-         FROM public_audit_trail
-         WHERE category = 'subagent_progress'
-           AND agent_name = 'prep-interview'
-           AND ts >= ?
-         ORDER BY ts ASC`,
-      )
-      .all(flowStartIso) as { stage: string; summary: string }[];
-  } finally {
-    db.close();
+  let kitRow: { round: string; drive_url: string; drive_file_id: string; status: string } | undefined;
+  let progressRows: { stage: string }[] = [];
+  {
+    const db = new Database(dbPath, { readonly: true });
+    try {
+      kitRow = db
+        .prepare(
+          'SELECT round, drive_url, drive_file_id, status FROM interview_kits WHERE application_id = ? ORDER BY created_at DESC LIMIT 1',
+        )
+        .get(appId) as { round: string; drive_url: string; drive_file_id: string; status: string } | undefined;
+      progressRows = db
+        .prepare(
+          `SELECT json_extract(details_json, '$.stage') AS stage
+             FROM public_audit_trail
+            WHERE category = 'subagent_progress' AND agent_name = 'build-interview-kit' AND ts >= ?
+            ORDER BY ts ASC`,
+        )
+        .all(flowStartIso) as { stage: string }[];
+    } finally {
+      db.close();
+    }
   }
-  // ≥1 (not ≥2) — same rationale as draft-outreach's equivalent above.
-  // GLM run-variance puts the 1-vs-2 line below noise floor; the wiring
-  // works as long as one emission lands.
-  if (progressRows.length < 1) {
-    console.error('  --- prep-interview progress rows (since flow start) ---');
-    for (const r of progressRows) console.error(`  > stage=${r.stage} | ${r.summary}`);
+  if (!kitRow) {
     fail(
-      `no record_progress rows found for prep-interview. ` +
-        'Subagent prompt requires at least one record_progress call to prove the wiring works.',
+      `no interview_kits row for ${appId} — the subagent didn't call persist_interview_kit, or the host Drive ` +
+        'write failed. Confirm OneCLI is connected to Google Drive (drive.file) and check logs/nanoclaw.log for ' +
+        '"drive create" errors.',
+    );
+  }
+  if (!/^https:\/\/docs\.google\.com\/document\/d\//.test(kitRow.drive_url) || !kitRow.drive_file_id) {
+    fail(
+      `interview_kits row lacks a real Drive Doc URL (drive_url=${kitRow.drive_url}, drive_file_id=${kitRow.drive_file_id}). ` +
+        'The host Drive write likely failed — check the OneCLI Drive connection.',
+    );
+  }
+  ok(`interview_kits row written: round=${kitRow.round}, status=${kitRow.status}, Doc → ${kitRow.drive_url}`);
+
+  // 4. ≥1 record_progress row for build-interview-kit (proves the trace wiring).
+  if (progressRows.length < 1) {
+    fail(
+      'no record_progress rows for build-interview-kit — the subagent prompt requires at least one to prove wiring.',
     );
   }
   ok(
-    `prep-interview emitted ${progressRows.length} record_progress row(s) (stages: ${progressRows.slice(0, 4).map((r) => r.stage).join(', ')})` +
-      `${progressRows.length === 1 ? ' — single emission within GLM run-variance, wiring proven' : ''}`,
+    `build-interview-kit emitted ${progressRows.length} record_progress row(s) (stages: ${progressRows
+      .slice(0, 4)
+      .map((r) => r.stage)
+      .join(', ')})`,
   );
 
-  // 9. Orchestrator's reply surfaces the prep guide faithfully (Pattern B).
-  // ≥200 chars (not a 2-sentence summary) OR contains ≥3 deliverable keywords.
-  const DELIVERABLE_KEYWORDS = [
-    /\bquestion\b/i,
-    /\btheme\b/i,
-    /\bframing\b/i,
-    /\brecent\b/i,
-    /\bask\b/i,
-    /\bsignal\b/i,
-    /\bpitch\b/i,
-  ];
-  const keywordHits = DELIVERABLE_KEYWORDS.filter((re) => re.test(reply)).length;
-  const isFaithful = reply.length >= 200 || keywordHits >= 3;
-  if (!isFaithful) {
-    console.error('  --- orchestrator reply (first 2000 chars) ---');
-    console.error(reply.slice(0, 2000));
+  // 5. The orchestrator's reply points at the kit (a Drive link or a "kit"
+  // mention) rather than pasting the kit text — writer pattern, like the
+  // outreach pointer.
+  const pointsAtKit = /docs\.google\.com\/document\/d\//.test(reply) || /\bkit\b/i.test(reply);
+  if (!pointsAtKit) {
+    console.error('  --- orchestrator reply (first 1500 chars) ---');
+    console.error(reply.slice(0, 1500));
     console.error('  --- end ---');
     fail(
-      `orchestrator reply does not appear to surface the prep guide ` +
-        `(${reply.length} chars, ${keywordHits} deliverable-keyword hits). ` +
-        'Pattern B: surface the deliverable faithfully, do not summarize into 2 sentences.',
+      'orchestrator reply does not point at the kit (no Drive link or "kit" mention). ' +
+        'Writer pattern: surface a pointer to the Doc, not the kit text.',
     );
   }
-  ok(
-    `orchestrator reply surfaces prep guide (${reply.length} chars, ${keywordHits} deliverable-keyword hits) — Pattern B faithful`,
-  );
+  ok(`orchestrator reply points at the kit (${reply.length} chars)`);
 }
 
 async function runScrapeJobs(): Promise<void> {
@@ -1908,7 +1725,15 @@ async function runScrapeJobs(): Promise<void> {
   const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
   const Database = (await import('better-sqlite3')).default;
   const db = new Database(dbPath, { readonly: true });
-  let leadsRows: Array<{ id: string; title: string; company: string; rules_score: number | null; content_fingerprint: string | null; source: string; source_job_id: string }>;
+  let leadsRows: Array<{
+    id: string;
+    title: string;
+    company: string;
+    rules_score: number | null;
+    content_fingerprint: string | null;
+    source: string;
+    source_job_id: string;
+  }>;
   let progressRows: { stage: string; summary: string }[];
   try {
     leadsRows = db
@@ -1941,7 +1766,9 @@ async function runScrapeJobs(): Promise<void> {
 
   // 4. All recorded leads have non-null content_fingerprint (16-char hex)
   // and rules_score.
-  const badFingerprint = leadsRows.filter((r) => !r.content_fingerprint || !/^[0-9a-f]{16}$/.test(r.content_fingerprint));
+  const badFingerprint = leadsRows.filter(
+    (r) => !r.content_fingerprint || !/^[0-9a-f]{16}$/.test(r.content_fingerprint),
+  );
   const badScore = leadsRows.filter((r) => r.rules_score == null);
   if (badFingerprint.length > 0) {
     console.error(`  --- leads with bad fingerprint (first 3) ---`);
@@ -1975,13 +1802,13 @@ async function runScrapeJobs(): Promise<void> {
 
   // 6. ≥1 record_progress row for scrape-jobs.
   if (progressRows.length < 1) {
-    fail(
-      `no record_progress rows for scrape-jobs. ` +
-        'Subagent prompt requires at least one record_progress call.',
-    );
+    fail(`no record_progress rows for scrape-jobs. ` + 'Subagent prompt requires at least one record_progress call.');
   }
   ok(
-    `scrape-jobs emitted ${progressRows.length} record_progress row(s) (stages: ${progressRows.slice(0, 4).map((r) => r.stage).join(', ')})`,
+    `scrape-jobs emitted ${progressRows.length} record_progress row(s) (stages: ${progressRows
+      .slice(0, 4)
+      .map((r) => r.stage)
+      .join(', ')})`,
   );
 
   // 7. Orchestrator called query_job_leads after scrape-jobs (the
@@ -2073,8 +1900,7 @@ function seedFakeJobLeads(): Array<{ id: string; company: string; title: string 
       company: 'Stripe',
       location_raw: 'New York, NY',
       workplace_type: 'hybrid',
-      description_text:
-        'Build the payments engine. Python, Go, Kubernetes, AWS. High-volume distributed systems.',
+      description_text: 'Build the payments engine. Python, Go, Kubernetes, AWS. High-volume distributed systems.',
       rules_score: 71,
     },
     {
@@ -2097,8 +1923,7 @@ function seedFakeJobLeads(): Array<{ id: string; company: string; title: string 
       company: 'Discord',
       location_raw: 'San Francisco, CA',
       workplace_type: 'hybrid',
-      description_text:
-        'Lead a platform engineering team. Distributed systems, real-time messaging, Python and Go.',
+      description_text: 'Lead a platform engineering team. Distributed systems, real-time messaging, Python and Go.',
       rules_score: 64,
     },
     {
@@ -2109,8 +1934,7 @@ function seedFakeJobLeads(): Array<{ id: string; company: string; title: string 
       company: 'Linear',
       location_raw: 'Remote',
       workplace_type: 'remote',
-      description_text:
-        'Build the issue-tracking backend. TypeScript, PostgreSQL, distributed systems, API design.',
+      description_text: 'Build the issue-tracking backend. TypeScript, PostgreSQL, distributed systems, API design.',
       rules_score: 58,
     },
   ];
@@ -2221,7 +2045,7 @@ async function runDailyBriefing(): Promise<void> {
     if (!row) {
       fail(
         'bootstrap did not insert a daily-briefing task. ' +
-          'Expected messages_in row with series_id=\'daily-briefing\' kind=\'task\'.',
+          "Expected messages_in row with series_id='daily-briefing' kind='task'.",
       );
     }
     if (row.kind !== 'task') fail(`daily-briefing row has kind='${row.kind}', expected 'task'`);
@@ -2254,9 +2078,7 @@ async function runDailyBriefing(): Promise<void> {
   ok(`orchestrator called query_job_leads ${queryCalls.length} time(s)`);
 
   // ── Assertion 3: orchestrator called rank_leads ──
-  const rankCalls = allCalls.filter(
-    (c) => c.startsWith('mcp__nanoclaw__rank_leads') || c.startsWith('rank_leads'),
-  );
+  const rankCalls = allCalls.filter((c) => c.startsWith('mcp__nanoclaw__rank_leads') || c.startsWith('rank_leads'));
   if (rankCalls.length === 0) {
     console.error('  --- all orchestrator tool calls ---');
     for (const c of allCalls) console.error(`  ${c}`);
@@ -2273,9 +2095,7 @@ async function runDailyBriefing(): Promise<void> {
   let scoredRows: Array<{ id: string; company: string; llm_score: number }>;
   try {
     scoredRows = centralDb
-      .prepare(
-        "SELECT id, company, llm_score FROM job_leads WHERE llm_score IS NOT NULL AND id LIKE 'lead-test-%'",
-      )
+      .prepare("SELECT id, company, llm_score FROM job_leads WHERE llm_score IS NOT NULL AND id LIKE 'lead-test-%'")
       .all() as Array<{ id: string; company: string; llm_score: number }>;
   } finally {
     centralDb.close();
@@ -2288,7 +2108,11 @@ async function runDailyBriefing(): Promise<void> {
   }
   ok(
     `${scoredRows.length} of ${seeds.length} seeded leads have llm_score populated ` +
-      `(top: ${scoredRows.sort((a, b) => b.llm_score - a.llm_score).slice(0, 3).map((r) => `${r.company}=${r.llm_score}`).join(', ')})`,
+      `(top: ${scoredRows
+        .sort((a, b) => b.llm_score - a.llm_score)
+        .slice(0, 3)
+        .map((r) => `${r.company}=${r.llm_score}`)
+        .join(', ')})`,
   );
 
   // ── Assertion 5: reply does NOT echo the trigger sentinel ──
@@ -2364,13 +2188,79 @@ function seedFakeKillerMatchLeads(): KillerMatchSeed[] {
 
   const SEEDS: Row[] = [
     // Eligible — should be claimed
-    { id: 'km-anthropic', source: 'greenhouse', source_job_id: 'km-gh-anthropic-1', title: 'Staff Platform Engineer', company: 'Anthropic', rules_score: 95, source_posted_at: oneHourAgo, killer_match_pushed_at: null, reason: 'eligible', eligible: true },
-    { id: 'km-stripe', source: 'lever', source_job_id: 'km-lv-stripe-1', title: 'Senior Backend Engineer', company: 'Stripe', rules_score: 92, source_posted_at: twoHoursAgo, killer_match_pushed_at: null, reason: 'eligible', eligible: true },
+    {
+      id: 'km-anthropic',
+      source: 'greenhouse',
+      source_job_id: 'km-gh-anthropic-1',
+      title: 'Staff Platform Engineer',
+      company: 'Anthropic',
+      rules_score: 95,
+      source_posted_at: oneHourAgo,
+      killer_match_pushed_at: null,
+      reason: 'eligible',
+      eligible: true,
+    },
+    {
+      id: 'km-stripe',
+      source: 'lever',
+      source_job_id: 'km-lv-stripe-1',
+      title: 'Senior Backend Engineer',
+      company: 'Stripe',
+      rules_score: 92,
+      source_posted_at: twoHoursAgo,
+      killer_match_pushed_at: null,
+      reason: 'eligible',
+      eligible: true,
+    },
     // Ineligible — should be ignored
-    { id: 'km-linear', source: 'greenhouse', source_job_id: 'km-gh-linear-1', title: 'Backend Engineer', company: 'Linear', rules_score: 80, source_posted_at: oneHourAgo, killer_match_pushed_at: null, reason: 'low_score', eligible: false },
-    { id: 'km-discord', source: 'greenhouse', source_job_id: 'km-gh-discord-1', title: 'Platform Engineer', company: 'Discord', rules_score: 96, source_posted_at: tenHoursAgo, killer_match_pushed_at: null, reason: 'too_old', eligible: false },
-    { id: 'km-cloudflare', source: 'greenhouse', source_job_id: 'km-gh-cloudflare-1', title: 'Distributed Systems Eng', company: 'Cloudflare', rules_score: 95, source_posted_at: oneHourAgo, killer_match_pushed_at: fiveHoursAgo, reason: 'already_pushed', eligible: false },
-    { id: 'km-vercel', source: 'greenhouse', source_job_id: 'km-gh-vercel-1', title: 'Edge Platform Engineer', company: 'Vercel', rules_score: 95, source_posted_at: null, killer_match_pushed_at: null, reason: 'null_posted_at', eligible: false },
+    {
+      id: 'km-linear',
+      source: 'greenhouse',
+      source_job_id: 'km-gh-linear-1',
+      title: 'Backend Engineer',
+      company: 'Linear',
+      rules_score: 80,
+      source_posted_at: oneHourAgo,
+      killer_match_pushed_at: null,
+      reason: 'low_score',
+      eligible: false,
+    },
+    {
+      id: 'km-discord',
+      source: 'greenhouse',
+      source_job_id: 'km-gh-discord-1',
+      title: 'Platform Engineer',
+      company: 'Discord',
+      rules_score: 96,
+      source_posted_at: tenHoursAgo,
+      killer_match_pushed_at: null,
+      reason: 'too_old',
+      eligible: false,
+    },
+    {
+      id: 'km-cloudflare',
+      source: 'greenhouse',
+      source_job_id: 'km-gh-cloudflare-1',
+      title: 'Distributed Systems Eng',
+      company: 'Cloudflare',
+      rules_score: 95,
+      source_posted_at: oneHourAgo,
+      killer_match_pushed_at: fiveHoursAgo,
+      reason: 'already_pushed',
+      eligible: false,
+    },
+    {
+      id: 'km-vercel',
+      source: 'greenhouse',
+      source_job_id: 'km-gh-vercel-1',
+      title: 'Edge Platform Engineer',
+      company: 'Vercel',
+      rules_score: 95,
+      source_posted_at: null,
+      killer_match_pushed_at: null,
+      reason: 'null_posted_at',
+      eligible: false,
+    },
   ];
 
   const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
@@ -2452,7 +2342,7 @@ async function runKillerMatch(): Promise<void> {
       | undefined;
     if (!row) {
       fail(
-        "bootstrap did not insert a killer-match task. " +
+        'bootstrap did not insert a killer-match task. ' +
           "Expected messages_in row with series_id='killer-match' kind='task'.",
       );
     }
@@ -2510,7 +2400,10 @@ async function runKillerMatch(): Promise<void> {
       `killer_match_pushed_at not as expected.\n` +
         `  Missing claims (eligible but unclaimed): ${missing.join(', ') || 'none'}\n` +
         `  Unexpected claims (ineligible but claimed): ${unexpected.join(', ') || 'none'}\n` +
-        `  Ineligible seeds that should stay unclaimed: ${ineligibleSeeds.filter((s) => s.reason !== 'already_pushed').map((s) => `${s.id} (${s.reason})`).join(', ')}`,
+        `  Ineligible seeds that should stay unclaimed: ${ineligibleSeeds
+          .filter((s) => s.reason !== 'already_pushed')
+          .map((s) => `${s.id} (${s.reason})`)
+          .join(', ')}`,
     );
   }
   ok(
@@ -2580,8 +2473,7 @@ function seedFakeFunnelState(): { applicationId: string; runId: string } {
   const db = new Database(dbPath);
   try {
     const now = new Date().toISOString();
-    const isoMinusDays = (d: number) =>
-      new Date(Date.now() - d * 86_400_000).toISOString();
+    const isoMinusDays = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString();
 
     const applicationId = 'app-fc-acme';
     const leadId = 'lead-fc-acme';
@@ -2715,9 +2607,7 @@ function seedFakeFunnelState(): { applicationId: string; runId: string } {
       suggestions: JSON.stringify([]),
     });
 
-    ok(
-      `seeded funnel-curator state: application=${applicationId}, lead=${leadId}, 4 email_events, run=${runId}`,
-    );
+    ok(`seeded funnel-curator state: application=${applicationId}, lead=${leadId}, 4 email_events, run=${runId}`);
     return { applicationId, runId };
   } finally {
     db.close();
@@ -2747,15 +2637,11 @@ async function runFunnelCuratorConsumer(): Promise<void> {
   const inDb = new Database(inboundPath, { readonly: true });
   try {
     const row = inDb
-      .prepare(
-        "SELECT id, kind, recurrence, content FROM messages_in WHERE series_id = 'funnel-curator' LIMIT 1",
-      )
-      .get() as
-      | { id: string; kind: string; recurrence: string; content: string }
-      | undefined;
+      .prepare("SELECT id, kind, recurrence, content FROM messages_in WHERE series_id = 'funnel-curator' LIMIT 1")
+      .get() as { id: string; kind: string; recurrence: string; content: string } | undefined;
     if (!row) {
       fail(
-        "bootstrap did not insert a funnel-curator task. " +
+        'bootstrap did not insert a funnel-curator task. ' +
           "Expected messages_in row with series_id='funnel-curator' kind='task'.",
       );
     }
@@ -2861,7 +2747,17 @@ function seedFunnelCuratorBase(): { applicationId: string; leadId: string } {
         rules_score, rules_score_reasons,
         status, status_changed_at, application_id
       ) VALUES (?, 'greenhouse', ?, ?, ?, ?, 'Acme', ?, ?, 88, '{}', 'applied', ?, ?)`,
-    ).run(leadId, 'sj-fc-acme', 'https://acme.example/jobs/senior-engineer', 'fp-fc-acme', 'Senior Engineer', now, now, now, applicationId);
+    ).run(
+      leadId,
+      'sj-fc-acme',
+      'https://acme.example/jobs/senior-engineer',
+      'fp-fc-acme',
+      'Senior Engineer',
+      now,
+      now,
+      now,
+      applicationId,
+    );
 
     ok(`seeded curator-base: application=${applicationId}, lead=${leadId}`);
     return { applicationId, leadId };
@@ -2889,13 +2785,19 @@ async function runFunnelCurator(): Promise<void> {
   const realApiMode = !process.env.GMAIL_FIXTURE && !process.env.CALENDAR_FIXTURE;
   if (!realApiMode) {
     if (!process.env.GMAIL_FIXTURE) {
-      fail('funnel-curator flow with --calendar-fixture set also requires --gmail-fixture (or omit both for real mode)');
+      fail(
+        'funnel-curator flow with --calendar-fixture set also requires --gmail-fixture (or omit both for real mode)',
+      );
     }
     if (!process.env.CALENDAR_FIXTURE) {
-      fail('funnel-curator flow with --gmail-fixture set also requires --calendar-fixture (or omit both for real mode)');
+      fail(
+        'funnel-curator flow with --gmail-fixture set also requires --calendar-fixture (or omit both for real mode)',
+      );
     }
   } else {
-    console.log('  (real-API mode: GMAIL_FIXTURE + CALENDAR_FIXTURE both unset — exercises live OneCLI-gated Google API calls)');
+    console.log(
+      '  (real-API mode: GMAIL_FIXTURE + CALENDAR_FIXTURE both unset — exercises live OneCLI-gated Google API calls)',
+    );
   }
 
   const { applicationId, leadId } = seedFunnelCuratorBase();
@@ -2913,12 +2815,13 @@ async function runFunnelCurator(): Promise<void> {
     const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
     const checkDb = new Database(dbPath, { readonly: true });
     try {
-      const persisted = checkDb
-        .prepare("SELECT COUNT(*) AS n FROM funnel_curator_output")
-        .get() as { n: number };
+      const persisted = checkDb.prepare('SELECT COUNT(*) AS n FROM funnel_curator_output').get() as { n: number };
       if (persisted.n > 0) {
-        console.log(`  (chatTurn timed out, but curator persisted ${persisted.n} run(s) — treating as silent completion)`);
-        reply = '<internal>(silent completion — curator persisted output without emitting a user-facing message)</internal>';
+        console.log(
+          `  (chatTurn timed out, but curator persisted ${persisted.n} run(s) — treating as silent completion)`,
+        );
+        reply =
+          '<internal>(silent completion — curator persisted output without emitting a user-facing message)</internal>';
       } else {
         throw e;
       }
@@ -2933,13 +2836,9 @@ async function runFunnelCurator(): Promise<void> {
   const inDb = new Database(inboundPath, { readonly: true });
   try {
     const row = inDb
-      .prepare(
-        "SELECT id, kind, recurrence, content FROM messages_in WHERE series_id = 'funnel-curator' LIMIT 1",
-      )
-      .get() as
-      | { id: string; kind: string; recurrence: string; content: string }
-      | undefined;
-    if (!row) fail("bootstrap did not insert a funnel-curator task");
+      .prepare("SELECT id, kind, recurrence, content FROM messages_in WHERE series_id = 'funnel-curator' LIMIT 1")
+      .get() as { id: string; kind: string; recurrence: string; content: string } | undefined;
+    if (!row) fail('bootstrap did not insert a funnel-curator task');
     if (row.kind !== 'task') fail(`funnel-curator row has kind='${row.kind}', expected 'task'`);
     ok(`bootstrap inserted task: recurrence='${row.recurrence}'`);
   } finally {
@@ -2981,7 +2880,9 @@ async function runFunnelCurator(): Promise<void> {
     fail('funnel-curator subagent did not call persist_funnel_state');
   }
   if (persistCalls.length > 1) {
-    fail(`funnel-curator subagent called persist_funnel_state ${persistCalls.length} times; should be exactly once per run`);
+    fail(
+      `funnel-curator subagent called persist_funnel_state ${persistCalls.length} times; should be exactly once per run`,
+    );
   }
   ok('subagent called persist_funnel_state exactly once');
 
@@ -2991,14 +2892,17 @@ async function runFunnelCurator(): Promise<void> {
   try {
     const outputRow = centralDb
       .prepare(
-        "SELECT id, narratives_json, attention_json, cheap_out FROM funnel_curator_output ORDER BY run_at DESC LIMIT 1",
+        'SELECT id, narratives_json, attention_json, cheap_out FROM funnel_curator_output ORDER BY run_at DESC LIMIT 1',
       )
       .get() as { id: string; narratives_json: string; attention_json: string; cheap_out: number } | undefined;
     if (!outputRow) fail('no funnel_curator_output row was written by the curator');
     if (outputRow.cheap_out === 1) {
       fail('curator emitted cheap_out=true despite non-empty Gmail + Calendar deltas');
     }
-    const narratives = JSON.parse(outputRow.narratives_json) as Array<{ company: string; application_id?: string | null }>;
+    const narratives = JSON.parse(outputRow.narratives_json) as Array<{
+      company: string;
+      application_id?: string | null;
+    }>;
     if (narratives.length === 0) fail('curator wrote empty narratives[]; expected at least one for Acme');
     if (realApiMode) {
       // Loose assertions: a freshly-created dev inbox may have anywhere
@@ -3008,7 +2912,7 @@ async function runFunnelCurator(): Promise<void> {
       ok(`funnel_curator_output written: ${narratives.length} narrative(s) [real-API mode]`);
 
       const eventRows = centralDb
-        .prepare("SELECT gmail_msg_id, classification FROM email_events ORDER BY gmail_msg_id")
+        .prepare('SELECT gmail_msg_id, classification FROM email_events ORDER BY gmail_msg_id')
         .all() as Array<{ gmail_msg_id: string; classification: string }>;
       ok(`email_events rows: ${eventRows.length} [real-API mode; no minimum expected]`);
 
@@ -3016,7 +2920,9 @@ async function runFunnelCurator(): Promise<void> {
         .prepare("SELECT history_id FROM gmail_sync_state WHERE account_id = 'primary'")
         .get() as { history_id: string } | undefined;
       if (!syncRow?.history_id) {
-        console.error('  ⚠ gmail_sync_state has no history_id after real-API run — full-sync path may have skipped recording');
+        console.error(
+          '  ⚠ gmail_sync_state has no history_id after real-API run — full-sync path may have skipped recording',
+        );
       } else {
         ok(`gmail_sync_state.history_id captured: ${syncRow.history_id}`);
       }
@@ -3039,7 +2945,7 @@ async function runFunnelCurator(): Promise<void> {
       ok(`funnel_curator_output written: ${narratives.length} narrative(s)`);
 
       const eventRows = centralDb
-        .prepare("SELECT gmail_msg_id, classification FROM email_events ORDER BY gmail_msg_id")
+        .prepare('SELECT gmail_msg_id, classification FROM email_events ORDER BY gmail_msg_id')
         .all() as Array<{ gmail_msg_id: string; classification: string }>;
       if (eventRows.length === 0) {
         fail('no email_events rows written; expected 4 from acme-pipeline-multi fixture');
@@ -3052,9 +2958,7 @@ async function runFunnelCurator(): Promise<void> {
 
       const linkedCount = (
         centralDb
-          .prepare(
-            "SELECT COUNT(*) AS n FROM email_events WHERE linked_job_lead_id = ? OR linked_application_id = ?",
-          )
+          .prepare('SELECT COUNT(*) AS n FROM email_events WHERE linked_job_lead_id = ? OR linked_application_id = ?')
           .get(leadId, applicationId) as { n: number }
       ).n;
       if (linkedCount === 0) {
@@ -3066,7 +2970,11 @@ async function runFunnelCurator(): Promise<void> {
         ok(`${linkedCount} email_event(s) linked to seeded application/lead`);
       }
 
-      const attention = JSON.parse(outputRow.attention_json) as Array<{ priority: string; reason: string; company?: string | null }>;
+      const attention = JSON.parse(outputRow.attention_json) as Array<{
+        priority: string;
+        reason: string;
+        company?: string | null;
+      }>;
       const onsiteItem = attention.find((a) => a.reason?.toLowerCase().includes('onsite') || a.priority === 'same_day');
       if (!onsiteItem) {
         console.error(`  ⚠ attention[] does not flag the onsite. items: ${JSON.stringify(attention, null, 2)}`);
@@ -3109,8 +3017,20 @@ function seedFakeCloseDetectionLeads(): CloseDetectionSeed[] {
       { id: 'cd-stale-2', expectClosed: true, reason: 'stale', lastSeenDaysAgo: 15 },
       { id: 'cd-fresh-1', expectClosed: false, reason: 'fresh', lastSeenDaysAgo: 5 },
       { id: 'cd-fresh-2', expectClosed: false, reason: 'fresh', lastSeenDaysAgo: 13 },
-      { id: 'cd-promoted', expectClosed: false, reason: 'promoted', lastSeenDaysAgo: 30, applicationId: 'app-cd-promoted' },
-      { id: 'cd-already-closed', expectClosed: false, reason: 'already_closed', lastSeenDaysAgo: 30, closedAt: isoDaysAgo(5) },
+      {
+        id: 'cd-promoted',
+        expectClosed: false,
+        reason: 'promoted',
+        lastSeenDaysAgo: 30,
+        applicationId: 'app-cd-promoted',
+      },
+      {
+        id: 'cd-already-closed',
+        expectClosed: false,
+        reason: 'already_closed',
+        lastSeenDaysAgo: 30,
+        closedAt: isoDaysAgo(5),
+      },
     ];
 
     for (const s of seeds) {
@@ -3182,9 +3102,7 @@ async function runCloseDetection(): Promise<void> {
     const checkDb = new Database(dbPath, { readonly: true });
     try {
       const sweptCount = (
-        checkDb
-          .prepare("SELECT COUNT(*) AS n FROM job_leads WHERE closed_reason = 'stale'")
-          .get() as { n: number }
+        checkDb.prepare("SELECT COUNT(*) AS n FROM job_leads WHERE closed_reason = 'stale'").get() as { n: number }
       ).n;
       if (sweptCount > 0) {
         console.log(`  (chatTurn timed out, but sweep closed ${sweptCount} lead(s) — treating as silent completion)`);
@@ -3203,13 +3121,9 @@ async function runCloseDetection(): Promise<void> {
   const inDb = new Database(inboundPath, { readonly: true });
   try {
     const row = inDb
-      .prepare(
-        "SELECT id, kind, recurrence, content FROM messages_in WHERE series_id = 'close-detection' LIMIT 1",
-      )
-      .get() as
-      | { id: string; kind: string; recurrence: string; content: string }
-      | undefined;
-    if (!row) fail("bootstrap did not insert a close-detection task");
+      .prepare("SELECT id, kind, recurrence, content FROM messages_in WHERE series_id = 'close-detection' LIMIT 1")
+      .get() as { id: string; kind: string; recurrence: string; content: string } | undefined;
+    if (!row) fail('bootstrap did not insert a close-detection task');
     if (row.kind !== 'task') fail(`close-detection row has kind='${row.kind}', expected 'task'`);
     ok(`bootstrap inserted task: recurrence='${row.recurrence}'`);
   } finally {
@@ -3236,9 +3150,7 @@ async function runCloseDetection(): Promise<void> {
   let actualClosedIds: Set<string>;
   try {
     const closedRows = centralDb
-      .prepare(
-        "SELECT id, closed_reason FROM job_leads WHERE closed_reason = 'stale' AND id LIKE 'cd-%' ORDER BY id",
-      )
+      .prepare("SELECT id, closed_reason FROM job_leads WHERE closed_reason = 'stale' AND id LIKE 'cd-%' ORDER BY id")
       .all() as Array<{ id: string; closed_reason: string }>;
     actualClosedIds = new Set(closedRows.map((r) => r.id));
   } finally {
@@ -3259,9 +3171,9 @@ async function runCloseDetection(): Promise<void> {
   // ── Assertion 4: promoted lead untouched ──
   const promotedDb = new Database(centralPath, { readonly: true });
   try {
-    const row = promotedDb
-      .prepare("SELECT closed_at FROM job_leads WHERE id = 'cd-promoted'")
-      .get() as { closed_at: string | null };
+    const row = promotedDb.prepare("SELECT closed_at FROM job_leads WHERE id = 'cd-promoted'").get() as {
+      closed_at: string | null;
+    };
     if (row.closed_at !== null) fail(`promoted lead was closed despite application_id set: closed_at=${row.closed_at}`);
     ok('promoted lead (application_id set) was not touched');
   } finally {
@@ -3366,16 +3278,14 @@ async function runMirrorAudit(): Promise<void> {
   try {
     // 1. Private funnel_events row exists.
     const events = db
-      .prepare(
-        'SELECT id, kind, from_status, to_status, payload FROM funnel_events WHERE application_id = ?',
-      )
+      .prepare('SELECT id, kind, from_status, to_status, payload FROM funnel_events WHERE application_id = ?')
       .all(appId) as Array<{
-        id: string;
-        kind: string;
-        from_status: string | null;
-        to_status: string | null;
-        payload: string;
-      }>;
+      id: string;
+      kind: string;
+      from_status: string | null;
+      to_status: string | null;
+      payload: string;
+    }>;
     if (events.length === 0) {
       const jsonl = findLatestSessionJsonl();
       if (jsonl) {
@@ -3389,15 +3299,15 @@ async function runMirrorAudit(): Promise<void> {
     // 2. Mirror fired — public_audit_trail row with our obfuscated_label.
     const auditRows = db
       .prepare(
-        "SELECT application_ref, summary, category, details_json " +
+        'SELECT application_ref, summary, category, details_json ' +
           "FROM public_audit_trail WHERE category = 'funnel'",
       )
       .all() as Array<{
-        application_ref: string | null;
-        summary: string;
-        category: string;
-        details_json: string | null;
-      }>;
+      application_ref: string | null;
+      summary: string;
+      category: string;
+      details_json: string | null;
+    }>;
     if (auditRows.length === 0) {
       fail(
         'no public_audit_trail (category=funnel) rows written — ' +
@@ -3524,12 +3434,7 @@ async function runResanitize(): Promise<void> {
              (id, application_id, kind, from_status, to_status, payload, source, ts)
            VALUES (?, ?, 'recruiter_email', NULL, NULL, ?, 'agent', ?)`,
         )
-        .run(
-          eventId,
-          appId,
-          JSON.stringify({ note: 'jane@acme.com from Acme Corp wrote about the $220k offer' }),
-          now,
-        );
+        .run(eventId, appId, JSON.stringify({ note: 'jane@acme.com from Acme Corp wrote about the $220k offer' }), now);
       // The "before" public row: redacted, linked to the event. Its exact
       // text doesn't matter — only that it exists, is linked, and hides the
       // real name. resanitize will DELETE it and re-mirror from truth.
@@ -3553,7 +3458,7 @@ async function runResanitize(): Promise<void> {
     const db = new Database(dbPath, { readonly: true });
     try {
       const row = db
-        .prepare("SELECT application_ref, summary FROM public_audit_trail WHERE id = ?")
+        .prepare('SELECT application_ref, summary FROM public_audit_trail WHERE id = ?')
         .get(seedAuditId) as { application_ref: string; summary: string } | undefined;
       if (!row) fail('seed audit row missing before turn');
       if (row!.summary.includes('Acme Corp')) fail('seed audit row already leaks the real name');
@@ -3606,7 +3511,7 @@ async function runResanitize(): Promise<void> {
     // 3. The funnel-category rows for this app now show the REAL name.
     const rows = db
       .prepare(
-        "SELECT application_ref, summary FROM public_audit_trail " +
+        'SELECT application_ref, summary FROM public_audit_trail ' +
           "WHERE category = 'funnel' AND source_funnel_event_id = ?",
       )
       .all(eventId) as Array<{ application_ref: string; summary: string }>;
@@ -3731,9 +3636,7 @@ async function runResearchCompanyDiscovery(): Promise<void> {
   // research-company delegations and require >=1 to have SUCCEEDED. A
   // first-attempt error followed by a successful retry is an internal detail
   // the user never sees — the subagent still runs and the digest still ships.
-  const researchCalls = findAllSubagentDelegations(jsonl).filter(
-    (c) => c.input?.subagent_type === 'research-company',
-  );
+  const researchCalls = findAllSubagentDelegations(jsonl).filter((c) => c.input?.subagent_type === 'research-company');
   if (researchCalls.length === 0) {
     // Dump all tool calls so the mode-of-failure is visible: did the
     // model attempt research inline (WebSearch/WebFetch), did it call
@@ -3768,7 +3671,9 @@ async function runResearchCompanyDiscovery(): Promise<void> {
         'groups/<group>/.claude/agents/research-company.md.',
     );
   }
-  ok(`Task tool_result succeeded — subagent ran end-to-end (${succeeded.length}/${researchCalls.length} attempt(s) ok)`);
+  ok(
+    `Task tool_result succeeded — subagent ran end-to-end (${succeeded.length}/${researchCalls.length} attempt(s) ok)`,
+  );
 }
 
 function taskCallSucceeded(jsonlPath: string, taskBlock: ToolUseBlock): boolean {
@@ -3954,11 +3859,7 @@ function findAllSubagentDelegations(jsonlPath: string): ToolUseBlock[] {
 
 // List all subagent JSONLs under a parent session, full paths.
 function listAllSubagentJsonls(parentJsonl: string): string[] {
-  const dir = path.join(
-    path.dirname(parentJsonl),
-    path.basename(parentJsonl, '.jsonl'),
-    'subagents',
-  );
+  const dir = path.join(path.dirname(parentJsonl), path.basename(parentJsonl, '.jsonl'), 'subagents');
   if (!fs.existsSync(dir)) return [];
   return fs
     .readdirSync(dir)
@@ -3970,10 +3871,7 @@ function listAllSubagentJsonls(parentJsonl: string): string[] {
 // whose invocation prompt (first user message) matches the regex.
 // Disambiguates the multiple-subagent case where Phase 2.1's
 // findSubagentJsonl(mtime-newest) would return the wrong file.
-function findSubagentJsonlByPrompt(
-  parentJsonl: string,
-  promptMatcher: RegExp,
-): string | null {
+function findSubagentJsonlByPrompt(parentJsonl: string, promptMatcher: RegExp): string | null {
   for (const jsonl of listAllSubagentJsonls(parentJsonl)) {
     const prompt = getSubagentInvocationPrompt(jsonl);
     if (prompt && promptMatcher.test(prompt)) return jsonl;
@@ -4075,9 +3973,7 @@ function assertApplicationRow(companyPattern: RegExp): ApplicationRow {
   const db = new Database(dbPath, { readonly: true });
   try {
     const rows = db
-      .prepare(
-        'SELECT id, company_name, role_title, status, obfuscated_label FROM applications',
-      )
+      .prepare('SELECT id, company_name, role_title, status, obfuscated_label FROM applications')
       .all() as ApplicationRow[];
     if (rows.length === 0) {
       fail('applications table is empty — agent did not call update_application');
@@ -4136,7 +4032,7 @@ async function main(): Promise<void> {
       'research-company': runResearchCompany,
       'tailor-resume': runTailorResume,
       'draft-outreach': runDraftOutreach,
-      'prep-interview': runPrepInterview,
+      'build-interview-kit': runBuildInterviewKit,
       'scrape-jobs': runScrapeJobs,
       'daily-briefing': runDailyBriefing,
       'killer-match': runKillerMatch,
@@ -4144,7 +4040,7 @@ async function main(): Promise<void> {
       'funnel-curator': runFunnelCurator,
       'close-detection': runCloseDetection,
       'mirror-audit': runMirrorAudit,
-      'resanitize': runResanitize,
+      resanitize: runResanitize,
     };
     await FLOW_HANDLERS[args.flow]();
     assertionsPassed = true;
