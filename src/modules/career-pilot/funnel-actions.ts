@@ -34,6 +34,7 @@ import type Database from 'better-sqlite3';
 import { getAgentGroup } from '../../db/agent-groups.js';
 import { getDb } from '../../db/connection.js';
 import { applyFunnelFromEmailEvents } from './funnel-apply.js';
+import { getActiveKitUrlsByApplication } from './interview-kit-store.js';
 import { reactToStatusTransitions } from './interview-kit-trigger.js';
 import { scoreWinConfidence } from './win-confidence.js';
 import { insertMessage } from '../../db/session-db.js';
@@ -540,6 +541,22 @@ export async function handleReadFunnelState(
       return;
     }
 
+    const narratives = JSON.parse(row.narratives_json) as Array<Record<string, unknown>>;
+    const attention = JSON.parse(row.attention_json) as Array<Record<string, unknown>>;
+
+    // §24.53: hang the active interview-kit link on each item by application_id so
+    // the orchestrator surfaces it wherever it already surfaces the application
+    // (daily briefing, same-day push, on-demand "how's X?"). Silent-created kits
+    // reach the candidate here, at the next natural cadence.
+    const appIds = [...narratives, ...attention]
+      .map((x) => (typeof x?.application_id === 'string' ? (x.application_id as string) : null))
+      .filter((v): v is string => !!v);
+    const kitUrls = getActiveKitUrlsByApplication(db, appIds);
+    for (const item of [...narratives, ...attention]) {
+      const appId = item?.application_id;
+      if (typeof appId === 'string' && kitUrls.has(appId)) item.kit_url = kitUrls.get(appId);
+    }
+
     writeResponse(inDb, requestId, {
       ok: true,
       data: {
@@ -548,8 +565,8 @@ export async function handleReadFunnelState(
           run_at: row.run_at,
           gmail_history_id: row.gmail_history_id,
           calendar_sync_tokens: JSON.parse(row.calendar_sync_tokens),
-          narratives: JSON.parse(row.narratives_json),
-          attention: JSON.parse(row.attention_json),
+          narratives,
+          attention,
           suggestions: JSON.parse(row.suggestions_json),
           cheap_out: row.cheap_out === 1,
           cost_usd: row.cost_usd,
