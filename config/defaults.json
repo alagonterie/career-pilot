@@ -65,6 +65,7 @@
     "interview_kit_auto_generate": true,
     "interview_kit_folder_name": "Career Pilot Interview Kits",
     "interview_kit_drive_folder_id": "",
+    "interview_kit_drive_archive_folder_id": "",
     "interview_kit_cleanup_enabled": true,
     "interview_kit_cleanup_cron": "30 6 * * *",
     "interview_kit_stale_days": 21,

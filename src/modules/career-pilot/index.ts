@@ -45,6 +45,7 @@ import {
   handleReadEmailEvents,
   handleReadFunnelState,
 } from './funnel-actions.js';
+import { handlePersistInterviewKit } from './interview-kit-actions.js';
 
 /**
  * Every career_pilot action is owner-only — the sandbox group must never reach
@@ -85,6 +86,7 @@ registerOwnerOnly('career_pilot.gmail_query_delta', handleGmailQueryDelta);
 registerOwnerOnly('career_pilot.calendar_query_delta', handleCalendarQueryDelta);
 registerOwnerOnly('career_pilot.persist_funnel_state', handlePersistFunnelState);
 registerOwnerOnly('career_pilot.read_funnel_state', handleReadFunnelState);
+registerOwnerOnly('career_pilot.persist_interview_kit', handlePersistInterviewKit);
 registerOwnerOnly('career_pilot.read_email_events', handleReadEmailEvents);
 registerOwnerOnly('career_pilot.load_gmail_fixture', handleLoadGmailFixture);
 registerOwnerOnly('career_pilot.load_calendar_fixture', handleLoadCalendarFixture);
