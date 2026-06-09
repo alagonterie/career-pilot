@@ -284,6 +284,29 @@ CREATE TABLE learnings (
 );
 CREATE INDEX idx_learnings_role_cat ON learnings(role_category);
 
+-- interview_kits — per-interview "mock-interview kit" artifacts (§24.53), materialized
+-- as Google Docs in the dedicated career-account Drive (drive.file scope). One row per
+-- (application_id, round); the orchestrator surfaces drive_url later (joined into the
+-- funnel read-model) and the cleanup sweep archives it on terminal/stale. Private —
+-- real company names, NEVER sanitized (not a public surface).
+CREATE TABLE interview_kits (
+  id                  TEXT PRIMARY KEY,
+  application_id      TEXT NOT NULL REFERENCES applications(id),
+  round               TEXT NOT NULL,             -- the interview status that triggered it:
+                                                 -- 'SCREENING' | 'TECH_SCREEN' | 'SYS_DESIGN' | 'FINAL'
+  interview_type      TEXT NOT NULL,             -- derived from round: recruiter_screen
+                                                 -- | technical_screen | system_design | final_round
+  drive_file_id       TEXT NOT NULL,             -- the Google Doc id (drive.file-scoped, app-owned)
+  drive_url           TEXT NOT NULL,             -- human-openable Doc link
+  title               TEXT NOT NULL,             -- "Interview Kit — <Company> — <Round> — <date>"
+  interview_at        TEXT,                      -- best-effort from calendar/curator; null ⇒ TBD
+  status              TEXT NOT NULL DEFAULT 'active',  -- 'active' | 'archived'
+  created_at          TEXT NOT NULL,
+  archived_at         TEXT
+);
+CREATE INDEX idx_interview_kits_app ON interview_kits(application_id, status);
+CREATE UNIQUE INDEX idx_interview_kits_app_round ON interview_kits(application_id, round);
+
 -- preferences — texture controls (quiet hours, frequency caps, channel prefs)
 CREATE TABLE preferences (
   key                 TEXT PRIMARY KEY,
@@ -600,6 +623,8 @@ maxTurns: 15
 
 Body: prep structure (company-specific signal, recent eng work, likely question themes by interview type, framing rules, things to ask the interviewer). Outputs structured markdown that renders nicely in Telegram + the `/funnel` detail panel.
 
+**Superseded by §24.53** — replaced by `build-interview-kit`. The static read-it-once guide becomes a two-part *mock-interview kit* (interviewer operating-manual + candidate quick-reference) materialized as a Google Doc in the career-account Drive, auto-generated on entry to an interview stage, and run as a live voice mock from a claude.ai project. prep-interview's candidate-facing content (recent signal, themes, questions to ask) survives as the kit's **Part 2**; the writer (`persist_interview_kit`) follows the `funnel-curator → persist_funnel_state` internal-writer pattern. Retire `prep-interview.md` when §24.53 lands.
+
 #### `scrape-jobs`
 
 ```yaml
@@ -617,7 +642,7 @@ maxTurns: 20
 
 ### 6. In-process MCP tools
 
-**Scope & non-goals (load-bearing — read this first):** All career-pilot MCP tools operate on the local `data/v2.db` funnel-tracking schema. **No tool in any phase auto-submits job applications** (auto-apply is intentionally never built — V2_IDEAS.md §4). "Adding an application" means inserting a row in our internal `applications` table — like recording an opportunity in a CRM, nothing reaches an external job-board. Public-web reading is limited to SDK built-ins (`WebFetch`, `WebSearch`) used by research subagents in Phase 2+; those have anti-bot mitigations (rate limits, polite UA, fail-open behavior). External-API writes are limited to Gmail (via OneCLI-managed OAuth, official API — no scraping) for outreach, and Google Calendar (same model) for RSVPs. Both are approval-card-gated. Nothing else writes externally.
+**Scope & non-goals (load-bearing — read this first):** All career-pilot MCP tools operate on the local `data/v2.db` funnel-tracking schema. **No tool in any phase auto-submits job applications** (auto-apply is intentionally never built — V2_IDEAS.md §4). "Adding an application" means inserting a row in our internal `applications` table — like recording an opportunity in a CRM, nothing reaches an external job-board. Public-web reading is limited to SDK built-ins (`WebFetch`, `WebSearch`) used by research subagents in Phase 2+; those have anti-bot mitigations (rate limits, polite UA, fail-open behavior). External-API writes are limited to Gmail (via OneCLI-managed OAuth, official API — no scraping) for outreach, Google Calendar (same model) for RSVPs — both approval-card-gated — and, from §24.53, Google Drive (career-account, least-privilege `drive.file`, official API) for interview-kit Docs, which is *not* approval-gated because it's private + reversible + has no external recipient (the `persist_interview_kit` writer pattern). Nothing else writes externally.
 
 Defined as a regular MCP server registered in the agent-runner's `nanoclaw` MCP server (`container/agent-runner/src/mcp-tools/`). Career-pilot tools live in `container/agent-runner/src/mcp-tools/career-pilot.ts`; each calls `registerTools([...])` at module scope. Tool naming convention is auto-derived: `mcp__nanoclaw__<tool_name>`.
 
@@ -668,6 +693,7 @@ All career-pilot action handlers register in `src/modules/career-pilot/index.ts`
 | `update_job_lead_status` | `{ id: string, status: 'new'\|'reviewed'\|'queued'\|'applied'\|'rejected'\|'archived', reason?: string }` | UPDATE `job_leads.status` + `status_changed_at`. Funnel transition. | 2.5 | ✓ | ✗ |
 | `discover_ats_board` | `{ careers_url: string }` | Read-only (no DB write). Fetches the careers page and detects `boards.greenhouse.io/<token>` or `jobs.lever.co/<site>` patterns. Returns `{ ats?, token?, confidence }`. Nice-to-have in v1.0; defers if cost is high. | 2.5 | ✓ | ✗ |
 | `fetch_source` | `{ priority?: 'A'\|'B'\|'C', company?: string, since?: ISO8601, limit?: number (default 150, cap 300) }` | Read-only outbound (no DB write). Host-side action reads the seed list `groups/career-pilot/data/ats-targets.json`, filters to matching boards (by `priority` and/or `company`), fetches each board's public API (Greenhouse `/v1/boards/{token}/jobs?content=true` or Lever `/v0/postings/{site}?mode=json`), normalizes via `src/scrape-jobs/sources.ts`, **stashes each full payload in the host-side payload-cache keyed by `(source, source_job_id)` with 1h TTL**, and returns `{ summaries: PostingSummary[], boards_scanned, postings_total }`. Each summary is `{ source, source_job_id, title, company, location_raw?, workplace_type?, snippet }` where `snippet` is a ~120-char excerpt of `description_text` (full payload stays host-side, never crosses the inline-cap boundary). Per-board distribution: `perBoardCap = ceil(limit / target_count)`, floor 3 — so the result spans multiple companies. Default 150 / ~12 priority-A boards = ~12 per board, deep enough to see past freshest-batch sales/GTM skew on Greenhouse's `updated_at DESC` ordering. Subagent judges from title + snippet then calls `record_job_lead({source, source_job_id})` for keepers; host re-hydrates from cache. Honors per-source crawl-delay + 1h response cache with ETag conditional GET on the upstream side as well. | 2.5 | ✓ | ✗ |
+| `persist_interview_kit` | `{ application_id, round, interview_type, title, markdown, interview_at? }` | **EXTERNAL+DB**: host handler materializes the kit as a native Google Doc in the career-account Drive (`drive.file`, dedicated folder + `Archive/`) and UPSERTs the `interview_kits` row — transactionally. Subagent-owned writer (the `persist_funnel_state` pattern); Drive mechanics live host-side, not in any prompt. **NOT** approval-gated (private, reversible, no recipient — unlike `send_outreach_email`). Returns `{ drive_url, drive_file_id, round }`. See §24.53. | 9 | ✓ | ✗ |
 
 Each tool is a single TS file in `mcp-tools/`. The barrel `mcp-tools/index.ts` exports `careerPilotMcpServer` (the `createSdkMcpServer` result). Tool visibility per agent group is controlled by the `allowedTools` / `disallowedTools` settings in `container_configs` (see §4) — NOT by the barrel.
 
@@ -713,7 +739,7 @@ Session lifecycle:
 - Same OAuth scope, same vault entry
 - Scheduled host task polls upcoming events with title matching `(interview|onsite|screen|chat|sync)` from companies in `applications`
 - Detected events → `messages_in` of `kind='webhook'` with `event_type='interview_scheduled'`
-- Agent updates funnel state → schedules a 24h-before `prep-interview` task
+- Agent updates funnel state; a transition INTO an interview stage (`SCREENING`/`TECH_SCREEN`/`SYS_DESIGN`/`FINAL`) auto-triggers interview-kit generation at the status-transition seam (§24.53) — **not** a 24h-before timer, so the kit exists the moment the interview is known (days or weeks out)
 
 ### 9. Sanitization pipeline
 
@@ -4719,6 +4745,52 @@ The container's `eligibilityToWake` maps any clean `eligible:false` → `wakeAge
 3. `quiet_hours_tz` empty ⇒ resolves to the system `TIMEZONE`; cap `0` ⇒ no cap check runs.
 4. No `src/delivery.ts` (core) change; container unchanged; persona's dead `preferences.quiet_hours*` references gone.
 5. Host suite + typecheck + `format:check` clean.
+
+---
+
+#### 24.53 Mock-interview kits — auto-generated, Drive-delivered, voice-practiceable
+
+**Why now / the problem.** Interview prep today is `prep-interview`: a one-shot candidate-facing *briefing* (recent signal, themes, pitch framing, questions to ask), delivered to Telegram, read once before the interview. It's passive — you read it, you don't *practice* against it. The owner confirmed a better loop: start a **voice call with Claude from a personal claude.ai "Interview Prep" project** and run a live 1:1 mock interview. That project reads its materials from Google Drive via the **Google Drive connector** (Search/Read/List on; owner-verified — Claude searches the whole Drive and reads a matching Doc on demand, no manual "Add Content" needed). The missing piece: career-pilot **materializes a proper "kit" per upcoming interview into the career-account Drive**, and the voice-call Claude finds it by name and runs the mock. Replaces the dated static guide with an AI-powered practice loop, on-theme for the showcase.
+
+**Trigger = the status-transition seam, not a 24h calendar timer.** "An interview exists" is already a first-class signal: a transition of `applications.status` INTO `{SCREENING, TECH_SCREEN, SYS_DESIGN, FINAL}`. The deterministic host converter `applyFunnelFromEmailEvents` (`src/modules/career-pilot/funnel-apply.ts`, runs after every non-cheap funnel-curator persist) maps a classified `screen_invite`/`onsite_invite`/`next_round_update` email to one of these and already emits `changes[]` + calls `upsertPublicFunnelView` per change — kit generation hooks the **same** seam. It fires the instant the recruiter's invite is classified (before a calendar slot may even exist), so the kit is ready whether the interview is 2 days or 2 weeks out — no day-before cram. Hook the transition itself (shared with the agent's own `update_application` path + the candidate-told-us path), not only the email converter, so every way an interview becomes known triggers a kit. `interview_type` derives deterministically from the target status (`SCREENING→recruiter_screen`, `TECH_SCREEN→technical_screen`, `SYS_DESIGN→system_design`, `FINAL→final_round`) — no human input, satisfying the one thing prep-interview refused without.
+
+**Generation = enqueue, then the orchestrator does the LLM work (silently).** The host hook does not generate inline (a kit is research + profile reasoning + prose = an LLM task). It enqueues a one-off `[scheduled trigger: build-interview-kit]` wakeup carrying the `application_id` + target round (mirrors the existing scheduled-trigger pattern). On that turn the orchestrator: (1) runs `research-company` if the digest is stale, (2) dispatches the new `build-interview-kit` subagent, (3) the subagent calls its `persist_interview_kit` writer. **Creation is silent** — an `<internal>` audit note only, no `<message>` (like `job-scrape`/`close-detection`). Pinging "I made you a kit" the instant a recruiter email lands is unnatural and premature; the link surfaces at the next natural touchpoint instead (below).
+
+**The artifact = one Google Doc, two parts.** A native Google Doc (authored in markdown, materialized as a Doc so the connector — which extracts text from Docs — reads it). **Real company names, never sanitized** (private career account, not the public mirror; "practice for Acme" must match "Acme"). Two sections:
+- **Part 1 — Interviewer operating manual** (for the voice-call Claude): rules of engagement (conduct a realistic `<type>` round for `<role>`, one question at a time, wait, push back on weak reasoning, don't hand over answers, escalate), a **scoring rubric** (what strong/weak looks like per theme so it can give real end-of-session feedback), grounding facts (the candidate's relevant resume points + research highlights + JD), and **gap notes to probe** (kept *in* — the inverse of the candidate-facing guide, which strips them).
+- **Part 2 — Candidate quick-reference** (for the human to read directly): recent company signal + what to lean into + questions to ask the interviewer. This is the genuinely-useful content the old guide produced; a live mock tests answers but doesn't hand you an in-the-room cheat-sheet, so it's preserved as a section, not lost.
+
+This **supersedes `prep-interview`** (§5): one `build-interview-kit` subagent replaces it; the on-demand "prep me for the Acme screen" Telegram ask is served by surfacing Part 2; the proactive prep behavior becomes "your kit's ready — go practice" + the Drive link + Part 2 inline.
+
+**The Drive write path (the one net-new dependency).** career-pilot writes to the dedicated **career Google account's** Drive (`alagonterie.career.dev@gmail.com` in dev — the same account OneCLI already vaults Google OAuth for), with **least-privilege `drive.file` scope** (owner-enabled): the app can only see/manage files it creates — it can never read the candidate's other Drive files. Mechanics live entirely in the `persist_interview_kit` **host handler** (TypeScript, OneCLI-injected `*.googleapis.com` calls — the Gmail injection model), NOT in any prompt: ensure the dedicated top-level folder (+ `Archive/` subfolder) exists, convert markdown→Doc, place it, UPSERT the `interview_kits` row — transactionally. Because `drive.file` can't name-search for a folder it didn't create, the parent **folder_id is persisted once** (config) and reused. The subagent calls one purpose-built tool with the kit content; neither agent carries Drive knowledge. (Implementation reads the Drive/Docs API docs for the exact create-folder / markdown-import / move-parent endpoints + mimeTypes before coding — no winging it.)
+
+**Folder isolation ≠ security isolation.** The dedicated folder keeps our files out of the candidate's way and homes the archive lifecycle, but the connector searches Drive-*wide* (folders aren't a permission boundary — owner's password-doc test proved it). The real isolation from personal data is the **account**: kits live in the career account, and the claude.ai Interview Prep project's Drive connector is authorized to **that** account (not the candidate's personal Google) — so the connector's broad read scope only ever sees career material.
+
+**Surfacing = durable, at the next natural cadence.** The kit link is not a fire-and-forget chat string — it's a row, so the orchestrator can pull it any time. The `read_funnel_state` handler LEFT-JOINs `interview_kits` (active, by `application_id`) and hangs `kit_url` on that application's narrative/attention item, so the link **rides along** wherever the orchestrator already surfaces that application: the daily-briefing attention line, the funnel-curator same-day push (if imminent — the curator's `priority` already distinguishes same-day vs weeks-out), or an on-demand "how's Acme?" reply. No new orchestrator tool, no Drive knowledge, always fresh. Two independent retrieval paths result: the orchestrator *pushes* the link at a natural moment, and the candidate can always *pull* it directly by opening the voice project and saying "practice for Acme."
+
+**Cleanup = archive, symmetric with creation + a sweep backstop.** The same transition seam that *creates* a kit on entry to an interview stage *retires* it on entry to a **terminal** stage (`OFFER`/`REJECTED`/`WITHDRAWN`): the host moves the Doc to `Archive/` and stamps `interview_kits.archived_at` (status→`archived`). Archive, not delete — the owner chose per-file partly for re-practice/history; `drive.file` *can* delete, but archive preserves the artifact while removing it from the active searchable set so "practice for Acme" never surfaces a closed-process kit. A periodic **`kit-cleanup`** sweep (a 6th cron in the `close-detection` mold — host-side, silent, owner-group-gated) is the backstop for processes that ghost without a clean terminal email — reusing the curator's `funnel_curator_ghosting_thresholds_days`. Stale kits aren't *harmful* (the connector reads on-demand), so cleanup is hygiene, not correctness — don't over-invest.
+
+**What lands:**
+1. Migration `127-interview-kits.ts` (the `interview_kits` table — see §3).
+2. `src/modules/career-pilot/interview-kit-actions.ts`: the `persist_interview_kit` host handler (Drive create/convert/move + transactional `interview_kits` UPSERT, via OneCLI-injected Drive/Docs API), the terminal-archive + `kit-cleanup` sweep functions, an `ensureKitFolder` (persisted folder_id) helper.
+3. The trigger: hook the status-transition seam (in/around `applyFunnelFromEmailEvents` + the `update_application` status path) to enqueue `[scheduled trigger: build-interview-kit]` on entry to an interview stage and archive on entry to a terminal stage.
+4. `read_funnel_state` handler: LEFT-JOIN `interview_kits` → `kit_url` on narratives/attention.
+5. `groups/career-pilot/.claude/agents-src/build-interview-kit.md` (+ built `agents/` output): the two-part kit, the rubric, `interview_type`-from-round, the single `persist_interview_kit` call. Retire `prep-interview.md`.
+6. `groups/career-pilot/.claude-host-fragments/persona.md`: swap the `prep-interview` subagent-table row + the "Interview prep flow" / "Interview event extraction" sections for `build-interview-kit`; add a silent `[scheduled trigger: build-interview-kit]` handler; add "surface the kit link when present" to the daily-briefing + same-day-push + on-demand-"how's X" sections.
+7. `config/defaults.json`: `interview_kit_auto_generate: true`, `interview_kit_folder_name`, `interview_kit_drive_folder_id: ""` (runtime-populated), `kit_cleanup_cron` (close-detection-adjacent). The OneCLI Drive scope/connection is owner-provisioned (done in dev).
+8. Cross-doc reconciliation (this commit set): the root `CLAUDE.md` "Subagents" locked-decision row (a new external-but-private writer joins the picture) and §6.2's "Nothing else writes externally" scope line (Drive added) — see the §6.2 edit below.
+9. Tests: handler (folder-ensure idempotency, md→Doc, archive move), the trigger (interview-stage entry enqueues; terminal entry archives; idempotent re-run doesn't double-create per the unique index), the read-model join, the persona-flow swap assertions.
+
+**Out of scope:** the candidate-facing *content quality* of a live mock is the voice-Claude's job (project custom-instructions, owner-authored once) — we ship the materials, not the interviewer persona; the claude.ai project + its connector are owner-configured (a verification step, not our code). ClaudeSync and any unofficial claude.ai write path (rejected — ToS-gray, personal session key on the box). A generic Drive tool (the writer is narrow + kit-specific by design). Hard-delete of archived kits (archive is terminal in v1; a much-later "archived > N days" purge is an optional future hygiene item).
+
+**DoD:**
+1. A transition INTO `{SCREENING, TECH_SCREEN, SYS_DESIGN, FINAL}` (via the converter *or* `update_application`) enqueues exactly one `build-interview-kit` wakeup for that application+round; re-running the converter does not double-create (the `(application_id, round)` unique index + idempotent enqueue hold). `interview_type` derives correctly from each round.
+2. `persist_interview_kit` creates a native Google Doc in the dedicated career-account folder (`drive.file`), titled `Interview Kit — <Company> — <Round> — <date>`, with both parts, and UPSERTs the `interview_kits` row with the real `drive_file_id`/`drive_url`; the folder (+ `Archive/`) is ensured idempotently via the persisted folder_id. Real company name, unsanitized.
+3. Creation emits no `<message>` (silent); the kit link surfaces via `read_funnel_state`'s `kit_url` join in the next briefing / same-day push / on-demand reply.
+4. A transition INTO `{OFFER, REJECTED, WITHDRAWN}` archives the application's active kit(s) (Doc moved to `Archive/`, `status='archived'`, `archived_at` set); the `kit-cleanup` sweep archives ghosted-past-threshold kits; both are silent host-side.
+5. `prep-interview` is retired (subagent file, persona table/flow/extraction sections, the §8 trigger line) with no dangling references; `build-interview-kit` is its replacement.
+6. Host suite + container typecheck + `format:check` clean; new handler/trigger/read-model/persona tests pass.
+7. **Live (owner-gated validation):** with the claude.ai Interview Prep project's Drive connector authorized to the career account, an **app-created** kit Doc is found by the connector's search and read in a voice call ("practice for the \<Company\> \<round\>") — the end-to-end assumption proven before broader rollout.
 
 ---
 
