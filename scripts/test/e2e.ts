@@ -1412,7 +1412,8 @@ async function runBuildInterviewKit(): Promise<void> {
   //     (technical screen → TECH_SCREEN) from the candidate's turn
   //   - invoke research-company first (about Anthropic)
   //   - invoke build-interview-kit next, passing the research digest + an
-  //     ## Interview block carrying application_id + round + interview_type
+  //     ## Interview block carrying application_id + round + interview_type +
+  //     the seeded JD under ## Job description (F3 §24.53)
   //   - the SUBAGENT itself calls persist_interview_kit, which the host
   //     materializes as a Google Doc and records in interview_kits
   //
@@ -1420,6 +1421,8 @@ async function runBuildInterviewKit(): Promise<void> {
   //   1. Both subagent types dispatched (research-company first), ≥1 success each.
   //   2. build-interview-kit's invocation prompt carries application_id +
   //      round (TECH_SCREEN) + interview_type under ## Interview.
+  //   2b. The kit prompt carries the JD (the seeded distinctive phrase) —
+  //      proving the orchestrator threaded jd_text into ## Job description (F3).
   //   3. An interview_kits row was written for the seeded application with a
   //      REAL Google Doc drive_url — proving subagent → persist_interview_kit →
   //      host → Drive end-to-end. NOTE: needs the local OneCLI connected to
@@ -1429,11 +1432,22 @@ async function runBuildInterviewKit(): Promise<void> {
   //   5. The orchestrator's reply points at the kit (a Drive link / "kit"),
   //      not the full kit text (writer pattern, like the outreach pointer).
   const appId = 'app-e2e-anthropic-kit';
+  // Seed a JD with distinctive, role-specific tokens so we can assert the
+  // orchestrator threaded jd_text into the build-interview-kit invocation
+  // (F3 §24.53: the JD is a first-class kit input, not just the title).
+  const JD_DISTINCTIVE = 'distributed inference scheduling';
   seedBookmarkedApplication({
     id: appId,
     company_name: 'Anthropic',
     role_title: 'Staff Backend Engineer',
     obfuscated_label: 'ai-a',
+    jd_text: [
+      'Staff Backend Engineer — Inference Platform.',
+      `You will own ${JD_DISTINCTIVE} across a multi-region GPU fleet,`,
+      'optimizing cost-per-inference and tail latency. Required: deep Rust + gRPC,',
+      'distributed systems at scale, and capacity-planning experience.',
+      'Nice to have: experience with autoscaling reasoning workloads.',
+    ].join(' '),
   });
   const flowStartIso = new Date().toISOString();
   const reply = await chatTurn(
@@ -1514,6 +1528,22 @@ async function runBuildInterviewKit(): Promise<void> {
     );
   }
   ok('build-interview-kit prompt carries application_id + round (TECH_SCREEN) + interview_type');
+
+  // 2b. The kit prompt carries the JD (F3 §24.53). The orchestrator must thread
+  // the application's jd_text into a ## Job description block — a title-only kit
+  // is the failure mode F3 fixes. Assert the seeded distinctive phrase reached
+  // the subagent.
+  if (!kitPrompt.toLowerCase().includes(JD_DISTINCTIVE.toLowerCase())) {
+    console.error('  --- build-interview-kit invocation prompt (first 2500 chars) ---');
+    console.error(kitPrompt.slice(0, 2500));
+    console.error('  --- end ---');
+    fail(
+      `build-interview-kit invocation prompt does not carry the JD (expected the seeded ` +
+        `distinctive phrase "${JD_DISTINCTIVE}"). The orchestrator must pass the application's ` +
+        'jd_text under ## Job description (F3 §24.53).',
+    );
+  }
+  ok('build-interview-kit prompt carries the JD (## Job description threaded from jd_text)');
 
   // 3. An interview_kits row was written for the seeded application, with a
   // REAL Google Doc drive_url — proves subagent → persist_interview_kit → host
@@ -3538,15 +3568,16 @@ function seedBookmarkedApplication(opts: {
   company_name: string;
   role_title: string;
   obfuscated_label: string;
+  jd_text?: string;
 }): void {
   const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
   const db = new Database(dbPath);
   try {
     const now = new Date().toISOString();
     db.prepare(
-      `INSERT INTO applications (id, company_name, obfuscated_label, role_title, status, created_at, last_activity_at)
-       VALUES (?, ?, ?, ?, 'BOOKMARKED', ?, ?)`,
-    ).run(opts.id, opts.company_name, opts.obfuscated_label, opts.role_title, now, now);
+      `INSERT INTO applications (id, company_name, obfuscated_label, role_title, jd_text, status, created_at, last_activity_at)
+       VALUES (?, ?, ?, ?, ?, 'BOOKMARKED', ?, ?)`,
+    ).run(opts.id, opts.company_name, opts.obfuscated_label, opts.role_title, opts.jd_text ?? null, now, now);
     ok(`seeded BOOKMARKED application: ${opts.company_name} (${opts.obfuscated_label})`);
   } finally {
     db.close();

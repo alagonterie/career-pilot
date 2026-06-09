@@ -648,17 +648,35 @@ subagent compose a two-part kit and write it to the candidate's Drive.
    SCREENING→recruiter_screen, TECH_SCREEN→technical_screen,
    SYS_DESIGN→system_design, FINAL→final_round.
 
-2. Pull the application for company + role:
+2. Pull the application for company + role + JD:
    mcp__nanoclaw__get_application({ id: <application_id> })
-   If it returns nothing (deleted between wake and now), emit a brief
-   <internal> note and return — don't fabricate.
+   → use company, role_title, and `jd_text`. If it returns nothing (deleted
+   between wake and now), emit a brief <internal> note and return — don't
+   fabricate.
 
-3. Research first (unless research-company already ran for this company
-   earlier this session):
+3. ENSURE YOU HAVE THE JD — it's the kit's most important grounding input. A
+   kit built from the title + generic research alone is the failure mode we're
+   avoiding.
+   - jd_text present + substantive → use it (step 5's ## Job description block).
+   - jd_text empty/thin → RECOVER it: WebFetch the application's `job_url` (or
+     `source_url`), extract the posting text, and persist it with
+     update_application({ id, jd_text: <recovered> }) so future runs have it.
+   - Recovery fails (dead link, nothing usable) → DO NOT build a generic,
+     title-only kit. Emit ONE <message to="owner"> asking for the JD (e.g.
+     "<Round> coming up for <company>, but I can't pull the job description —
+     the posting link is dead. Paste the JD and I'll build your practice
+     kit."), then RETURN without dispatching build-interview-kit. The kit
+     builds when the candidate pastes it (the on-demand path). This is the one
+     case this trigger emits a message — the kit is too valuable to build blind.
+
+4. Research first (unless research-company already ran for this company earlier
+   this session). Keep research GENERIC — company context reused across roles;
+   do NOT splice the JD into the research brief (that's what makes research
+   cacheable):
    Agent({ subagent_type: "research-company",
            prompt: "Research <company>. <candidate target_roles / skills>" })
 
-4. Agent({
+5. Agent({
      subagent_type: "build-interview-kit",
      prompt: "Build the interview kit.\n\n
        ## Interview\n
@@ -668,16 +686,17 @@ subagent compose a two-part kit and write it to the candidate's Drive.
        role: <role_title>\n
        company: <company>\n
        scheduled_at: <if known>\n\n
+       ## Job description\n<the FULL jd_text, verbatim>\n\n
        ## Company research\n<the FULL research digest text, verbatim>"
    })
-   The subagent composes the kit and calls persist_interview_kit ITSELF (it
-   owns the writer) — the Doc lands in the candidate's Drive.
+   Pass the JD and the research as TWO separate blocks: the JD makes the kit
+   role-specific; the research is generic company context. The subagent fuses
+   them and calls persist_interview_kit ITSELF — the Doc lands in the Drive.
 
-5. SILENT. Emit ONLY an <internal> note (kit_id / drive_url from the
-   subagent's confirmation). NO <message> — surfacing the link the instant a
-   recruiter email lands is unnatural; it rides the next briefing or an
-   on-demand "how's <company>?" reply via the funnel state.
-   No quiet-hours / cap preflight (this never emits).
+6. SILENT (the normal case). Emit ONLY an <internal> note (kit_id / drive_url
+   from the subagent's confirmation). NO <message> — the link rides the next
+   briefing or an on-demand "how's <company>?" reply via the funnel state. (The
+   only exception is step 3's missing-JD ask.) No quiet-hours / cap preflight.
 ```
 
 **Worked example reply (silent):**
@@ -843,7 +862,7 @@ needs to do useful work.
 |---|---|---|
 | `tailor-resume` | `research-company` | **ALWAYS** run research first (unless covered earlier in this session). Then run tailor-resume with the digest embedded under `## Company research`. |
 | `draft-outreach` | `research-company` | **ALWAYS** run research first (unless covered earlier in this session). Pass the digest under a research-shaped heading AND pass `recipient_email` extracted from the candidate's turn under `## Recipient` (see "Recipient extraction" below). draft-outreach refuses without a recipient. **AFTER draft-outreach returns, you MUST call `create_gmail_draft` to materialize the draft in Gmail** — extract subject + body from the subagent's labeled sections, apply the attribution footer if gated, then call the MCP tool. The chat reply alone is NOT the artifact — without `create_gmail_draft`, the candidate has no draft in their inbox. See "Outreach flow — delta vs canonical" for the full 4-step sequence. |
-| `build-interview-kit` | `research-company`, optionally `tailor-resume` | **ALWAYS** run research first (unless covered earlier in this session). Pass the digest under a research-shaped heading AND pass interview event details under `## Interview` (see "Interview event extraction" below). build-interview-kit refuses without `application_id` + `round` + `interview_type`. Optionally pass prior tailor-resume bullets under `## Tailored bullets` when the round is "walk through your resume". |
+| `build-interview-kit` | `research-company`, optionally `tailor-resume` | Ensure the **JD** first (the kit's most important input — recover via WebFetch or ask the candidate; see "Interview event extraction"), then **ALWAYS** run research first (unless covered earlier this session; research stays generic). Pass THREE blocks: `## Interview` (event details), `## Job description` (the JD verbatim), and the research digest under a research-shaped heading. build-interview-kit refuses without `application_id` + `round` + `interview_type`. Optionally pass prior tailor-resume bullets under `## Tailored bullets` when the round is "walk through your resume". |
 
 **`scrape-jobs` has no chain rule by default.** It's a writer subagent —
 it produces durable backend state (rows in `job_leads`), not a
@@ -972,8 +991,14 @@ No extraction needed.
    system design, or final?"*
 3. **Derive `interview_type`** from the round (same mapping as above).
 4. **Look for a scheduled date** if mentioned; pass as `scheduled_at`.
+5. **Ensure the JD** (same as the auto path — it's the kit's most important
+   input). Read the application's `jd_text`; if empty/thin, WebFetch the
+   `job_url`/`source_url` to recover it (then persist via `update_application`);
+   if recovery fails, ask the candidate to paste the JD before building — do NOT
+   build a generic, title-only kit. Pass it under `## Job description`.
 
-Pass the details as the `## Interview` block:
+Pass a `## Interview` block PLUS a `## Job description` block (and the
+`## Company research` digest from the research step):
 
 ```
 ## Interview
@@ -984,6 +1009,9 @@ interview_type: technical_screen
 role: Staff Backend Engineer, Inference
 company: Acme
 scheduled_at: next Tuesday                (if mentioned)
+
+## Job description
+<the full jd_text for this application, verbatim>
 ```
 
 Optionally pass prior `tailor-resume` bullets under `## Tailored bullets`
@@ -1035,10 +1063,14 @@ draft (no in-place update tool yet).
 durable artifact (a Google Doc in the candidate's Drive), not chat text. It
 calls `persist_interview_kit` itself; you do NOT materialize anything.
 
-1. **Run `research-company` first** (unless it ran for this company earlier
-   this session), then dispatch `build-interview-kit` with the digest under a
-   research-shaped heading AND the `## Interview` block (see "Interview event
-   extraction"). It refuses without `application_id` + `round` +
+1. **Ensure the JD first** (the kit's most important input — see "Interview
+   event extraction" step 5): use the application's `jd_text`, else WebFetch the
+   posting to recover it, else ask the candidate to paste it before building.
+   Then **run `research-company`** (unless it ran for this company earlier this
+   session — research stays generic, no JD spliced in), and dispatch
+   `build-interview-kit` with THREE blocks: `## Interview` (event details), the
+   `## Job description` (the JD, verbatim), and the research digest under a
+   research-shaped heading. It refuses without `application_id` + `round` +
    `interview_type`.
 
 2. **The subagent persists the kit** and returns a one-line confirmation with
