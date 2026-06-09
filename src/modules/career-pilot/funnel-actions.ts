@@ -34,6 +34,7 @@ import type Database from 'better-sqlite3';
 import { getAgentGroup } from '../../db/agent-groups.js';
 import { getDb } from '../../db/connection.js';
 import { applyFunnelFromEmailEvents } from './funnel-apply.js';
+import { reactToStatusTransitions } from './interview-kit-trigger.js';
 import { scoreWinConfidence } from './win-confidence.js';
 import { insertMessage } from '../../db/session-db.js';
 import { log } from '../../log.js';
@@ -478,6 +479,9 @@ export async function handlePersistFunnelState(
         if (applied.converted > 0) {
           log.info('funnel board converged after curator persist', { converted: applied.converted });
         }
+        // §24.53: interview-stage entries → enqueue a kit wake; terminal entries →
+        // archive kits. Best-effort, inside the same try (never fails the persist).
+        reactToStatusTransitions(db, inDb, applied.changes);
       } catch (applyErr) {
         log.error('applyFunnelFromEmailEvents after persist threw', { applyErr });
       }

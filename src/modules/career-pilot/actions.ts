@@ -32,6 +32,7 @@ import { applyPass1 } from '../portal/sanitizer.js';
 import { isKnownApplicationStatus, upsertPublicFunnelView } from '../portal/public-funnel-view.js';
 import type { Session } from '../../types.js';
 
+import { reactToStatusTransitions } from './interview-kit-trigger.js';
 import { validateProactivePref } from './quiet-hours.js';
 
 // ── Response writer (shared by all handlers) ──
@@ -658,8 +659,10 @@ export async function handleUpdateApplication(
   try {
     const db = getDb();
     const existing = db
-      .prepare('SELECT obfuscated_label, company_name, company_aliases, public_state FROM applications WHERE id = ?')
-      .get(id) as ObfuscationSnapshot | undefined;
+      .prepare(
+        'SELECT obfuscated_label, company_name, company_aliases, public_state, status FROM applications WHERE id = ?',
+      )
+      .get(id) as (ObfuscationSnapshot & { status: string | null }) | undefined;
 
     const now = new Date().toISOString();
 
@@ -713,6 +716,11 @@ export async function handleUpdateApplication(
         data: { id, created: true, obfuscated_label },
       });
       upsertPublicFunnelView(db, id);
+      // §24.53: a new application created straight into an interview stage
+      // (rare, but possible) should still get a kit.
+      if (patch.status) {
+        reactToStatusTransitions(db, inDb, [{ application_id: id, from: null, to: String(patch.status) }]);
+      }
       return;
     }
 
@@ -770,6 +778,14 @@ export async function handleUpdateApplication(
     // Refresh the public funnel read-model (application_ref / stage / activity
     // may have changed). Best-effort; the function catches + never throws.
     upsertPublicFunnelView(db, id);
+
+    // §24.53: an agent-driven status move into an interview stage enqueues a kit
+    // wake; into a terminal stage archives kits. Only when status actually changed.
+    if (patch.status && updatable.includes('status') && patch.status !== existing.status) {
+      reactToStatusTransitions(db, inDb, [
+        { application_id: id, from: existing.status ?? null, to: String(patch.status) },
+      ]);
+    }
   } catch (err) {
     log.error('handleUpdateApplication failed', { id, err });
     writeResponse(inDb, requestId, {
