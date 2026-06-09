@@ -5,6 +5,11 @@
  * a fresh in-memory central DB. Does not spawn a container; does not
  * touch the action handler — that's covered by the spot-check in
  * actions.integration.test.ts (Component 3).
+ *
+ * mirrorFunnelEvent + resanitizeApplicationAuditTrail are async since §24.12
+ * (Pass 3). In this test env Pass 3 is inactive (no Portkey key + the default
+ * `sanitization_pass3_enabled=false`), so the deterministic Pass 1+2 path runs
+ * and the outcomes/values are unchanged — the calls just need awaiting.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
@@ -92,7 +97,7 @@ describe('mirrorFunnelEvent', () => {
     }>;
   }
 
-  it('mirrors a happy-path obfuscated event with PII redacted + company replaced', () => {
+  it('mirrors a happy-path obfuscated event with PII redacted + company replaced', async () => {
     seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a' });
     seedEvent({
       id: 'fe-1',
@@ -101,7 +106,7 @@ describe('mirrorFunnelEvent', () => {
       payload: JSON.stringify({ note: 'jane@acme.com sent the $220k offer at Acme Corp' }),
     });
 
-    mirrorFunnelEvent(db, 'fe-1');
+    await mirrorFunnelEvent(db, 'fe-1');
 
     const rows = readAuditRows();
     expect(rows).toHaveLength(1);
@@ -115,7 +120,7 @@ describe('mirrorFunnelEvent', () => {
     expect(rows[0].summary).not.toContain('$220k');
   });
 
-  it('writes the real company name when public_state=public', () => {
+  it('writes the real company name when public_state=public', async () => {
     seedApp({
       id: 'app-1',
       company_name: 'Acme Corp',
@@ -128,7 +133,7 @@ describe('mirrorFunnelEvent', () => {
       payload: JSON.stringify({ note: 'great chat with Acme Corp' }),
     });
 
-    mirrorFunnelEvent(db, 'fe-1');
+    await mirrorFunnelEvent(db, 'fe-1');
 
     const rows = readAuditRows();
     expect(rows).toHaveLength(1);
@@ -136,7 +141,7 @@ describe('mirrorFunnelEvent', () => {
     expect(rows[0].summary).toContain('Acme Corp'); // not redacted
   });
 
-  it('skips events whose application is missing (defensive on FK gap)', () => {
+  it('skips events whose application is missing (defensive on FK gap)', async () => {
     // Insert an event referencing a non-existent application. The FK
     // constraint should prevent this in normal use; we bypass via raw SQL
     // to simulate a stale FK.
@@ -144,12 +149,12 @@ describe('mirrorFunnelEvent', () => {
     seedEvent({ id: 'fe-1', application_id: 'app-missing' });
     db.exec('PRAGMA foreign_keys = ON');
 
-    mirrorFunnelEvent(db, 'fe-1');
+    await mirrorFunnelEvent(db, 'fe-1');
 
     expect(readAuditRows()).toHaveLength(0);
   });
 
-  it('drops the row when the defense-in-depth scan finds a surviving real name', () => {
+  it('drops the row when the defense-in-depth scan finds a surviving real name', async () => {
     seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a' });
     // Seed a SECOND non-public company whose name will appear in the
     // payload but is NOT linked to this event's application. Pass 2
@@ -180,13 +185,13 @@ describe('mirrorFunnelEvent', () => {
     // PartnerCo's obfuscated_label to empty so Pass 2 skips it.
     db.prepare("UPDATE applications SET obfuscated_label = '' WHERE id = 'app-2'").run();
 
-    mirrorFunnelEvent(db, 'fe-1');
+    await mirrorFunnelEvent(db, 'fe-1');
 
     // PartnerCo survived sanitization → defense-in-depth dropped the row.
     expect(readAuditRows()).toHaveLength(0);
   });
 
-  it('writes the row when the operator disables defense-in-depth', () => {
+  it('writes the row when the operator disables defense-in-depth', async () => {
     seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a' });
     seedApp({ id: 'app-2', company_name: 'PartnerCo', obfuscated_label: '' });
     seedEvent({
@@ -202,7 +207,7 @@ describe('mirrorFunnelEvent', () => {
        VALUES ('sanitization_audit_drop_on_unmatched_company', 'false', '2026-05-28T00:00:00Z')`,
     ).run();
 
-    mirrorFunnelEvent(db, 'fe-1');
+    await mirrorFunnelEvent(db, 'fe-1');
 
     const rows = readAuditRows();
     expect(rows).toHaveLength(1);
@@ -210,7 +215,7 @@ describe('mirrorFunnelEvent', () => {
     expect(rows[0].summary).toContain('PartnerCo');
   });
 
-  it('truncates summary to the configured max_chars preference', () => {
+  it('truncates summary to the configured max_chars preference', async () => {
     seedApp({ id: 'app-1', company_name: 'Acme', obfuscated_label: 'fintech-a' });
     const longPayload = 'x'.repeat(2000);
     seedEvent({ id: 'fe-1', application_id: 'app-1', payload: longPayload });
@@ -220,26 +225,26 @@ describe('mirrorFunnelEvent', () => {
        VALUES ('sanitization_public_summary_max_chars', '100', '2026-05-28T00:00:00Z')`,
     ).run();
 
-    mirrorFunnelEvent(db, 'fe-1');
+    await mirrorFunnelEvent(db, 'fe-1');
 
     const rows = readAuditRows();
     expect(rows).toHaveLength(1);
     expect(rows[0].summary.length).toBe(100);
   });
 
-  it('uses default 500-char truncation when no preference is set', () => {
+  it('uses default 500-char truncation when no preference is set', async () => {
     seedApp({ id: 'app-1', company_name: 'Acme', obfuscated_label: 'fintech-a' });
     const longPayload = 'x'.repeat(2000);
     seedEvent({ id: 'fe-1', application_id: 'app-1', payload: longPayload });
 
-    mirrorFunnelEvent(db, 'fe-1');
+    await mirrorFunnelEvent(db, 'fe-1');
 
     const rows = readAuditRows();
     expect(rows).toHaveLength(1);
     expect(rows[0].summary.length).toBe(500);
   });
 
-  it('includes details_json with the kind + status arrows + sanitized text', () => {
+  it('includes details_json with the kind + status arrows + sanitized text', async () => {
     seedApp({ id: 'app-1', company_name: 'Acme', obfuscated_label: 'fintech-a' });
     seedEvent({
       id: 'fe-1',
@@ -250,7 +255,7 @@ describe('mirrorFunnelEvent', () => {
       payload: JSON.stringify({ note: 'submitted via Greenhouse' }),
     });
 
-    mirrorFunnelEvent(db, 'fe-1');
+    await mirrorFunnelEvent(db, 'fe-1');
 
     const rows = readAuditRows();
     expect(rows).toHaveLength(1);
@@ -262,16 +267,16 @@ describe('mirrorFunnelEvent', () => {
     expect(typeof details.sanitized).toBe('string');
   });
 
-  it('does not throw if the funnel_event id does not exist', () => {
-    expect(() => mirrorFunnelEvent(db, 'fe-nonexistent')).not.toThrow();
+  it('does not throw (resolves) if the funnel_event id does not exist', async () => {
+    await expect(mirrorFunnelEvent(db, 'fe-nonexistent')).resolves.toBe('skipped');
     expect(readAuditRows()).toHaveLength(0);
   });
 
-  it('links the audit row back to its source funnel_event (§24.11 migration 122)', () => {
+  it('links the audit row back to its source funnel_event (§24.11 migration 122)', async () => {
     seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a' });
     seedEvent({ id: 'fe-1', application_id: 'app-1', payload: JSON.stringify({ note: 'hello' }) });
 
-    const outcome = mirrorFunnelEvent(db, 'fe-1');
+    const outcome = await mirrorFunnelEvent(db, 'fe-1');
     expect(outcome).toBe('inserted');
 
     const row = db.prepare('SELECT source_funnel_event_id FROM public_audit_trail').get() as {
@@ -280,9 +285,9 @@ describe('mirrorFunnelEvent', () => {
     expect(row.source_funnel_event_id).toBe('fe-1');
   });
 
-  it('returns a typed outcome for skipped/dropped paths', () => {
+  it('returns a typed outcome for skipped/dropped paths', async () => {
     // Non-existent event → skipped.
-    expect(mirrorFunnelEvent(db, 'fe-nope')).toBe('skipped');
+    expect(await mirrorFunnelEvent(db, 'fe-nope')).toBe('skipped');
 
     // Defense-in-depth drop → dropped.
     seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a' });
@@ -292,12 +297,12 @@ describe('mirrorFunnelEvent', () => {
       application_id: 'app-1',
       payload: JSON.stringify({ note: 'collaboration with PartnerCo announced' }),
     });
-    expect(mirrorFunnelEvent(db, 'fe-1')).toBe('dropped');
+    expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('dropped');
   });
 
   // ── §24.11 Sub-milestone 4.3: retroactive resanitization ───────────────
   describe('resanitizeApplicationAuditTrail', () => {
-    it('rewrites public→obfuscated: real name replaced with [REDACTED:<label>]', () => {
+    it('rewrites public→obfuscated: real name replaced with [REDACTED:<label>]', async () => {
       seedApp({
         id: 'app-1',
         company_name: 'Acme Corp',
@@ -309,7 +314,7 @@ describe('mirrorFunnelEvent', () => {
         application_id: 'app-1',
         payload: JSON.stringify({ note: 'call with Acme Corp went well' }),
       });
-      expect(mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
+      expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
 
       // Baseline: public row shows the real name.
       let rows = readAuditRows();
@@ -318,7 +323,7 @@ describe('mirrorFunnelEvent', () => {
       expect(rows[0].summary).toContain('Acme Corp');
 
       db.prepare("UPDATE applications SET public_state = 'obfuscated' WHERE id = 'app-1'").run();
-      expect(resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 1, deleted: 1 });
+      expect(await resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 1, deleted: 1 });
 
       rows = readAuditRows();
       expect(rows).toHaveLength(1);
@@ -327,7 +332,7 @@ describe('mirrorFunnelEvent', () => {
       expect(rows[0].summary).not.toContain('Acme Corp');
     });
 
-    it('rewrites obfuscated→public: [REDACTED:<label>] replaced with the real name', () => {
+    it('rewrites obfuscated→public: [REDACTED:<label>] replaced with the real name', async () => {
       seedApp({
         id: 'app-1',
         company_name: 'Acme Corp',
@@ -339,14 +344,14 @@ describe('mirrorFunnelEvent', () => {
         application_id: 'app-1',
         payload: JSON.stringify({ note: 'call with Acme Corp went well' }),
       });
-      expect(mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
+      expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
 
       let rows = readAuditRows();
       expect(rows[0].summary).toContain('[REDACTED:fintech-a]');
       expect(rows[0].summary).not.toContain('Acme Corp');
 
       db.prepare("UPDATE applications SET public_state = 'public' WHERE id = 'app-1'").run();
-      expect(resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 1, deleted: 1 });
+      expect(await resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 1, deleted: 1 });
 
       rows = readAuditRows();
       expect(rows).toHaveLength(1);
@@ -355,7 +360,7 @@ describe('mirrorFunnelEvent', () => {
       expect(rows[0].summary).not.toContain('[REDACTED:fintech-a]');
     });
 
-    it('rewrites after an obfuscated_label change: rows reflect the new label', () => {
+    it('rewrites after an obfuscated_label change: rows reflect the new label', async () => {
       seedApp({
         id: 'app-1',
         company_name: 'Acme Corp',
@@ -367,10 +372,10 @@ describe('mirrorFunnelEvent', () => {
         application_id: 'app-1',
         payload: JSON.stringify({ note: 'spoke with Acme Corp' }),
       });
-      expect(mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
+      expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
 
       db.prepare("UPDATE applications SET obfuscated_label = 'fintech-z' WHERE id = 'app-1'").run();
-      expect(resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 1, deleted: 1 });
+      expect(await resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 1, deleted: 1 });
 
       const rows = readAuditRows();
       expect(rows).toHaveLength(1);
@@ -379,7 +384,7 @@ describe('mirrorFunnelEvent', () => {
       expect(rows[0].summary).not.toContain('fintech-a');
     });
 
-    it('rewrites after a company_aliases add: the new alias is now redacted', () => {
+    it('rewrites after a company_aliases add: the new alias is now redacted', async () => {
       seedApp({
         id: 'app-1',
         company_name: 'Acme Corp',
@@ -392,14 +397,14 @@ describe('mirrorFunnelEvent', () => {
         application_id: 'app-1',
         payload: JSON.stringify({ note: 'AcmeCo recruiter reached out' }),
       });
-      expect(mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
+      expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
 
       // Baseline: alias not yet known → leaks through.
       let rows = readAuditRows();
       expect(rows[0].summary).toContain('AcmeCo');
 
       db.prepare(`UPDATE applications SET company_aliases = '["AcmeCo"]' WHERE id = 'app-1'`).run();
-      expect(resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 1, deleted: 1 });
+      expect(await resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 1, deleted: 1 });
 
       rows = readAuditRows();
       expect(rows).toHaveLength(1);
@@ -407,13 +412,13 @@ describe('mirrorFunnelEvent', () => {
       expect(rows[0].summary).not.toContain('AcmeCo');
     });
 
-    it('is a no-op when the application has no funnel_events', () => {
+    it('is a no-op when the application has no funnel_events', async () => {
       seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a' });
-      expect(resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 0, deleted: 0 });
+      expect(await resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 0, deleted: 0 });
       expect(readAuditRows()).toHaveLength(0);
     });
 
-    it('rewrites only the target application; counts match and other rows are untouched', () => {
+    it('rewrites only the target application; counts match and other rows are untouched', async () => {
       seedApp({
         id: 'app-1',
         company_name: 'Acme Corp',
@@ -434,11 +439,11 @@ describe('mirrorFunnelEvent', () => {
       seedEvent({ id: 'fe-x', application_id: 'app-2', payload: JSON.stringify({ note: 'unrelated Globex note' }) });
 
       for (const id of ['fe-1', 'fe-2', 'fe-3', 'fe-x']) {
-        expect(mirrorFunnelEvent(db, id)).toBe('inserted');
+        expect(await mirrorFunnelEvent(db, id)).toBe('inserted');
       }
 
       db.prepare("UPDATE applications SET public_state = 'public' WHERE id = 'app-1'").run();
-      expect(resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 3, deleted: 3 });
+      expect(await resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 3, deleted: 3 });
 
       // app-1 rows now public (real name); app-2 row untouched (still redacted).
       const app1Rows = db

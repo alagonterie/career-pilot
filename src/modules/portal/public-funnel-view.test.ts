@@ -318,13 +318,13 @@ describe('upsertPublicFunnelView', () => {
 // ── public_audit_trail.proactive (§24.24) ────────────────────────────────
 
 describe('public_audit_trail.proactive', () => {
-  it('mirrorFunnelEvent copies funnel_events.proactive onto the public row', () => {
+  it('mirrorFunnelEvent copies funnel_events.proactive onto the public row', async () => {
     seedApp({ id: 'app-1', company_name: 'Acme', obfuscated_label: 'fintech-a' });
     seedEvent({ id: 'fe-1', application_id: 'app-1', payload: JSON.stringify({ note: 'auto' }), proactive: 1 });
     seedEvent({ id: 'fe-2', application_id: 'app-1', payload: JSON.stringify({ note: 'manual' }), proactive: 0 });
 
-    expect(mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
-    expect(mirrorFunnelEvent(db, 'fe-2')).toBe('inserted');
+    expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
+    expect(await mirrorFunnelEvent(db, 'fe-2')).toBe('inserted');
 
     const p1 = db.prepare(`SELECT proactive FROM public_audit_trail WHERE source_funnel_event_id = 'fe-1'`).get() as {
       proactive: number;
@@ -336,11 +336,11 @@ describe('public_audit_trail.proactive', () => {
     expect(p2.proactive).toBe(0);
   });
 
-  it('preserves proactive across a resanitize re-mirror (reproduced from funnel_events truth)', () => {
+  it('preserves proactive across a resanitize re-mirror (reproduced from funnel_events truth)', async () => {
     seedApp({ id: 'app-1', company_name: 'Acme', obfuscated_label: 'fintech-a' });
     seedEvent({ id: 'fe-1', application_id: 'app-1', payload: JSON.stringify({ note: 'auto-advance' }), proactive: 1 });
 
-    expect(mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
+    expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
     expect(
       (
         db.prepare(`SELECT proactive FROM public_audit_trail WHERE source_funnel_event_id = 'fe-1'`).get() as {
@@ -351,7 +351,7 @@ describe('public_audit_trail.proactive', () => {
 
     // A policy change triggers delete + re-mirror with no session context;
     // proactive must come back from funnel_events truth, not get lost.
-    resanitizeApplicationAuditTrail(db, 'app-1');
+    await resanitizeApplicationAuditTrail(db, 'app-1');
 
     const after = db
       .prepare(`SELECT proactive FROM public_audit_trail WHERE source_funnel_event_id = 'fe-1'`)
@@ -371,15 +371,15 @@ describe('public_audit_trail.seq', () => {
     );
   }
 
-  it('assigns strictly increasing seq across mirrorFunnelEvent inserts', () => {
+  it('assigns strictly increasing seq across mirrorFunnelEvent inserts', async () => {
     seedApp({ id: 'app-1', company_name: 'Acme', obfuscated_label: 'fintech-a' });
     seedEvent({ id: 'fe-1', application_id: 'app-1', payload: JSON.stringify({ note: 'one' }) });
     seedEvent({ id: 'fe-2', application_id: 'app-1', payload: JSON.stringify({ note: 'two' }) });
     seedEvent({ id: 'fe-3', application_id: 'app-1', payload: JSON.stringify({ note: 'three' }) });
 
-    expect(mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
-    expect(mirrorFunnelEvent(db, 'fe-2')).toBe('inserted');
-    expect(mirrorFunnelEvent(db, 'fe-3')).toBe('inserted');
+    expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
+    expect(await mirrorFunnelEvent(db, 'fe-2')).toBe('inserted');
+    expect(await mirrorFunnelEvent(db, 'fe-3')).toBe('inserted');
 
     expect(seqs()).toEqual([1, 2, 3]);
   });
@@ -389,13 +389,13 @@ describe('public_audit_trail.seq', () => {
     seedEvent({ id: 'fe-1', application_id: 'app-1', payload: JSON.stringify({ note: 'one' }) });
     seedEvent({ id: 'fe-2', application_id: 'app-1', payload: JSON.stringify({ note: 'two' }) });
 
-    expect(mirrorFunnelEvent(db, 'fe-1')).toBe('inserted'); // seq 1 (funnel)
+    expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('inserted'); // seq 1 (funnel)
     await handleRecordProgress(
       progressContent({ subagent_name: 'research-company', stage: 'start', detail: 'digging in' }),
       FAKE_SESSION,
       inDb,
     ); // seq 2 (subagent_progress)
-    expect(mirrorFunnelEvent(db, 'fe-2')).toBe('inserted'); // seq 3 (funnel)
+    expect(await mirrorFunnelEvent(db, 'fe-2')).toBe('inserted'); // seq 3 (funnel)
 
     const rows = db.prepare('SELECT seq, category FROM public_audit_trail ORDER BY seq ASC').all() as Array<{
       seq: number;
@@ -405,7 +405,7 @@ describe('public_audit_trail.seq', () => {
     expect(rows.map((r) => r.category)).toEqual(['funnel', 'subagent_progress', 'funnel']);
   });
 
-  it('re-mirrored rows after resanitize sort after surviving rows (fresh MAX+1 seq)', () => {
+  it('re-mirrored rows after resanitize sort after surviving rows (fresh MAX+1 seq)', async () => {
     // Two apps so a surviving row preserves the MAX counter when app-1's row
     // is deleted + re-mirrored. (When ALL higher rows are deleted, MAX+1
     // legitimately reuses a freed seq — acceptable for a forward tail, since
@@ -420,14 +420,14 @@ describe('public_audit_trail.seq', () => {
     seedEvent({ id: 'fe-1', application_id: 'app-1', payload: JSON.stringify({ note: 'call with Acme Corp' }) });
     seedEvent({ id: 'fe-2', application_id: 'app-2', payload: JSON.stringify({ note: 'note for Globex' }) });
 
-    expect(mirrorFunnelEvent(db, 'fe-1')).toBe('inserted'); // seq 1
-    expect(mirrorFunnelEvent(db, 'fe-2')).toBe('inserted'); // seq 2
+    expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('inserted'); // seq 1
+    expect(await mirrorFunnelEvent(db, 'fe-2')).toBe('inserted'); // seq 2
     const app2Seq = (
       db.prepare("SELECT seq FROM public_audit_trail WHERE source_funnel_event_id = 'fe-2'").get() as { seq: number }
     ).seq;
 
     db.prepare("UPDATE applications SET public_state = 'obfuscated' WHERE id = 'app-1'").run();
-    expect(resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 1, deleted: 1 });
+    expect(await resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 1, deleted: 1 });
 
     const app1Seq = (
       db.prepare("SELECT seq FROM public_audit_trail WHERE source_funnel_event_id = 'fe-1'").get() as { seq: number }

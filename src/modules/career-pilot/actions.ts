@@ -28,7 +28,8 @@ import { getConfig } from '../../get-config.js';
 import { insertMessage } from '../../db/session-db.js';
 import { log } from '../../log.js';
 import { mirrorFunnelEvent, resanitizeApplicationAuditTrail } from '../portal/public-audit.js';
-import { applyPass1 } from '../portal/sanitizer.js';
+import { sanitize, sanitizeForPublic } from '../portal/sanitizer.js';
+import { pass3Active } from '../portal/sanitizer-pass3.js';
 import { isKnownApplicationStatus, upsertPublicFunnelView } from '../portal/public-funnel-view.js';
 import type { Session } from '../../types.js';
 
@@ -325,22 +326,49 @@ const PROGRESS_DETAIL_CAP = 200;
 const PROGRESS_PER_SESSION_CAP = 6;
 
 /**
- * PII sanitization for `record_progress` detail strings, which mirror to the
- * public `/live` feed. Reuses the sanitizer's deterministic Pass 1 — emails,
- * phones, SSNs, **$-prefixed monetary amounts**, and URL query PII — so
- * progress traces get the SAME redaction the funnel mirror applies.
- *
- * Previously this stripped only emails + phones, which let candidate-private
- * figures like a comp floor ("$165k") survive into public traces. Pass 1's
- * money regex is correctly calibrated for this path: it redacts `$165k` but
- * leaves bare counts ("19 postings", "28 events") intact. Pass 2 (company-name
- * redaction) is intentionally NOT applied — scrape progress references the
- * job market, not the candidate's tracked applications.
+ * INSERT one `subagent_progress` row into the public mirror. `seq = MAX+1` under
+ * the host's single synchronous writer (§24.14).
  */
-function sanitizeProgressDetail(raw: string): string {
-  return applyPass1(raw);
+function insertProgressRow(
+  db: Database.Database,
+  args: {
+    id: string;
+    ts: string;
+    agentName: string;
+    proactive: number;
+    summary: string;
+    stage: string;
+    sessionId: string;
+  },
+): void {
+  db.prepare(
+    `INSERT INTO public_audit_trail (id, seq, ts, category, agent_name, proactive, summary, details_json)
+     VALUES (@id, (SELECT COALESCE(MAX(seq), 0) + 1 FROM public_audit_trail),
+             @ts, 'subagent_progress', @agentName, @proactive, @summary, @detailsJson)`,
+  ).run({
+    id: args.id,
+    ts: args.ts,
+    agentName: args.agentName,
+    proactive: args.proactive,
+    summary: args.summary,
+    detailsJson: JSON.stringify({ stage: args.stage, session_id: args.sessionId }),
+  });
 }
 
+/**
+ * `record_progress` writes a subagent's progress trace to the public `/live`
+ * feed. The detail string is obfuscated through the SINGLE sanitizer pipeline
+ * (§24.12, F2) — Pass 1 (PII regex) + Pass 2 (company/alias) + Pass 3 (host-side
+ * semantic obfuscation, when active). The old Pass-1-only `sanitizeProgressDetail`
+ * fork is gone: `research-company` / `build-interview-kit` progress strings name
+ * the target company, its products, and events — all of which now get redacted.
+ *
+ * Pass 3 inactive (CI / local-dev, no Portkey key) → synchronous Pass 1+2 insert
+ * (today's behavior, plus the company redaction Pass 2 now adds). Pass 3 active
+ * (the box / prod) → ack first, then sanitize + insert-or-withhold OFF the hot
+ * path so the semantic LLM call never blocks the agent; a Pass-3 failure
+ * withholds the row (fail-safe).
+ */
 export async function handleRecordProgress(
   content: Record<string, unknown>,
   session: Session,
@@ -364,7 +392,6 @@ export async function handleRecordProgress(
   }
 
   const detailCapped = detail.length > PROGRESS_DETAIL_CAP ? `${detail.slice(0, PROGRESS_DETAIL_CAP - 3)}...` : detail;
-  const summary = sanitizeProgressDetail(detailCapped);
 
   try {
     const db = getDb();
@@ -397,20 +424,38 @@ export async function handleRecordProgress(
 
     const id = generateId('prog');
     const now = new Date().toISOString();
-    db.prepare(
-      `INSERT INTO public_audit_trail (id, seq, ts, category, agent_name, proactive, summary, details_json)
-       VALUES (@id, (SELECT COALESCE(MAX(seq), 0) + 1 FROM public_audit_trail),
-               @ts, @category, @agent_name, @proactive, @summary, @details_json)`,
-    ).run({
-      id,
-      ts: now,
-      category: 'subagent_progress',
-      agent_name: subagent_name,
-      proactive: deriveProactive(inDb) ? 1 : 0,
-      summary,
-      details_json: JSON.stringify({ stage, session_id: session.id }),
-    });
+    const proactive = deriveProactive(inDb) ? 1 : 0;
 
+    if (pass3Active(db)) {
+      // Ack first, then sanitize + insert-or-withhold off the hot path so the
+      // semantic LLM call never blocks the agent's MCP response.
+      writeResponse(inDb, requestId, { ok: true, data: { id, stage } });
+      void (async () => {
+        try {
+          const { text, ok } = await sanitizeForPublic(detailCapped, { db });
+          if (!ok) {
+            log.warn('record_progress: Pass 3 unavailable — withholding /live row', { subagent_name });
+            return;
+          }
+          insertProgressRow(db, {
+            id,
+            ts: now,
+            agentName: subagent_name,
+            proactive,
+            summary: text,
+            stage,
+            sessionId: session.id,
+          });
+        } catch (asyncErr) {
+          log.error('record_progress async mirror failed', { subagent_name, asyncErr });
+        }
+      })();
+      return;
+    }
+
+    // Pass 3 inactive: deterministic Pass 1+2, fully synchronous (today's path).
+    const summary = sanitize(detailCapped, { db });
+    insertProgressRow(db, { id, ts: now, agentName: subagent_name, proactive, summary, stage, sessionId: session.id });
     writeResponse(inDb, requestId, { ok: true, data: { id, stage } });
   } catch (err) {
     log.error('handleRecordProgress failed', { subagent_name, err });
@@ -765,7 +810,7 @@ export async function handleUpdateApplication(
         .get(id) as ObfuscationSnapshot | undefined;
       if (after && obfuscationPolicyChanged(existing, after)) {
         try {
-          resanitizeApplicationAuditTrail(db, id);
+          await resanitizeApplicationAuditTrail(db, id);
         } catch (resanErr) {
           log.error('resanitizeApplicationAuditTrail threw despite internal try/catch', {
             id,
@@ -918,7 +963,7 @@ export async function handleRecordFunnelEvent(
     // latency never blocks the agent's MCP call. Errors are logged and
     // swallowed — the private write is committed regardless.
     try {
-      mirrorFunnelEvent(db, event_id);
+      await mirrorFunnelEvent(db, event_id);
     } catch (mirrorErr) {
       log.error('mirrorFunnelEvent threw despite internal try/catch', { event_id, mirrorErr });
     }

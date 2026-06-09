@@ -25,7 +25,7 @@ import type Database from 'better-sqlite3';
 
 import { log } from '../../log.js';
 
-import { sanitize } from './sanitizer.js';
+import { sanitizeForPublic } from './sanitizer.js';
 
 const DEFAULT_PUBLIC_SUMMARY_MAX_CHARS = 500;
 const DEFAULT_AUDIT_DROP_ON_UNMATCHED_COMPANY = true;
@@ -76,9 +76,9 @@ interface JoinedRow {
  * dropped by the defense-in-depth scan. handleRecordFunnelEvent ignores
  * the return — the mirror is best-effort there.
  */
-export type MirrorOutcome = 'inserted' | 'dropped' | 'skipped' | 'error';
+export type MirrorOutcome = 'inserted' | 'dropped' | 'skipped' | 'error' | 'withheld';
 
-export function mirrorFunnelEvent(db: Database.Database, eventId: string): MirrorOutcome {
+export async function mirrorFunnelEvent(db: Database.Database, eventId: string): Promise<MirrorOutcome> {
   let row: JoinedRow | undefined;
   try {
     row = db
@@ -108,7 +108,17 @@ export function mirrorFunnelEvent(db: Database.Database, eventId: string): Mirro
   }
 
   const payloadText = `${row.kind} ${row.from_status ?? ''}→${row.to_status ?? ''} ${row.payload}`;
-  const sanitized = sanitize(payloadText, { application_id: row.application_id, db });
+  const { text: sanitized, ok } = await sanitizeForPublic(payloadText, {
+    application_id: row.application_id,
+    db,
+    obfuscatedLabel: row.obfuscated_label ?? undefined,
+  });
+  // Fail-safe (§24.12): Pass 3 was active but failed → withhold the public row
+  // rather than risk a leak. The private funnel_events truth is untouched.
+  if (!ok) {
+    log.warn('mirrorFunnelEvent: Pass 3 unavailable — withholding public row', { eventId });
+    return 'withheld';
+  }
 
   // Defense-in-depth: scan the sanitized text for any non-public real
   // company name. If something survived, drop the row rather than leak.
@@ -205,8 +215,20 @@ export interface ResanitizeResult {
  * Note: legacy audit rows with a NULL source_funnel_event_id (pre-migration
  * 122; none in practice) are NOT matched by the DELETE and are left as-is.
  */
-export function resanitizeApplicationAuditTrail(db: Database.Database, applicationId: string): ResanitizeResult {
-  const run = db.transaction((): ResanitizeResult => {
+export async function resanitizeApplicationAuditTrail(
+  db: Database.Database,
+  applicationId: string,
+): Promise<ResanitizeResult> {
+  // DELETE synchronously in a transaction (atomic, fast). The re-mirror loop
+  // runs async OUTSIDE the transaction: better-sqlite3 transactions cannot span
+  // `await`s, and Pass 3 (when active) is an async LLM call (§24.12). We lose
+  // single-transaction atomicity but correctness holds — truth lives in
+  // funnel_events (never deleted), so a partial re-mirror just leaves some
+  // public rows missing until the next mirror, consistent with the
+  // best-effort/never-throws contract. Withheld rows (Pass 3 unavailable) are
+  // intentionally not re-inserted.
+  let deleted = 0;
+  try {
     const del = db
       .prepare(
         `DELETE FROM public_audit_trail
@@ -216,30 +238,24 @@ export function resanitizeApplicationAuditTrail(db: Database.Database, applicati
             )`,
       )
       .run(applicationId);
+    deleted = del.changes;
+  } catch (err) {
+    log.error('resanitizeApplicationAuditTrail: delete failed', { applicationId, err });
+    return { rewritten: 0, deleted: 0 };
+  }
 
-    // Re-read inside the transaction so any event committed before our
-    // BEGIN IMMEDIATE is visible; concurrent inserts serialize behind us.
+  let rewritten = 0;
+  try {
     const events = db
       .prepare('SELECT id FROM funnel_events WHERE application_id = ? ORDER BY ts ASC')
       .all(applicationId) as Array<{ id: string }>;
-
-    let rewritten = 0;
     for (const { id } of events) {
-      if (mirrorFunnelEvent(db, id) === 'inserted') rewritten++;
+      if ((await mirrorFunnelEvent(db, id)) === 'inserted') rewritten++;
     }
-    return { rewritten, deleted: del.changes };
-  });
-
-  try {
-    const result = run.immediate();
-    log.info('resanitizeApplicationAuditTrail complete', {
-      applicationId,
-      rewritten: result.rewritten,
-      deleted: result.deleted,
-    });
-    return result;
   } catch (err) {
-    log.error('resanitizeApplicationAuditTrail failed', { applicationId, err });
-    return { rewritten: 0, deleted: 0 };
+    log.error('resanitizeApplicationAuditTrail: re-mirror failed', { applicationId, err });
   }
+
+  log.info('resanitizeApplicationAuditTrail complete', { applicationId, rewritten, deleted });
+  return { rewritten, deleted };
 }

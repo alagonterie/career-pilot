@@ -10,7 +10,7 @@ import type Database from 'better-sqlite3';
 import { closeDb, initTestDb } from '../../db/connection.js';
 import { runMigrations } from '../../db/migrations/index.js';
 
-import { applyPass1, applyPass2, applyPass3, sanitize } from './sanitizer.js';
+import { applyPass1, applyPass2, sanitize, sanitizeForPublic } from './sanitizer.js';
 
 describe('sanitizer Pass 1 — regex patterns', () => {
   describe('emails', () => {
@@ -200,13 +200,7 @@ describe('sanitizer Pass 2 — company name + alias replacement', () => {
   });
 });
 
-describe('sanitizer Pass 3 — no-op stub', () => {
-  it('returns text unchanged', () => {
-    expect(applyPass3('hello world', {})).toBe('hello world');
-  });
-});
-
-describe('sanitize() — full pipeline', () => {
+describe('sanitize() — deterministic pipeline (Pass 1 + Pass 2, synchronous)', () => {
   let db: Database.Database;
 
   beforeEach(() => {
@@ -219,7 +213,7 @@ describe('sanitize() — full pipeline', () => {
     closeDb();
   });
 
-  it('runs Pass 1 + Pass 2 + Pass 3 in order on the same text', () => {
+  it('runs Pass 1 + Pass 2 in order on the same text', () => {
     db.prepare(
       `INSERT INTO applications (id, company_name, company_aliases, obfuscated_label, public_state, role_title, status, created_at)
        VALUES ('app-1', 'Acme Corp', '["AcmeCo"]', 'fintech-a', 'obfuscated', 'Senior Engineer', 'BOOKMARKED', '2026-05-28T00:00:00Z')`,
@@ -232,8 +226,22 @@ describe('sanitize() — full pipeline', () => {
     expect(out).not.toContain('Acme Corp');
     expect(out).not.toContain('jane@acme.com');
     expect(out).not.toContain('$220k');
-    // Recruiter name "Jane Doe" survives — 4.1 doesn't catch context-dependent
-    // names; Sub-milestone 4.2 (Pass 3) will.
+    // Recruiter name "Jane Doe" survives the deterministic floor — Pass 1+2
+    // don't catch context-dependent names; Pass 3 (sanitizeForPublic, host-side
+    // semantic obfuscation) does, when active.
     expect(out).toContain('Jane Doe');
+  });
+
+  it('sanitizeForPublic with Pass 3 inactive returns the deterministic result + ok=true', async () => {
+    db.prepare(
+      `INSERT INTO applications (id, company_name, company_aliases, obfuscated_label, public_state, role_title, status, created_at)
+       VALUES ('app-1', 'Acme Corp', NULL, 'fintech-a', 'obfuscated', 'Senior Engineer', 'BOOKMARKED', '2026-05-28T00:00:00Z')`,
+    ).run();
+    // No PORTKEY_API_KEY + default sanitization_pass3_enabled=false → Pass 3 inactive.
+    const res = await sanitizeForPublic('chat with Acme Corp about the $220k offer', { db });
+    expect(res.ok).toBe(true);
+    expect(res.text).toContain('[REDACTED:fintech-a]');
+    expect(res.text).toContain('[AMOUNT_REDACTED]');
+    expect(res.text).not.toContain('Acme Corp');
   });
 });
