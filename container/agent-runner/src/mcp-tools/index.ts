@@ -13,6 +13,7 @@ import './self-mod.js';
 import './career-pilot.js';
 import './scrape-jobs.js';
 import './funnel-curator.js';
+import './interview-kit.js';
 import { startMcpServer } from './server.js';
 
 function log(msg: string): void {
