@@ -2643,11 +2643,10 @@ The new domain-specific layers are: the funnel-curator subagent prompt, the **co
    │ orchestrator (persona has funnel-curator handler)│
    │   1. dispatch Agent("funnel-curator")            │
    │   2. await subagent reply (≤5 min cap)           │
-   │   3. read_funnel_state() → check attention[]     │
-   │   4. relay highlights ONLY if any item has       │
-   │      priority='same_day' AND under freq cap AND  │
-   │      outside quiet hours; else silent (briefing  │
-   │      at 08:00 will surface the rest).            │
+   │   3. read_funnel_state() → audit note only       │
+   │   4. SILENT — never emit a <message> on this     │
+   │      cron. Materialize-only; the 08:00 briefing  │
+   │      is the single morning surface.              │
    └──────────────────────────────────────────────────┘
          │
          ▼
@@ -2755,10 +2754,7 @@ The new domain-specific layers are: the funnel-curator subagent prompt, the **co
    - **`funnel-curator.VERIFICATION.md` lists:** curator emits valid schema; classifications respect taxonomy enum; suggestions don't include direct-write actions; cheap-out path triggers correctly on empty deltas.
 
 6. **Persona — funnel-curator handler section** added to `groups/career-pilot/.claude-host-fragments/persona.md` under "Scheduled wakeups", sibling to daily-briefing and killer-match handlers.
-   - On `[scheduled trigger: funnel-curator]`: dispatch the `funnel-curator` subagent via the `Agent` tool. After return:
-     1. Read just-written output via `read_funnel_state()`.
-     2. If `attention[]` has any `priority='same_day'` items AND not in quiet hours AND under freq cap → emit short `<message to="owner">` highlighting them. Else silent (briefing surfaces the rest).
-     3. Audit count of new email_events, `cheap_out`, `cost_usd` via `<internal>`.
+   - On `[scheduled trigger: funnel-curator]`: dispatch the `funnel-curator` subagent via the `Agent` tool. After return, **materialize-only** — emit NO `<message>`, only an `<internal>` audit note (count of new email_events, `cheap_out`, `cost_usd`). **Δ (2026-06-09):** the same-day cron push was retired. It fired at 07:30, 30 min before the 08:00 briefing, and reliably duplicated it (observed in dev — the same offer/onsite/rejection items showed up twice). The 08:00 daily-briefing — which reads the curator's just-materialized `attention[]` — is now the single morning surface; same-day-urgent items surface there (≤30 min later), not as a redundant 07:30 ping. Off-cycle urgency (a Gmail signal noticed mid-conversation) still pings via the "Gmail signal matched" proactivity trigger, which is independent of this cron.
    - On-demand pattern: when candidate asks "what's the state of Acme?" / "what needs attention?" / "anything new from Stripe?", orchestrator calls `read_funnel_state()` (cached read; no curator re-spawn) and synthesizes a narrative reply. If `run_at` is >24h stale, the reply suggests a fresh sweep.
    - No spec refs, no file paths, no DoD in persona text (runtime-artifact rule).
 
