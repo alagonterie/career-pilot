@@ -59,7 +59,7 @@ function Home() {
       </section>
 
       {/* Viewport 2 — funnel strip (PORTAL §5.1): the search as a live pipeline,
-          reusing the compact funnel; clicking through opens /momentum. Rendered
+          reusing the compact funnel; clicking through opens /pipeline. Rendered
           from first paint (skeleton while the first poll lands) so it holds its
           space instead of popping in — there's essentially always live data here.
           A cold backend error is the one case it collapses (no stranded skeleton). */}
@@ -69,7 +69,7 @@ function Home() {
             <h2 id="home-funnel-heading" className="text-sm font-semibold text-muted-foreground">
               The search, live
             </h2>
-            <Link to="/momentum" className="font-mono text-xs text-accent-cool hover:underline">
+            <Link to="/pipeline" className="font-mono text-xs text-accent-cool hover:underline">
               track the search →
             </Link>
           </div>

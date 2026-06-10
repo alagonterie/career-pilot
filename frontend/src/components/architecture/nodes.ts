@@ -190,7 +190,7 @@ export const NODES: ArchNode[] = [
     region: 'container',
     probe: 'structural',
     description:
-      'research-company, tailor-resume, draft-outreach, prep-interview, scrape-jobs, funnel-curator — each makes its own LLM calls.',
+      'research-company, tailor-resume, draft-outreach, build-interview-kit, scrape-jobs, pipeline-scribe — each makes its own LLM calls.',
     x: 514,
     y: 346,
     w: 188,

@@ -13,6 +13,7 @@ import { Route as opsRouteRouteImport } from './routes/(ops)/route'
 import { Route as marketingRouteRouteImport } from './routes/(marketing)/route'
 import { Route as marketingIndexRouteImport } from './routes/(marketing)/index'
 import { Route as ApiSplatRouteImport } from './routes/api/$'
+import { Route as opsPipelineRouteImport } from './routes/(ops)/pipeline'
 import { Route as opsMomentumRouteImport } from './routes/(ops)/momentum'
 import { Route as opsLiveRouteImport } from './routes/(ops)/live'
 import { Route as opsDevRouteImport } from './routes/(ops)/dev'
@@ -40,6 +41,11 @@ const ApiSplatRoute = ApiSplatRouteImport.update({
   id: '/api/$',
   path: '/api/$',
   getParentRoute: () => rootRouteImport,
+} as any)
+const opsPipelineRoute = opsPipelineRouteImport.update({
+  id: '/pipeline',
+  path: '/pipeline',
+  getParentRoute: () => opsRouteRoute,
 } as any)
 const opsMomentumRoute = opsMomentumRouteImport.update({
   id: '/momentum',
@@ -96,6 +102,7 @@ export interface FileRoutesByFullPath {
   '/dev': typeof opsDevRoute
   '/live': typeof opsLiveRoute
   '/momentum': typeof opsMomentumRoute
+  '/pipeline': typeof opsPipelineRoute
   '/api/$': typeof ApiSplatRoute
   '/': typeof marketingIndexRoute
   '/simulator/': typeof marketingSimulatorIndexRoute
@@ -109,6 +116,7 @@ export interface FileRoutesByTo {
   '/dev': typeof opsDevRoute
   '/live': typeof opsLiveRoute
   '/momentum': typeof opsMomentumRoute
+  '/pipeline': typeof opsPipelineRoute
   '/api/$': typeof ApiSplatRoute
   '/': typeof marketingIndexRoute
   '/simulator': typeof marketingSimulatorIndexRoute
@@ -125,6 +133,7 @@ export interface FileRoutesById {
   '/(ops)/dev': typeof opsDevRoute
   '/(ops)/live': typeof opsLiveRoute
   '/(ops)/momentum': typeof opsMomentumRoute
+  '/(ops)/pipeline': typeof opsPipelineRoute
   '/api/$': typeof ApiSplatRoute
   '/(marketing)/': typeof marketingIndexRoute
   '/(marketing)/simulator/': typeof marketingSimulatorIndexRoute
@@ -140,6 +149,7 @@ export interface FileRouteTypes {
     | '/dev'
     | '/live'
     | '/momentum'
+    | '/pipeline'
     | '/api/$'
     | '/'
     | '/simulator/'
@@ -153,6 +163,7 @@ export interface FileRouteTypes {
     | '/dev'
     | '/live'
     | '/momentum'
+    | '/pipeline'
     | '/api/$'
     | '/'
     | '/simulator'
@@ -168,6 +179,7 @@ export interface FileRouteTypes {
     | '/(ops)/dev'
     | '/(ops)/live'
     | '/(ops)/momentum'
+    | '/(ops)/pipeline'
     | '/api/$'
     | '/(marketing)/'
     | '/(marketing)/simulator/'
@@ -209,6 +221,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/$'
       preLoaderRoute: typeof ApiSplatRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/(ops)/pipeline': {
+      id: '/(ops)/pipeline'
+      path: '/pipeline'
+      fullPath: '/pipeline'
+      preLoaderRoute: typeof opsPipelineRouteImport
+      parentRoute: typeof opsRouteRoute
     }
     '/(ops)/momentum': {
       id: '/(ops)/momentum'
@@ -302,6 +321,7 @@ interface opsRouteRouteChildren {
   opsDevRoute: typeof opsDevRoute
   opsLiveRoute: typeof opsLiveRoute
   opsMomentumRoute: typeof opsMomentumRoute
+  opsPipelineRoute: typeof opsPipelineRoute
 }
 
 const opsRouteRouteChildren: opsRouteRouteChildren = {
@@ -310,6 +330,7 @@ const opsRouteRouteChildren: opsRouteRouteChildren = {
   opsDevRoute: opsDevRoute,
   opsLiveRoute: opsLiveRoute,
   opsMomentumRoute: opsMomentumRoute,
+  opsPipelineRoute: opsPipelineRoute,
 }
 
 const opsRouteRouteWithChildren = opsRouteRoute._addFileChildren(

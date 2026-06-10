@@ -189,7 +189,7 @@ export function postDevControl(baseUrl: string, action: 'pause' | 'resume'): Pro
 }
 
 /**
- * Enqueue an on-demand funnel-curator sweep (§24.43c) — the orchestrator wakes,
+ * Enqueue an on-demand pipeline-scribe sweep (§24.43c) — the orchestrator wakes,
  * classifies the sim's inbound mail, and applies the moves to the funnel board,
  * instead of waiting for the daily cron. 409 if there's no active owner session.
  */

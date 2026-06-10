@@ -85,8 +85,8 @@ describe('LiveTicker', () => {
     expect(screen.getByText('[fintech-a]')).toBeInTheDocument()
     expect(screen.queryByTestId('proactive-marker')).not.toBeInTheDocument()
     // category is the fallback source label when agent_name is null, aliased for
-    // display (the 'funnel' category renders as 'momentum' — §5.2 / §8.1)
-    expect(screen.getByText('momentum')).toBeInTheDocument()
+    // display (the 'funnel' category renders as 'pipeline' — §5.2 / §8.1 / §24.59)
+    expect(screen.getByText('pipeline')).toBeInTheDocument()
   })
 
   it('renders a page-supplied header action (the watch-live link slot — §24.35 Pass A)', () => {

@@ -15,7 +15,7 @@ const ROUTES = [
   '/contact',
   '/simulator',
   '/simulator/results/det-sim-1',
-  '/momentum',
+  '/pipeline',
   '/architecture',
   '/live',
 ]
@@ -28,7 +28,7 @@ async function gotoStable(page: Page, path: string): Promise<void> {
     await expect(page.getByTestId('arch-node-host-router')).toHaveAttribute('data-status', 'healthy')
   } else if (path === '/live') {
     await expect(page.getByTestId('trace-stream')).toBeVisible()
-  } else if (path === '/momentum') {
+  } else if (path === '/pipeline') {
     await expect(page.getByTestId('funnel-board')).toBeVisible()
   } else {
     await expect(page.locator('h1').first()).toBeVisible()
@@ -114,8 +114,8 @@ test('/live leads with the trace stream on mobile (not the stat tiles)', async (
   expect(trace!.y).toBeLessThan(stats!.y)
 })
 
-test('/momentum stacks the funnel board into a single column on mobile', async ({ page }) => {
-  await page.goto('/momentum')
+test('/pipeline stacks the funnel board into a single column on mobile', async ({ page }) => {
+  await page.goto('/pipeline')
   await expect(page.getByTestId('funnel-board')).toBeVisible()
   const applied = await page.getByTestId('funnel-col-applied').boundingBox()
   const offer = await page.getByTestId('funnel-col-offer').boundingBox()
@@ -165,11 +165,11 @@ test('mobile nav menu (open) matches visual baseline', { tag: '@visual' }, async
   await expect(page).toHaveScreenshot('mobile-nav-open.png', { animations: 'disabled' })
 })
 
-test('mobile momentum matches visual baseline', { tag: '@visual' }, async ({ page }) => {
-  await page.goto('/momentum')
+test('mobile pipeline matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  await page.goto('/pipeline')
   await expect(page.getByTestId('funnel-board')).toBeVisible()
   await expect(page.getByText('Wayne Enterprises')).toBeVisible()
-  await expect(page).toHaveScreenshot('mobile-momentum.png', {
+  await expect(page).toHaveScreenshot('mobile-pipeline.png', {
     animations: 'disabled',
     fullPage: true,
     mask: [page.getByTestId('funnel-card-age'), page.getByTestId('stat-value')],

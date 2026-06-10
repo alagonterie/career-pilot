@@ -31,8 +31,8 @@ test('work page matches visual baseline', { tag: '@visual' }, async ({ page }) =
 })
 
 test('funnel page matches visual baseline', { tag: '@visual' }, async ({ page }) => {
-  await page.goto('/momentum')
-  await expect(page.getByRole('heading', { name: 'Momentum', level: 1 })).toBeVisible()
+  await page.goto('/pipeline')
+  await expect(page.getByRole('heading', { name: 'Job Pipeline', level: 1 })).toBeVisible()
   // Wait for the board to render from the seeded API so the snapshot is stable.
   await expect(page.getByTestId('funnel-board')).toBeVisible()
   await expect(page.getByText('Wayne Enterprises')).toBeVisible()
@@ -105,19 +105,19 @@ test('live page matches visual baseline', { tag: '@visual' }, async ({ page }) =
 // language; `animations:'disabled'` freezes the skeleton pulse + the connecting
 // cursor at a deterministic frame.
 test('funnel loading state matches visual baseline', { tag: '@visual' }, async ({ page }) => {
-  await page.goto('/momentum?__state=loading')
+  await page.goto('/pipeline?__state=loading')
   await expect(page.getByTestId('funnel-skeleton')).toBeVisible()
   await expect(page).toHaveScreenshot('funnel-loading.png', { animations: 'disabled', fullPage: true })
 })
 
 test('funnel empty state matches visual baseline', { tag: '@visual' }, async ({ page }) => {
-  await page.goto('/momentum?__state=empty')
+  await page.goto('/pipeline?__state=empty')
   await expect(page.getByTestId('funnel-empty')).toBeVisible()
   await expect(page).toHaveScreenshot('funnel-empty.png', { animations: 'disabled', fullPage: true })
 })
 
 test('funnel error state matches visual baseline', { tag: '@visual' }, async ({ page }) => {
-  await page.goto('/momentum?__state=error')
+  await page.goto('/pipeline?__state=error')
   await expect(page.getByTestId('funnel-error')).toBeVisible()
   await expect(page).toHaveScreenshot('funnel-error.png', { animations: 'disabled', fullPage: true })
 })
