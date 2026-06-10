@@ -27,7 +27,7 @@ import { getDb } from '../../db/connection.js';
 import { getConfig } from '../../get-config.js';
 import { insertMessage } from '../../db/session-db.js';
 import { log } from '../../log.js';
-import { mirrorFunnelEvent, resanitizeApplicationAuditTrail } from '../portal/public-audit.js';
+import { mirrorFunnelEvent, publicApplicationRef, resanitizeApplicationAuditTrail } from '../portal/public-audit.js';
 import { sanitize, sanitizeForPublic } from '../portal/sanitizer.js';
 import { pass3Active } from '../portal/sanitizer-pass3.js';
 import { isKnownApplicationStatus, upsertPublicFunnelView } from '../portal/public-funnel-view.js';
@@ -327,7 +327,10 @@ const PROGRESS_PER_SESSION_CAP = 6;
 
 /**
  * INSERT one `subagent_progress` row into the public mirror. `seq = MAX+1` under
- * the host's single synchronous writer (§24.14).
+ * the host's single synchronous writer (§24.14). When the call attributed
+ * itself to an application (§24.61), `applicationRef` is the HOST-derived
+ * public label and `applicationId` rides details_json (server-side only —
+ * /api/activity never delivers details_json) so policy flips can re-derive.
  */
 function insertProgressRow(
   db: Database.Database,
@@ -339,19 +342,26 @@ function insertProgressRow(
     summary: string;
     stage: string;
     sessionId: string;
+    applicationRef: string | null;
+    applicationId: string | null;
   },
 ): void {
   db.prepare(
-    `INSERT INTO public_audit_trail (id, seq, ts, category, agent_name, proactive, summary, details_json)
+    `INSERT INTO public_audit_trail (id, seq, ts, category, agent_name, proactive, application_ref, summary, details_json)
      VALUES (@id, (SELECT COALESCE(MAX(seq), 0) + 1 FROM public_audit_trail),
-             @ts, 'subagent_progress', @agentName, @proactive, @summary, @detailsJson)`,
+             @ts, 'subagent_progress', @agentName, @proactive, @applicationRef, @summary, @detailsJson)`,
   ).run({
     id: args.id,
     ts: args.ts,
     agentName: args.agentName,
     proactive: args.proactive,
+    applicationRef: args.applicationRef,
     summary: args.summary,
-    detailsJson: JSON.stringify({ stage: args.stage, session_id: args.sessionId }),
+    detailsJson: JSON.stringify({
+      stage: args.stage,
+      session_id: args.sessionId,
+      ...(args.applicationId ? { application_id: args.applicationId } : {}),
+    }),
   });
 }
 
@@ -379,6 +389,9 @@ export async function handleRecordProgress(
   const subagent_name = p.subagent_name as string;
   const stage = p.stage as string;
   const detail = p.detail as string;
+  // §24.61 optional application attribution: the container passes only the
+  // internal id; the public ref is derived host-side below.
+  const application_id = typeof p.application_id === 'string' && p.application_id ? p.application_id : null;
 
   if (!subagent_name || !stage || typeof detail !== 'string' || !detail) {
     writeResponse(inDb, requestId, {
@@ -425,6 +438,11 @@ export async function handleRecordProgress(
     const id = generateId('prog');
     const now = new Date().toISOString();
     const proactive = deriveProactive(inDb) ? 1 : 0;
+    // §24.61: derive the public-safe ref from the internal id. An unknown or
+    // label-less application yields null → the row inserts ref-less (today's
+    // shape), never an error — attribution is best-effort by design.
+    const applicationRef = application_id ? publicApplicationRef(db, application_id) : null;
+    const applicationId = applicationRef ? application_id : null;
 
     if (pass3Active(db)) {
       // Ack first, then sanitize + insert-or-withhold off the hot path so the
@@ -445,6 +463,8 @@ export async function handleRecordProgress(
             summary: text,
             stage,
             sessionId: session.id,
+            applicationRef,
+            applicationId,
           });
         } catch (asyncErr) {
           log.error('record_progress async mirror failed', { subagent_name, asyncErr });
@@ -455,7 +475,17 @@ export async function handleRecordProgress(
 
     // Pass 3 inactive: deterministic Pass 1+2, fully synchronous (today's path).
     const summary = sanitize(detailCapped, { db });
-    insertProgressRow(db, { id, ts: now, agentName: subagent_name, proactive, summary, stage, sessionId: session.id });
+    insertProgressRow(db, {
+      id,
+      ts: now,
+      agentName: subagent_name,
+      proactive,
+      summary,
+      stage,
+      sessionId: session.id,
+      applicationRef,
+      applicationId,
+    });
     writeResponse(inDb, requestId, { ok: true, data: { id, stage } });
   } catch (err) {
     log.error('handleRecordProgress failed', { subagent_name, err });

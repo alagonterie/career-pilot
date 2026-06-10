@@ -822,6 +822,87 @@ describe('proactive trace-capture (§24.24)', () => {
     expect(pub.summary).not.toContain('Acme');
   });
 
+  it('record_progress with application_id attributes the row via the HOST-derived ref (§24.61)', async () => {
+    // beforeEach seeded app-pro (company Acme, non-public → label misc-a).
+    const c = {
+      requestId: `req-${Math.random().toString(36).slice(2, 8)}`,
+      payload: {
+        subagent_name: 'tailor-resume',
+        stage: 'ranking-bullets',
+        detail: 'weighing master-resume bullets against the JD',
+        application_id: 'app-pro',
+      },
+    };
+    await handleRecordProgress(c, FAKE_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+
+    const pub = getDb()
+      .prepare(
+        `SELECT application_ref, details_json FROM public_audit_trail
+          WHERE category = 'subagent_progress' AND agent_name = 'tailor-resume'`,
+      )
+      .get() as { application_ref: string | null; details_json: string };
+    // The container passed only the internal id; the public label is derived
+    // host-side — the obfuscated label, never the company name.
+    expect(pub.application_ref).toBe('misc-a');
+    // details_json records the id (server-side only) so policy flips re-derive.
+    expect(JSON.parse(pub.details_json).application_id).toBe('app-pro');
+  });
+
+  it('record_progress with application_id carries the REAL name for a public application (§24.61)', async () => {
+    await handleUpdateApplication(
+      actionContent('career_pilot.update_application', {
+        id: 'app-rev',
+        patch: { company_name: 'Wayne Enterprises', role_title: 'Staff', status: 'OFFER', public_state: 'public' },
+      }),
+      FAKE_SESSION,
+      inDb,
+    );
+    const c = {
+      requestId: `req-${Math.random().toString(36).slice(2, 8)}`,
+      payload: {
+        subagent_name: 'research-company',
+        stage: 'digging',
+        detail: 'mapping the engineering org',
+        application_id: 'app-rev',
+      },
+    };
+    await handleRecordProgress(c, FAKE_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+
+    const pub = getDb()
+      .prepare(
+        `SELECT application_ref FROM public_audit_trail
+          WHERE category = 'subagent_progress' AND agent_name = 'research-company'`,
+      )
+      .get() as { application_ref: string | null };
+    expect(pub.application_ref).toBe('Wayne Enterprises');
+  });
+
+  it('record_progress with an UNKNOWN application_id inserts ref-less — never an error (§24.61)', async () => {
+    const c = {
+      requestId: `req-${Math.random().toString(36).slice(2, 8)}`,
+      payload: {
+        subagent_name: 'draft-outreach',
+        stage: 'drafting-body',
+        detail: 'composing the outreach body',
+        application_id: 'app-does-not-exist',
+      },
+    };
+    await handleRecordProgress(c, FAKE_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+
+    const pub = getDb()
+      .prepare(
+        `SELECT application_ref, details_json FROM public_audit_trail
+          WHERE category = 'subagent_progress' AND agent_name = 'draft-outreach'`,
+      )
+      .get() as { application_ref: string | null; details_json: string };
+    expect(pub.application_ref).toBeNull();
+    // The unresolvable id is not recorded either — the row is today's shape.
+    expect(JSON.parse(pub.details_json).application_id).toBeUndefined();
+  });
+
   it('defaults to reactive (proactive=0) when no wake message is present', async () => {
     // No seedWake — only the beforeEach's trigger=0 response row exists.
     const c = actionContent('career_pilot.record_funnel_event', {

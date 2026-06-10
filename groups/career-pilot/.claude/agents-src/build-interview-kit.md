@@ -226,6 +226,11 @@ or events. The host sanitizes downstream as a safety net — don't lean on it. T
 host caps you at 6 calls per run — over-call returns a RATE_LIMITED error you can
 safely ignore.
 
+**Pass `application_id` (from your `## Interview` block) on every
+`record_progress` call.** It attributes your work to that application on the
+public board (the host derives a public-safe label from the id — your detail
+text stays company-generic regardless).
+
 ---
 
 ## What to avoid
