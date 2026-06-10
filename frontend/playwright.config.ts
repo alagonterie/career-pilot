@@ -50,19 +50,24 @@ export default defineConfig({
   // to dependency projects, so chaining in CI would force the @visual tests to
   // run despite `--grep-invert @visual` — on Linux, where no baselines exist.
   // CI runs workers=1 with no captures to protect; the chain buys nothing there.
+  // Declaration order matters in CI (no deps + workers=1 → projects run as
+  // declared): desktop functional must precede mobile so live.spec asserts the
+  // seeded spend before mobile's simulator flow adds run cost — the pre-§24.62
+  // order. Locally the dependency chain (visual → mobile → functional)
+  // overrides declaration order.
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testMatch: /visual\.spec\.ts/ },
-    {
-      name: 'mobile-chromium',
-      use: { ...devices['Pixel 5'] },
-      testMatch: /mobile\.spec\.ts/,
-      dependencies: process.env.CI ? [] : ['chromium'],
-    },
     {
       name: 'chromium-functional',
       use: { ...devices['Desktop Chrome'] },
       testIgnore: [/mobile\.spec\.ts/, /visual\.spec\.ts/],
       dependencies: process.env.CI ? [] : ['mobile-chromium'],
+    },
+    {
+      name: 'mobile-chromium',
+      use: { ...devices['Pixel 5'] },
+      testMatch: /mobile\.spec\.ts/,
+      dependencies: process.env.CI ? [] : ['chromium'],
     },
   ],
   webServer: [
