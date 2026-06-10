@@ -88,6 +88,35 @@ test.describe('/momentum — pipeline board, frontend <-> backend', () => {
     await expect(card).toBeFocused()
   })
 
+  test('closing the drawer preserves the scroll position (§24.58 Δ)', async ({ page }) => {
+    await page.goto('/momentum')
+    await expect(page.getByTestId('funnel-card').first()).toBeVisible()
+    // Force a scrollable page on the desktop viewport, then scroll down.
+    await page.setViewportSize({ width: 1280, height: 400 })
+    await page.evaluate(() => window.scrollTo(0, 300))
+    await expect.poll(async () => page.evaluate(() => window.scrollY)).toBeGreaterThan(250)
+
+    await page.getByText('Wayne Enterprises').click()
+    await expect(page.getByRole('dialog', { name: 'Wayne Enterprises' })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog', { name: 'Wayne Enterprises' })).toBeHidden()
+    // The visitor stays where they were — not thrown back to the top.
+    await expect.poll(async () => page.evaluate(() => window.scrollY)).toBeGreaterThan(250)
+  })
+
+  test('browser/OS back dismisses the open drawer in place (§24.58 Δ)', async ({ page }) => {
+    await page.goto('/momentum')
+    await page.getByText('Wayne Enterprises').click()
+    await expect(page.getByRole('dialog', { name: 'Wayne Enterprises' })).toBeVisible()
+    await expect(page).toHaveURL(/\?app=/)
+
+    await page.goBack()
+    await expect(page.getByRole('dialog', { name: 'Wayne Enterprises' })).toBeHidden()
+    await expect(page).toHaveURL('/momentum')
+    // Still on the board — back dismissed the overlay, not the page.
+    await expect(page.getByTestId('funnel-board')).toBeVisible()
+  })
+
   test('?app deep-link opens the drawer once the funnel loads (§24.57)', async ({ page }) => {
     await page.goto('/momentum?app=Wayne%20Enterprises')
     await expect(page.getByRole('dialog', { name: 'Wayne Enterprises' })).toBeVisible()

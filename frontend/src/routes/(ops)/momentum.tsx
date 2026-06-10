@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useRouter } from '@tanstack/react-router'
 import * as React from 'react'
 
 import { DetailPanel } from '~/components/funnel/DetailPanel'
@@ -31,34 +31,40 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
 
 function MomentumPage() {
   const { data, status } = useFunnel(API_BASE)
-  const [selected, setSelected] = React.useState<FunnelApplication | null>(null)
   const apps = data?.applications ?? []
   const { app: appParam } = Route.useSearch()
   const navigate = Route.useNavigate()
+  const router = useRouter()
 
-  // Deep-link open (§24.57): once the funnel loads, `?app=«ref»` selects that
-  // card (an unknown ref is a no-op). CONSUME-ONCE: the effect fires a single
-  // time — without the guard, closing the drawer races the param-clearing
-  // navigation and the stale param immediately re-opens it. Any explicit user
-  // interaction also consumes the deep link.
-  const deepLinkDone = React.useRef(false)
-  React.useEffect(() => {
-    if (deepLinkDone.current || !appParam || apps.length === 0) return
-    deepLinkDone.current = true
-    const match = apps.find((a) => a.application_ref === appParam)
-    if (match) setSelected(match)
-  }, [appParam, apps])
+  // The URL is the drawer's single source of truth (§24.58 Δ): the drawer is
+  // open iff `?app=«ref»` resolves to an application (unknown ref = no drawer;
+  // deep links work with no extra wiring; back/forward just work — and there is
+  // no local-state/param race to guard, which is what the §24.57 consume-once
+  // hack existed for).
+  const selected: FunnelApplication | null = React.useMemo(
+    () => (appParam ? (apps.find((a) => a.application_ref === appParam) ?? null) : null),
+    [apps, appParam],
+  )
 
-  // Selecting/closing keeps the param in sync so the drawer state is shareable.
+  // A card tap PUSHES the param so the OS back gesture dismisses the drawer in
+  // place (the ingrained mobile overlay habit) instead of leaving the page.
+  // `resetScroll: false` on every drawer navigation — the router scrolls to top
+  // by default, which threw the visitor back to the top of the board on close.
+  const pushedRef = React.useRef(false)
   const select = (app: FunnelApplication): void => {
-    deepLinkDone.current = true
-    setSelected(app)
-    void navigate({ search: { app: app.application_ref }, replace: true })
+    pushedRef.current = true
+    void navigate({ search: { app: app.application_ref }, resetScroll: false })
   }
+  // Explicit close (Esc / backdrop / button): pop the entry we pushed so
+  // history doesn't accumulate; a direct deep-link arrival (no in-app entry to
+  // pop) clears via replace so back still exits the site correctly.
   const close = (): void => {
-    deepLinkDone.current = true
-    setSelected(null)
-    void navigate({ search: {}, replace: true })
+    if (pushedRef.current) {
+      pushedRef.current = false
+      router.history.back()
+    } else {
+      void navigate({ search: {}, replace: true, resetScroll: false })
+    }
   }
 
   return (
