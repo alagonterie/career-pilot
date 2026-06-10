@@ -6,7 +6,7 @@
  */
 import type http from 'http';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChannelSetup } from '../../channels/adapter.js';
 import { _resetPortalAdapter, createPortalAdapter } from '../../channels/portal/adapter.js';
@@ -17,6 +17,7 @@ import { startPortalApi, stopPortalApi } from './api.js';
 import {
   _simulatorClientCount,
   addSimulatorClient,
+  endSimulatorRun,
   pushSimulatorEvent,
   removeSimulatorClient,
   stopBroadcaster,
@@ -25,13 +26,13 @@ import {
 // ── unit: the push-based simulator topic ───────────────────────────────────
 
 describe('simulator SSE topic (broadcaster)', () => {
-  function fakeRes(sink: string[]): http.ServerResponse {
+  function fakeRes(sink: string[], onEnd?: () => void): http.ServerResponse {
     return {
       write: (chunk: string) => {
         sink.push(chunk);
         return true;
       },
-      end: () => undefined,
+      end: () => onEnd?.(),
     } as unknown as http.ServerResponse;
   }
 
@@ -64,6 +65,39 @@ describe('simulator SSE topic (broadcaster)', () => {
     expect(_simulatorClientCount('run-C')).toBe(1);
     stopBroadcaster();
     expect(_simulatorClientCount('run-C')).toBe(0);
+  });
+
+  it('writes `: ka` keepalives to idle simulator clients (§24.21 Δ)', () => {
+    vi.useFakeTimers();
+    try {
+      const sink: string[] = [];
+      addSimulatorClient('run-ka', fakeRes(sink));
+      sink.length = 0; // drop the `: open` establishment write
+      vi.advanceTimersByTime(16_000); // default portal_sse_keepalive_ms = 15s
+      expect(sink.join('')).toContain(': ka');
+    } finally {
+      stopBroadcaster();
+      vi.useRealTimers();
+    }
+  });
+
+  it('endSimulatorRun ends every client and drops the topic (§24.21 Δ)', () => {
+    let ended = 0;
+    addSimulatorClient(
+      'run-D',
+      fakeRes([], () => ended++),
+    );
+    addSimulatorClient(
+      'run-D',
+      fakeRes([], () => ended++),
+    );
+    expect(_simulatorClientCount('run-D')).toBe(2);
+
+    endSimulatorRun('run-D');
+    expect(ended).toBe(2);
+    expect(_simulatorClientCount('run-D')).toBe(0);
+    // Ending an unknown run is a no-op (no throw).
+    expect(() => endSimulatorRun('run-D')).not.toThrow();
   });
 });
 
@@ -133,11 +167,24 @@ describe('GET /api/simulator/:id/stream', () => {
     const adapter = createPortalAdapter();
     const buf = await drainUntil(`${base}/api/simulator/sb-xyz/stream`, {
       onConnect: () => {
-        void adapter.deliver('sandbox', 'sb-xyz', { kind: 'task', content: { text: 'done — $0.04' } });
+        void adapter.deliver('sandbox', 'sb-xyz', { kind: 'chat', content: { text: 'done — $0.04' } });
       },
       predicate: (b) => b.includes('done'),
     });
-    expect(buf).toContain('event: task');
+    expect(buf).toContain('event: chat');
     expect(buf).toContain('done');
+  });
+
+  it('endSimulatorRun closes a live stream after the terminal end event', async () => {
+    const buf = await drainUntil(`${base}/api/simulator/sb-end/stream`, {
+      onConnect: () => {
+        pushSimulatorEvent('sb-end', 'end', { reason: 'complete', cost_usd: 0.04, latency_ms: 1200 });
+        endSimulatorRun('sb-end');
+      },
+      // The stream should END (reader done) — drain to completion, not a match.
+      predicate: () => false,
+    });
+    expect(buf).toContain('event: end');
+    expect(buf).toContain('"reason":"complete"');
   });
 });

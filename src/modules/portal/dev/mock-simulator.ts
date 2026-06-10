@@ -7,13 +7,15 @@
  * in startSimulatorRun (src/modules/portal/simulator.ts) — never on a
  * production request path (mirrors the §24.26 fake-everything-transparently
  * seam: PORTAL_MOCK_CONTAINERS). It drives a
- * deterministic `trace`/`chat`/`task` sequence onto the run's `simulator:<id>`
+ * deterministic `trace`/`chat` sequence onto the run's `simulator:<id>`
  * SSE topic *exactly as* the portal channel adapter's deliver() would (push +
  * accumulator), so the frontend sees a real streaming run with no LLM/container.
  *
  * The step payloads match the real wire: `trace` carries a TraceEvent
  * (container/agent-runner sdkMessageToTraceEvents — `tool`/`subagent`
- * dispatches + one end-of-run `result` cost), `chat`/`task` carry `{ text }`.
+ * dispatches + one end-of-run `result` cost), `chat` carries `{ text }`. The
+ * terminal is the `result` trace (§24.21 Δ) — finalize then pushes `end` and
+ * closes the stream, exactly like a real run.
  */
 import { log } from '../../../log.js';
 import { recordSimulatorOutput } from '../simulator.js';
@@ -24,15 +26,15 @@ interface ScriptStep {
    * the frontend to open the stream before any event is pushed (pushes are a
    * no-op with no client, exactly like a real run before the container warms). */
   delayMs: number;
-  kind: 'trace' | 'chat' | 'task';
+  kind: 'trace' | 'chat';
   payload: unknown;
 }
 
 /**
  * Pure: the deterministic step sequence for a mock run, templated on the
  * visitor's company/role so `dev:mock` + the results look personalized. Shapes
- * match the real wire — `trace` payloads are TraceEvents, `chat`/`task` are
- * `{ text }`. The terminal `task` step finalizes + persists the run.
+ * match the real wire — `trace` payloads are TraceEvents, `chat` is `{ text }`.
+ * The terminal `result` trace step finalizes + persists the run (§24.21 Δ).
  */
 export function buildSimulatorScript(company: string, role: string): ScriptStep[] {
   const resume = [
@@ -112,15 +114,16 @@ export function buildSimulatorScript(company: string, role: string): ScriptStep[
       },
     },
     { delayMs: 500, kind: 'chat', payload: { text: resume } },
-    { delayMs: 400, kind: 'trace', payload: { t: 'result', cost_usd: 0.041 } },
-    { delayMs: 50, kind: 'task', payload: { text: outreach } },
+    { delayMs: 400, kind: 'chat', payload: { text: outreach } },
+    { delayMs: 50, kind: 'trace', payload: { t: 'result', cost_usd: 0.041 } },
   ];
 }
 
 /**
  * Schedule the scripted run. Each step pushes to the run's SSE topic AND feeds
  * the run accumulator (recordSimulatorOutput) — exactly what adapter.deliver()
- * does — so the terminal `task` finalizes + persists the run for the share page.
+ * does — so the terminal `result` trace finalizes + persists the run for the
+ * share page (and pushes `end` + closes the stream, per §24.21 Δ).
  * Timers are `.unref()`'d so a pending run never holds the process open.
  */
 export function runMockSimulator(runId: string, company: string, role: string): void {

@@ -46,14 +46,14 @@ function seedRun(id: string, opts: { company?: string; shareable?: number; expir
 }
 
 describe('run accumulation + finalize', () => {
-  it('persists a row on the terminal task message (cost, latency, output)', () => {
+  it('persists a row on the terminal result trace (cost, latency, output) — §24.21 Δ', () => {
     const { simulation_id: id } = startSimulatorRun({ company: 'Acme', role: 'Staff SWE', jd: 'Ship things' });
     expect(id).toBeDefined();
 
     recordSimulatorOutput(id!, 'trace', { t: 'subagent', subagent: 'research-company' });
-    recordSimulatorOutput(id!, 'trace', { t: 'result', cost_usd: 0.041 });
     recordSimulatorOutput(id!, 'chat', { text: 'Tailored bullets…' });
-    recordSimulatorOutput(id!, 'task', { text: 'Done — outreach drafted.' });
+    recordSimulatorOutput(id!, 'chat', { text: 'Done — outreach drafted.' });
+    recordSimulatorOutput(id!, 'trace', { t: 'result', cost_usd: 0.041 });
 
     const row = getSimulatorResult(id!);
     expect(row).not.toBeNull();
@@ -66,9 +66,9 @@ describe('run accumulation + finalize', () => {
     expect(row!.expires_at).not.toBeNull();
   });
 
-  it('finalize is idempotent — a task/hard-wall race persists exactly once', () => {
+  it('finalize is idempotent — a result/hard-wall race persists exactly once', () => {
     const { simulation_id: id } = startSimulatorRun({ company: 'Acme', role: 'SWE' });
-    recordSimulatorOutput(id!, 'task', { text: 'done' });
+    recordSimulatorOutput(id!, 'trace', { t: 'result', cost_usd: 0.01 });
     // Second finalize (e.g. the hard-wall firing after completion) is a no-op.
     finalizeSimulatorRun(id!, 'hard-wall');
     const count = (getDb().prepare('SELECT COUNT(*) AS c FROM simulator_runs WHERE id = ?').get(id!) as { c: number })
@@ -76,8 +76,15 @@ describe('run accumulation + finalize', () => {
     expect(count).toBe(1);
   });
 
+  it('a chat row arriving after finalize is a no-op (accumulator already claimed)', () => {
+    const { simulation_id: id } = startSimulatorRun({ company: 'Acme', role: 'SWE' });
+    recordSimulatorOutput(id!, 'trace', { t: 'result', cost_usd: 0.01 });
+    recordSimulatorOutput(id!, 'chat', { text: 'late straggler' });
+    expect(getSimulatorResult(id!)!.tailored_resume).toBeNull();
+  });
+
   it('recordSimulatorOutput on an unknown/finalized run is a no-op (no throw)', () => {
-    expect(() => recordSimulatorOutput('sb-nope', 'task', { text: 'x' })).not.toThrow();
+    expect(() => recordSimulatorOutput('sb-nope', 'chat', { text: 'x' })).not.toThrow();
     expect(getSimulatorResult('sb-nope')).toBeNull();
   });
 });

@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 
 // /simulator is the grippiest spoke of the conversion spine (§24.31). The E2E
 // server enables PORTAL_MOCK_SIMULATOR, so POST /api/simulator runs a scripted,
-// container-free run and the live trace/chat/task stream drives the real UI end
+// container-free run and the live trace/chat/end stream drives the real UI end
 // to end. The mid-run view is timing-dependent (no visual baseline — that's the
 // semantic assertions below); the static input + the seeded share page carry the
 // visual baselines. The 503/unavailable fallback is unit-tested.

@@ -29,9 +29,10 @@ describe('useSimulatorRun', () => {
         event: 'trace',
         data: JSON.stringify({ t: 'tool', name: 'web_search', parent_tool_use_id: 'tu' }),
       })
-      opts.onEvent({ event: 'trace', data: JSON.stringify({ t: 'result', cost_usd: 0.041 }) })
       opts.onEvent({ event: 'chat', data: JSON.stringify({ text: '## Tailored resume\n- a bullet' }) })
-      opts.onEvent({ event: 'task', data: JSON.stringify({ text: '## Cold outreach\nHi there' }) })
+      opts.onEvent({ event: 'chat', data: JSON.stringify({ text: '## Cold outreach\nHi there' }) })
+      opts.onEvent({ event: 'trace', data: JSON.stringify({ t: 'result', cost_usd: 0.041 }) })
+      opts.onEvent({ event: 'end', data: JSON.stringify({ reason: 'complete', cost_usd: 0.041, latency_ms: 1200 }) })
     })
 
     const { result } = renderHook(() => useSimulatorRun())
@@ -75,13 +76,48 @@ describe('useSimulatorRun', () => {
     expect(result.current.errorMessage).toBeTruthy()
   })
 
+  it('shows a timeout error on a hard-wall `end` with no output', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => res({ simulation_id: 'sb-wall' })),
+    )
+    vi.mocked(connectSimulatorStream).mockImplementation(async (opts) => {
+      opts.onEvent({ event: 'trace', data: JSON.stringify({ t: 'subagent', subagent: 'research-company' }) })
+      opts.onEvent({ event: 'end', data: JSON.stringify({ reason: 'hard-wall', latency_ms: 300000 }) })
+    })
+
+    const { result } = renderHook(() => useSimulatorRun())
+    act(() => result.current.start({ company: 'Acme', role: 'SWE' }))
+
+    await waitFor(() => expect(result.current.status).toBe('error'))
+    expect(result.current.errorMessage).toContain('timed out')
+  })
+
+  it('still reaches done on a hard-wall `end` when partial output exists', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => res({ simulation_id: 'sb-partial' })),
+    )
+    vi.mocked(connectSimulatorStream).mockImplementation(async (opts) => {
+      opts.onEvent({ event: 'chat', data: JSON.stringify({ text: 'partial bullets' }) })
+      opts.onEvent({ event: 'end', data: JSON.stringify({ reason: 'hard-wall', latency_ms: 300000 }) })
+    })
+
+    const { result } = renderHook(() => useSimulatorRun())
+    act(() => result.current.start({ company: 'Acme', role: 'SWE' }))
+
+    await waitFor(() => expect(result.current.status).toBe('done'))
+    expect(result.current.output).toContain('partial bullets')
+  })
+
   it('reset() returns to the idle input state', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => res({ simulation_id: 'sb-x' })),
     )
     vi.mocked(connectSimulatorStream).mockImplementation(async (opts) => {
-      opts.onEvent({ event: 'task', data: JSON.stringify({ text: 'done' }) })
+      opts.onEvent({ event: 'chat', data: JSON.stringify({ text: 'done' }) })
+      opts.onEvent({ event: 'end', data: JSON.stringify({ reason: 'complete', latency_ms: 800 }) })
     })
 
     const { result } = renderHook(() => useSimulatorRun())
