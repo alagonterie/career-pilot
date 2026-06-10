@@ -81,11 +81,14 @@ export function FunnelBoard({
         })}
       </div>
 
-      {offboard.length > 0 ? (
-        <section aria-label="Bookmarked and closed" data-testid="funnel-offboard" className="mt-4">
-          <h2 className="mb-2 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">
-            Bookmarked &amp; closed
-          </h2>
+      {/* Always rendered (§24.62): the strip popping in/out between loading and
+          loaded shifted everything below it. Empty gets an honest line instead
+          of disappearing — nothing in the funnel is silently hidden either way. */}
+      <section aria-label="Bookmarked and closed" data-testid="funnel-offboard" className="mt-4">
+        <h2 className="mb-2 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">
+          Bookmarked &amp; closed
+        </h2>
+        {offboard.length > 0 ? (
           <div className="flex flex-wrap gap-2 opacity-70">
             {offboard.map((a) => (
               <div key={a.application_id} className="min-w-[10rem] flex-1 sm:max-w-[14rem]">
@@ -93,8 +96,12 @@ export function FunnelBoard({
               </div>
             ))}
           </div>
-        </section>
-      ) : null}
+        ) : (
+          <p data-testid="funnel-offboard-empty" className="font-mono text-xs text-muted-foreground">
+            Nothing bookmarked or closed yet.
+          </p>
+        )}
+      </section>
     </>
   )
 }
@@ -124,5 +131,23 @@ export function FunnelBoardSkeleton() {
         </section>
       ))}
     </div>
+  )
+}
+
+/** The loading twin of the always-rendered Bookmarked & closed strip (§24.62):
+ * without it the strip pops in under the board on load and shifts everything
+ * below. Header + one card-height row — the loaded strip's minimum footprint. */
+export function FunnelOffboardSkeleton() {
+  return (
+    <section aria-label="Bookmarked and closed" data-testid="funnel-offboard-skeleton" className="mt-4">
+      <h2 className="mb-2 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">
+        Bookmarked &amp; closed
+      </h2>
+      <div className="flex flex-wrap gap-2">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-16 min-w-[10rem] flex-1 sm:max-w-[14rem]" />
+        ))}
+      </div>
+    </section>
   )
 }

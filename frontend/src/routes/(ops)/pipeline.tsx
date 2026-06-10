@@ -2,7 +2,7 @@ import { createFileRoute, useRouter } from '@tanstack/react-router'
 import * as React from 'react'
 
 import { DetailPanel } from '~/components/funnel/DetailPanel'
-import { FunnelBoard, FunnelBoardSkeleton } from '~/components/funnel/FunnelBoard'
+import { FunnelBoard, FunnelBoardSkeleton, FunnelOffboardSkeleton } from '~/components/funnel/FunnelBoard'
 import { StatTiles } from '~/components/funnel/StatTiles'
 import { StateNote } from '~/components/states'
 import { seo } from '~/lib/seo'
@@ -85,7 +85,10 @@ function PipelinePage() {
             loading, and empty/error centered in a reserved region the same height
             as the board lanes — so flipping states never collapses the page. */}
         {status === 'loading' ? (
-          <FunnelBoardSkeleton />
+          <>
+            <FunnelBoardSkeleton />
+            <FunnelOffboardSkeleton />
+          </>
         ) : status === 'error' ? (
           <div className="flex min-h-[16rem] items-center justify-center">
             <StateNote data-testid="funnel-error" tone="error">

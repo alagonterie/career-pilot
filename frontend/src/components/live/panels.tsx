@@ -61,7 +61,9 @@ export function Panel({
 }
 
 /** A single big-number readout. `info` hangs an InfoTip off the label —
- * the §24.57 explain-on-tap affordance for metric jargon. */
+ * the §24.57 explain-on-tap affordance for metric jargon. The label never
+ * wraps (§24.62): in a narrow grid column the ⓘ pushed "turn p50" onto two
+ * lines — a label that can't fit its column gets a shorter label, not a wrap. */
 function Metric({ value, label, testId, info }: { value: string; label: string; testId?: string; info?: ReactNode }) {
   return (
     <div className="flex flex-col">
@@ -69,7 +71,7 @@ function Metric({ value, label, testId, info }: { value: string; label: string; 
         {value}
       </span>
       <span className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-        {label}
+        <span className="whitespace-nowrap">{label}</span>
         {info ? <InfoTip label={label}>{info}</InfoTip> : null}
       </span>
     </div>
@@ -121,7 +123,9 @@ export function SystemStatusPanel({
 }
 
 /** ACTIVE SESSIONS — live counts from /api/architecture (the 24h history chart
- * needs a series endpoint → deferred). */
+ * needs a series endpoint → deferred). §24.62: the thinnest panel gets the
+ * explain-on-tap treatment (what a session IS) + the siblings' footer line —
+ * no invented metrics; the endpoint exposes only the two counts. */
 export function SessionsPanel({ arch, status }: { arch: ArchitectureData | null; status?: PollStatus }) {
   const running = arch?.sessions.running
   const active = arch?.sessions.active
@@ -132,10 +136,23 @@ export function SessionsPanel({ arch, status }: { arch: ArchitectureData | null;
       ) : status === 'error' ? (
         <PanelOffline />
       ) : (
-        <div className="flex items-end gap-6">
-          <Metric value={running != null ? String(running) : '—'} label="running" />
-          <Metric value={active != null ? String(active) : '—'} label="active" />
-        </div>
+        <>
+          <div className="flex items-end gap-6">
+            <Metric
+              value={running != null ? String(running) : '—'}
+              label="running"
+              info="Sessions with a live container right now. Containers idle out between turns and respawn on the next message, so fewer running than active is normal."
+            />
+            <Metric
+              value={active != null ? String(active) : '—'}
+              label="active"
+              info="Open conversation threads — the owner's chat, scheduled jobs, the public simulator — each an isolated session with its own container and history."
+            />
+          </div>
+          <p className="border-t border-border pt-2 font-mono text-[11px] text-muted-foreground">
+            1 session = 1 conversation in its own container
+          </p>
+        </>
       )}
     </Panel>
   )
@@ -209,7 +226,11 @@ export function TelemetryPanel({ view, status }: { view: TelemetryView; status?:
     <Panel title="LLM telemetry">
       {view.hasTurns && local ? (
         <>
-          <div className="grid grid-cols-3 gap-3">
+          {/* Content-sized flex, not grid-cols-3 (§24.62): Tailwind's 1fr tracks
+              are minmax(0,1fr), so at narrow rail widths the nowrap "turn p50"
+              label overflowed its track into the neighbor. Flex lets each metric
+              take its natural width and wraps as the graceful worst case. */}
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <Metric value={local.turns_total.toLocaleString()} label="turns" />
             {local.turn_p50_ms != null ? (
               <Metric
@@ -349,7 +370,9 @@ export function RecentOutcomesPanel({ apps, status }: { apps: FunnelApplication[
           {recent.map((a) => {
             const isPublic = a.public_state === 'public'
             return (
-              <li key={a.application_ref}>
+              // keyed by application_id, not the ref — two PUBLIC applications
+              // at one company share their company-name ref (§24.62 note)
+              <li key={a.application_id}>
                 <Link
                   to="/pipeline"
                   search={{ app: a.application_ref }}

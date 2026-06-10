@@ -117,7 +117,11 @@ function LivePage() {
             row height so loading→ok never shifts (§24.36 Tier-2), regardless of
             whether LLM-telemetry has captured turns (taller metric lanes) or is
             awaiting the first (shorter pending copy). 196px = the populated
-            height; the grid equalizes the row, this pins its floor across states. */}
+            height re-measured for §24.62 at the narrowest desktop rail (1024px,
+            where the panel footers wrap to two lines: 175px base + one wrapped
+            line); wider rails sit under the floor. The §24.62 Metric nowrap fix
+            is what keeps the loaded row UNDER this floor — the old "TURN P50"
+            two-line wrap pushed past it and the row resized on load. */}
         <div className="order-3 grid grid-cols-1 gap-4 [grid-auto-rows:minmax(196px,auto)] sm:grid-cols-2 lg:order-2 lg:grid-cols-4">
           <SystemStatusPanel mode={mode} arch={arch} status={archStatus} />
           <SessionsPanel arch={arch} status={archStatus} />

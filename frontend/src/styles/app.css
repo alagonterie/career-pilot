@@ -76,6 +76,15 @@
   * {
     border-color: var(--border);
   }
+  /*
+   * Layout stability on classic-scrollbar platforms (PORTAL §13): without a
+   * reserved gutter the root scrollbar comes and goes — between pages of
+   * different heights AND when useDialog scroll-locks the body — and every
+   * centered max-w-* layout shifts by half a scrollbar width each time.
+   */
+  html {
+    scrollbar-gutter: stable;
+  }
   body {
     background-color: var(--background);
     color: var(--foreground);
