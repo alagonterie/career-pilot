@@ -50,20 +50,27 @@ interface Chip {
 
 // Data-driven filter chips (PORTAL §5.2). Reactive/Proactive read the real
 // `proactive` flag; the per-subagent + System chips read `agent_name`/`category`.
-const AGENT_CHIPS: { agent: string; label: string }[] = [
-  { agent: 'research-company', label: 'Research' },
-  { agent: 'tailor-resume', label: 'Tailor' },
-  { agent: 'draft-outreach', label: 'Outreach' },
-  { agent: 'prep-interview', label: 'Prep' },
-  { agent: 'scrape-jobs', label: 'Scrape' },
-  { agent: 'funnel-curator', label: 'Curator' },
+// Each chip matches an id LIST (§24.59): the audit trail is append-only, so
+// historical rows keep pre-rename agent ids ('funnel-curator' → pipeline-scribe,
+// 'prep-interview' → build-interview-kit) and one chip covers old + new.
+const AGENT_CHIPS: { id: string; agents: string[]; label: string }[] = [
+  { id: 'research-company', agents: ['research-company'], label: 'Research' },
+  { id: 'tailor-resume', agents: ['tailor-resume'], label: 'Tailor' },
+  { id: 'draft-outreach', agents: ['draft-outreach'], label: 'Outreach' },
+  { id: 'build-interview-kit', agents: ['build-interview-kit', 'prep-interview'], label: 'Prep' },
+  { id: 'scrape-jobs', agents: ['scrape-jobs'], label: 'Scrape' },
+  { id: 'pipeline-scribe', agents: ['pipeline-scribe', 'funnel-curator'], label: 'Scribe' },
 ]
 
 const CHIPS: Chip[] = [
   { id: 'all', label: 'All', match: () => true },
   { id: 'reactive', label: 'Reactive', match: (e) => !e.proactive },
   { id: 'proactive', label: 'Proactive', match: (e) => !!e.proactive },
-  ...AGENT_CHIPS.map((c) => ({ id: c.agent, label: c.label, match: (e: AuditEvent) => e.agent_name === c.agent })),
+  ...AGENT_CHIPS.map((c) => ({
+    id: c.id,
+    label: c.label,
+    match: (e: AuditEvent) => e.agent_name != null && c.agents.includes(e.agent_name),
+  })),
   { id: 'system', label: 'System', match: (e) => e.agent_name == null },
 ]
 

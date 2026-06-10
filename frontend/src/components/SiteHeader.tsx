@@ -4,7 +4,7 @@ import * as React from 'react'
 
 const LINKS: { to: string; label: string }[] = [
   { to: '/live', label: 'Live' },
-  { to: '/momentum', label: 'Momentum' },
+  { to: '/pipeline', label: 'Job Pipeline' },
   { to: '/architecture', label: 'Architecture' },
   { to: '/simulator', label: 'Simulator' },
   { to: '/work', label: 'Work' },
@@ -13,12 +13,12 @@ const LINKS: { to: string; label: string }[] = [
 
 /**
  * Slim site nav (PORTAL §8.1 / §13), shared by the marketing pages (`/`, `/work`)
- * and the ops pages (`/momentum`, `/architecture`, `/live`). Order = lead with the
- * wow (`/live`), cluster its drill-ins (`Momentum`, `Architecture`), then the
- * personal/conversion tail (`Simulator`, `Work`, `Contact`). "Momentum" is the
- * visitor label for the funnel page (`/momentum`); the internal naming stays
- * "funnel". `/about` is a footer link (§8.2), not a header item. Brand wordmark =
- * the persona name (not a domain — the deployed site is `hire.<DOMAIN>`).
+ * and the ops pages (`/pipeline`, `/architecture`, `/live`). Order = lead with the
+ * wow (`/live`), cluster its drill-ins (`Job Pipeline`, `Architecture`), then the
+ * personal/conversion tail (`Simulator`, `Work`, `Contact`). "Job Pipeline" is the
+ * visitor label for the funnel page (`/pipeline`, §24.59); the internal naming
+ * stays "funnel". `/about` is a footer link (§8.2), not a header item. Brand
+ * wordmark = the persona name (not a domain — the deployed site is `hire.<DOMAIN>`).
  *
  * Responsive (§13): the horizontal row overflows a phone, so below `sm` it
  * collapses to a hamburger disclosure menu (the full row fits ≥640px, so tablets

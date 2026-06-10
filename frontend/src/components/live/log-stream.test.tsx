@@ -69,14 +69,30 @@ describe('LogStream', () => {
     expect(screen.queryByText(/cache \d+%/)).not.toBeInTheDocument()
     expect(screen.queryByTestId('trace-proactive')).not.toBeInTheDocument()
     // category is the fallback source label when agent_name is null, aliased for
-    // display (the 'funnel' category renders as 'momentum' — §5.2 / §8.1)
-    expect(screen.getByText('momentum')).toBeInTheDocument()
+    // display (the 'funnel' category renders as 'pipeline' — §5.2 / §8.1 / §24.59)
+    expect(screen.getByText('pipeline')).toBeInTheDocument()
   })
 
   it('filters to proactive events on the Proactive chip', () => {
     render(<LogStream events={EVENTS} status="open" count={3} />)
     fireEvent.click(screen.getByTestId('trace-chip-proactive'))
     expect(screen.getAllByTestId('trace-line')).toHaveLength(2) // seq 2 + 3
+  })
+
+  it('display-aliases historical agent ids and one chip matches old + new (§24.59)', () => {
+    // The audit trail is append-only: pre-rename rows carry
+    // agent_name='funnel-curator'; new rows carry 'pipeline-scribe'. Both
+    // render as the new name, and the single Scribe chip matches both.
+    const events = [
+      ev({ seq: 1, category: 'subagent_progress', agent_name: 'funnel-curator', summary: 'classified 2 messages' }),
+      ev({ seq: 2, category: 'subagent_progress', agent_name: 'pipeline-scribe', summary: 'persisted state' }),
+      ev({ seq: 3, category: 'subagent_progress', agent_name: 'scrape-jobs', summary: 'scanned boards' }),
+    ]
+    render(<LogStream events={events} status="open" count={3} />)
+    expect(screen.getAllByText('pipeline-scribe')).toHaveLength(2)
+    expect(screen.queryByText('funnel-curator')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('trace-chip-pipeline-scribe'))
+    expect(screen.getAllByTestId('trace-line')).toHaveLength(2)
   })
 
   it('filters by subagent on a per-agent chip', () => {

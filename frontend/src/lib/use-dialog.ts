@@ -17,7 +17,7 @@ function focusablesIn(panel: HTMLElement): HTMLElement[] {
 
 /**
  * The shared modal-dialog a11y contract (PORTAL §8.5), consumed by the
- * /momentum drawer (DetailPanel) and the /architecture node modal (NodePanel).
+ * /pipeline drawer (DetailPanel) and the /architecture node modal (NodePanel).
  * When `open`, it:
  *  - records the trigger (the previously focused element) and restores focus to
  *    it on close — the visitor lands back on the card/node they opened, not at

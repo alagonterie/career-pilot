@@ -6,7 +6,7 @@ import type { FunnelApplication } from '~/lib/use-funnel'
 import type { TelemetryView } from '~/lib/use-telemetry'
 
 // Isolate from the router — RecentOutcomesPanel rows are <Link>s (the §24.57
-// /momentum deep-link), which would need a RouterProvider. An anchor stand-in
+// /pipeline deep-link), which would need a RouterProvider. An anchor stand-in
 // keeps the content + testids assertable (the SimFallback.test pattern).
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
@@ -176,12 +176,12 @@ describe('CostCachePanel', () => {
 describe('Panel', () => {
   it('renders a page-supplied header action (the open-link slot — §24.35 Pass A)', () => {
     render(
-      <Panel title="Momentum" action={<a href="/momentum">open →</a>}>
+      <Panel title="Job Pipeline" action={<a href="/pipeline">open →</a>}>
         <p>body</p>
       </Panel>,
     )
-    expect(screen.getByRole('heading', { name: 'Momentum' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /open/i })).toHaveAttribute('href', '/momentum')
+    expect(screen.getByRole('heading', { name: 'Job Pipeline' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /open/i })).toHaveAttribute('href', '/pipeline')
   })
 })
 
@@ -212,7 +212,7 @@ describe('FunnelCompact + RecentOutcomes', () => {
     expect(items[1]).toHaveTextContent('[fintech-a]')
   })
 
-  it('renders each outcome as a deep-link into the /momentum drawer (§24.57)', () => {
+  it('renders each outcome as a deep-link into the /pipeline drawer (§24.57)', () => {
     render(<RecentOutcomesPanel apps={APPS} />)
     expect(screen.getAllByTestId('recent-outcome-link')).toHaveLength(2)
   })

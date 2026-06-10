@@ -91,15 +91,15 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
     expect(failedRequests).toEqual([])
   })
 
-  test('a Recent-outcomes row deep-links into the /momentum drawer (§24.57)', async ({ page }) => {
+  test('a Recent-outcomes row deep-links into the /pipeline drawer (§24.57)', async ({ page }) => {
     await page.goto('/live')
     await page.getByTestId('recent-outcome-link').filter({ hasText: 'Wayne Enterprises' }).click()
-    await expect(page).toHaveURL(/\/momentum\?app=Wayne([+ ]|%20)Enterprises/)
+    await expect(page).toHaveURL(/\/pipeline\?app=Wayne([+ ]|%20)Enterprises/)
     await expect(page.getByRole('dialog', { name: 'Wayne Enterprises' })).toBeVisible()
     // Closing clears the param (the drawer state stays shareable but not sticky).
     await page.keyboard.press('Escape')
     await expect(page.getByRole('dialog', { name: 'Wayne Enterprises' })).toBeHidden()
-    await expect(page).toHaveURL('/momentum')
+    await expect(page).toHaveURL('/pipeline')
   })
 
   test('the shared header nav reaches /live and back', async ({ page }) => {
@@ -123,14 +123,14 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Live' })).toBeVisible()
   })
 
-  test('the Momentum panel links into /momentum (contextual nav — §24.35 Pass A)', async ({ page }) => {
+  test('the Job Pipeline panel links into /pipeline (contextual nav — §24.35 Pass A)', async ({ page }) => {
     await page.goto('/live')
-    // Scope to main; the FUNNEL panel header action is the only "open →" link.
+    // Scope to main; the funnel panel header action is the only "open →" link.
     await page
       .getByRole('main')
       .getByRole('link', { name: /open →/ })
       .click()
-    await expect(page).toHaveURL(/\/momentum$/)
-    await expect(page.getByRole('heading', { level: 1, name: 'Momentum' })).toBeVisible()
+    await expect(page).toHaveURL(/\/pipeline$/)
+    await expect(page.getByRole('heading', { level: 1, name: 'Job Pipeline' })).toBeVisible()
   })
 })

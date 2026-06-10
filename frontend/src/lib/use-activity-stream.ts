@@ -49,13 +49,15 @@ export interface ActivityStreamOptions {
 /**
  * Surface-level display aliases for an event's source label (the ticker/trace
  * show `agent_name ?? category`). The backend audit vocabulary stays "funnel"
- * (the internal domain term); the feed just renders the visitor-facing names so
- * nothing says "funnel" on the public surface (PORTAL §5.2 / §8.1). Extend this
- * map as more internal source ids want friendlier labels.
+ * (the internal domain term), and historical rows keep the subagent's
+ * pre-§24.59 name; the feed just renders the visitor-facing names so nothing
+ * says "funnel" on the public surface (PORTAL §5.2 / §8.1). New rows carry
+ * `agent_name='pipeline-scribe'` natively. Extend this map as more internal
+ * source ids want friendlier labels.
  */
 const SOURCE_ALIASES: Record<string, string> = {
-  funnel: 'momentum', // category: pipeline/stage updates → the Momentum board
-  'funnel-curator': 'momentum-curator', // subagent that curates the Momentum read-model
+  funnel: 'pipeline', // category: stage updates → the Job Pipeline board
+  'funnel-curator': 'pipeline-scribe', // the subagent's pre-rename id on historical rows
 }
 
 /** The visitor-facing source label for an event (agent, else category), aliased. */

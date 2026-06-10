@@ -343,7 +343,7 @@ export function RecentOutcomesPanel({ apps, status }: { apps: FunnelApplication[
         <p className="font-mono text-xs text-muted-foreground">No activity yet.</p>
       ) : (
         <ol data-testid="recent-outcomes" className="flex flex-col gap-1.5 font-mono text-xs">
-          {/* Each row deep-links into the /momentum drawer for that application
+          {/* Each row deep-links into the /pipeline drawer for that application
               (§24.57) — the static outcome list becomes navigation into the
               detail panel that already exists there. */}
           {recent.map((a) => {
@@ -351,7 +351,7 @@ export function RecentOutcomesPanel({ apps, status }: { apps: FunnelApplication[
             return (
               <li key={a.application_ref}>
                 <Link
-                  to="/momentum"
+                  to="/pipeline"
                   search={{ app: a.application_ref }}
                   data-testid="recent-outcome-link"
                   className="group flex items-center justify-between gap-2 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"

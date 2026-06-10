@@ -4,7 +4,7 @@ import { railConfigFor } from './ConnectiveRail'
 
 describe('railConfigFor (connective rail, PORTAL §8.4)', () => {
   it('gives every deep surface a convert path to /contact', () => {
-    for (const p of ['/', '/live', '/architecture', '/momentum', '/work']) {
+    for (const p of ['/', '/live', '/architecture', '/pipeline', '/work']) {
       const cfg = railConfigFor(p)
       expect(cfg).not.toBeNull()
       const convert = cfg!.items.find((i) => i.kind === 'convert')
@@ -20,7 +20,7 @@ describe('railConfigFor (connective rail, PORTAL §8.4)', () => {
 
   it('tags ops surfaces ops-register and marketing surfaces marketing', () => {
     expect(railConfigFor('/live')!.register).toBe('ops')
-    expect(railConfigFor('/momentum')!.register).toBe('ops')
+    expect(railConfigFor('/pipeline')!.register).toBe('ops')
     expect(railConfigFor('/architecture')!.register).toBe('ops')
     expect(railConfigFor('/')!.register).toBe('marketing')
     expect(railConfigFor('/work')!.register).toBe('marketing')

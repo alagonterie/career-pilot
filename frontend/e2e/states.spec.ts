@@ -11,16 +11,16 @@ import { expect, test } from '@playwright/test'
 // `loading` deliberately hangs requests (aborted on teardown) and `error`
 // deliberately returns 500s, so that noise is expected, not a failure.
 
-test.describe('/momentum async states', () => {
+test.describe('/pipeline async states', () => {
   test('loading → a skeleton board, not the real board', async ({ page }) => {
-    await page.goto('/momentum?__state=loading')
-    await expect(page.getByRole('heading', { level: 1, name: 'Momentum' })).toBeVisible()
+    await page.goto('/pipeline?__state=loading')
+    await expect(page.getByRole('heading', { level: 1, name: 'Job Pipeline' })).toBeVisible()
     await expect(page.getByTestId('funnel-skeleton')).toBeVisible()
     await expect(page.getByTestId('funnel-board')).toHaveCount(0)
   })
 
   test('empty → a themed empty note (a11y clean)', async ({ page }) => {
-    await page.goto('/momentum?__state=empty')
+    await page.goto('/pipeline?__state=empty')
     const note = page.getByTestId('funnel-empty')
     await expect(note).toBeVisible()
     await expect(note).toContainText(/no applications/i)
@@ -30,7 +30,7 @@ test.describe('/momentum async states', () => {
   })
 
   test('error → a themed offline note', async ({ page }) => {
-    await page.goto('/momentum?__state=error')
+    await page.goto('/pipeline?__state=error')
     const note = page.getByTestId('funnel-error')
     await expect(note).toBeVisible()
     await expect(note).toContainText(/offline/i)
@@ -78,7 +78,7 @@ test.describe('reduced-motion (§24.36 36.4)', () => {
         .evaluate((el) => parseFloat(getComputedStyle(el).animationDuration))
 
     // Control: with no preference, the pulse runs.
-    await page.goto('/momentum?__state=loading')
+    await page.goto('/pipeline?__state=loading')
     await expect(page.getByTestId('funnel-skeleton')).toBeVisible()
     expect(await pulseDurationS()).toBeGreaterThan(0.5)
 
