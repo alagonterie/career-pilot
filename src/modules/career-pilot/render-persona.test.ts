@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { renderPersona, type CandidateProfile } from './render-persona.js';
+import { renderPersona, renderSandboxCandidate, type CandidateProfile } from './render-persona.js';
 
 function profile(overrides: Partial<CandidateProfile> = {}): CandidateProfile {
   return {
@@ -211,5 +211,45 @@ describe('renderPersona', () => {
       const out = renderPersona(profile({ full_name: 'Jane', location_pref: 'not json' }));
       expect(out).not.toContain('## Location');
     });
+  });
+});
+
+describe('renderSandboxCandidate (§24.54 — public simulator subset)', () => {
+  const populated = profile({
+    full_name: 'Jane Doe',
+    bio: 'Backend engineer, 8y, infra-leaning.',
+    target_roles: JSON.stringify(['Staff Backend Engineer']),
+    location_pref: JSON.stringify({ remote: true }),
+    comp_floor: 220000,
+    master_resume: '## Experience\n\n- Built things',
+    skills: JSON.stringify(['Go', 'Rust', 'PostgreSQL']),
+    github_url: 'https://github.com/jane',
+  });
+
+  it('includes the resume-grade public subset', () => {
+    const out = renderSandboxCandidate(populated);
+    expect(out).toContain('# Jane Doe');
+    expect(out).toContain('## Background');
+    expect(out).toContain('## Target roles');
+    expect(out).toContain('## Master resume');
+    expect(out).toContain('- Go');
+    expect(out).toContain('## Links');
+  });
+
+  it('excludes comp floor and quiet hours by design', () => {
+    const out = renderSandboxCandidate(populated);
+    expect(out).not.toContain('## Comp');
+    expect(out).not.toContain('220,000');
+    expect(out).not.toContain('## Quiet hours');
+  });
+
+  it('returns the sandbox sentinel (never the owner onboarding flow) for null/empty profiles', () => {
+    for (const p of [null, profile(), profile({ comp_floor: 220000 })]) {
+      const out = renderSandboxCandidate(p);
+      expect(out).toContain('GENERIC senior software engineer');
+      expect(out).toContain('Never ask');
+      expect(out).not.toContain('# Onboarding mode');
+      expect(out).not.toContain('update_profile_field');
+    }
   });
 });

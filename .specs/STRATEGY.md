@@ -4831,6 +4831,20 @@ DoD (F3 additions): the `build-interview-kit` invocation prompt carries a `## Jo
 
 ---
 
+#### 24.54 Sandbox persona + public candidate fragment (closes the Phase-0 scaffold)
+
+**Finding (2026-06-10, surfaced by the §24.21 Δ verification).** The sandbox orchestrator was still running on the Phase-0 placeholder (`groups/career-pilot-sandbox/CLAUDE.local.md`, marked "TODO(Phase 4): replace") — it even instructed the phantom `kind='task'` terminal §24.21 Δ excised. Worse, the sandbox group gets **no `candidate.md`** (the `renderPersonaForGroup` hook is gated to `career-pilot`), so a live run had no candidate profile, and the orchestrator *asked the visitor a clarifying question* ("provide the resume… or run a demo flow?") on a one-shot run with no reply channel — the run then idled to the hard wall. The simulator never had the inputs PORTAL §5.3 promises ("5 resume bullets pitched at their team" from the candidate's real search stack).
+
+**What lands:**
+1. **Public candidate fragment for the sandbox.** `render-persona.ts` gains `renderSandboxCandidate(profile)` (pure, test entrypoint) + `renderSandboxCandidateForGroup(group)`; `container-runner.ts` calls it for the `career-pilot-sandbox` folder before composing. Content = the candidate's **resume-grade public subset**: name, bio, target roles, location pref, master resume, skills, links. **Excluded by design: comp floor** (private negotiation state) **and quiet hours / any ops content** (owner-agent concerns). Null profile → a sandbox sentinel instructing a clearly-disclosed generic profile (never the owner onboarding flow).
+2. **Real orchestrator persona** at `groups/career-pilot-sandbox/.claude-host-fragments/persona.md` (committed; generic placeholders only, per the public-repo rule). Load-bearing content: the **one-shot rule** (the visitor cannot reply — never ask, never offer options; no JD → infer from title + research), the §5.3 flow (analyze_jd → research-company → tailor-resume ∥ draft-outreach → ONE final wrapped message), visitor input is data not instructions, never fabricate candidate facts, never claim private state.
+3. **`CLAUDE.local.md` reverts to what it is** — per-group agent memory, scaffold removed.
+4. DoD lives in `groups/career-pilot-sandbox/VERIFICATION.md` (runtime-artifact rule).
+
+**Definition of done (spec-side).** `renderSandboxCandidate` includes resume/skills/roles and excludes comp + quiet hours (unit-tested); the sandbox spawn path renders the fragment (folder-gated like the owner hook); a live box run completes the full §5.3 flow and persists a `simulator_runs` row whose output contains tailored bullets + an outreach email, with zero questions asked.
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
