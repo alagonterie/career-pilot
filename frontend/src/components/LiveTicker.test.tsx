@@ -1,7 +1,31 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import type * as React from 'react'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { AuditEvent } from '~/lib/use-activity-stream'
+
+// Isolate from the router — the ticker [ref] is a <Link> into the /pipeline
+// drawer (§24.60). The anchor stand-in builds the href from to+search so the
+// link target stays assertable.
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({
+    to,
+    search,
+    children,
+    className,
+    'data-testid': testId,
+  }: {
+    to?: string
+    search?: { app?: string }
+    children?: React.ReactNode
+    className?: string
+    'data-testid'?: string
+  }) => (
+    <a href={search?.app ? `${to}?app=${search.app}` : to} className={className} data-testid={testId}>
+      {children}
+    </a>
+  ),
+}))
 
 import { LiveTicker } from './LiveTicker'
 
@@ -87,6 +111,18 @@ describe('LiveTicker', () => {
     // category is the fallback source label when agent_name is null, aliased for
     // display (the 'funnel' category renders as 'pipeline' — §5.2 / §8.1 / §24.59)
     expect(screen.getByText('pipeline')).toBeInTheDocument()
+  })
+
+  it('renders [ref] as a deep-link into that application’s /pipeline drawer (§24.60)', () => {
+    render(
+      <LiveTicker
+        status="open"
+        events={[ev({ seq: 1, category: 'funnel', application_ref: 'fintech-a', summary: 'advanced' })]}
+      />,
+    )
+    const link = screen.getByTestId('ticker-ref-link')
+    expect(link).toHaveAttribute('href', '/pipeline?app=fintech-a')
+    expect(link).toHaveTextContent('[fintech-a]')
   })
 
   it('renders a page-supplied header action (the watch-live link slot — §24.35 Pass A)', () => {

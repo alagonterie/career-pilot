@@ -1,6 +1,8 @@
+import { Link } from '@tanstack/react-router'
 import { motion } from 'motion/react'
 import * as React from 'react'
 
+import { InfoTip } from '~/components/InfoTip'
 import { useDialog } from '~/lib/use-dialog'
 import type { FunnelApplication } from '~/lib/use-funnel'
 
@@ -85,10 +87,30 @@ export function DetailPanel({ app, onClose }: { app: FunnelApplication | null; o
           <Fact label="Days in pipeline" value={app.days_in_pipeline != null ? `${app.days_in_pipeline}` : '—'} />
         </dl>
 
+        {/* This application's rows filtered out of the live trace window (§24.60)
+            — the honest version of a "related artifacts" view. The reverse of the
+            trace-line [ref] links, so /pipeline ↔ /live cross-navigate per app. */}
+        <Link
+          to="/live"
+          search={{ app: app.application_ref }}
+          data-testid="detail-live-link"
+          className="self-start font-mono text-xs text-accent-cool hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Live activity →
+        </Link>
+
         {win != null ? (
           <section aria-labelledby="win-heading" className="flex flex-col gap-2">
-            <h3 id="win-heading" className="font-mono text-[11px] uppercase tracking-widest text-muted-foreground">
+            <h3
+              id="win-heading"
+              className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-widest text-muted-foreground"
+            >
               Win confidence
+              <InfoTip label="win confidence">
+                An AI-scored 0–100 estimate of this application reaching an offer, recomputed as recruiter signals
+                arrive — stage, response cadence, tone. The sentence below the bar is the model&apos;s own one-line
+                rationale. A heuristic, not a probability.
+              </InfoTip>
             </h3>
             <div className="flex items-center gap-3">
               <div aria-hidden="true" className="h-2 flex-1 overflow-hidden rounded-full bg-secondary">

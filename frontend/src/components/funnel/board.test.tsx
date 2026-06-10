@@ -4,6 +4,29 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { FunnelApplication } from '~/lib/use-funnel'
 
+// Isolate from the router — DetailPanel's "Live activity →" is a <Link>
+// (§24.60), which would need a RouterProvider. The anchor stand-in builds the
+// href from to+search so the link target stays assertable.
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({
+    to,
+    search,
+    children,
+    className,
+    'data-testid': testId,
+  }: {
+    to?: string
+    search?: { app?: string }
+    children?: React.ReactNode
+    className?: string
+    'data-testid'?: string
+  }) => (
+    <a href={search?.app ? `${to}?app=${search.app}` : to} className={className} data-testid={testId}>
+      {children}
+    </a>
+  ),
+}))
+
 import { DetailPanel } from './DetailPanel'
 import { FunnelBoard } from './FunnelBoard'
 import { FunnelCard } from './FunnelCard'
@@ -122,6 +145,13 @@ describe('StatTiles', () => {
     }
     expect(screen.getAllByTestId('stat-value')).toHaveLength(4)
   })
+
+  it('each tile carries an InfoTip that opens its honest derivation (§24.60)', () => {
+    render(<StatTiles apps={APPS} />)
+    expect(screen.getAllByTestId('info-tip-trigger')).toHaveLength(4)
+    fireEvent.click(screen.getByRole('button', { name: 'About: Avg days active' }))
+    expect(screen.getByTestId('info-tip-panel')).toHaveTextContent(/closed applications.*excluded.*heuristic/i)
+  })
 })
 
 describe('DetailPanel', () => {
@@ -160,6 +190,22 @@ describe('DetailPanel', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(onClose).toHaveBeenCalledTimes(2)
+  })
+
+  it('explains win confidence via an InfoTip — heuristic, not a probability (§24.60)', () => {
+    render(<DetailPanel app={APPS[4]} onClose={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'About: win confidence' }))
+    expect(screen.getByTestId('info-tip-panel')).toHaveTextContent(/heuristic, not a probability/i)
+  })
+
+  it('omits the win-confidence InfoTip when there is no score to explain', () => {
+    render(<DetailPanel app={APPS[0]} onClose={() => {}} />) // win_confidence null
+    expect(screen.queryByRole('button', { name: 'About: win confidence' })).not.toBeInTheDocument()
+  })
+
+  it('links to this application’s filtered /live activity (§24.60)', () => {
+    render(<DetailPanel app={APPS[4]} onClose={() => {}} />)
+    expect(screen.getByTestId('detail-live-link')).toHaveAttribute('href', '/live?app=Wayne Enterprises')
   })
 })
 

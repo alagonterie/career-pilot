@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { useReducedMotion } from 'motion/react'
 import * as React from 'react'
 
@@ -122,10 +123,17 @@ export function LogStream({
   events,
   status,
   count,
+  appFilter,
+  onClearAppFilter,
 }: {
   events: AuditEvent[]
   status: StreamStatus | 'idle'
   count: number
+  /** §24.60: filter the stream to one application_ref (the `/live?app=` param,
+   * arrived at via the /pipeline drawer's "Live activity →" link). AND-composes
+   * with the agent chips; applies to the live window only — not an archive. */
+  appFilter?: string
+  onClearAppFilter?: () => void
 }) {
   const [active, setActive] = React.useState('all')
   const [stuck, setStuck] = React.useState(true)
@@ -133,7 +141,7 @@ export function LogStream({
 
   const reduce = useReducedMotion()
   const chip = CHIPS.find((c) => c.id === active) ?? CHIPS[0]
-  const filtered = events.filter(chip.match)
+  const filtered = events.filter((e) => chip.match(e) && (!appFilter || e.application_ref === appFilter))
   // Drop bare/consecutive turn seals so a quiet stretch reads as quiet, not as a
   // wall of empty rules. `visible` is what actually renders (day dividers are
   // interleaved at render time — they're presentation rows, not events).
@@ -176,9 +184,40 @@ export function LogStream({
       <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
         <h2
           id="trace-heading"
-          className="font-mono text-xs font-semibold uppercase tracking-widest text-muted-foreground"
+          className="flex items-center gap-1.5 font-mono text-xs font-semibold uppercase tracking-widest text-muted-foreground"
         >
           Agent trace stream
+          {/* "the cast" (§24.60): ONE header-level explainer for the agent names
+              — per-occurrence tips on every name were rejected as clutter. */}
+          <InfoTip label="who the agents are">
+            Six specialist agents work this stream:
+            <ul className="mt-1.5 flex flex-col gap-1">
+              <li>
+                <span className="font-mono text-foreground">research-company</span> — digs into a company before
+                anything is sent
+              </li>
+              <li>
+                <span className="font-mono text-foreground">tailor-resume</span> — re-cuts the resume for one specific
+                role
+              </li>
+              <li>
+                <span className="font-mono text-foreground">draft-outreach</span> — writes the recruiter email, saved as
+                a draft
+              </li>
+              <li>
+                <span className="font-mono text-foreground">build-interview-kit</span> — assembles a prep doc before an
+                interview
+              </li>
+              <li>
+                <span className="font-mono text-foreground">scrape-jobs</span> — hunts the boards for new leads
+              </li>
+              <li>
+                <span className="font-mono text-foreground">pipeline-scribe</span> — sweeps inbox + calendar to keep the
+                record straight
+              </li>
+            </ul>
+            <span className="mt-1.5 block">Unlabeled lines are the orchestrator — the agent that runs the show.</span>
+          </InfoTip>
         </h2>
         <LiveIndicator status={status} count={count} />
       </header>
@@ -205,15 +244,31 @@ export function LogStream({
             {c.label}
           </button>
         ))}
+        {appFilter ? (
+          // The §24.60 application filter (the /pipeline drawer's "Live activity →"
+          // destination): dismissible, AND-composed with the chips above.
+          <button
+            type="button"
+            data-testid="trace-app-filter"
+            aria-label={`Stop filtering to ${appFilter}`}
+            onClick={onClearAppFilter}
+            className="rounded-full border border-accent-cool/60 bg-accent-cool/10 px-2.5 py-0.5 font-mono text-[11px] text-foreground transition-colors hover:border-accent-cool focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            [{appFilter}] ×
+          </button>
+        ) : null}
       </div>
 
       <div className="relative min-h-0 flex-1">
         {visible.length === 0 ? (
           filtered.length === 0 && events.length > 0 ? (
             // A chip genuinely excluded everything (vs. a window of bare turns,
-            // which collapses to nothing but isn't a "no match").
+            // which collapses to nothing but isn't a "no match"). The app filter
+            // gets honesty copy (§24.60): it scopes the live WINDOW, not history.
             <StateNote data-testid="trace-empty" className="px-4 py-6">
-              No events match this filter.
+              {appFilter
+                ? `No recent activity for [${appFilter}] in the live window — the stream holds the most recent events, not the full history.`
+                : 'No events match this filter.'}
             </StateNote>
           ) : status === 'reconnecting' ? (
             <StateNote data-testid="trace-empty" tone="error" className="px-4 py-6">
@@ -299,8 +354,17 @@ export function LogStream({
                       metadata row (§24.37); inline terminal row restored at sm+.
                       mr-2 matches the row's gap-x-2 so desktop is unchanged. */}
                   <span className="w-full min-w-0 sm:w-auto sm:flex-1">
+                    {/* [ref] deep-links into that application's /pipeline drawer
+                        (§24.60) — dotted underline as the touch-visible affordance. */}
                     {row.e.application_ref ? (
-                      <span className="mr-2 text-muted-foreground">[{row.e.application_ref}]</span>
+                      <Link
+                        to="/pipeline"
+                        search={{ app: row.e.application_ref }}
+                        data-testid="trace-ref-link"
+                        className="mr-2 text-muted-foreground underline decoration-muted-foreground/50 decoration-dotted underline-offset-2 transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        [{row.e.application_ref}]
+                      </Link>
                     ) : null}
                     <span className="text-foreground">{row.e.summary}</span>
                   </span>

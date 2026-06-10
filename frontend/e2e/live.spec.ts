@@ -72,8 +72,10 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
 
     // §24.57: the fixture window is in the past, so the stream opens with a
     // leading day divider; the seal explains itself via an InfoTip on tap.
+    // (Scoped to the turn row — the header's cast InfoTip (§24.60) is the
+    // section's first trigger now.)
     await expect(trace.getByTestId('trace-date').first()).toHaveText('Jun 2')
-    await trace.getByTestId('info-tip-trigger').first().click()
+    await trace.getByTestId('trace-turn').first().getByTestId('info-tip-trigger').click()
     await expect(page.getByTestId('info-tip-panel')).toContainText('One container turn')
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('info-tip-panel')).toBeHidden()
@@ -89,6 +91,43 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
 
     expect(consoleErrors).toEqual([])
     expect(failedRequests).toEqual([])
+  })
+
+  test('the trace header explains the cast via one InfoTip (§24.60)', async ({ page }) => {
+    await page.goto('/live')
+    await page.getByRole('button', { name: 'About: who the agents are' }).click()
+    const panel = page.getByTestId('info-tip-panel')
+    await expect(panel).toContainText('pipeline-scribe')
+    await expect(panel).toContainText('build-interview-kit')
+    await expect(panel).toContainText(/orchestrator/i)
+  })
+
+  test('a trace-line [ref] deep-links into the /pipeline drawer (§24.60)', async ({ page }) => {
+    await page.goto('/live')
+    await page.getByTestId('trace-ref-link').filter({ hasText: 'fintech-a' }).first().click()
+    await expect(page).toHaveURL(/\/pipeline\?app=fintech-a/)
+    await expect(page.getByRole('dialog', { name: '[fintech-a]' })).toBeVisible()
+  })
+
+  test('the /pipeline drawer round-trips into that application’s filtered /live activity (§24.60)', async ({
+    page,
+  }) => {
+    await page.goto('/pipeline?app=fintech-a')
+    await expect(page.getByRole('dialog', { name: '[fintech-a]' })).toBeVisible()
+    await page.getByTestId('detail-live-link').click()
+    await expect(page).toHaveURL(/\/live\?app=fintech-a/)
+
+    // The dismissible app-filter chip is active and the stream is scoped: only
+    // fintech-a rows render (every visible [ref] is the filtered one).
+    const chip = page.getByTestId('trace-app-filter')
+    await expect(chip).toHaveText('[fintech-a] ×')
+    await expect(page.getByTestId('trace-line').first()).toBeVisible()
+    await expect(page.getByTestId('trace-ref-link').filter({ hasText: 'ai-infra-b' })).toHaveCount(0)
+
+    // Dismissing clears the param and restores the full stream.
+    await chip.click()
+    await expect(page).toHaveURL('/live')
+    await expect(page.getByTestId('trace-app-filter')).toBeHidden()
   })
 
   test('a Recent-outcomes row deep-links into the /pipeline drawer (§24.57)', async ({ page }) => {

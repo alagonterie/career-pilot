@@ -60,6 +60,15 @@ describe('deriveStatTiles', () => {
     expect(byLabel['Offers']).toBe('0')
     expect(byLabel['Avg days active']).toBe('0')
   })
+
+  it('every tile carries InfoTip derivation copy with the honest caveats (§24.60)', () => {
+    const tiles = deriveStatTiles([])
+    for (const t of tiles) expect(t.tip.length).toBeGreaterThan(20)
+    const byLabel = Object.fromEntries(tiles.map((t) => [t.label, t.tip]))
+    expect(byLabel['Applications YTD']).toMatch(/calendar year/i)
+    expect(byLabel['Interviews this month']).toMatch(/calendar month/i)
+    expect(byLabel['Avg days active']).toMatch(/heuristic/i)
+  })
 })
 
 describe('useFunnel', () => {
