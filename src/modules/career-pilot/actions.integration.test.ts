@@ -851,14 +851,20 @@ describe('handleRecordTurnTelemetry', () => {
       cache_hit: 1,
       latency_ms: 1234,
       record_calls: 2,
-      details: { num_turns: 3, duration_api_ms: 1100, total_cost_usd: 0.041, model_usage: {} },
+      details: {
+        num_turns: 3,
+        duration_api_ms: 1100,
+        total_cost_usd: 0.041,
+        // 900 cache_read / (100 input + 900 read + 200 creation) = 75%
+        model_usage: { 'claude-opus-4-8': { input: 100, output: 50, cache_read: 900, cache_creation: 200 } },
+      },
     });
     await handleRecordTurnTelemetry(c, FAKE_SESSION, inDb);
     expect(readResponse(c.requestId).frame.ok).toBe(true);
 
     const row = getDb()
       .prepare(
-        `SELECT category, agent_name, proactive, model_used, tokens, cost_cents, cache_hit, latency_ms, summary, details_json
+        `SELECT category, agent_name, proactive, model_used, tokens, cost_cents, cache_hit, cache_read_pct, latency_ms, summary, details_json
            FROM public_audit_trail WHERE category = 'turn'`,
       )
       .get() as {
@@ -869,6 +875,7 @@ describe('handleRecordTurnTelemetry', () => {
       tokens: number;
       cost_cents: number;
       cache_hit: number;
+      cache_read_pct: number | null;
       latency_ms: number;
       summary: string;
       details_json: string;
@@ -880,9 +887,29 @@ describe('handleRecordTurnTelemetry', () => {
     expect(row.tokens).toBe(17000);
     expect(row.cost_cents).toBe(4);
     expect(row.cache_hit).toBe(1);
+    expect(row.cache_read_pct).toBe(75); // §24.55 quantitative cache lane
     expect(row.latency_ms).toBe(1234);
     expect(row.summary).toBe('turn complete');
     expect(JSON.parse(row.details_json).record_calls).toBe(2);
+  });
+
+  it('leaves cache_read_pct NULL when model_usage is absent or prompt-side empty (§24.55: unknown ≠ 0%)', async () => {
+    const c = actionContent('career_pilot.record_turn_telemetry', {
+      model_used: 'claude-opus-4-8',
+      tokens: 10,
+      cost_cents: 1,
+      cache_hit: 0,
+      latency_ms: 10,
+      record_calls: 0,
+      details: { num_turns: 1, duration_api_ms: 10, total_cost_usd: 0.001, model_usage: {} },
+    });
+    await handleRecordTurnTelemetry(c, FAKE_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+
+    const row = getDb().prepare(`SELECT cache_read_pct FROM public_audit_trail WHERE category = 'turn'`).get() as {
+      cache_read_pct: number | null;
+    };
+    expect(row.cache_read_pct).toBeNull();
   });
 
   it('does not write a row when telemetry_capture is disabled (kill switch)', async () => {

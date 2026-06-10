@@ -17,6 +17,9 @@ export interface TelemetryLocal {
   turns_24h: number
   turn_cost_cents_total: number
   turn_cost_cents_24h: number
+  /** Simulator spend (§24.55) — per-run SDK estimates summed; joins the combined headline. */
+  sim_cost_cents_total: number
+  sim_cost_cents_24h: number
   cache_hit_rate: number | null // 0..1
   turn_p50_ms: number | null
   turn_p95_ms: number | null

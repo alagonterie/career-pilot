@@ -45,12 +45,13 @@ interface AuditRow {
   tokens: number | null;
   cost_cents: number | null;
   cache_hit: number;
+  cache_read_pct: number | null;
   latency_ms: number | null;
   summary: string;
 }
 
 const SELECT_COLS =
-  'seq, ts, category, agent_name, proactive, application_ref, model_used, tokens, cost_cents, cache_hit, latency_ms, summary';
+  'seq, ts, category, agent_name, proactive, application_ref, model_used, tokens, cost_cents, cache_hit, cache_read_pct, latency_ms, summary';
 
 const activityClients = new Set<ActivityClient>();
 let tailTimer: NodeJS.Timeout | null = null;

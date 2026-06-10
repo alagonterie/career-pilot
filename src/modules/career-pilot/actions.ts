@@ -476,16 +476,42 @@ function numOrNull(v: unknown): number | null {
 }
 
 /**
+ * Derive the quantitative cache lane (§24.55): the share of the turn's
+ * prompt-side tokens served from cache, 0–100, from the per-model usage the
+ * container forwards in `details.model_usage`. NULL when there is no usage
+ * map or the prompt-side sum is zero (unknown ≠ 0%).
+ */
+function deriveCacheReadPct(details: Record<string, unknown>): number | null {
+  const usage = details.model_usage;
+  if (!usage || typeof usage !== 'object') return null;
+  let cacheRead = 0;
+  let promptTotal = 0;
+  for (const u of Object.values(usage as Record<string, unknown>)) {
+    if (!u || typeof u !== 'object') continue;
+    const m = u as { input?: unknown; cache_read?: unknown; cache_creation?: unknown };
+    const read = typeof m.cache_read === 'number' && Number.isFinite(m.cache_read) ? m.cache_read : 0;
+    const input = typeof m.input === 'number' && Number.isFinite(m.input) ? m.input : 0;
+    const creation = typeof m.cache_creation === 'number' && Number.isFinite(m.cache_creation) ? m.cache_creation : 0;
+    cacheRead += read;
+    promptTotal += input + read + creation;
+  }
+  if (promptTotal <= 0) return null;
+  return Math.round((100 * cacheRead) / promptTotal);
+}
+
+/**
  * Write a per-turn LLM-telemetry row (category='turn') to public_audit_trail.
  *
  * The honest unit is one query() call: the SDK resolves cost only per-turn
  * (no per-subagent/per-tool breakdown — subagent usage rolls up into the
  * parent result), so this row carries the turn's real model/tokens/cost/cache/
  * latency on a turn-level row, while the funnel/progress writers stay
- * untouched. The container's poll-loop fires it fire-and-forget when the turn
- * made ≥1 record_* call (the portal-worthy gate); registered owner-only, so a
- * sandbox emission never lands a row. Gated by the `telemetry_capture`
- * preference (default true) — a kill switch.
+ * untouched. The container's poll-loop fires it fire-and-forget on EVERY turn
+ * (§24.55 lifted the original record_*-only gate so /live's spend is a total,
+ * not a sample); registered owner-only, so a sandbox emission never lands a
+ * row. Gated by the `telemetry_capture` preference (default true) — a kill
+ * switch. `cache_read_pct` is derived here from the per-model usage; the
+ * legacy boolean `cache_hit` keeps being written for back-compat.
  *
  * The row carries no free text (numbers + a fixed summary), so it needs no
  * sanitization and is exempt from the funnel-only resanitization hooks.
@@ -511,9 +537,9 @@ export async function handleRecordTurnTelemetry(
     const details = typeof p.details === 'object' && p.details ? (p.details as Record<string, unknown>) : {};
     db.prepare(
       `INSERT INTO public_audit_trail
-         (id, seq, ts, category, agent_name, proactive, model_used, tokens, cost_cents, cache_hit, latency_ms, summary, details_json)
+         (id, seq, ts, category, agent_name, proactive, model_used, tokens, cost_cents, cache_hit, cache_read_pct, latency_ms, summary, details_json)
        VALUES (@id, (SELECT COALESCE(MAX(seq), 0) + 1 FROM public_audit_trail),
-               @ts, 'turn', NULL, @proactive, @model_used, @tokens, @cost_cents, @cache_hit, @latency_ms, @summary, @details_json)`,
+               @ts, 'turn', NULL, @proactive, @model_used, @tokens, @cost_cents, @cache_hit, @cache_read_pct, @latency_ms, @summary, @details_json)`,
     ).run({
       id,
       ts: now,
@@ -522,6 +548,7 @@ export async function handleRecordTurnTelemetry(
       tokens: numOrNull(p.tokens),
       cost_cents: numOrNull(p.cost_cents),
       cache_hit: p.cache_hit === 1 || p.cache_hit === true ? 1 : 0,
+      cache_read_pct: deriveCacheReadPct(details),
       latency_ms: numOrNull(p.latency_ms),
       summary: TURN_TELEMETRY_SUMMARY,
       details_json: JSON.stringify({ ...details, record_calls: numOrNull(p.record_calls) }),

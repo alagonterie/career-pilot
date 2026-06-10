@@ -10,6 +10,8 @@ const LOCAL = {
   turns_24h: 5,
   turn_cost_cents_total: 37,
   turn_cost_cents_24h: 12,
+  sim_cost_cents_total: 72,
+  sim_cost_cents_24h: 24,
   cache_hit_rate: 0.66,
   turn_p50_ms: 15000,
   turn_p95_ms: 31000,

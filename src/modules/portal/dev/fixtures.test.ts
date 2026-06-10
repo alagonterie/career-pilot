@@ -150,12 +150,20 @@ describe('telemetry lives on category=turn rows (§24.34 shape)', () => {
     seedDeterministicBacklog(db);
     const turn = db
       .prepare(
-        `SELECT model_used, tokens, cost_cents, cache_hit, latency_ms FROM public_audit_trail WHERE category = 'turn'`,
+        `SELECT model_used, tokens, cost_cents, cache_hit, cache_read_pct, latency_ms FROM public_audit_trail WHERE category = 'turn'`,
       )
-      .get() as { model_used: string; tokens: number; cost_cents: number; cache_hit: number; latency_ms: number };
+      .get() as {
+      model_used: string;
+      tokens: number;
+      cost_cents: number;
+      cache_hit: number;
+      cache_read_pct: number | null;
+      latency_ms: number;
+    };
     expect(turn.model_used).toBe('opus-4-8');
     expect(turn.cost_cents).toBeGreaterThan(0);
     expect(turn.cache_hit).toBe(1);
+    expect(turn.cache_read_pct).toBe(90); // the §24.55 quantitative cache lane
     // No telemetry ever leaks onto a non-turn row (the real §24.34 shape).
     const leak = (
       db

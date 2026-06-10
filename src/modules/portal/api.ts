@@ -192,7 +192,7 @@ function handleActivity(url: URL, res: http.ServerResponse, cors: Record<string,
   const events = getDb()
     .prepare(
       `SELECT seq, ts, category, agent_name, proactive, application_ref, model_used,
-              tokens, cost_cents, cache_hit, latency_ms, summary
+              tokens, cost_cents, cache_hit, cache_read_pct, latency_ms, summary
          FROM public_audit_trail
         WHERE seq > @since
         ORDER BY seq ASC
@@ -443,6 +443,8 @@ function emptyPayloadFor(path: string): unknown {
           turns_24h: 0,
           turn_cost_cents_total: 0,
           turn_cost_cents_24h: 0,
+          sim_cost_cents_total: 0,
+          sim_cost_cents_24h: 0,
           cache_hit_rate: null,
           turn_p50_ms: null,
           turn_p95_ms: null,

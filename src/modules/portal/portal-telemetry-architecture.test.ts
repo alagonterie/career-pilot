@@ -31,8 +31,10 @@ afterEach(async () => {
   _resetTelemetryCache();
 });
 
-function seedSimRun(id: string): void {
-  getDb().prepare(`INSERT INTO simulator_runs (id, ts) VALUES (?, '2026-05-29T00:00:00Z')`).run(id);
+function seedSimRun(id: string, costCents?: number, ts?: string): void {
+  getDb()
+    .prepare(`INSERT INTO simulator_runs (id, ts, total_cost_cents) VALUES (?, ?, ?)`)
+    .run(id, ts ?? '2026-05-29T00:00:00Z', costCents ?? null);
 }
 
 function seedAudit(seq: number, ts: string): void {
@@ -142,6 +144,19 @@ describe('GET /api/telemetry', () => {
     expect(body.local.turns_total).toBe(3);
     expect(body.local.turn_cost_cents_total).toBe(19); // 6 + 4 + 9
     expect(body.local.turn_cost_cents_24h).toBe(10); // 6 + 4 (the 9 is > 24h)
+  });
+
+  it('sums simulator-run cost into the local aggregate (§24.55 — the sim spend lane)', async () => {
+    seedSimRun('s1', 24, nowIso());
+    seedSimRun('s2', 31, nowIso());
+    seedSimRun('s3', 18, daysAgoIso(2)); // outside the 24h window
+    seedSimRun('s4'); // NULL cost (incomplete run) contributes nothing
+
+    const body = (await (await fetch(`${base}/api/telemetry`)).json()) as {
+      local: { sim_cost_cents_total: number; sim_cost_cents_24h: number };
+    };
+    expect(body.local.sim_cost_cents_total).toBe(73); // 24 + 31 + 18
+    expect(body.local.sim_cost_cents_24h).toBe(55); // 24 + 31
   });
 
   it('caches the response for the configured window', async () => {

@@ -236,12 +236,15 @@ export function TelemetryPanel({ view, status }: { view: TelemetryView; status?:
   )
 }
 
-/** COST & CACHE — the estimated agent spend summed from the per-turn capture
- * (§24.34/§24.47) + the cache-hit rate. cost is an SDK *estimate* (labeled
- * "est"), not a billed number; the headline is lifetime, the bottom line carries
- * the windowed "today" detail (masked in the visual baseline — wall-clock). */
+/** COST & CACHE — the COMBINED estimated spend (§24.55): owner agent turns
+ * (per-turn capture, §24.34/§24.47) + public simulator runs (per-run capture),
+ * plus the cache-read rate. cost is an SDK *estimate* (labeled "est"), not a
+ * billed number; the headline is lifetime, the bottom line carries the windowed
+ * "today" detail broken down by lane (masked in the visual baseline —
+ * wall-clock). */
 export function CostCachePanel({ view, status }: { view: TelemetryView; status?: PollStatus }) {
   const local = view.local
+  const hasSpend = view.hasTurns || (local?.sim_cost_cents_total ?? 0) > 0
   if (status === 'loading') {
     return (
       <Panel title="Cost & cache" className="min-h-[175px]">
@@ -258,11 +261,11 @@ export function CostCachePanel({ view, status }: { view: TelemetryView; status?:
   }
   return (
     <Panel title="Cost & cache" className="min-h-[175px]">
-      {view.hasTurns && local ? (
+      {hasSpend && local ? (
         <>
           <Metric
             testId="local-spend"
-            value={`$${(local.turn_cost_cents_total / 100).toFixed(2)}`}
+            value={`$${((local.turn_cost_cents_total + local.sim_cost_cents_total) / 100).toFixed(2)}`}
             label="spend · est"
           />
           {local.cache_hit_rate != null ? (
@@ -284,7 +287,9 @@ export function CostCachePanel({ view, status }: { view: TelemetryView; status?:
           data-testid="live-volatile"
           className="flex flex-wrap gap-x-4 gap-y-1 border-t border-border pt-2 font-mono text-[11px] text-muted-foreground"
         >
-          <span>${(local.turn_cost_cents_24h / 100).toFixed(2)} today</span>
+          <span>${((local.turn_cost_cents_24h + local.sim_cost_cents_24h) / 100).toFixed(2)} today</span>
+          <span>agent ${(local.turn_cost_cents_24h / 100).toFixed(2)}</span>
+          <span>sim ${(local.sim_cost_cents_24h / 100).toFixed(2)}</span>
         </div>
       ) : null}
     </Panel>

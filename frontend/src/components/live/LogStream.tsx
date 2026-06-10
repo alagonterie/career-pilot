@@ -221,7 +221,13 @@ export function LogStream({
                     {e.tokens != null ? <span>· {e.tokens.toLocaleString()} tok</span> : null}
                     {e.cost_cents != null ? <span>· ${(e.cost_cents / 100).toFixed(3)}</span> : null}
                     {e.latency_ms != null ? <span>· {(e.latency_ms / 1000).toFixed(1)}s</span> : null}
-                    {e.cache_hit ? <span className="text-primary">· cache✓</span> : null}
+                    {/* quantitative cache lane (§24.55) — the share of prompt tokens
+                        served from cache; the old boolean cache✓ was always true */}
+                    {e.cache_read_pct != null ? (
+                      <span className="text-primary" title="share of prompt tokens served from cache">
+                        · cache {e.cache_read_pct}%
+                      </span>
+                    ) : null}
                   </span>
                   <span aria-hidden="true" className="h-px flex-1 bg-border" />
                 </li>
@@ -254,9 +260,9 @@ export function LogStream({
                   {e.tokens != null ? <Lane title="tokens">{e.tokens.toLocaleString()} tok</Lane> : null}
                   {e.latency_ms != null ? <Lane title="latency">{(e.latency_ms / 1000).toFixed(1)}s</Lane> : null}
                   {e.cost_cents != null ? <Lane title="cost">${(e.cost_cents / 100).toFixed(3)}</Lane> : null}
-                  {e.cache_hit ? (
-                    <Lane title="cache hit" tone="text-primary">
-                      cache✓
+                  {e.cache_read_pct != null ? (
+                    <Lane title="share of prompt tokens served from cache" tone="text-primary">
+                      cache {e.cache_read_pct}%
                     </Lane>
                   ) : null}
                 </li>
