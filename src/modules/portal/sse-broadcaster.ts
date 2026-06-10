@@ -224,6 +224,47 @@ export function stopBroadcaster(): void {
 // and no tail timer.
 
 const simulatorClients = new Map<string, Set<http.ServerResponse>>();
+let simKeepaliveTimer: NodeJS.Timeout | null = null;
+
+/**
+ * Keepalive for simulator streams (§24.21 Δ): the push-based topic has no tail
+ * timer, so a silent generation phase (no tool calls → no trace events) would
+ * idle past the Worker/Tunnel ~100 s timeout and drop the stream mid-run.
+ * One client-gated, unref()'d interval writes `: ka` to every simulator client.
+ */
+function maybeStartSimKeepalive(): void {
+  if (simKeepaliveTimer) return;
+  let ms = DEFAULT_KEEPALIVE_MS;
+  try {
+    ms = getConfig<number>(getDb(), 'portal_sse_keepalive_ms', DEFAULT_KEEPALIVE_MS);
+  } catch {
+    ms = DEFAULT_KEEPALIVE_MS;
+  }
+  simKeepaliveTimer = setInterval(() => {
+    if (simulatorClients.size === 0) {
+      maybeStopSimKeepalive();
+      return;
+    }
+    for (const [runId, set] of simulatorClients) {
+      for (const res of set) {
+        try {
+          res.write(': ka\n\n');
+        } catch {
+          set.delete(res);
+        }
+      }
+      if (set.size === 0) simulatorClients.delete(runId);
+    }
+  }, ms);
+  if (typeof simKeepaliveTimer.unref === 'function') simKeepaliveTimer.unref();
+}
+
+function maybeStopSimKeepalive(): void {
+  if (simKeepaliveTimer && simulatorClients.size === 0) {
+    clearInterval(simKeepaliveTimer);
+    simKeepaliveTimer = null;
+  }
+}
 
 /**
  * Register an SSE client for a simulator run. The caller must already have
@@ -243,6 +284,7 @@ export function addSimulatorClient(runId: string, res: http.ServerResponse): voi
   } catch {
     set.delete(res);
   }
+  maybeStartSimKeepalive();
 }
 
 /**
@@ -269,6 +311,26 @@ export function removeSimulatorClient(runId: string, res: http.ServerResponse): 
   if (!set) return;
   set.delete(res);
   if (set.size === 0) simulatorClients.delete(runId);
+  maybeStopSimKeepalive();
+}
+
+/**
+ * Close a finished run's stream (§24.21 Δ): end every client and drop the
+ * topic. Called by finalizeSimulatorRun after the terminal `end` event is
+ * pushed, so the browser sees an explicit completion instead of an idle drop.
+ */
+export function endSimulatorRun(runId: string): void {
+  const set = simulatorClients.get(runId);
+  if (!set) return;
+  for (const res of set) {
+    try {
+      res.end();
+    } catch {
+      // already closed
+    }
+  }
+  simulatorClients.delete(runId);
+  maybeStopSimKeepalive();
 }
 
 function endAllSimulatorClients(): void {
@@ -282,6 +344,7 @@ function endAllSimulatorClients(): void {
     }
   }
   simulatorClients.clear();
+  maybeStopSimKeepalive();
 }
 
 // Test seams.

@@ -2,7 +2,7 @@ import * as React from 'react'
 
 /**
  * The simulator run's OUTPUT pane (PORTAL §5.3, right pane) — also reused by the
- * `/simulator/results/:id` share page. Renders the streamed `chat`/`task` text
+ * `/simulator/results/:id` share page. Renders the streamed `chat` text
  * faithfully as it materializes (the §24.24 render-what-you-have rule). The
  * §5.3 two-panel RESUME/OUTREACH *concurrent fill* is deferred (it needs a
  * pinned sandbox output format + subagent attribution on the wire) — until then

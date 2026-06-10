@@ -11,6 +11,8 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
  * `subagent` dispatches (with `parent_tool_use_id` for nesting) + a single
  * end-of-run `result` carrying total `cost_usd`. No per-subagent cost/latency,
  * no per-line completion — SimActivity renders dispatches + the run total.
+ * The host then pushes a terminal `end` event `{ reason, cost_usd?, latency_ms }`
+ * and closes the stream (STRATEGY §24.21 Δ).
  */
 export interface SimTraceEvent {
   t: 'tool' | 'subagent' | 'result'
@@ -49,9 +51,10 @@ export interface SimRunState {
  * Drive a recruiter-simulator run (Sub-milestone 8.2, STRATEGY §24.31): POST
  * `/api/simulator`, then open the per-run SSE stream and accumulate the trace
  * (left pane) + output (right pane). A small state machine:
- *   idle → starting (POST) → running (SSE open) → done (terminal `task`)
+ *   idle → starting (POST) → running (SSE open) → done (terminal `end`)
  *                          ↘ unavailable (503 — disabled / no adapter)
- *                          ↘ error (network / bad response / stream drop)
+ *                          ↘ error (network / bad response / stream drop /
+ *                                   timed out with no output)
  * Client-only; the live run is ephemeral (a refresh resets — the durable
  * artifact is the `/simulator/results/:id` share page).
  */
@@ -67,6 +70,8 @@ export function useSimulatorRun(): SimRunState {
 
   const acRef = React.useRef<AbortController | null>(null)
   const startedRef = React.useRef(0)
+  // Mirror of `output` for the `end` handler (state would be stale in the closure).
+  const outputRef = React.useRef('')
 
   // Abort any open stream on unmount.
   React.useEffect(() => () => acRef.current?.abort(), [])
@@ -74,6 +79,7 @@ export function useSimulatorRun(): SimRunState {
   const reset = React.useCallback((): void => {
     acRef.current?.abort()
     acRef.current = null
+    outputRef.current = ''
     setStatus('idle')
     setRunId(null)
     setTrace([])
@@ -88,6 +94,7 @@ export function useSimulatorRun(): SimRunState {
     acRef.current?.abort()
     const ac = new AbortController()
     acRef.current = ac
+    outputRef.current = ''
     setStatus('starting')
     setRunId(null)
     setTrace([])
@@ -152,17 +159,26 @@ export function useSimulatorRun(): SimRunState {
             } else {
               setTrace((prev) => [...prev, tr])
             }
-          } else if (ev.event === 'chat' || ev.event === 'task') {
+          } else if (ev.event === 'chat') {
             const text = (payload as { text?: unknown }).text
             if (typeof text === 'string' && text.length > 0) {
-              setOutput((prev) => (prev ? `${prev}\n\n${text}` : text))
+              outputRef.current = outputRef.current ? `${outputRef.current}\n\n${text}` : text
+              setOutput(outputRef.current)
             }
-            if (ev.event === 'task') {
-              // Terminal message — the run is complete. Close the live stream.
-              setElapsedMs(Date.now() - startedRef.current)
+          } else if (ev.event === 'end') {
+            // Host-pushed terminal (STRATEGY §24.21 Δ) — complete or hard-wall.
+            const end = payload as { reason?: unknown; cost_usd?: unknown }
+            if (typeof end.cost_usd === 'number' && end.cost_usd > 0) {
+              setCost((prev) => prev ?? (end.cost_usd as number))
+            }
+            setElapsedMs(Date.now() - startedRef.current)
+            if (end.reason !== 'complete' && outputRef.current.length === 0) {
+              setStatus('error')
+              setErrorMessage('The run timed out before producing a result — please try again.')
+            } else {
               setStatus('done')
-              ac.abort()
             }
+            ac.abort()
           }
         },
         onError: () => {

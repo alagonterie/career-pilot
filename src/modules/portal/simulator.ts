@@ -21,6 +21,7 @@ import { getMessagingGroupByPlatform } from '../../db/messaging-groups.js';
 import { findSessionForAgent } from '../../db/sessions.js';
 import { getConfig } from '../../get-config.js';
 import { log } from '../../log.js';
+import { endSimulatorRun, pushSimulatorEvent } from './sse-broadcaster.js';
 
 /** Sandbox group folder — also a literal in container-config.ts + init-sandbox-group.ts. */
 const SANDBOX_FOLDER = 'career-pilot-sandbox';
@@ -212,9 +213,10 @@ function extractText(content: unknown): string | null {
 
 /**
  * Called by the portal channel adapter (via the registered sink) for every
- * outbound row of an active run. Captures cost from trace `result` events,
- * appends chat/task text, and finalizes on the terminal `task` message. Never
- * throws — it must not break the delivery path.
+ * outbound row of an active run. Appends chat text; the terminal signal is the
+ * `result` trace event — the Agent SDK's end-of-run message (§24.21 Δ; FIFO
+ * drain guarantees the turn's chat rows precede it), which carries the total
+ * cost and triggers finalize. Never throws — it must not break delivery.
  */
 export function recordSimulatorOutput(runId: string, kind: string, content: unknown): void {
   const acc = runs.get(runId);
@@ -222,13 +224,13 @@ export function recordSimulatorOutput(runId: string, kind: string, content: unkn
   try {
     if (kind === 'trace') {
       const tr = content as { t?: string; cost_usd?: number };
-      if (tr.t === 'result' && typeof tr.cost_usd === 'number') {
-        acc.costCents = Math.round(tr.cost_usd * 100); // total_cost_usd is cumulative → last wins
+      if (tr.t === 'result') {
+        if (typeof tr.cost_usd === 'number') acc.costCents = Math.round(tr.cost_usd * 100);
+        finalizeSimulatorRun(runId, 'complete');
       }
-    } else if (kind === 'chat' || kind === 'task') {
+    } else if (kind === 'chat') {
       const text = extractText(content);
       if (text) acc.output.push(text);
-      if (kind === 'task') finalizeSimulatorRun(runId, 'complete');
     }
   } catch (err) {
     log.warn('recordSimulatorOutput failed', { runId, kind, err });
@@ -246,6 +248,19 @@ export function finalizeSimulatorRun(runId: string, reason: string): void {
   if (!acc) return;
   runs.delete(runId); // claim once
   if (acc.hardWall) clearTimeout(acc.hardWall);
+
+  // Explicit terminal for the browser (§24.21 Δ): push `end`, then close the
+  // run's SSE clients — completion is signaled, never inferred from an idle drop.
+  try {
+    pushSimulatorEvent(runId, 'end', {
+      reason,
+      cost_usd: acc.costCents > 0 ? acc.costCents / 100 : undefined,
+      latency_ms: Date.now() - acc.startedAt,
+    });
+    endSimulatorRun(runId);
+  } catch (err) {
+    log.warn('finalizeSimulatorRun: stream close failed', { runId, err });
+  }
 
   try {
     persistRun(runId, acc);

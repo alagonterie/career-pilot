@@ -221,17 +221,17 @@ describe('seedDeterministicSimulatorRun (8.2 share page — §24.31)', () => {
 });
 
 describe('buildSimulatorScript (mock-simulator — §24.31)', () => {
-  it('produces a wire-shaped, personalized script ending in the terminal task', () => {
+  it('produces a wire-shaped, personalized script ending in the terminal result trace (§24.21 Δ)', () => {
     const steps = buildSimulatorScript('Acme Corp', 'Staff Engineer');
     // First push is delayed enough for the client to connect (no-op otherwise).
     expect(steps[0].delayMs).toBeGreaterThanOrEqual(300);
-    // Exactly one terminal `task`, and it is last.
-    const taskSteps = steps.filter((s) => s.kind === 'task');
-    expect(taskSteps).toHaveLength(1);
-    expect(steps[steps.length - 1].kind).toBe('task');
-    // Exactly one end-of-run `result` trace carrying cost (matches the real wire).
+    // No `task` kind anywhere — the agent-runner never emits it (§24.21 Δ).
+    expect(steps.every((s) => s.kind === 'trace' || s.kind === 'chat')).toBe(true);
+    // Exactly one end-of-run `result` trace carrying cost, and it is LAST —
+    // it is the terminal that finalizes the run; chat output precedes it.
     const results = steps.filter((s) => s.kind === 'trace' && (s.payload as { t?: string }).t === 'result');
     expect(results).toHaveLength(1);
+    expect(steps[steps.length - 1]).toBe(results[0]);
     expect((results[0].payload as { cost_usd: number }).cost_usd).toBeGreaterThan(0);
     // Personalized on the visitor's company/role.
     const text = JSON.stringify(steps);
