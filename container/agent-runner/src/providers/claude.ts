@@ -40,8 +40,10 @@ function summarizeToolInput(input: unknown): string | undefined {
  * — so the owner path (emitTrace=false) yields no trace events at all.
  *
  *  - `assistant` message → one event per `tool_use` content block (a `Task`
- *    block becomes a `subagent` event carrying `subagent_type`); the message's
- *    `parent_tool_use_id` marks calls made inside a subagent's own context.
+ *    OR `Agent` block becomes a `subagent` event carrying `subagent_type` —
+ *    the SDK's delegation tool is named `Agent` on the real wire; `Task` is
+ *    kept for compatibility); the message's `parent_tool_use_id` marks calls
+ *    made inside a subagent's own context.
  *  - `result` message → a single `result` event carrying `total_cost_usd`.
  */
 export function sdkMessageToTraceEvents(message: unknown, emitTrace: boolean): TraceEvent[] {
@@ -59,7 +61,7 @@ export function sdkMessageToTraceEvents(message: unknown, emitTrace: boolean): T
     for (const b of blocks) {
       const block = b as { type?: string; name?: string; input?: unknown };
       if (block.type !== 'tool_use') continue;
-      const isSubagent = block.name === 'Task';
+      const isSubagent = block.name === 'Task' || block.name === 'Agent';
       out.push({
         t: isSubagent ? 'subagent' : 'tool',
         name: block.name,

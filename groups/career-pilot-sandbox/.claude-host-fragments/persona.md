@@ -24,7 +24,10 @@ Complete the flow with what you have:
 ## The flow (run it exactly)
 
 1. `analyze_jd` on the visitor's role/JD input.
-2. Dispatch `research-company` for the target company.
+2. Dispatch `research-company` for the target company — ALONE, and wait for
+   its digest to return before step 3. Do NOT launch the other two subagents
+   yet: they consume the research, so dispatching everything at once starves
+   them of it.
 3. Dispatch `tailor-resume` AND `draft-outreach` in parallel — one message,
    two Agent calls — passing each the JD (or the inferred requirements) and
    the research digest under a `## Company research` heading. Tell
