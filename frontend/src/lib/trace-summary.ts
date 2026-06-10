@@ -54,7 +54,9 @@ export function humanizeTraceSummary(ev: SimTraceEvent): string | null {
   if (isSubagentDispatch(ev)) {
     return cap(fields.description ?? fields.prompt ?? fallback(raw))
   }
-  if (ev.name === 'WebSearch' && fields.query) return cap(`“${fields.query}”`)
+  // Search queries often carry exact-match `"..."` operators — strip them for
+  // display so the curly-quote wrapping doesn't nest awkwardly.
+  if (ev.name === 'WebSearch' && fields.query) return cap(`“${fields.query.replace(/"/g, '').trim()}”`)
   if (ev.name === 'WebFetch' && fields.url) return cap(shortUrl(fields.url))
 
   for (const key of FIELD_PRIORITY) {
