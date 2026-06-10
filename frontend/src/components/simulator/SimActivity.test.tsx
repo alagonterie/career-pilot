@@ -71,4 +71,27 @@ describe('SimActivity (PORTAL §5.3 trace pane)', () => {
     const researchLine = screen.getByText('research-company').closest('li')
     expect(researchLine?.querySelector('[data-testid="sim-trace-parallel"]')).toBeNull()
   })
+
+  it('renders legacy Agent-named dispatches as subagent lines with their subagent_type (§24.31 Δ)', () => {
+    // Traces persisted before the runner mapped the SDK's `Agent` tool to
+    // t:'subagent' — the label and the parallel badge must still work.
+    const legacy: SimTraceEvent[] = [
+      {
+        t: 'tool',
+        name: 'Agent',
+        input_summary: '{"subagent_type":"tailor-resume","description":"Rank + rewrite top bullets"}',
+      },
+      {
+        t: 'tool',
+        name: 'Agent',
+        input_summary: '{"subagent_type":"draft-outreach","description":"Tone-matched cold email"}',
+      },
+    ]
+    render(<SimActivity trace={legacy} status="running" cost_usd={null} />)
+    expect(screen.getByText('tailor-resume')).toBeInTheDocument()
+    expect(screen.getByText('draft-outreach')).toBeInTheDocument()
+    expect(screen.queryByText('Agent')).not.toBeInTheDocument()
+    expect(screen.getAllByTestId('sim-trace-subagent')).toHaveLength(2)
+    expect(screen.getAllByTestId('sim-trace-parallel')).toHaveLength(2)
+  })
 })

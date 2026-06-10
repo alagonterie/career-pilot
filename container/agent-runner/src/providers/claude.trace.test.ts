@@ -38,6 +38,15 @@ describe('sdkMessageToTraceEvents', () => {
     expect(events[0].subagent).toBe('research-company');
   });
 
+  it('translates an Agent block into a subagent event too (the real wire name — §24.31 Δ)', () => {
+    const msg = assistant([
+      { type: 'tool_use', name: 'Agent', input: { subagent_type: 'tailor-resume', prompt: 'go' } },
+    ]);
+    const events = sdkMessageToTraceEvents(msg, true);
+    expect(events[0].t).toBe('subagent');
+    expect(events[0].subagent).toBe('tailor-resume');
+  });
+
   it('carries parent_tool_use_id for calls made inside a subagent', () => {
     const msg = assistant([{ type: 'tool_use', name: 'WebFetch', input: { url: 'https://x' } }], 'toolu_parent');
     const events = sdkMessageToTraceEvents(msg, true);

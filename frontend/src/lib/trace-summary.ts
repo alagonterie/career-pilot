@@ -13,13 +13,45 @@ const MAX_LEN = 110
 
 const FIELD_PRIORITY = ['description', 'query', 'url', 'prompt', 'command', 'file_path', 'path', 'role'] as const
 
+/**
+ * Is this trace row a subagent dispatch? `t:'subagent'` is the canonical wire
+ * shape; `name:'Agent'|'Task'` covers traces persisted before the runner
+ * mapped the SDK's delegation tool (named `Agent`) to `t:'subagent'`.
+ */
+export function isSubagentDispatch(ev: SimTraceEvent): boolean {
+  return ev.t === 'subagent' || ev.name === 'Agent' || ev.name === 'Task'
+}
+
+/** The display label for a dispatch line — the subagent's name when it is one
+ * (from the event, else dug out of the legacy input_summary). */
+export function dispatchLabel(ev: SimTraceEvent): string {
+  if (!isSubagentDispatch(ev)) return ev.name ?? 'tool'
+  return ev.subagent ?? extractOne(ev.input_summary, 'subagent_type') ?? ev.name ?? 'subagent'
+}
+
+/** Pull one string field from a (possibly truncated) JSON summary. */
+function extractOne(raw: string | undefined, key: string): string | null {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    if (parsed && typeof parsed === 'object') {
+      const v = parsed[key]
+      return typeof v === 'string' && v.trim() ? v.trim() : null
+    }
+  } catch {
+    const m = raw.match(new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)`))
+    if (m && m[1].trim()) return unescapeJson(m[1].trim())
+  }
+  return null
+}
+
 export function humanizeTraceSummary(ev: SimTraceEvent): string | null {
   const raw = ev.input_summary
   if (!raw || raw.trim().length === 0) return null
 
   const fields = extractFields(raw)
 
-  if (ev.t === 'subagent' || ev.name === 'Agent' || ev.name === 'Task') {
+  if (isSubagentDispatch(ev)) {
     return cap(fields.description ?? fields.prompt ?? fallback(raw))
   }
   if (ev.name === 'WebSearch' && fields.query) return cap(`“${fields.query}”`)

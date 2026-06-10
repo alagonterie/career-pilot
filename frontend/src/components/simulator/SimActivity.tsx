@@ -1,7 +1,7 @@
 import { useReducedMotion } from 'motion/react'
 import * as React from 'react'
 
-import { humanizeTraceSummary } from '~/lib/trace-summary'
+import { dispatchLabel, humanizeTraceSummary, isSubagentDispatch } from '~/lib/trace-summary'
 import { cn } from '~/lib/utils'
 import type { SimRunStatus, SimTraceEvent } from '~/lib/use-simulator-run'
 
@@ -103,21 +103,25 @@ export function SimActivity({
           >
             {trace.map((ev, i) => {
               const nested = ev.parent_tool_use_id != null
-              const label = ev.t === 'subagent' ? (ev.subagent ?? 'subagent') : (ev.name ?? 'tool')
+              const isSub = isSubagentDispatch(ev)
+              const label = dispatchLabel(ev)
               const summary = humanizeTraceSummary(ev)
               // Adjacent subagent dispatches = the orchestrator launched them in
               // one message → they run CONCURRENTLY (PORTAL §5.3's "doing
               // multiple things at once" moment). Honest by construction: the
               // badge only appears when the wire shows back-to-back dispatches.
-              const parallel = ev.t === 'subagent' && (trace[i - 1]?.t === 'subagent' || trace[i + 1]?.t === 'subagent')
+              const parallel =
+                isSub &&
+                ((trace[i - 1] != null && isSubagentDispatch(trace[i - 1])) ||
+                  (trace[i + 1] != null && isSubagentDispatch(trace[i + 1])))
               return (
                 <li
                   key={i}
-                  data-testid={ev.t === 'subagent' ? 'sim-trace-subagent' : 'sim-trace-tool'}
+                  data-testid={isSub ? 'sim-trace-subagent' : 'sim-trace-tool'}
                   className={cn('flex flex-wrap items-baseline gap-x-2 py-0.5', nested && 'pl-5')}
                 >
                   <span className="text-muted-foreground">▸</span>
-                  <span className={ev.t === 'subagent' ? 'text-primary' : 'text-accent-cool'}>{label}</span>
+                  <span className={isSub ? 'text-primary' : 'text-accent-cool'}>{label}</span>
                   {parallel ? (
                     <span
                       data-testid="sim-trace-parallel"

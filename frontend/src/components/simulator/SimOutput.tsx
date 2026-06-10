@@ -85,7 +85,7 @@ function renderMarkdownish(text: string): React.ReactNode {
     } else {
       flushList(String(i))
       out.push(
-        <p key={`p-${i}`} className="text-sm leading-relaxed text-foreground/90">
+        <p key={`p-${i}`} className="my-2 text-sm leading-relaxed text-foreground/90 first:mt-0">
           {renderInline(line)}
         </p>,
       )
