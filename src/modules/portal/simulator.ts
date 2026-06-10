@@ -131,6 +131,7 @@ export function startSimulatorRun(input: SimulatorInput): SimulatorStartResult {
     costCents: 0,
     cacheHits: 0,
     output: [],
+    trace: [],
     hardWall: null,
   };
   acc.hardWall = setTimeout(() => finalizeSimulatorRun(simulationId, 'hard-wall'), hardWallMs());
@@ -174,8 +175,14 @@ interface RunAccumulator {
   costCents: number;
   cacheHits: number;
   output: string[];
+  /** Dispatch TraceEvents (not the terminal `result`), persisted to trace_json
+   * for the share page's expandable activity (§24.31 Δ). Capped. */
+  trace: unknown[];
   hardWall: NodeJS.Timeout | null;
 }
+
+/** Cap on persisted dispatch-trace steps per run (keeps trace_json bounded). */
+const TRACE_PERSIST_CAP = 200;
 
 /** A persisted simulator run (subset of the simulator_runs columns). */
 export interface SimulatorRunRow {
@@ -191,6 +198,7 @@ export interface SimulatorRunRow {
   cache_hit_count: number | null;
   shareable: number;
   expires_at: string | null;
+  trace_json: string | null;
 }
 
 const runs = new Map<string, RunAccumulator>();
@@ -228,6 +236,8 @@ export function recordSimulatorOutput(runId: string, kind: string, content: unkn
       if (tr.t === 'result') {
         if (typeof tr.cost_usd === 'number') acc.costCents = Math.round(tr.cost_usd * 100);
         finalizeSimulatorRun(runId, 'complete');
+      } else if (acc.trace.length < TRACE_PERSIST_CAP) {
+        acc.trace.push(content);
       }
     } else if (kind === 'chat') {
       const text = extractText(content);
@@ -293,11 +303,11 @@ function persistRun(runId: string, acc: RunAccumulator): void {
       `INSERT OR REPLACE INTO simulator_runs (
          id, ts, visitor_company, visitor_role, jd_excerpt, tailored_resume,
          outreach_draft, total_cost_cents, total_latency_ms, cache_hit_count,
-         shareable, expires_at
+         shareable, expires_at, trace_json
        ) VALUES (
          @id, @ts, @company, @role, @jd, @resume,
          @outreach, @cost, @latency, @cache,
-         1, @expires
+         1, @expires, @trace
        )`,
     )
     .run({
@@ -312,6 +322,7 @@ function persistRun(runId: string, acc: RunAccumulator): void {
       latency: Date.now() - acc.startedAt,
       cache: acc.cacheHits,
       expires: new Date(now.getTime() + ttlDays * 86_400_000).toISOString(),
+      trace: acc.trace.length > 0 ? JSON.stringify(acc.trace) : null,
     });
 }
 

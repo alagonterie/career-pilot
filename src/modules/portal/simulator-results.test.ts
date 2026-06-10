@@ -64,6 +64,11 @@ describe('run accumulation + finalize', () => {
     expect(row!.tailored_resume).toContain('Done — outreach drafted.');
     expect(typeof row!.total_latency_ms).toBe('number');
     expect(row!.expires_at).not.toBeNull();
+    // The dispatch trace persists for the share page (§24.31 Δ); the terminal
+    // `result` event is captured into cost, not stored as a step.
+    const trace = JSON.parse(row!.trace_json!) as Array<{ t: string; subagent?: string }>;
+    expect(trace).toHaveLength(1);
+    expect(trace[0]).toMatchObject({ t: 'subagent', subagent: 'research-company' });
   });
 
   it('finalize is idempotent — a result/hard-wall race persists exactly once', () => {

@@ -35,4 +35,26 @@ describe('SimActivity (PORTAL §5.3 trace pane)', () => {
     render(<SimActivity trace={[]} status="running" cost_usd={null} />)
     expect(screen.getByTestId('sim-activity-empty')).toHaveTextContent('starting')
   })
+
+  it('humanizes a raw-JSON input_summary into its salient field (§24.31 Δ)', () => {
+    render(
+      <SimActivity
+        trace={[{ t: 'tool', name: 'WebSearch', input_summary: '{"query":"Stripe engineering blog 2026"}' }]}
+        status="running"
+        cost_usd={null}
+      />,
+    )
+    expect(screen.getByText('“Stripe engineering blog 2026”')).toBeInTheDocument()
+    expect(screen.queryByText(/\{"query"/)).not.toBeInTheDocument()
+  })
+
+  it('shows the elapsed ticker while running when startedAt is provided', () => {
+    render(<SimActivity trace={trace} status="running" cost_usd={null} startedAt={Date.now() - 65_000} />)
+    expect(screen.getByTestId('sim-elapsed')).toHaveTextContent(/1:0[5-9]/)
+  })
+
+  it('hides the ticker once done', () => {
+    render(<SimActivity trace={trace} status="done" cost_usd={0.04} startedAt={Date.now() - 65_000} />)
+    expect(screen.queryByTestId('sim-elapsed')).not.toBeInTheDocument()
+  })
 })

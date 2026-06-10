@@ -523,6 +523,8 @@ Form validation: company + role required, JD optional (if empty, we use sensible
 
 A rate limit indicator: "8 of 10 free runs remaining today (per IP)". Limit prevents abuse.
 
+> **Build note (STRATEGY §24.31 Δ 2026-06-10):** the timing/cost figures in this section ("20–30s", "~$0.04") were pre-build estimates — a real run takes **a few minutes** and ~$0.25; the shipped copy says so honestly and the ACTIVITY pane carries a live elapsed ticker. The rate-limit indicator is NOT rendered until the Phase-9 per-IP cap actually exists (a displayed-but-unenforced limit is fabrication). The share page additionally renders the run's persisted activity trace as an expandable section (`simulator_runs.trace_json`, migration 128).
+
 #### Running view (the wow moment)
 
 The moment the visitor clicks Run, the form animates up and the page switches to a 2-pane streaming view. The left pane shows live agent activity; the right pane shows output materializing as subagents finish. The orchestration runs in three phases (one serial, one parallel, then finalization):

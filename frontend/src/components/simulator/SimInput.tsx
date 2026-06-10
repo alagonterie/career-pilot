@@ -74,23 +74,25 @@ export function SimInput({ onRun, disabled }: { onRun: (input: SimRunInput) => v
         <Button type="submit" disabled={disabled}>
           {disabled ? 'Starting…' : 'Run simulation →'}
         </Button>
-        <p className="font-mono text-[11px] text-muted-foreground">10 of 10 free runs remaining today</p>
       </div>
 
       <div className="mt-2 rounded-lg border border-border bg-card px-5 py-4 text-sm text-muted-foreground">
         <p className="mb-2 font-mono text-xs uppercase tracking-widest text-foreground">What happens</p>
         <ol className="ml-4 list-decimal space-y-1">
-          <li>A sandbox container spins up in ~3s.</li>
+          <li>A sandbox container spins up.</li>
           <li>
-            <span className="text-foreground/90">research-company</span> digests your role + company.
+            <span className="text-foreground/90">research-company</span> digests your role + company — live web
+            research, not a canned demo.
           </li>
           <li>
             <span className="text-foreground/90">tailor-resume</span> +{' '}
             <span className="text-foreground/90">draft-outreach</span> run in parallel.
           </li>
-          <li>You get a draft pitch + email in 20–30s.</li>
+          <li>You get a tailored pitch + outreach email — a real run takes a few minutes.</li>
         </ol>
-        <p className="mt-3 text-xs">No data persists. No DB writes. Cost ~$0.04 per run.</p>
+        <p className="mt-3 text-xs">
+          No private data is touched. No DB writes. The run cost is reported transparently.
+        </p>
       </div>
     </form>
   )

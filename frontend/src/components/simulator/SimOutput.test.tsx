@@ -21,4 +21,25 @@ describe('SimOutput (PORTAL §5.3 result pane)', () => {
     render(<SimOutput text="" />)
     expect(screen.getByTestId('sim-output-empty')).toBeInTheDocument()
   })
+
+  it('renders --- as a rule, not a paragraph (§24.31 Δ)', () => {
+    const { container } = render(<SimOutput text={'## Bullets\n- one\n\n---\n\n## Outreach\nHi'} />)
+    expect(container.querySelector('hr')).toBeInTheDocument()
+    expect(screen.queryByText('---')).not.toBeInTheDocument()
+  })
+
+  it('renders **bold** and `code` inline instead of raw markers', () => {
+    render(<SimOutput text={'**Subject:** Senior Engineer — `analyze_jd` approved'} />)
+    const strong = screen.getByText('Subject:')
+    expect(strong.tagName).toBe('STRONG')
+    const code = screen.getByText('analyze_jd')
+    expect(code.tagName).toBe('CODE')
+    expect(screen.queryByText(/\*\*/)).not.toBeInTheDocument()
+  })
+
+  it('renders ### as a subheading level below ##', () => {
+    render(<SimOutput text={'## Section\n### Sub-point\nbody'} />)
+    expect(screen.getByText('Section').tagName).toBe('H3')
+    expect(screen.getByText('Sub-point').tagName).toBe('H4')
+  })
 })
