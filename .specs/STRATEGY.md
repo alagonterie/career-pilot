@@ -3922,6 +3922,8 @@ This is the honest, low-risk choice: turn-level data on a turn-level row (semant
 
 **Reconciled (§24.35 Pass C).** DoD #5's "`LogStream` renders the lanes by presence" still holds for *action* rows, but the `category='turn'` row itself no longer renders as a peer line — it renders as a **batch-sealing separator** (the same metrics, inline in a rule), and the compact home ticker drops turn rows entirely. The capture/attribution here is unchanged; only the turn row's *presentation* moved (§24.35 Pass C).
 
+**Reconciled (§24.55, cost truth).** The **portal-worthy gate is lifted** — every owner turn now emits telemetry (the gate made /live a sample and its matcher never counted `persist_*` turns), and `cache_hit`'s boolean render is superseded by the quantitative `cache_read_pct` column. Capture mechanics, the owner-only host gate, and the `telemetry_capture` kill switch are otherwise as specified here. See §24.55.
+
 ---
 
 #### 24.35 Phase 8 UI-feedback refinement (hands-on polish) + Pass A — navigation & layout reachability
@@ -4850,6 +4852,39 @@ DoD (F3 additions): the `build-interview-kit` invocation prompt carries a `## Jo
 4. DoD lives in `groups/career-pilot-sandbox/VERIFICATION.md` (runtime-artifact rule).
 
 **Definition of done (spec-side).** `renderSandboxCandidate` includes resume/skills/roles and excludes comp + quiet hours (unit-tested); the sandbox spawn path renders the fragment (folder-gated like the owner hook); a live box run completes the full §5.3 flow and persists a `simulator_runs` row whose output contains tailored bullets + an outreach email, with zero questions asked.
+
+---
+
+#### 24.55 Cost truth — full-turn capture, quantitative cache lane, simulator spend in the aggregate
+
+**Finding (2026-06-10, owner-surfaced: "the platform console shows a different cost than /live's Cost & cache").** Both numbers are real; they measure different things. The divergence decomposes into five sources, in measured order of magnitude on the dev box (06-08 → 06-10: 16 captured turns, $10.56, all `claude-haiku-4-5` via the dev tier):
+
+1. **The §24.34 portal-worthy gate makes /live a *sample*, not a total.** Turn telemetry is emitted only when the turn made ≥1 `__record_(funnel_event|progress)` call — so chat-only turns, briefings, curator sweeps that advance nothing, and **every `persist_*`-writing turn** (interview kits, scraped leads, funnel-state materialization — substantive work the matcher never counted) are invisible to /live. The uncaptured share is not host-recoverable retroactively (no per-turn cost lands anywhere else).
+2. **Sandbox/simulator runs are excluded by design** (`record_turn_telemetry` is owner-only) — but their cost IS captured per-run in `simulator_runs.total_cost_cents` and was never summed into the panel. Measured: 10 runs / $2.42 on 2026-06-10 alone (~$0.24/run) — a whole public-facing spend lane the panel omitted.
+3. **Host-side Haiku calls** (sanitizer Pass 3, win-confidence, recruiter-sim prose — the three `api.portkey.ai/chat/completions` fetch sites) are metered by Portkey but counted nowhere locally. Magnitude: ~$0.002/call, Pass 3 budget-capped at $1/day — worst case observed ≤ $0.05/day. Negligible but nonzero.
+4. **`total_cost_usd` is the SDK's price-table estimate, not billing.** It excludes Anthropic server-side tool fees (web search: $10/1k searches — measured 8% of a Phase-2.x validation run) and can drift from the invoice line. The console additionally includes any non-box usage billed to the same key (Phase-2.x validation runs, ad-hoc API use).
+5. **Window/lifetime mismatch + dev resets.** /live's headline is lifetime-of-this-DB (a `reset:dev` zeroes it); the console buckets by calendar day/month and never resets.
+
+**Cache economics (measured, the item-7 register).** Token mix across the 16 captured turns: cache_read 16.7M (≈$1.67) · cache_creation 3.2M (**≈$4.0–6.4 depending on 5m/1h TTL mix — the single largest cost bucket, ~38–50%**) · uncached input 2.0M (≈$1.97) · output 0.37M (≈$1.84). Levers, ranked:
+- **L1 — cache-write churn.** Incremental prefix-writes are inherent to agentic loops (each tool result extends the cached prefix), but the volume (~200k cache-creation tokens/turn) is the #1 spend driver. Lever: context hygiene — cap tool-result sizes, avoid feeding large bodies inline (see L2). The 24h-preamble idea stays CLOSED (investigated + declined 2026-06-08; 1h is Anthropic's max, already wired).
+- **L2 — giant uncached inline payloads.** One turn carried 264k *uncached* input tokens (≈$0.26 + the matching cache-write) — a JD/transcript fed inline. Lever: pass references/excerpts, not whole bodies, when dispatching subagents.
+- **L3 — output volume is the product.** 368k output tokens are drafts/kits/briefings; cutting them costs quality. No action.
+- **L4 — the simulator is the only *unbounded* spend surface** (public, ~$0.24/run). The Phase-9 per-day cap (PORTAL §5.3 rate-limit note) is the lever; until it exists the honest move is showing the spend (this section).
+- **L5 — prod multiplier.** Dev runs the Haiku tier; prod's Sonnet tier prices ~3× across input/output/cache. Read every number above ×3 for prod planning.
+
+**What lands (one host+container+frontend pass):**
+1. **Full-turn capture — the gate lifts.** `poll-loop.ts` emits `record_turn_telemetry` on **every** owner `result` (was: only `record_calls > 0`); `record_calls` stays in `details_json` as data. Sub-cent turns may now land $0.00 rows — accepted (§24.34's `cost_micros` widening stays the noted follow-up); /live render is already safe (`sealVisibleTurns` collapses bare seals; the ticker drops turn rows). The owner-only host gate + `telemetry_capture` kill switch are unchanged; sandbox emissions still write nothing.
+2. **Quantitative cache lane.** Migration 129 adds `public_audit_trail.cache_read_pct INTEGER` (0–100, NULL = unknown/legacy). `handleRecordTurnTelemetry` derives it from `details.model_usage`: `round(100 · Σcache_read / Σ(input + cache_read + cache_creation))` (NULL when the prompt-side sum is 0). `cache_hit` keeps being written (cheap back-compat) but the UI drops the boolean badge: the SSE broadcaster + `/api/activity` select the new column, and LogStream's turn seal + metric lane render `cache NN%` only when present. (The always-true `cache✓` was meaningless: any turn ≥2 reads *some* cache. The ticker's `(cache hit)` lane was already dead — turn rows never reach it — and is removed.)
+3. **Simulator spend joins the aggregate.** `computeLocal` adds `sim_cost_cents_total` / `sim_cost_cents_24h` (SUM over `simulator_runs.total_cost_cents`); the COST & CACHE headline becomes the **combined** estimate (agent turns + simulator), with the windowed line broken down (`$A today · agent $B · sim $C`). Labels stay "est".
+4. **Documented exclusions (no UI change).** What the estimate still omits — host-side Haiku (≤$0.05/day), web-search fees, SDK-vs-billing drift, non-box usage on the key — lives here, not in panel copy. Free-plan calibration stays manual: the Portkey dashboard segmented by `x-portkey-metadata.surface` / `agent_group` (§24.46) is the per-caller ground truth; the Analytics REST API remains Enterprise-only (§24.47).
+
+**Definition of done.**
+1. Every owner turn writes a `category='turn'` row (gate lifted; container test updated); a sandbox emission still writes nothing; `telemetry_capture=false` still skips.
+2. Migration 129 applied; the handler derives + writes `cache_read_pct` (unit-tested incl. the zero-prompt → NULL edge); legacy rows read back NULL.
+3. `/api/activity` + the SSE rows carry `cache_read_pct`; LogStream renders `cache NN%` (seal + lane) when present and no boolean badge anywhere; LiveTicker's dead cache lane removed.
+4. `/api/telemetry.local` gains the two sim-spend fields; CostCachePanel renders the combined headline + the broken-down today line; fixtures seed `cache_read_pct` + keep the panels lit; frontend unit + E2E updated; visual baselines re-blessed as needed.
+5. Host suite + container typecheck + frontend suites green; deployed to dev; a live owner turn seals with a quantitative cache percentage.
+6. Spec deltas: this §24.55; §24.34 gate reconciliation note; PORTAL §5.2 trace-telemetry backend note + COST & CACHE panel copy updated to the local-capture reality.
 
 ---
 

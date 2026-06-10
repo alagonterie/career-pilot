@@ -414,7 +414,7 @@ The stream auto-scrolls until the visitor manually scrolls up, at which point a 
 
 Filter chips above the stream: `[All] [Reactive] [Proactive] [Research] [Tailor] [Outreach] [Prep] [Scrape] [System]`.
 
-> **Backend note — trace telemetry capture.** The per-line metrics (`model_used`, `tokens`, `cost_cents`, `cache_hit`, `latency_ms`) and the `proactive` marker that powers the `◆` glyph + the Reactive/Proactive filter exist as columns on `public_audit_trail` but are not yet populated by any writer. The capture path (mirror the Agent SDK's per-turn usage from the container/poll-loop level; source `proactive` from the session trigger kind) is specified in STRATEGY.md §24.14 and built in Phase 5 alongside the SSE layer. Until then these fields render as `—` (the empty-state per §10).
+> **Backend note — trace telemetry capture (updated per STRATEGY §24.34/§24.55).** The per-line metrics are captured per-*turn* (a `category='turn'` seal row carrying model / tokens / cost / cache / latency — the SDK resolves cost only per `query()` call), populated for **every** owner turn (§24.55 lifted the original portal-worthy gate). Cache state renders quantitatively — `cache NN%` from `cache_read_pct` (share of prompt tokens served from cache) — never as a boolean badge (an agent turn virtually always reads *some* cache, so `cache✓` carried no information). Action rows keep their progressive lanes (render-if-present).
 
 #### Panel: `FUNNEL (compact)`
 A reduced version of the funnel race. Same data as `/momentum` but compacted to one row.
@@ -427,6 +427,8 @@ Two numbers:
 Tagline below: *"This page costs the candidate ~$ZZ/day to run. Cache saves the rest."*
 
 This single signal is one of the strongest credibility moves on the site: real cost, real numbers, transparent.
+
+> **Build note (per STRATEGY §24.47/§24.55).** Portkey's analytics API is Enterprise-only, so the shipped panel is sourced from **local per-turn capture** instead: the headline is the lifetime **combined** estimate (agent turns + simulator runs, both SDK estimates labeled "est"), the sub-line is the cache-read share of prompt tokens, and the windowed bottom line breaks today down (`$A today · agent $B · sim $C`). The "saved via cache" dollar figure and tagline were dropped — a derived counterfactual, not a captured number. What the estimate still excludes (host-side Haiku calls, web-search fees, SDK-vs-billing drift) is registered in STRATEGY §24.55.
 
 #### Panel: `RECENT OUTCOMES`
 A log of recent funnel state changes:
