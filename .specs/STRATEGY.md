@@ -4962,6 +4962,8 @@ DoD (F3 additions): the `build-interview-kit` invocation prompt carries a `## Jo
 4. Suites + axe green; `funnel.png` / `mobile-momentum.png` re-blessed; deployed to dev; owner re-test on the phone is the final gate.
 5. Spec deltas: this §24.58; PORTAL §13 gains the base-grid clamp + scroll-lock as standing mobile rules.
 
+**Δ (2026-06-10, owner re-test): scroll position lost on close + Android back should dismiss the drawer.** Both trace to the §24.57 `?app=` param sync. (1) Closing navigated to clear the param, and TanStack Router's `navigate` **resets scroll to top by default** — drawer-param navigations now pass `resetScroll: false`. (2) The drawer's open-state becomes **URL-derived** (the param IS the state: `selected = apps.find(ref === appParam)`): a card tap *pushes* `?app=«ref»`, so the OS back gesture pops it and dismisses the drawer in place — the ingrained mobile overlay habit, instead of being thrown off the page. Explicit close (Esc / backdrop / button) pops the entry it pushed (`history.back()`) so history doesn't accumulate; a direct deep-link arrival (no prior in-app entry) clears via `replace` instead, so back still exits the site correctly. This DELETES the §24.57 consume-once guard — with single-source-of-truth state there is no close/reopen race to guard. DoD: E2E asserts scroll preserved across open/close and that browser-back closes the drawer while staying on the page; the §8.5 focus contract and the §24.57 deep-link tests pass unchanged.
+
 ---
 
 ## Part VI: Open questions
