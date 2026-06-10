@@ -5038,6 +5038,29 @@ DoD (F3 additions): the `build-interview-kit` invocation prompt carries a `## Jo
 
 ---
 
+#### 24.62 Layout-stability + polish batch (Track H)
+
+**Owner register, 2026-06-10 (the third TODO batch's small items — all frontend, zero backend).** Four visible defects plus one bounded investigation. Three of the four share one root cause: the classic-scrollbar platforms (Windows — the owner's desktop) add/remove the root scrollbar as page height and scroll-locks change, and the centered `max-w-*` layouts shift by half a scrollbar width every time.
+
+**What lands:**
+
+1. **Root scrollbar gutter, stabilized.** `scrollbar-gutter: stable` on `html` (one global rule in `app.css`). This fixes, with a single line: (a) the **header shift between pages** — tall pages show the root scrollbar, short ones don't, and every centered container re-centers ~8px; (b) the **content shift when any dialog opens** — `useDialog`'s scroll-lock (`body.style.overflow='hidden'`, §24.58) removes the root scrollbar mid-open; with the gutter reserved, locking scroll no longer moves content. Trade-off accepted: short pages permanently reserve the gutter strip on classic-scrollbar platforms (overlay-scrollbar platforms — macOS default, most phones — never took layout space and are unaffected).
+2. **`/live` panel loading→loaded equalization.** Extend the §24.36 `min-h` convention (already on `Cost & cache` and `Recent outcomes`) to the four panels that never got it: **System status, Active sessions, Container pool, LLM telemetry** — each carries a `min-h` sized to its MAX loaded footprint (measured at build time), skeleton line-counts matched, so the poll landing doesn't resize the stat row. (The visible regression was LLM telemetry growing its loaded footprint — the §24.55/§24.57 footer rows + tips — without a floor.)
+3. **Metric labels don't wrap.** The §24.57 InfoTip beside "turn p50" pushed the label past its `grid-cols-3` column width and the text wraps ("TURN" / "P50" on two lines). The `Metric` label text gets `whitespace-nowrap` (the ⓘ stays beside it on the same line); verified at the rail's narrowest width. If a future label genuinely can't fit its column, the answer is a shorter label, not a wrap.
+4. **Active sessions, modestly enriched.** The thinnest panel gets the §24.57 explain-on-tap treatment rather than padding: an ⓘ on the panel (what a session *is* — one isolated conversation thread backed by its own container; copy finalized against `/api/architecture`'s actual active/running semantics at build time) and a one-line muted footer in the siblings' style (e.g. "1 session = 1 isolated container"). No new data, no invented metrics — `/api/architecture` exposes only `active`/`running` counts.
+5. **Architecture node-click smoothness (bounded investigation).** The desktop-only "laggy" feel on node click is plausibly mostly item 1's bug — the page reflowing sideways *during* the panel's `layoutId` grow animation reads as jank. Re-test after the gutter fix; if still rough, profile with suspects ranked: the full-viewport `backdrop-blur-sm` paint (desktop area ≫ phone), then the motion shared-layout measurement. Record the outcome as a Δ here; don't remove the grow animation on speculation.
+
+**Definition of done.**
+1. E2E: opening the pipeline drawer (and the architecture node panel) produces zero horizontal movement of a fixed header probe element (boundingBox before/after); if the e2e harness renders overlay scrollbars and can't reproduce the shift, the test asserts the root `scrollbar-gutter` computed style instead and the owner's desktop eyeball carries the check.
+2. The four /live panels hold one height across loading→ok (min-h floors in place, skeletons matched); visual baselines re-blessed where they change.
+3. "turn p50" (and every Metric label) renders on one line at the narrowest rail width.
+4. The Active-sessions ⓘ + footer render with copy that is honest to the endpoint's semantics; axe green.
+5. Suites + both tscs + format green; deployed to dev; owner desktop pass (header static across pages, no shift on node click, stable panels, one-line P50) is the final gate.
+6. Smoothness investigation outcome recorded as a Δ on this section (fixed-by-gutter / profiled finding / accepted).
+7. Spec deltas: this §24.62; PORTAL §13 gains the root-scrollbar-gutter standing rule.
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
