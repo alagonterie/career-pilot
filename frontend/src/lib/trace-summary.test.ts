@@ -20,6 +20,13 @@ describe('humanizeTraceSummary', () => {
     expect(out).toBe('“Stripe engineering blog 2026”')
   })
 
+  it('strips exact-match quotes inside a query so the curly wrap does not nest', () => {
+    const out = humanizeTraceSummary(
+      ev({ name: 'WebSearch', input_summary: '{"query":"\\"Vertafore\\" engineering culture 2026"}' }),
+    )
+    expect(out).toBe('“Vertafore engineering culture 2026”')
+  })
+
   it('shortens the url for WebFetch', () => {
     const out = humanizeTraceSummary(
       ev({
