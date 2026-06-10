@@ -105,6 +105,11 @@ export function SimActivity({
               const nested = ev.parent_tool_use_id != null
               const label = ev.t === 'subagent' ? (ev.subagent ?? 'subagent') : (ev.name ?? 'tool')
               const summary = humanizeTraceSummary(ev)
+              // Adjacent subagent dispatches = the orchestrator launched them in
+              // one message → they run CONCURRENTLY (PORTAL §5.3's "doing
+              // multiple things at once" moment). Honest by construction: the
+              // badge only appears when the wire shows back-to-back dispatches.
+              const parallel = ev.t === 'subagent' && (trace[i - 1]?.t === 'subagent' || trace[i + 1]?.t === 'subagent')
               return (
                 <li
                   key={i}
@@ -113,6 +118,15 @@ export function SimActivity({
                 >
                   <span className="text-muted-foreground">▸</span>
                   <span className={ev.t === 'subagent' ? 'text-primary' : 'text-accent-cool'}>{label}</span>
+                  {parallel ? (
+                    <span
+                      data-testid="sim-trace-parallel"
+                      title="Dispatched together — these subagents run concurrently"
+                      className="rounded-full border border-primary/40 bg-primary/10 px-1.5 font-mono text-[10px] text-primary"
+                    >
+                      ∥ parallel
+                    </span>
+                  ) : null}
                   {summary ? (
                     <span className="min-w-0 flex-1 text-muted-foreground [overflow-wrap:anywhere]">{summary}</span>
                   ) : null}

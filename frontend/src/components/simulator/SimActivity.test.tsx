@@ -57,4 +57,18 @@ describe('SimActivity (PORTAL §5.3 trace pane)', () => {
     render(<SimActivity trace={trace} status="done" cost_usd={0.04} startedAt={Date.now() - 65_000} />)
     expect(screen.queryByTestId('sim-elapsed')).not.toBeInTheDocument()
   })
+
+  it('badges adjacent subagent dispatches as parallel — and never a lone one (§5.3)', () => {
+    const parallelTrace: SimTraceEvent[] = [
+      { t: 'subagent', subagent: 'research-company' },
+      { t: 'tool', name: 'WebSearch', parent_tool_use_id: 'tu' },
+      { t: 'subagent', subagent: 'tailor-resume' },
+      { t: 'subagent', subagent: 'draft-outreach' },
+    ]
+    render(<SimActivity trace={parallelTrace} status="running" cost_usd={null} />)
+    const badges = screen.getAllByTestId('sim-trace-parallel')
+    expect(badges).toHaveLength(2) // tailor-resume + draft-outreach, NOT research-company
+    const researchLine = screen.getByText('research-company').closest('li')
+    expect(researchLine?.querySelector('[data-testid="sim-trace-parallel"]')).toBeNull()
+  })
 })
