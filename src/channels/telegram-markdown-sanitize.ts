@@ -9,17 +9,26 @@
  */
 
 const CODE_PATTERN = /```[\s\S]*?```|`[^`\n]*`/g;
+// Bare URLs and markdown link targets. Real job-lead URLs carry `_` (e.g.
+// `?gh_jid=…`, `utm_campaign=…`, Drive file IDs) — left in the prose they
+// poison the odd-delimiter counts below and get globally stripped, corrupting
+// the link (§24.56). Protect them like code spans: swap out before any
+// transform, restore byte-identical at the end. `[^\s)]+` stops at `)` so a
+// `[text](url)` target doesn't swallow its closing paren.
+const URL_PATTERN = /https?:\/\/[^\s)]+/g;
 const PLACEHOLDER_PREFIX = '\x00CODE';
 const PLACEHOLDER_SUFFIX = '\x00';
 
 export function sanitizeTelegramLegacyMarkdown(input: string): string {
   if (!input) return input;
 
-  const codeSegments: string[] = [];
-  let text = input.replace(CODE_PATTERN, (m) => {
-    codeSegments.push(m);
-    return `${PLACEHOLDER_PREFIX}${codeSegments.length - 1}${PLACEHOLDER_SUFFIX}`;
-  });
+  const protectedSegments: string[] = [];
+  const protect = (m: string): string => {
+    protectedSegments.push(m);
+    return `${PLACEHOLDER_PREFIX}${protectedSegments.length - 1}${PLACEHOLDER_SUFFIX}`;
+  };
+  let text = input.replace(CODE_PATTERN, protect);
+  text = text.replace(URL_PATTERN, protect);
 
   // The adapter re-parses and re-stringifies markdown before sending, which
   // rewrites `- item` list bullets into `* item` — injecting unbalanced
@@ -50,6 +59,6 @@ export function sanitizeTelegramLegacyMarkdown(input: string): string {
 
   return text.replace(
     new RegExp(`${PLACEHOLDER_PREFIX}(\\d+)${PLACEHOLDER_SUFFIX}`, 'g'),
-    (_, i) => codeSegments[Number(i)],
+    (_, i) => protectedSegments[Number(i)],
   );
 }
