@@ -30,13 +30,35 @@ export default defineConfig({
   // visual baseline is deterministic, and `animations:'disabled'` in the
   // snapshot freezes CSS. Reduced-motion for real users is handled in-component
   // via `MotionConfig reducedMotion="user"` (the real media query).
-  // Two projects: the desktop suite (everything except the mobile spec) and the
-  // mobile suite (§24.37 + PORTAL §13) — a Pixel-5-class ~393px viewport running
-  // ONLY e2e/mobile.spec.ts. Both use the chromium engine (CI installs only
-  // chromium; `devices['Pixel 5']` is a viewport/touch preset, not a new browser).
+  // Three projects, chained via `dependencies` so every @visual capture runs
+  // BEFORE any state-mutating functional test (§24.62): the smoke live-push
+  // inserts a wall-clock audit row and the simulator flows insert run rows into
+  // the run's shared in-memory DB — a parallel capture that loses that race
+  // bakes a nondeterministic row into the baseline (historically the captures
+  // just happened to win). Order: desktop visual → mobile (its own @visual
+  // baselines + its sim-run mutation) → desktop functional (the pushers). In
+  // CI (`--grep-invert @visual`) the visual project simply runs zero tests and
+  // the chain is a no-op. All chromium-engine (CI installs only chromium;
+  // `devices['Pixel 5']` is a viewport/touch preset, not a browser).
+  //
+  // NAMING IS LOAD-BEARING: the default snapshot path embeds the project name
+  // (`funnel-chromium-win32.png`), so the project that OWNS visual.spec.ts must
+  // stay named `chromium` or every baseline silently forks to a new filename
+  // (auto-created, while the old ones rot as orphans — learned the hard way).
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: /mobile\.spec\.ts/ },
-    { name: 'mobile-chromium', use: { ...devices['Pixel 5'] }, testMatch: /mobile\.spec\.ts/ },
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testMatch: /visual\.spec\.ts/ },
+    {
+      name: 'mobile-chromium',
+      use: { ...devices['Pixel 5'] },
+      testMatch: /mobile\.spec\.ts/,
+      dependencies: ['chromium'],
+    },
+    {
+      name: 'chromium-functional',
+      use: { ...devices['Desktop Chrome'] },
+      testIgnore: [/mobile\.spec\.ts/, /visual\.spec\.ts/],
+      dependencies: ['mobile-chromium'],
+    },
   ],
   webServer: [
     {

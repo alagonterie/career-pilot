@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { ArchitectureData, SystemMode } from '~/lib/use-architecture'
@@ -232,5 +232,28 @@ describe('InfoTip explainers on the metric jargon (§24.57)', () => {
     const view: TelemetryView = { local: LOCAL, hasTurns: true }
     render(<TelemetryPanel view={view} />)
     expect(screen.getByLabelText('About: turn p50')).toBeInTheDocument()
+  })
+})
+
+describe('§24.62 layout-stability polish', () => {
+  it('Metric labels never wrap (the TURN P50 two-line regression)', () => {
+    const view: TelemetryView = { local: LOCAL, hasTurns: true }
+    render(<TelemetryPanel view={view} />)
+    const label = screen.getByText('turn p50')
+    expect(label).toHaveClass('whitespace-nowrap')
+  })
+
+  it('SessionsPanel explains both counts via InfoTips', () => {
+    render(<SessionsPanel arch={ARCH} />)
+    fireEvent.click(screen.getByRole('button', { name: 'About: running' }))
+    expect(screen.getByTestId('info-tip-panel')).toHaveTextContent(/idle out between turns and respawn/i)
+    fireEvent.click(screen.getByRole('button', { name: 'About: running' })) // re-tap closes (jsdom gets no outside-click)
+    fireEvent.click(screen.getByRole('button', { name: 'About: active' }))
+    expect(screen.getByTestId('info-tip-panel')).toHaveTextContent(/each an isolated session with its own container/i)
+  })
+
+  it('SessionsPanel carries the session-definition footer line', () => {
+    render(<SessionsPanel arch={ARCH} />)
+    expect(screen.getByText('1 session = 1 conversation in its own container')).toBeInTheDocument()
   })
 })

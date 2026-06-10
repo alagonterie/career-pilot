@@ -101,6 +101,13 @@ describe('FunnelBoard', () => {
     expect(screen.getByText('[saas-b]')).toBeInTheDocument()
   })
 
+  it('keeps the Bookmarked & closed strip with an honest note when nothing is closed (§24.62)', () => {
+    const pipelineOnly = APPS.filter((a) => a.stage !== 'rejected')
+    render(<FunnelBoard apps={pipelineOnly} onSelect={() => {}} />)
+    expect(screen.getByTestId('funnel-offboard')).toBeInTheDocument()
+    expect(screen.getByTestId('funnel-offboard-empty')).toHaveTextContent('Nothing bookmarked or closed yet.')
+  })
+
   it('calls onSelect with the clicked application', () => {
     const onSelect = vi.fn()
     render(<FunnelBoard apps={APPS} onSelect={onSelect} />)
