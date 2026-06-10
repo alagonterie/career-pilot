@@ -45,19 +45,24 @@ export default defineConfig({
   // (`funnel-chromium-win32.png`), so the project that OWNS visual.spec.ts must
   // stay named `chromium` or every baseline silently forks to a new filename
   // (auto-created, while the old ones rot as orphans — learned the hard way).
+  //
+  // The chain is LOCAL-ONLY: Playwright does NOT apply test filters (--grep)
+  // to dependency projects, so chaining in CI would force the @visual tests to
+  // run despite `--grep-invert @visual` — on Linux, where no baselines exist.
+  // CI runs workers=1 with no captures to protect; the chain buys nothing there.
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testMatch: /visual\.spec\.ts/ },
     {
       name: 'mobile-chromium',
       use: { ...devices['Pixel 5'] },
       testMatch: /mobile\.spec\.ts/,
-      dependencies: ['chromium'],
+      dependencies: process.env.CI ? [] : ['chromium'],
     },
     {
       name: 'chromium-functional',
       use: { ...devices['Desktop Chrome'] },
       testIgnore: [/mobile\.spec\.ts/, /visual\.spec\.ts/],
-      dependencies: ['mobile-chromium'],
+      dependencies: process.env.CI ? [] : ['mobile-chromium'],
     },
   ],
   webServer: [
