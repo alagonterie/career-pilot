@@ -1404,6 +1404,10 @@ The portal is **phone-primary responsive**, not desktop-only. A page that overfl
 
 **Carried over unchanged:** the reduced-motion guarantee (§3.5) and the dialog focus/a11y contract (§8.5) apply on mobile as on desktop; the bottom-sheet node modal honors both.
 
+**Standing mobile rules (added per STRATEGY §24.58, learned from the /momentum phone defects):**
+- **Every grid declares its column template at the base breakpoint** (`grid-cols-1`, not bare `grid`): an un-templated implicit track sizes to content *min-width*, and a `truncate`d element still contributes its full nowrap line as min-content — so one long real-world string blows the page out sideways while short fixture data keeps CI green. Pair the rule with at least one real-shaped long string in the deterministic seeds.
+- **Open dialogs scroll-lock the body** (in the shared `useDialog`, so every dialog inherits it): `inert` stops interaction but not scroll-chaining; without the lock, touch scroll moves the page behind the open drawer.
+
 ---
 
 ## 14. Open questions

@@ -30,7 +30,10 @@ function focusablesIn(panel: HTMLElement): HTMLElement[] {
  *    assistive tech + pointer can't reach the backdrop content. No portal: the
  *    walk leaves the React/DOM tree intact, so NodePanel's `layoutId`
  *    grow-from-node transition is untouched (`inert` doesn't affect layout or
- *    visibility, only interactivity + the a11y tree).
+ *    visibility, only interactivity + the a11y tree);
+ *  - scroll-locks the body (§24.58): `inert` blocks interaction but NOT
+ *    scroll-chaining — without the lock, touch scroll moves the page behind
+ *    the open dialog. The prior overflow style is restored on close.
  *
  * `panelRef` is the focusable dialog surface (`tabIndex={-1}`, `role="dialog"`);
  * `overlayRef` is the outermost fixed overlay (the inert walk starts there).
@@ -53,6 +56,10 @@ export function useDialog<P extends HTMLElement, O extends HTMLElement>(
 
     // Move focus into the dialog (the panel shell is tabIndex=-1).
     panel?.focus()
+
+    // Scroll-lock the page behind the dialog (§24.58).
+    const priorOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
 
     // Inert everything outside the overlay: walk from the overlay up to <body>,
     // marking each off-path sibling. We track only what we set so cleanup
@@ -105,6 +112,7 @@ export function useDialog<P extends HTMLElement, O extends HTMLElement>(
     window.addEventListener('keydown', onKeyDown, true)
     return () => {
       window.removeEventListener('keydown', onKeyDown, true)
+      document.body.style.overflow = priorOverflow
       for (const el of inerted) el.removeAttribute('inert')
       if (trigger && document.contains(trigger) && typeof trigger.focus === 'function') trigger.focus()
     }

@@ -36,7 +36,11 @@ export function FunnelBoard({
 
   return (
     <>
-      <div data-testid="funnel-board" className="grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      {/* grid-cols-1 at the base is load-bearing (§24.58): a bare `grid` track
+          sizes to content min-width, and a truncated long role title still
+          contributes its full nowrap line — one real-world title blows the
+          phone layout out sideways. grid-cols-N = minmax(0,1fr) = the clamp. */}
+      <div data-testid="funnel-board" className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {COLUMNS.map((col) => {
           const items = apps.filter((a) => a.stage === col.stage)
           return (
@@ -100,7 +104,7 @@ export function FunnelBoard({
  * is in flight. Static markup — no motion, no data. */
 export function FunnelBoardSkeleton() {
   return (
-    <div data-testid="funnel-skeleton" className="grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-5">
+    <div data-testid="funnel-skeleton" className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 lg:grid-cols-5">
       {COLUMNS.map((col, i) => (
         <section
           key={col.stage}

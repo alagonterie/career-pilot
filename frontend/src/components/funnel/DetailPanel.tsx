@@ -1,3 +1,4 @@
+import { motion } from 'motion/react'
 import * as React from 'react'
 
 import { useDialog } from '~/lib/use-dialog'
@@ -35,20 +36,29 @@ export function DetailPanel({ app, onClose }: { app: FunnelApplication | null; o
 
   return (
     <div ref={overlayRef} className="fixed inset-0 z-30 flex justify-end">
+      {/* touch-action-none: the backdrop must not become a scroll surface on
+          touch (§24.58 — useDialog locks the body; this covers the overlay). */}
       <button
         type="button"
         aria-label="Close details"
         onClick={onClose}
-        className="absolute inset-0 bg-background/70 backdrop-blur-sm"
+        className="absolute inset-0 touch-none bg-background/70 backdrop-blur-sm"
       />
-      <aside
+      {/* The drawer slides in from its edge (§24.58 — its §8.5 identity made
+          visible; before this it popped instantly, which on a phone mid-
+          viewport-jump read as "zoomed in"). Reduced-motion users get no slide
+          via the root MotionConfig; visual snapshots disable animations. */}
+      <motion.aside
+        initial={{ x: '100%' }}
+        animate={{ x: 0 }}
+        transition={{ duration: 0.2, ease: 'easeOut' }}
         ref={panelRef}
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="funnel-detail-title"
         data-testid="funnel-detail"
-        className="relative z-10 flex h-full w-full max-w-md flex-col gap-6 overflow-y-auto border-l border-border bg-card p-6 shadow-xl focus:outline-none"
+        className="relative z-10 flex h-full w-full max-w-md flex-col gap-6 overflow-y-auto overscroll-contain border-l border-border bg-card p-6 shadow-xl focus:outline-none"
       >
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
@@ -112,7 +122,7 @@ export function DetailPanel({ app, onClose }: { app: FunnelApplication | null; o
         <p className="mt-auto text-[11px] leading-relaxed text-muted-foreground">
           Companies are obfuscated by default; revealed only post-close with the company&apos;s awareness.
         </p>
-      </aside>
+      </motion.aside>
     </div>
   )
 }

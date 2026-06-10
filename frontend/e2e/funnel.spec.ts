@@ -44,8 +44,12 @@ test.describe('/momentum — pipeline board, frontend <-> backend', () => {
     const panel = page.getByRole('dialog', { name: 'Wayne Enterprises' })
     await expect(panel).toBeVisible()
     await expect(panel.getByText(/AI estimate/i)).toBeVisible()
+    // §24.58: an open dialog scroll-locks the page behind it (the shared
+    // useDialog contract), and closing restores it.
+    await expect.poll(async () => page.evaluate(() => getComputedStyle(document.body).overflow)).toBe('hidden')
     await page.getByRole('button', { name: 'Close panel' }).click()
     await expect(panel).toBeHidden()
+    await expect.poll(async () => page.evaluate(() => getComputedStyle(document.body).overflow)).toBe('visible')
 
     // Accessibility — recruiter-facing showcase; zero violations on every route.
     const a11y = await new AxeBuilder({ page }).analyze()
