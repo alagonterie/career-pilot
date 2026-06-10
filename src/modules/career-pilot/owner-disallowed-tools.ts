@@ -13,7 +13,7 @@
  * documented owner flow — by neither the orchestrator (persona's built-ins:
  * Read/Write/Edit/Bash/Glob/Grep/WebSearch/WebFetch/Agent/TodoWrite + the
  * career-pilot MCP tools) nor any of the six subagents (palettes: WebSearch/
- * WebFetch + record_progress + fetch_source/record_job_lead + the funnel-curator
+ * WebFetch + record_progress + fetch_source/record_job_lead + the pipeline-scribe
  * read set). The guard test asserts that invariant so a future edit can't
  * disallow a load-bearing tool. Verified present-but-unused against a live owner
  * request's `tools[]` array.

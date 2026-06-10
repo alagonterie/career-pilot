@@ -155,11 +155,30 @@ export function applyPass2(text: string, db: Database.Database): string {
   return redactCompanies(text, apps);
 }
 
+// ── Vocabulary pass: internal domain terms → visitor vocabulary ─────────────
+
+/**
+ * Deterministic vocab swap applied to every public-bound string (§24.59):
+ * nothing on the public surface says "funnel" (the PORTAL §8.1 rule), enforced
+ * at the mirror seam instead of trusting each writer's prompt. Token priority
+ * matters — the full subagent id maps first so `funnel-curator` becomes
+ * `pipeline-scribe`, not `pipeline-curator`. Word-boundary `\b` deliberately
+ * leaves snake_case internals (`funnel_curator_output`) alone: an identifier
+ * leaking verbatim is a different bug this cosmetic pass shouldn't half-mask.
+ */
+export function applyVocab(text: string): string {
+  let t = text;
+  t = t.replace(/funnel-curator/gi, 'pipeline-scribe');
+  t = t.replace(/\bFunnel\b/g, 'Pipeline');
+  t = t.replace(/\bfunnel\b/gi, 'pipeline');
+  return t;
+}
+
 // ── Public entry points ─────────────────────────────────────────────────────
 
 /**
  * Deterministic sanitizer: Pass 1 (regex PII) + Pass 2 (DB company/alias
- * replacement). Synchronous, never throws. This is the floor every public-bound
+ * replacement) + the visitor-vocabulary swap. Synchronous, never throws. This is the floor every public-bound
  * string gets; callers that need an inline string (`published_learning`, the
  * resanitize re-mirror, the anonymization demo) use it directly. Pass 3 (the
  * async LLM layer) is added on top by `sanitizeForPublic`.
@@ -168,6 +187,7 @@ export function sanitize(raw: string, opts: SanitizeOpts = {}): string {
   const db = opts.db ?? getDb();
   let t = applyPass1(raw);
   t = applyPass2(t, db);
+  t = applyVocab(t);
   return t;
 }
 

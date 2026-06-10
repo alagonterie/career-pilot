@@ -152,7 +152,7 @@ export function renderPersona(
   }
 
   // Quiet hours (§24.52): the configured proactive-quiet window, so the agent's
-  // own judgment for the host-ungated triggers (funnel-curator same-day push,
+  // own judgment for the host-ungated triggers (pipeline-scribe same-day push,
   // catch-up) uses the real value rather than a hardcoded default. The host
   // separately hard-gates killer-match on the same preference. Empty ⇒ omitted.
   if (quietHours && quietHours.window.trim()) {

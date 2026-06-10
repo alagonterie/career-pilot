@@ -24,8 +24,13 @@ import { nextEvenSeq } from '../../db/session-db.js';
 import { log } from '../../log.js';
 import type { AgentGroup, Session } from '../../types.js';
 
+// SERIES_ID is internal plumbing and deliberately keeps the pre-rename name
+// (§24.59): renaming it would orphan the live series on deployed boxes for
+// zero visitor-facing benefit. The PROMPT is what the persona handles — it
+// follows the subagent's rename to pipeline-scribe, and ensure() reconciles
+// the live row's stored prompt when this constant changes.
 const SERIES_ID = 'funnel-curator';
-const TASK_PROMPT = '[scheduled trigger: funnel-curator]';
+const TASK_PROMPT = '[scheduled trigger: pipeline-scribe]';
 
 export interface BootstrapPreferences {
   enabled: boolean;
@@ -33,7 +38,7 @@ export interface BootstrapPreferences {
 }
 
 export interface BootstrapResult {
-  action: 'inserted' | 'skipped_exists' | 'skipped_disabled';
+  action: 'inserted' | 'skipped_exists' | 'skipped_disabled' | 'reconciled_prompt';
   taskId?: string;
   nextFireAt?: string;
   recurrence?: string;
@@ -48,13 +53,16 @@ export function readFunnelCuratorPreferences(centralDb: Database.Database): Boot
   };
 }
 
-export function hasLiveFunnelCuratorTask(inDb: Database.Database): boolean {
-  const row = inDb
+function readLiveTask(inDb: Database.Database): { id: string; content: string } | undefined {
+  return inDb
     .prepare(
-      "SELECT id FROM messages_in WHERE series_id = ? AND kind = 'task' AND status IN ('pending', 'paused') LIMIT 1",
+      "SELECT id, content FROM messages_in WHERE series_id = ? AND kind = 'task' AND status IN ('pending', 'paused') LIMIT 1",
     )
-    .get(SERIES_ID);
-  return row !== undefined;
+    .get(SERIES_ID) as { id: string; content: string } | undefined;
+}
+
+export function hasLiveFunnelCuratorTask(inDb: Database.Database): boolean {
+  return readLiveTask(inDb) !== undefined;
 }
 
 function generateBootstrapId(): string {
@@ -80,7 +88,31 @@ export function ensureFunnelCuratorTask(
   if (!prefs.enabled) {
     return { action: 'skipped_disabled' };
   }
-  if (hasLiveFunnelCuratorTask(inDb)) {
+  const live = readLiveTask(inDb);
+  if (live) {
+    // Prompt reconciliation (§24.59): when the sentinel constant changes (the
+    // subagent rename), the recurring row a deployed box already holds keeps
+    // firing the OLD prompt forever — which the updated persona no longer
+    // handles (it falls into the unknown-trigger note and the sweep silently
+    // stops materializing). Converge the stored prompt in place; the series,
+    // recurrence, and next fire time are untouched.
+    try {
+      const parsed = JSON.parse(live.content) as { prompt?: string; script?: unknown };
+      if (parsed.prompt !== TASK_PROMPT) {
+        inDb
+          .prepare('UPDATE messages_in SET content = @content WHERE id = @id')
+          .run({ content: JSON.stringify({ ...parsed, prompt: TASK_PROMPT }), id: live.id });
+        log.info('funnel-curator task prompt reconciled', {
+          rowId: live.id,
+          seriesId: SERIES_ID,
+          prompt: TASK_PROMPT,
+        });
+        return { action: 'reconciled_prompt', taskId: live.id };
+      }
+    } catch {
+      // Malformed content JSON — leave the row alone; the sweep loop owns
+      // surfacing that as a delivery error.
+    }
     return { action: 'skipped_exists' };
   }
   const nextFireAt = computeNextFireTime(prefs.cronExpr);

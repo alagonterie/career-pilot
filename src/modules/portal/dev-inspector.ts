@@ -557,9 +557,9 @@ export function applyDevReset(db: Database.Database, raw: unknown): DevResetOutc
   return { status: 200, body: { scope: s, cleared, halted } };
 }
 
-// ── on-demand funnel-curator sweep (§24.43c) ─────────────────────────────────
+// ── on-demand pipeline-scribe sweep (§24.43c) ────────────────────────────────
 
-const SWEEP_PROMPT = '[scheduled trigger: funnel-curator]';
+const SWEEP_PROMPT = '[scheduled trigger: pipeline-scribe]';
 
 export interface DevSweepOutcome {
   status: number;
@@ -567,7 +567,7 @@ export interface DevSweepOutcome {
 }
 
 /**
- * Insert a ONE-SHOT funnel-curator trigger row into an inbound DB: the same
+ * Insert a ONE-SHOT pipeline-scribe trigger row into an inbound DB: the same
  * sentinel the daily cron fires, but `recurrence=NULL` + `process_after=now` so
  * it runs once, immediately. `series_id` is the row's own id (a one-shot series,
  * so it never collides with the recurring `funnel-curator` series or its clone
@@ -591,7 +591,7 @@ export function enqueueSweepTask(inDb: Database.Database): string {
  *      into `email_events`, without waiting for (or re-fetching) anything. This is
  *      what makes already-consumed mail (the cursor has moved past it) show up.
  *   2. SWEEP (async, best-effort) — enqueue a fresh `[scheduled trigger:
- *      funnel-curator]` task so the orchestrator fetches any NEW mail; that run's
+ *      pipeline-scribe]` task so the orchestrator fetches any NEW mail; that run's
  *      persist auto-converts via the same path (funnel-actions hook). Skipped (no
  *      error) when there's no active owner session yet, or while halted/paused.
  */

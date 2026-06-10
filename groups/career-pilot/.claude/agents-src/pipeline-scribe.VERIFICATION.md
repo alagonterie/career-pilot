@@ -1,11 +1,18 @@
-# funnel-curator — verification plan
+# pipeline-scribe — verification plan
 
 > **Developer-facing.** Not loaded into the agent's runtime context. The
-> sibling `funnel-curator.md` is the runtime spec (composed into the
+> sibling `pipeline-scribe.md` is the runtime spec (composed into the
 > agent's system prompt by NanoClaw's per-group composer + our
 > `agents-src/` extension). This file is the verification target for that
-> spec — how we check that funnel-curator's actual behavior matches its
+> spec — how we check that pipeline-scribe's actual behavior matches its
 > written contract.
+>
+> Renamed from `funnel-curator` per STRATEGY §24.59 (2026-06-10). The
+> internal names deliberately keep the old vocabulary: the bootstrap
+> `SERIES_ID='funnel-curator'`, the `funnel_curator_*` config keys, the
+> `funnel_curator_output` table, and the `--flow=funnel-curator` e2e flow
+> ids. Historical `public_audit_trail` rows keep
+> `agent_name='funnel-curator'` and are display-aliased on the frontend.
 >
 > Per the project CLAUDE.md runtime-artifact rule: developer-facing DoD
 > lives next to the runtime artifact (not inline), so the system prompt
@@ -13,7 +20,7 @@
 
 ## Definition of done
 
-The runtime contract at `funnel-curator.md` is the behavioral spec for
+The runtime contract at `pipeline-scribe.md` is the behavioral spec for
 the subagent. "Done" means observed behavior matches the spec across
 the following checks, in increasing rigor:
 
@@ -21,8 +28,8 @@ the following checks, in increasing rigor:
 
 After build / spawn:
 
-- `groups/career-pilot/.claude/agents/funnel-curator.md` exists
-  (rendered from `agents-src/funnel-curator.md` + the
+- `groups/career-pilot/.claude/agents/pipeline-scribe.md` exists
+  (rendered from `agents-src/pipeline-scribe.md` + the
   `_shared/subagent-preamble.md` include).
 - The rendered file's frontmatter contains exactly the 9 tools listed
   in source: `query_gmail_delta`, `query_calendar_delta`,
@@ -31,7 +38,7 @@ After build / spawn:
   `record_progress` — no more, no less.
 - The rendered file does NOT exist in `groups/career-pilot-sandbox/`
   (the source isn't in that group → no render → orchestrator can't
-  delegate to funnel-curator from sandbox; defense-in-depth alongside
+  delegate to pipeline-scribe from sandbox; defense-in-depth alongside
   the host-action sandbox guard).
 - `model: sonnet` in frontmatter (not haiku, not opus — synthesis
   quality matters; cost still bounded since runs are ~daily).
@@ -40,7 +47,7 @@ After build / spawn:
 
 `pnpm test:e2e --flow=funnel-curator --gmail-fixture=acme-pipeline-multi --calendar-fixture=acme-onsite-tomorrow --llm-provider=claude`
 exercises the full path: scheduled-task fires → orchestrator dispatches
-funnel-curator → subagent calls `read_funnel_state` (null on first run)
+pipeline-scribe → subagent calls `read_funnel_state` (null on first run)
 → calls `query_gmail_delta` (returns fixture messages) +
 `query_calendar_delta` (returns fixture event) → calls
 `list_applications` + `query_job_leads` → classifies each message,
@@ -129,8 +136,8 @@ won't trigger — that's expected.)
 ### 6. Sandbox isolation (automated — DoD #12 from spec)
 
 - Spawning a `career-pilot-sandbox` session does NOT schedule
-  funnel-curator (bootstrap is owner-group-only — verified by the
-  bootstrap unit test + the absence of `agents-src/funnel-curator.md`
+  the pipeline-scribe sweep (bootstrap is owner-group-only — verified by
+  the bootstrap unit test + the absence of `agents-src/pipeline-scribe.md`
   in the sandbox group).
 - Calling `mcp__nanoclaw__query_gmail_delta` from a sandbox session
   returns a `FORBIDDEN`-shaped error from the host action (verified by
@@ -166,11 +173,11 @@ After 5+ real (non-fixture) runs against the candidate's actual inbox:
 
 Re-run this verification plan whenever any of the following changes:
 
-- `funnel-curator.md` (this subagent's runtime contract) — re-run §1,
+- `pipeline-scribe.md` (this subagent's runtime contract) — re-run §1,
   §2, §3, §4
 - The email taxonomy or matching strategies (sections in the runtime
   spec) — re-run §4
 - The host-side `funnel-actions.ts` or fixture loader — re-run §2, §3
 - The output schema fields or caps (preferences) — re-run §3
-- The persona's funnel-curator handler section — re-run §2
+- The persona's pipeline-scribe handler section — re-run §2
   (orchestrator dispatch + read_funnel_state surfacing)

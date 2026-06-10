@@ -10,7 +10,7 @@ import type Database from 'better-sqlite3';
 import { closeDb, initTestDb } from '../../db/connection.js';
 import { runMigrations } from '../../db/migrations/index.js';
 
-import { applyPass1, applyPass2, sanitize, sanitizeForPublic } from './sanitizer.js';
+import { applyPass1, applyPass2, applyVocab, sanitize, sanitizeForPublic } from './sanitizer.js';
 
 describe('sanitizer Pass 1 — regex patterns', () => {
   describe('emails', () => {
@@ -243,5 +243,31 @@ describe('sanitize() — deterministic pipeline (Pass 1 + Pass 2, synchronous)',
     expect(res.text).toContain('[REDACTED:fintech-a]');
     expect(res.text).toContain('[AMOUNT_REDACTED]');
     expect(res.text).not.toContain('Acme Corp');
+  });
+
+  it('applies the visitor-vocabulary swap (§24.59) inside sanitize()', () => {
+    const out = sanitize('funnel-curator updated the funnel state', { db });
+    expect(out).toBe('pipeline-scribe updated the pipeline state');
+  });
+});
+
+describe('applyVocab — visitor vocabulary swap (§24.59)', () => {
+  it('maps the full subagent id with token priority (never pipeline-curator)', () => {
+    expect(applyVocab('funnel-curator ran a sweep')).toBe('pipeline-scribe ran a sweep');
+    expect(applyVocab('Funnel-Curator cheap-out')).toBe('pipeline-scribe cheap-out');
+  });
+
+  it('swaps the bare word case-aware', () => {
+    expect(applyVocab('the funnel advanced; Funnel state is fresh')).toBe(
+      'the pipeline advanced; Pipeline state is fresh',
+    );
+  });
+
+  it('leaves snake_case internals alone (identifier leaks are a different bug)', () => {
+    expect(applyVocab('wrote funnel_curator_output row')).toBe('wrote funnel_curator_output row');
+  });
+
+  it('no-ops on text without the terms', () => {
+    expect(applyVocab('classified 4 new messages')).toBe('classified 4 new messages');
   });
 });
