@@ -214,9 +214,10 @@ function extractText(content: unknown): string | null {
 /**
  * Called by the portal channel adapter (via the registered sink) for every
  * outbound row of an active run. Appends chat text; the terminal signal is the
- * `result` trace event — the Agent SDK's end-of-run message (§24.21 Δ; FIFO
- * drain guarantees the turn's chat rows precede it), which carries the total
- * cost and triggers finalize. Never throws — it must not break delivery.
+ * `result` trace event — the Agent SDK's end-of-run message (§24.21 Δ), which
+ * the runner writes as the run's LAST outbound row (poll-loop defers it past
+ * the final chat rows), carries the total cost, and triggers finalize. Never
+ * throws — it must not break delivery.
  */
 export function recordSimulatorOutput(runId: string, kind: string, content: unknown): void {
   const acc = runs.get(runId);
