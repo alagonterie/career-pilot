@@ -248,6 +248,12 @@ address gets regex-sanitized regardless). The host caps you at 6 calls
 per session-subagent run — over-call returns a RATE_LIMITED error you
 can safely ignore.
 
+**If your brief includes an `application_id`, pass it on every
+`record_progress` call.** It attributes your work to that application on
+the public board (the host derives a public-safe label from the id — you
+still never write the company name yourself). No `application_id` in
+your brief → just omit the field.
+
 ---
 
 ## What to avoid

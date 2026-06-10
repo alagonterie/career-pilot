@@ -340,6 +340,10 @@ export const recordProgress: McpToolDefinition = {
           type: 'string',
           description: 'One-line prose describing what you\'re doing right now (≤80 chars target). Visible to portal visitors on the public trace stream — keep it candidate-friendly, no PII (it gets regex-sanitized anyway).',
         },
+        application_id: {
+          type: 'string',
+          description: 'Optional. The internal application id (e.g. "app-acme") when this run\'s work is about one specific application — pass it on EVERY progress call so the public stream attributes the work to that application. The host derives the public-safe label from the id; never put a company name here or lean on this for the detail text. Omit when the work is not about a single application.',
+        },
       },
       required: ['subagent_name', 'stage', 'detail'],
     },
@@ -349,6 +353,7 @@ export const recordProgress: McpToolDefinition = {
     const subagent_name = args.subagent_name as string;
     const stage = args.stage as string;
     const detail = args.detail as string;
+    const application_id = typeof args.application_id === 'string' && args.application_id ? args.application_id : null;
     if (!subagent_name || !stage || !detail) {
       return err('subagent_name, stage, and detail are all required');
     }
@@ -356,6 +361,7 @@ export const recordProgress: McpToolDefinition = {
       subagent_name,
       stage,
       detail,
+      ...(application_id ? { application_id } : {}),
     });
     if (!res.ok) return actionErr('record_progress', res.error);
     return ok(`Progress recorded (${stage}).`, res.data);

@@ -78,6 +78,31 @@ interface JoinedRow {
  */
 export type MirrorOutcome = 'inserted' | 'dropped' | 'skipped' | 'error' | 'withheld';
 
+/**
+ * The public-safe display ref for an application — the real company name when
+ * revealed, else the obfuscated label (the same rule mirrorFunnelEvent applies
+ * inline from its join). §24.61: this is the HOST-side derivation that lets a
+ * container pass only the internal application_id — a subagent never authors
+ * the public label, because an echo of the real company name on a non-public
+ * application would be a leak. Returns null for an unknown id or an
+ * application with no usable label (caller inserts ref-less).
+ */
+export function publicApplicationRef(db: Database.Database, applicationId: string): string | null {
+  try {
+    const row = db
+      .prepare('SELECT company_name, obfuscated_label, public_state FROM applications WHERE id = ?')
+      .get(applicationId) as
+      | { company_name: string | null; obfuscated_label: string | null; public_state: string | null }
+      | undefined;
+    if (!row) return null;
+    const ref = row.public_state === 'public' ? row.company_name : row.obfuscated_label;
+    return ref && ref.length > 0 ? ref : null;
+  } catch (err) {
+    log.error('publicApplicationRef failed', { applicationId, err });
+    return null;
+  }
+}
+
 export async function mirrorFunnelEvent(db: Database.Database, eventId: string): Promise<MirrorOutcome> {
   let row: JoinedRow | undefined;
   try {
@@ -256,6 +281,28 @@ export async function resanitizeApplicationAuditTrail(
     log.error('resanitizeApplicationAuditTrail: re-mirror failed', { applicationId, err });
   }
 
-  log.info('resanitizeApplicationAuditTrail complete', { applicationId, rewritten, deleted });
+  // §24.61: subagent_progress rows attribute themselves via details_json's
+  // application_id; their stored application_ref was derived under the OLD
+  // policy. Re-derive in place so a reveal flip (and especially an un-reveal —
+  // a real name stored as the ref while public) reflects current intent. The
+  // summary TEXT is not re-derived — unlike funnel rows there is no canonical
+  // private source to re-mirror progress prose from (pre-existing property).
+  let progressRefsUpdated = 0;
+  try {
+    const ref = publicApplicationRef(db, applicationId);
+    const upd = db
+      .prepare(
+        `UPDATE public_audit_trail
+            SET application_ref = @ref
+          WHERE category = 'subagent_progress'
+            AND json_extract(details_json, '$.application_id') = @applicationId`,
+      )
+      .run({ ref, applicationId });
+    progressRefsUpdated = upd.changes;
+  } catch (err) {
+    log.error('resanitizeApplicationAuditTrail: progress-ref rederive failed', { applicationId, err });
+  }
+
+  log.info('resanitizeApplicationAuditTrail complete', { applicationId, rewritten, deleted, progressRefsUpdated });
   return { rewritten, deleted };
 }

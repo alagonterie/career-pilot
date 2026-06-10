@@ -32,6 +32,13 @@ design.
       shapes only); no STAR/confidence platitudes; `[inferred]` framed honestly.
 - [ ] Within the ~900-word soft / ~1200 hard cap.
 
+## Progress attribution
+
+- [ ] Every `record_progress` call passes `application_id` (from the
+      `## Interview` block) so the public stream attributes the work to the
+      application — the host derives the public-safe label; the detail text
+      stays company-generic regardless.
+
 ## Writer
 
 - [ ] Calls `persist_interview_kit` EXACTLY ONCE, at the end, with

@@ -17,7 +17,7 @@ import type Database from 'better-sqlite3';
 import { closeDb, initTestDb } from '../../db/connection.js';
 import { runMigrations } from '../../db/migrations/index.js';
 
-import { mirrorFunnelEvent, resanitizeApplicationAuditTrail } from './public-audit.js';
+import { mirrorFunnelEvent, publicApplicationRef, resanitizeApplicationAuditTrail } from './public-audit.js';
 
 describe('mirrorFunnelEvent', () => {
   let db: Database.Database;
@@ -300,6 +300,25 @@ describe('mirrorFunnelEvent', () => {
     expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('dropped');
   });
 
+  // ── §24.61: host-side public-ref derivation ─────────────────────────────
+  describe('publicApplicationRef', () => {
+    it('returns the obfuscated label for a non-public application', () => {
+      seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a' });
+      expect(publicApplicationRef(db, 'app-1')).toBe('fintech-a');
+    });
+
+    it('returns the real company name for a public application', () => {
+      seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a', public_state: 'public' });
+      expect(publicApplicationRef(db, 'app-1')).toBe('Acme Corp');
+    });
+
+    it('returns null for an unknown id or a label-less application', () => {
+      expect(publicApplicationRef(db, 'app-nope')).toBeNull();
+      seedApp({ id: 'app-2', company_name: 'Globex', obfuscated_label: '' });
+      expect(publicApplicationRef(db, 'app-2')).toBeNull();
+    });
+  });
+
   // ── §24.11 Sub-milestone 4.3: retroactive resanitization ───────────────
   describe('resanitizeApplicationAuditTrail', () => {
     it('rewrites public→obfuscated: real name replaced with [REDACTED:<label>]', async () => {
@@ -416,6 +435,65 @@ describe('mirrorFunnelEvent', () => {
       seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a' });
       expect(await resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 0, deleted: 0 });
       expect(readAuditRows()).toHaveLength(0);
+    });
+
+    // ── §24.61: subagent_progress rows attribute via details_json's
+    // application_id; their ref is re-derived in place on a policy flip.
+    function seedProgressRow(opts: { id: string; application_id?: string; application_ref: string | null }): void {
+      db.prepare(
+        `INSERT INTO public_audit_trail (id, seq, ts, category, agent_name, proactive, application_ref, summary, details_json)
+         VALUES (@id, (SELECT COALESCE(MAX(seq), 0) + 1 FROM public_audit_trail),
+                 '2026-05-28T00:00:00Z', 'subagent_progress', 'tailor-resume', 0, @application_ref, 'ranking bullets', @details_json)`,
+      ).run({
+        id: opts.id,
+        application_ref: opts.application_ref,
+        details_json: JSON.stringify({
+          stage: 'ranking-bullets',
+          session_id: 's-1',
+          ...(opts.application_id ? { application_id: opts.application_id } : {}),
+        }),
+      });
+    }
+
+    it('re-derives progress refs on a reveal AND an un-reveal (§24.61)', async () => {
+      seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a', public_state: 'obfuscated' });
+      seedProgressRow({ id: 'prog-1', application_id: 'app-1', application_ref: 'fintech-a' });
+
+      // Reveal: the progress ref becomes the real name.
+      db.prepare("UPDATE applications SET public_state = 'public' WHERE id = 'app-1'").run();
+      await resanitizeApplicationAuditTrail(db, 'app-1');
+      let row = db.prepare("SELECT application_ref FROM public_audit_trail WHERE id = 'prog-1'").get() as {
+        application_ref: string | null;
+      };
+      expect(row.application_ref).toBe('Acme Corp');
+
+      // Un-reveal (the dangerous direction): the stored real name reverts to
+      // the obfuscated label.
+      db.prepare("UPDATE applications SET public_state = 'obfuscated' WHERE id = 'app-1'").run();
+      await resanitizeApplicationAuditTrail(db, 'app-1');
+      row = db.prepare("SELECT application_ref FROM public_audit_trail WHERE id = 'prog-1'").get() as {
+        application_ref: string | null;
+      };
+      expect(row.application_ref).toBe('fintech-a');
+    });
+
+    it('re-derives progress refs on a label rename; unrelated progress rows untouched (§24.61)', async () => {
+      seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a', public_state: 'obfuscated' });
+      seedApp({ id: 'app-2', company_name: 'Globex', obfuscated_label: 'retail-a', public_state: 'obfuscated' });
+      seedProgressRow({ id: 'prog-1', application_id: 'app-1', application_ref: 'fintech-a' });
+      seedProgressRow({ id: 'prog-2', application_id: 'app-2', application_ref: 'retail-a' });
+      seedProgressRow({ id: 'prog-3', application_ref: null }); // unattributed — never touched
+
+      db.prepare("UPDATE applications SET obfuscated_label = 'fintech-z' WHERE id = 'app-1'").run();
+      await resanitizeApplicationAuditTrail(db, 'app-1');
+
+      const refs = db
+        .prepare("SELECT id, application_ref FROM public_audit_trail WHERE category = 'subagent_progress'")
+        .all() as Array<{ id: string; application_ref: string | null }>;
+      const byId = Object.fromEntries(refs.map((r) => [r.id, r.application_ref]));
+      expect(byId['prog-1']).toBe('fintech-z');
+      expect(byId['prog-2']).toBe('retail-a');
+      expect(byId['prog-3']).toBeNull();
     });
 
     it('rewrites only the target application; counts match and other rows are untouched', async () => {

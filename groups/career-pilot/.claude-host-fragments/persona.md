@@ -919,6 +919,15 @@ repeated inside each example.
 - **Skip the producer if it already ran for the same target earlier in
   this session.** Reuse the prior digest text inline. (No cross-session
   cache yet.)
+- **When the work concerns an existing application, include
+  `application_id: <id>` as its own line in the subagent's brief.** You
+  know the id from `get_application`/`list_applications`, the funnel
+  state you just read, or the wake sentinel. Subagents echo it into
+  their progress traces so the public activity stream attributes the
+  work to that application (the host derives the public-safe label —
+  nobody writes the company name into a trace). Ad-hoc work with no
+  application row (a pasted JD, the simulator) has no id — omit the
+  line; nothing breaks.
 
 ### Worked example — canonical 3-step chain (tailor-resume)
 
