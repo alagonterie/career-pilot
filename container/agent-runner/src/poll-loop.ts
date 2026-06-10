@@ -327,6 +327,12 @@ async function processQuery(
   let done = false;
   let unwrappedNudged = false;
   let toolTextNudges = 0;
+  // The simulator's terminal marker (§24.21 Δ): the host finalizes a run on
+  // the kind:'trace' t:'result' row, so it must be the LAST outbound row of
+  // the query — after the final <message> chat rows (written from the result
+  // text below) and after any nudge-recovered turns. Stash it here (cost is
+  // cumulative; last wins) and write it once the SDK loop completes.
+  let pendingResultTrace: unknown = null;
 
   // Concurrent polling: push follow-ups into the active query as they arrive.
   // We do NOT force-end the stream on silence — keeping the query open avoids
@@ -517,20 +523,43 @@ async function processQuery(
         // Simulator trace step (§24.20). Sandbox-only — the provider only emits
         // these when emitTrace is set. Persist as a kind:'trace' outbound row
         // routed to the run's portal stream; the host pushes it to the
-        // simulator:<id> SSE topic via the portal channel adapter.
-        writeMessageOut({
-          id: `trace-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          kind: 'trace',
-          content: JSON.stringify(event.trace),
-          platform_id: routing.platformId,
-          channel_type: routing.channelType,
-          thread_id: routing.threadId,
-        });
+        // simulator:<id> SSE topic via the portal channel adapter. The t:'result'
+        // trace is deferred to end-of-loop (see pendingResultTrace above).
+        const t = (event.trace as { t?: string }).t;
+        if (t === 'result') {
+          pendingResultTrace = event.trace;
+        } else {
+          writeMessageOut({
+            id: `trace-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            kind: 'trace',
+            content: JSON.stringify(event.trace),
+            platform_id: routing.platformId,
+            channel_type: routing.channelType,
+            thread_id: routing.threadId,
+          });
+        }
       }
     }
   } finally {
     done = true;
     clearInterval(pollHandle);
+    if (pendingResultTrace) {
+      // Written even when the loop ends by error: the run is over either way,
+      // and the host should finalize with whatever output exists rather than
+      // wait for the hard wall.
+      try {
+        writeMessageOut({
+          id: `trace-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          kind: 'trace',
+          content: JSON.stringify(pendingResultTrace),
+          platform_id: routing.platformId,
+          channel_type: routing.channelType,
+          thread_id: routing.threadId,
+        });
+      } catch (err) {
+        log(`terminal result-trace write failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
   }
 
   return { continuation: queryContinuation };
