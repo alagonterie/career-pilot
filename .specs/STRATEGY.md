@@ -4910,6 +4910,38 @@ DoD (F3 additions): the `build-interview-kit` invocation prompt carries a `## Jo
 
 ---
 
+#### 24.57 Portal interaction pass — explain-on-tap + time legibility (the Track-D deep dive)
+
+**Finding (2026-06-10, owner items 2 + 4).** Two related legibility gaps on the ops register, both sharpened by the realistic-pace observation period:
+
+1. **Timestamps lose their day.** `/live`'s LogStream and the home ticker render `HH:MM:SS` only. At fast pace everything was "today"; at realistic pace the visible window spans days, so a `14:22:31` line is silently ambiguous — the owner's item 4, with the explicit constraint that mobile is space-starved.
+2. **The metric vocabulary explains itself only on desktop.** The register leans on jargon — `spend · est`, `cache 76%`, `turn p50/p95`, the turn seal, `◆`, `[fintech-a]` — and the only affordance is scattered `title` attributes, which don't exist on touch. A recruiter on a phone (the primary visitor) gets numbers with no way to ask "what is this?". Existing interactivity is real but coarse: the §8.5 dialogs (`/momentum` drawer, `/architecture` node modal), `/live` filter chips, the simulator's share-page activity toggle.
+
+**Interactivity register (the deep-dive deliverable — what was considered):**
+
+| Candidate | Verdict | Why |
+|---|---|---|
+| Day dividers in LogStream | **Build** | Chat-app pattern; zero marginal interaction cost; solves item 4 on the scrolling surface. |
+| Compact date prefix in the home ticker | **Build** | The ticker can't afford divider rows (5 lines); a non-today line swaps `HH:MM:SS` → `«Mon D» HH:MM` in the same slot. |
+| `InfoTip` primitive + metric explainers | **Build** | The missing mobile affordance: a tap/hover/focus disclosure on the jargon sites. Hand-rolled (~a component): no focus trap (disclosure, not modal), Esc + outside-tap dismiss, `aria-expanded`/`aria-describedby`, reduced-motion-safe. Applied to 4 sites: `spend · est`, the cache-rate line, `turn p50/p95`, and the LogStream turn seal. |
+| Recent-outcomes rows → tap-through to the `/momentum` drawer | **Build** | The drawer already exists; rows become links carrying `?app=«ref»`, `/momentum` gains `validateSearch` + select-on-load (close clears the param). Turns a static list into navigation. |
+| Per-line `◆` / obfuscated-label InfoTips | **Skip** | Per-line popovers on a streaming list are noise; `title` stays, the page footer + home copy already explain both. |
+| Collapsible per-step TraceLine (PORTAL §5.2's original promise) | **Supersede** | Needs per-event cost/tool detail the SDK doesn't expose (§24.34 deferred the per-event enrichment for exactly this reason). The seal InfoTip carries the turn-level story; revisit only if §24.34's deferred enrichment ever lands. |
+| LiveIndicator hover tooltip (§5.1: "event count and uptime") | **Reconcile** | Count shipped as a `title`; uptime is not captured anywhere — spec note, not a build. |
+| Stat-tile / panel drill-down modals | **Defer** | No second data layer behind the tiles to drill into; a modal repeating the panel is interaction theater. |
+
+**Determinism notes.** Day boundaries derive from the viewer's local date; the fixture backlog (fixed 2026-06-02 timestamps) is always in the past, so the E2E/visual surfaces show a deterministic leading divider ("a window older than today opens with its date"). Fixture times sit mid-day UTC, so US-timezone local conversion never crosses a date line.
+
+**Definition of done.**
+1. LogStream: a day-boundary divider row renders between events from different local days, plus a leading divider when the newest window starts on a non-today date; bare dividers don't stack (same collapse spirit as turn seals); unit-tested.
+2. LiveTicker: non-today events render `«Mon D» HH:MM` in the clock slot, today's stay `HH:MM:SS`; unit-tested; mobile width unchanged (no overflow).
+3. `InfoTip`: opens on tap/click and on focus, closes on Esc/outside-tap/re-tap, `aria-expanded` + panel association correct, reduced-motion-safe; unit-tested; applied at the 4 sites; the seal's `title` replaced (the lanes' `title`s stay).
+4. `/momentum` accepts `?app=«application_ref»` and opens that card's drawer once data loads (unknown ref = no-op); closing clears the param; Recent-outcomes rows link there; covered by E2E.
+5. Frontend unit + functional E2E + axe green; visual baselines re-blessed (`live`, `home`, mobile pair).
+6. Spec deltas: this §24.57; PORTAL §5.1 (ticker dates + LiveIndicator uptime reconcile), §5.2 (dividers + InfoTips + TraceLine-collapse supersede), §5.4 (drawer deep-link).
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.

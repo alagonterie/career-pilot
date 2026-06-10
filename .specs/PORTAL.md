@@ -228,6 +228,8 @@ The "● live" indicator is a real-time signal:
 - Tooltip on hover shows the latest event count and uptime.
 - This single element is the visitor's first hint that this is a live system.
 
+> **Build note (per STRATEGY §24.57).** The indicator's hover `title` shows the event count; **uptime is not captured anywhere** and is dropped from the promise (an invented number would violate the honesty rule). Ticker time legibility: a line from a previous local day renders `«Mon D» HH:MM` in the clock slot (today's lines keep `HH:MM:SS`) — same width class, mobile-safe.
+
 Below the CTAs, **a single line** that updates every page load with a real number:
 > *3 active applications · last activity 4 minutes ago · cache hit rate 91%*
 
@@ -409,6 +411,8 @@ The `┌─` and `└─` brackets show **parallel subagent invocation** — the
 The `◆` marker tags proactive (cron/webhook-initiated) events vs reactive (user-message-initiated). Visible in the trace stream and as a filter chip.
 
 Each `TraceLine` is collapsible: the top-level row shows agent + summary + total cost; click expands to show tool calls, subagent invocations, cache hits per step.
+
+> **Superseded (STRATEGY §24.57).** Per-step expansion needs per-event cost/tool detail the SDK does not expose (§24.34 deferred the per-event enrichment for exactly this reason) — a collapsible row with nothing real behind it would be interaction theater. The turn-level story lives on the **seal's InfoTip** instead; revisit only if §24.34's deferred enrichment lands. What DID land from the §24.57 pass: **day-boundary divider rows** (chat-app style, plus a leading divider when the window opens on a non-today date — the realistic-pace window spans days) and **InfoTip explainers** (tap/hover/focus disclosures, mobile-first) on the metric jargon: `spend · est`, the cache-rate line, `turn p50/p95`, the turn seal.
 
 The stream auto-scrolls until the visitor manually scrolls up, at which point a `↓ jump to live` button appears (Slack-style).
 
@@ -649,6 +653,8 @@ Click a card → side panel opens with:
 - Anonymized timeline: every state change with date
 - Sanitized recent activity for that application (resume tailoring count, outreach drafted, etc.)
 - A "win confidence" % (low rigor — a heuristic, labeled as such)
+
+> **Build note (per STRATEGY §24.57).** The drawer is deep-linkable: `/momentum?app=«application_ref»` opens that card's panel once the funnel data loads (an unknown ref is a no-op; closing the panel clears the param). The `/live` Recent-outcomes rows link here — a static outcome list becomes navigation into the drawer that already existed.
 
 > **Backend note.** The richest source for "sanitized recent activity" is the funnel-curator's per-company narratives (`funnel_curator_output`, already captured privately). Surfacing them is V1-scoped but **built in Phase 6** alongside this panel and **gated on the Pass 3 LLM sanitization review** (STRATEGY.md §24.12): the narratives are free-form prose where regex + exact-name redaction isn't sufficient. Until then this panel renders from the structured `funnel_events` timeline + `public_funnel_view`.
 
