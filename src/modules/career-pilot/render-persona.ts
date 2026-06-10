@@ -166,6 +166,98 @@ export function renderPersona(
   return sections.join('\n\n') + '\n';
 }
 
+/**
+ * Sandbox sentinel (§24.54): the public simulator must never run the owner
+ * onboarding flow. With no profile it pitches a clearly-disclosed generic
+ * profile instead of asking the visitor for anything.
+ */
+const SANDBOX_NO_PROFILE_SENTINEL = [
+  '# Candidate profile (not configured in this environment)',
+  '',
+  'No candidate profile is loaded. Run the pitch flow with a clearly-labeled',
+  'GENERIC senior software engineer profile and disclose that in the deliverable',
+  '("illustrative profile — the live system uses the real resume"). Never ask',
+  'the visitor for profile data.',
+  '',
+].join('\n');
+
+/**
+ * Pure render for the PUBLIC simulator's candidate fragment (§24.54): the
+ * resume-grade subset only — name, bio, target roles, location, master
+ * resume, skills, links. Excludes comp floor (private negotiation state) and
+ * quiet hours / ops content (owner-agent concerns). Test entrypoint.
+ */
+export function renderSandboxCandidate(profile: CandidateProfile | null): string {
+  if (!profile) return SANDBOX_NO_PROFILE_SENTINEL;
+
+  const targetRoles = parseJsonArray(profile.target_roles, 'target_roles');
+  const skills = parseJsonArray(profile.skills, 'skills');
+  const locationPref = parseLocationPref(profile.location_pref);
+
+  const hasAnyContent =
+    profile.full_name ||
+    profile.bio ||
+    targetRoles.length > 0 ||
+    profile.master_resume ||
+    skills.length > 0 ||
+    profile.github_url ||
+    profile.linkedin_url ||
+    profile.x_url ||
+    profile.website_url;
+  if (!hasAnyContent) return SANDBOX_NO_PROFILE_SENTINEL;
+
+  const sections: string[] = [];
+
+  if (profile.full_name) {
+    sections.push(`# ${profile.full_name}`);
+  }
+
+  if (profile.display_name && profile.display_name !== profile.full_name) {
+    sections.push(`> ${profile.display_name}`);
+  }
+
+  if (profile.bio) {
+    sections.push('## Background', profile.bio.trim());
+  }
+
+  if (targetRoles.length > 0) {
+    sections.push('## Target roles', targetRoles.map((r) => `- ${r}`).join('\n'));
+  }
+
+  if (locationPref) {
+    const lines: string[] = ['## Location'];
+    if (typeof locationPref.remote === 'boolean') {
+      lines.push(`- Remote: ${locationPref.remote ? 'yes' : 'no'}`);
+    }
+    if (locationPref.hybrid_cities && locationPref.hybrid_cities.length > 0) {
+      lines.push('- Hybrid cities:');
+      for (const city of locationPref.hybrid_cities) {
+        lines.push(`  - ${city}`);
+      }
+    }
+    sections.push(lines.join('\n'));
+  }
+
+  if (profile.master_resume) {
+    sections.push('## Master resume', profile.master_resume.trim());
+  }
+
+  if (skills.length > 0) {
+    sections.push('## Skills', skills.map((s) => `- ${s}`).join('\n'));
+  }
+
+  const links: string[] = [];
+  if (profile.github_url) links.push(`- [GitHub](${profile.github_url})`);
+  if (profile.linkedin_url) links.push(`- [LinkedIn](${profile.linkedin_url})`);
+  if (profile.x_url) links.push(`- [X](${profile.x_url})`);
+  if (profile.website_url) links.push(`- [Website](${profile.website_url})`);
+  if (links.length > 0) {
+    sections.push('## Links', links.join('\n'));
+  }
+
+  return sections.join('\n\n') + '\n';
+}
+
 interface LocationPref {
   remote?: boolean;
   hybrid_cities?: string[];
@@ -229,7 +321,21 @@ export function renderPersonaForGroup(group: AgentGroup): void {
     }
   }
   const body = renderPersona(profile, quietHours);
+  writeCandidateFragment(group, body);
+}
 
+/**
+ * Sandbox variant of the spawn hook (§24.54): write the PUBLIC candidate
+ * subset into the sandbox group's `.claude-host-fragments/candidate.md` so
+ * tailor-resume/draft-outreach have the resume-grade facts a live run needs.
+ * Called from `container-runner.ts` for the `career-pilot-sandbox` folder.
+ */
+export function renderSandboxCandidateForGroup(group: AgentGroup): void {
+  const profile = readCandidateProfile();
+  writeCandidateFragment(group, renderSandboxCandidate(profile));
+}
+
+function writeCandidateFragment(group: AgentGroup, body: string): void {
   const fragmentsDir = path.join(GROUPS_DIR, group.folder, '.claude-host-fragments');
   if (!fs.existsSync(fragmentsDir)) {
     fs.mkdirSync(fragmentsDir, { recursive: true });
@@ -243,7 +349,6 @@ export function renderPersonaForGroup(group: AgentGroup): void {
   log.debug('Rendered candidate.md', {
     group: group.folder,
     bytes: body.length,
-    onboarding: profile === null,
   });
 }
 

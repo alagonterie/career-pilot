@@ -328,11 +328,30 @@ async function processQuery(
   let unwrappedNudged = false;
   let toolTextNudges = 0;
   // The simulator's terminal marker (§24.21 Δ): the host finalizes a run on
-  // the kind:'trace' t:'result' row, so it must be the LAST outbound row of
-  // the query — after the final <message> chat rows (written from the result
-  // text below) and after any nudge-recovered turns. Stash it here (cost is
-  // cumulative; last wins) and write it once the SDK loop completes.
+  // the kind:'trace' t:'result' row, so it must follow the turn's <message>
+  // chat rows (written from the result text below) and must not fire for a
+  // turn a nudge is about to extend. The provider yields the trace BEFORE the
+  // result event of the same SDK message, so stash it here (cost is
+  // cumulative; last wins) and flush it at the end of un-nudged result
+  // handling. NOT at loop end — the query stays open for follow-ups until the
+  // host kills the container (SIGKILL skips finally), so loop end never comes.
   let pendingResultTrace: unknown = null;
+  const flushResultTrace = (): void => {
+    if (!pendingResultTrace) return;
+    try {
+      writeMessageOut({
+        id: `trace-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        kind: 'trace',
+        content: JSON.stringify(pendingResultTrace),
+        platform_id: routing.platformId,
+        channel_type: routing.channelType,
+        thread_id: routing.threadId,
+      });
+    } catch (err) {
+      log(`terminal result-trace write failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    pendingResultTrace = null;
+  };
 
   // Concurrent polling: push follow-ups into the active query as they arrive.
   // We do NOT force-end the stream on silence — keeping the query open avoids
@@ -486,9 +505,11 @@ async function processQuery(
             details: t.details,
           }).catch((err) => log(`turn-telemetry emit failed: ${err instanceof Error ? err.message : String(err)}`));
         }
+        let nudged = false;
         if (event.text) {
           const { hasUnwrapped, toolTextEmissions } = dispatchResultText(event.text, routing);
           if (hasUnwrapped && toolTextEmissions.length > 0 && toolTextNudges < MAX_TOOL_TEXT_NUDGES) {
+            nudged = true;
             // §24.13 footgun fix: the model TRIED to call a tool but wrote it as
             // text. The generic "wrap it in <message>" nudge makes GLM fabricate
             // a "work done" reply — so steer it to re-issue a REAL tool call.
@@ -508,6 +529,7 @@ async function processQuery(
                 `make the tool call now.</system>`,
             );
           } else if (hasUnwrapped && toolTextEmissions.length === 0 && !unwrappedNudged) {
+            nudged = true;
             unwrappedNudged = true;
             const destinations = getAllDestinations();
             const names = destinations.map((d) => d.name).join(', ');
@@ -519,12 +541,16 @@ async function processQuery(
             );
           }
         }
+        // §24.21 Δ: the turn truly ended (no nudge extending it) — flush the
+        // stashed terminal trace AFTER the chat rows dispatchResultText wrote,
+        // so the host's finalize-on-result sees the run's output first.
+        if (!nudged) flushResultTrace();
       } else if (event.type === 'trace') {
         // Simulator trace step (§24.20). Sandbox-only — the provider only emits
         // these when emitTrace is set. Persist as a kind:'trace' outbound row
         // routed to the run's portal stream; the host pushes it to the
         // simulator:<id> SSE topic via the portal channel adapter. The t:'result'
-        // trace is deferred to end-of-loop (see pendingResultTrace above).
+        // trace is stashed and flushed by the result handler above (§24.21 Δ).
         const t = (event.trace as { t?: string }).t;
         if (t === 'result') {
           pendingResultTrace = event.trace;
@@ -543,23 +569,10 @@ async function processQuery(
   } finally {
     done = true;
     clearInterval(pollHandle);
-    if (pendingResultTrace) {
-      // Written even when the loop ends by error: the run is over either way,
-      // and the host should finalize with whatever output exists rather than
-      // wait for the hard wall.
-      try {
-        writeMessageOut({
-          id: `trace-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          kind: 'trace',
-          content: JSON.stringify(pendingResultTrace),
-          platform_id: routing.platformId,
-          channel_type: routing.channelType,
-          thread_id: routing.threadId,
-        });
-      } catch (err) {
-        log(`terminal result-trace write failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
+    // Safety net for a clean loop end (query.end() / stream error) while a
+    // nudged turn's trace is still stashed — the run is over either way, so
+    // let the host finalize with whatever output exists.
+    flushResultTrace();
   }
 
   return { continuation: queryContinuation };

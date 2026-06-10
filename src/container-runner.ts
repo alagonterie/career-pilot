@@ -32,7 +32,7 @@ import { ensureDailyBriefingTask } from './modules/career-pilot/daily-briefing-b
 import { ensureFunnelCuratorTask } from './modules/career-pilot/funnel-curator-bootstrap.js';
 import { ensureJobScrapeTask } from './modules/career-pilot/scrape-jobs-bootstrap.js';
 import { ensureKillerMatchTask } from './modules/career-pilot/killer-match-bootstrap.js';
-import { renderPersonaForGroup } from './modules/career-pilot/render-persona.js';
+import { renderPersonaForGroup, renderSandboxCandidateForGroup } from './modules/career-pilot/render-persona.js';
 import { getPauseState, type PauseState } from './modules/portal/system-modes.js';
 import { stopTypingRefresh } from './modules/typing/index.js';
 import { log } from './log.js';
@@ -351,6 +351,11 @@ function buildMounts(
     } catch (err) {
       log.warn('Heartbeat bootstrap failed (non-fatal)', { sessionId: session.id, err });
     }
+  } else if (agentGroup.folder === 'career-pilot-sandbox') {
+    // §24.54: the public simulator gets the resume-grade candidate subset
+    // (no comp floor, no quiet hours) so tailor-resume/draft-outreach have
+    // the facts a live run needs. No bootstraps — the sandbox runs no crons.
+    renderSandboxCandidateForGroup(agentGroup);
   }
 
   // Compose CLAUDE.md fresh every spawn from the shared base, enabled skill
