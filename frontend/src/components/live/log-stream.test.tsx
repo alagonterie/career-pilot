@@ -127,6 +127,30 @@ describe('LogStream', () => {
     expect(screen.getByTestId('trace-empty')).toHaveTextContent(/no agent activity/i)
   })
 
+  it('opens a stale window with a leading day divider (§24.57 — the fixture days are in the past)', () => {
+    render(<LogStream events={EVENTS} status="open" count={3} />)
+    const dividers = screen.getAllByTestId('trace-date')
+    expect(dividers).toHaveLength(1) // all three events share 2026-06-02
+    expect(dividers[0]).toHaveTextContent('Jun 2')
+  })
+
+  it('marks a day boundary between events from different days (§24.57)', () => {
+    const events = [
+      ev({ seq: 1, ts: '2026-06-02T16:42:00Z', summary: 'day one' }),
+      ev({ seq: 2, ts: '2026-06-03T09:05:00Z', summary: 'day two' }),
+    ]
+    render(<LogStream events={events} status="open" count={2} />)
+    const dividers = screen.getAllByTestId('trace-date')
+    expect(dividers).toHaveLength(2) // leading Jun 2 + the Jun 3 boundary
+    expect(dividers[1]).toHaveTextContent('Jun 3')
+  })
+
+  it('shows no divider when every event is from today (§24.57)', () => {
+    const events = [ev({ seq: 1, ts: new Date().toISOString(), summary: 'fresh' })]
+    render(<LogStream events={events} status="open" count={1} />)
+    expect(screen.queryByTestId('trace-date')).not.toBeInTheDocument()
+  })
+
   it('renders a category=turn row as a batch-sealing separator, not an action line (§24.35 Pass C)', () => {
     const turn = ev({
       seq: 9,
@@ -144,6 +168,8 @@ describe('LogStream', () => {
     expect(seal).toHaveTextContent('opus-4-8')
     expect(seal).toHaveTextContent('18,400 tok')
     expect(seal).toHaveTextContent('cache 90%')
+    // §24.57: the seal explains itself via an InfoTip (mobile-capable), not a title attr
+    expect(within(seal).getByTestId('info-tip-trigger')).toBeInTheDocument()
     // the turn row is the seal — NOT one of the action lines
     expect(screen.getAllByTestId('trace-line')).toHaveLength(1)
   })

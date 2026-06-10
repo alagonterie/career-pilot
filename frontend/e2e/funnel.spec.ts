@@ -84,6 +84,15 @@ test.describe('/momentum — pipeline board, frontend <-> backend', () => {
     await expect(card).toBeFocused()
   })
 
+  test('?app deep-link opens the drawer once the funnel loads (§24.57)', async ({ page }) => {
+    await page.goto('/momentum?app=Wayne%20Enterprises')
+    await expect(page.getByRole('dialog', { name: 'Wayne Enterprises' })).toBeVisible()
+    // An unknown ref is a no-op — the board renders, no drawer.
+    await page.goto('/momentum?app=not-a-real-ref')
+    await expect(page.getByTestId('funnel-card').first()).toBeVisible()
+    await expect(page.getByRole('dialog')).toBeHidden()
+  })
+
   test('the shared header nav reaches /momentum and back', async ({ page }) => {
     await page.goto('/')
     const nav = page.getByRole('navigation', { name: 'Primary' })

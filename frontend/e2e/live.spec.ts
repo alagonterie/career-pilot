@@ -70,6 +70,14 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
     // ($0.06) + the seeded deterministic simulator run ($0.04).
     await expect(page.getByTestId('local-spend')).toHaveText('$0.10')
 
+    // §24.57: the fixture window is in the past, so the stream opens with a
+    // leading day divider; the seal explains itself via an InfoTip on tap.
+    await expect(trace.getByTestId('trace-date').first()).toHaveText('Jun 2')
+    await trace.getByTestId('info-tip-trigger').first().click()
+    await expect(page.getByTestId('info-tip-panel')).toContainText('One container turn')
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('info-tip-panel')).toBeHidden()
+
     // A filter chip narrows the stream: System = non-subagent events only, so the
     // single research-company line disappears.
     await expect(page.getByTestId('trace-line').filter({ hasText: 'research-company' })).toHaveCount(1)
@@ -81,6 +89,17 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
 
     expect(consoleErrors).toEqual([])
     expect(failedRequests).toEqual([])
+  })
+
+  test('a Recent-outcomes row deep-links into the /momentum drawer (§24.57)', async ({ page }) => {
+    await page.goto('/live')
+    await page.getByTestId('recent-outcome-link').filter({ hasText: 'Wayne Enterprises' }).click()
+    await expect(page).toHaveURL(/\/momentum\?app=Wayne([+ ]|%20)Enterprises/)
+    await expect(page.getByRole('dialog', { name: 'Wayne Enterprises' })).toBeVisible()
+    // Closing clears the param (the drawer state stays shareable but not sticky).
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog', { name: 'Wayne Enterprises' })).toBeHidden()
+    await expect(page).toHaveURL('/momentum')
   })
 
   test('the shared header nav reaches /live and back', async ({ page }) => {
