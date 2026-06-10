@@ -2678,7 +2678,7 @@ async function runFunnelCuratorConsumer(): Promise<void> {
     if (row.kind !== 'task') fail(`funnel-curator row has kind='${row.kind}', expected 'task'`);
     if (!row.recurrence) fail('funnel-curator row has null recurrence');
     const content = JSON.parse(row.content) as { prompt: string };
-    if (!content.prompt?.includes('funnel-curator')) {
+    if (!content.prompt?.includes('pipeline-scribe')) {
       fail(`funnel-curator row content.prompt missing trigger sentinel: ${content.prompt}`);
     }
     ok(`bootstrap inserted task: series_id=funnel-curator recurrence='${row.recurrence}'`);
@@ -2838,7 +2838,7 @@ async function runFunnelCurator(): Promise<void> {
   // Detect this case via the persisted funnel_curator_output row.
   let reply = '';
   try {
-    reply = await chatTurn('[scheduled trigger: funnel-curator]', realApiMode ? 120_000 : 600_000);
+    reply = await chatTurn('[scheduled trigger: pipeline-scribe]', realApiMode ? 120_000 : 600_000);
   } catch (e) {
     if (!realApiMode) throw e;
     // Real-mode: check whether the curator persisted a row regardless of reply
@@ -2878,14 +2878,14 @@ async function runFunnelCurator(): Promise<void> {
   // ── Assertion 2: subagent dispatched ──
   const jsonl = findLatestSessionJsonl();
   if (!jsonl) fail('no session JSONL found under data/v2-sessions/');
-  const dispatch = findTaskDelegation(jsonl, 'funnel-curator');
+  const dispatch = findTaskDelegation(jsonl, 'pipeline-scribe');
   if (!dispatch) {
     fail(
-      'orchestrator did not dispatch the funnel-curator subagent via Agent/Task. ' +
+      'orchestrator did not dispatch the pipeline-scribe subagent via Agent/Task. ' +
         'The scheduled-trigger handler must dispatch the subagent before reading state.',
     );
   }
-  ok('orchestrator dispatched funnel-curator subagent');
+  ok('orchestrator dispatched pipeline-scribe subagent');
 
   // ── Assertion 3: subagent called query_gmail_delta + persist_funnel_state ──
   const subagentJsonl = findSubagentJsonl(jsonl);

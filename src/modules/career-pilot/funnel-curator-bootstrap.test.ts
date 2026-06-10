@@ -202,7 +202,7 @@ describe('ensureFunnelCuratorTask', () => {
     expect(row.series_id).toBe('funnel-curator');
     expect(row.id).not.toBe('funnel-curator');
     const content = JSON.parse(row.content) as { prompt: string; script: string | null };
-    expect(content.prompt).toBe('[scheduled trigger: funnel-curator]');
+    expect(content.prompt).toBe('[scheduled trigger: pipeline-scribe]');
     expect(content.script).toBeNull();
   });
 
@@ -251,5 +251,47 @@ describe('ensureFunnelCuratorTask', () => {
         .get() as { n: number }
     ).n;
     expect(liveCount).toBe(1);
+  });
+
+  it('reconciles a live row holding the pre-rename sentinel to the current prompt (§24.59)', () => {
+    // insertSampleTask seeds the legacy '[scheduled trigger: funnel-curator]'
+    // prompt — exactly what a deployed box holds across the rename deploy.
+    insertSampleTask({ status: 'pending' });
+    const before = inDb
+      .prepare("SELECT process_after, recurrence FROM messages_in WHERE id = 'funnel-curator'")
+      .get() as { process_after: string; recurrence: string };
+
+    const res = ensureFunnelCuratorTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION);
+    expect(res.action).toBe('reconciled_prompt');
+    expect(res.taskId).toBe('funnel-curator');
+
+    const row = inDb
+      .prepare("SELECT content, process_after, recurrence FROM messages_in WHERE id = 'funnel-curator'")
+      .get() as { content: string; process_after: string; recurrence: string };
+    const content = JSON.parse(row.content) as { prompt: string; script: string | null };
+    expect(content.prompt).toBe('[scheduled trigger: pipeline-scribe]');
+    expect(content.script).toBeNull();
+    // The series schedule is untouched — only the prompt converged.
+    expect(row.process_after).toBe(before.process_after);
+    expect(row.recurrence).toBe(before.recurrence);
+
+    // No duplicate row, and the next pass is a plain skip.
+    const count = (
+      inDb.prepare("SELECT COUNT(*) AS n FROM messages_in WHERE series_id = 'funnel-curator'").get() as { n: number }
+    ).n;
+    expect(count).toBe(1);
+    expect(ensureFunnelCuratorTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION).action).toBe('skipped_exists');
+  });
+
+  it('reconciles a paused legacy row too', () => {
+    insertSampleTask({ status: 'paused' });
+    const res = ensureFunnelCuratorTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION);
+    expect(res.action).toBe('reconciled_prompt');
+    const row = inDb.prepare("SELECT status, content FROM messages_in WHERE id = 'funnel-curator'").get() as {
+      status: string;
+      content: string;
+    };
+    expect(row.status).toBe('paused');
+    expect((JSON.parse(row.content) as { prompt: string }).prompt).toBe('[scheduled trigger: pipeline-scribe]');
   });
 });

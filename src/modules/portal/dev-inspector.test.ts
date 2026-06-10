@@ -446,7 +446,7 @@ describe('on-demand sweep (§24.43c)', () => {
       expect(row.status).toBe('pending');
       expect(row.recurrence).toBeNull(); // one-shot — won't clone
       expect(row.series_id).toBe(id); // its own series, not 'funnel-curator'
-      expect((JSON.parse(row.content) as { prompt: string }).prompt).toBe('[scheduled trigger: funnel-curator]');
+      expect((JSON.parse(row.content) as { prompt: string }).prompt).toBe('[scheduled trigger: pipeline-scribe]');
     } finally {
       inDb.close();
       fs.rmSync(tmpDir, { recursive: true, force: true });

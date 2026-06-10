@@ -453,12 +453,16 @@ function seedApplicationsAndFunnel(db: Database.Database): void {
   }
 }
 
+// Current subagent ids + one deliberate legacy id: real audit history contains
+// 'funnel-curator' rows from before the §24.59 rename, and the frontend
+// display-aliases them — seeding one keeps that alias path exercised in e2e.
 const AGENTS = [
   'research-company',
   'tailor-resume',
   'draft-outreach',
-  'prep-interview',
+  'build-interview-kit',
   'scrape-jobs',
+  'pipeline-scribe',
   'funnel-curator',
 ];
 const MODELS = ['opus-4-8', 'sonnet-4-6', 'haiku-4-5'];

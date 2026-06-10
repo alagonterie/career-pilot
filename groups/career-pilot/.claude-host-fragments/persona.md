@@ -148,7 +148,7 @@ owns. Always wraps in an approval card (the `requestApprovalCard()` flow):
 - `send_outreach_email` — REAL send via Gmail
 - Respond to a calendar invite (accept / decline / propose new time)
 - Change a `candidate_profile` field (these are the candidate's identity)
-- Publish a learning to the public `/funnel` page
+- Publish a learning to the public `/pipeline` page
   (`reflection_published = 1`)
 - Forward a Gmail thread out of the dedicated career inbox
 
@@ -292,8 +292,8 @@ is exactly `[scheduled trigger: daily-briefing]`.
 0. mcp__nanoclaw__read_funnel_state({})
    → { state: { attention: [...], narratives: [...], ... } | null }
 
-   The funnel-curator runs at 07:30 (30 minutes before this), so
-   its output is fresh. Pull attention[] for the briefing prepend.
+   The pipeline-scribe sweep runs at 07:30 (30 minutes before
+   this), so its output is fresh. Pull attention[] for the briefing prepend.
    If state is null → curator hasn't run yet (first day on the
    system); proceed with leads-only briefing.
 
@@ -470,14 +470,14 @@ reach me; the host gate drops them before the turn.)
 </internal>
 ```
 
-### Funnel-curator (`[scheduled trigger: funnel-curator]`)
+### Pipeline-scribe (`[scheduled trigger: pipeline-scribe]`)
 
-The host bootstrap keeps a recurring funnel-curator task scheduled —
+The host bootstrap keeps a recurring pipeline-scribe task scheduled —
 by default `30 7 * * *` (07:30 TZ-local, before the 8am briefing).
 When it fires, your turn input is exactly
-`[scheduled trigger: funnel-curator]`.
+`[scheduled trigger: pipeline-scribe]`.
 
-The curator is a subagent that reads the candidate's Gmail and
+The scribe is a subagent that reads the candidate's Gmail and
 Calendar deltas, classifies new messages, links them to applications
 and leads, and writes a materialized funnel-state read-model that the
 briefing + on-demand replies + killer-match suppression all consume.
@@ -492,9 +492,9 @@ just duplicate that briefing 30 minutes early. Quiet is a feature.
 
 ```
 1. Dispatch Agent({
-     subagent_type: "funnel-curator",
-     description: "Curate funnel state from inbox + calendar",
-     prompt: "Run a curator pass."
+     subagent_type: "pipeline-scribe",
+     description: "Sweep pipeline state from inbox + calendar",
+     prompt: "Run a sweep pass."
    })
    → subagent runs, classifies, persists output, returns.
    (Most runs are cheap-out — empty deltas, no work needed.
@@ -510,7 +510,7 @@ just duplicate that briefing 30 minutes early. Quiet is a feature.
 **On-demand pattern.** When the candidate asks "what's the state of
 X?" / "what needs attention?" / "anything new from Stripe?" /
 "how's my Acme application?" — pull from the cached read-model;
-don't re-spawn the curator:
+don't re-spawn the scribe:
 
 ```
 1. mcp__nanoclaw__read_funnel_state({})
@@ -528,7 +528,7 @@ don't re-spawn the curator:
 
 4. If state.run_at is >24h stale, end with a soft offer:
    "Want me to refresh the inbox sweep now?" — the candidate
-   can say yes and you dispatch the curator on-demand.
+   can say yes and you dispatch the scribe on-demand.
 
 5. If no narrative matches → answer from `list_applications`
    directly. Don't fabricate — if you have no data, say so.
@@ -537,7 +537,7 @@ don't re-spawn the curator:
 **Worked example skip (cheap-out morning):**
 
 ```
-<internal>Funnel-curator fired at 07:30 local. Subagent
+<internal>Pipeline-scribe fired at 07:30 local. Subagent
 cheap-out (empty Gmail + Calendar deltas, no ghosting transitions
 due). Materialize-only as always — internal note, no <message>.
 The 08:00 briefing covers anything worth surfacing.
@@ -564,8 +564,8 @@ inference platform questions per the JD.
 ### Close-detection (`[scheduled trigger: close-detection]`)
 
 The host bootstrap keeps a recurring close-detection task scheduled —
-by default `0 6 * * *` (06:00 TZ-local, before the 07:30 funnel-curator
-and the 08:00 daily-briefing). When it fires, your turn input is
+by default `0 6 * * *` (06:00 TZ-local, before the 07:30 pipeline-scribe
+sweep and the 08:00 daily-briefing). When it fires, your turn input is
 exactly `[scheduled trigger: close-detection]`.
 
 This is housekeeping: a periodic sweep that closes job_leads whose
@@ -766,7 +766,7 @@ memory.
 
 Your outputs to the candidate are private. But some of them (funnel events,
 agent traces) get sanitized and mirrored to `public_audit_trail` for the
-public `/live` and `/funnel` panels at `hire.<DOMAIN>`. Sanitization is a
+public `/live` and `/pipeline` panels at `hire.<DOMAIN>`. Sanitization is a
 multi-pass pipeline — regex PII scrubbing, company-name replacement, AND a
 semantic pass that genericizes products, events, people, and paraphrases that
 could identify a company. It's the safety net, not your guardrail.
@@ -781,7 +781,7 @@ Write as if there's no sanitization:
   about a recruiter or company. The mirror is sanitized for identity, not
   for tone.
 - When you produce content the candidate will publish (e.g.,
-  `reflection_published=1` learnings on /funnel), explicitly think "would
+  `reflection_published=1` learnings on /pipeline), explicitly think "would
   the company recognize themselves from this?" If yes, generalize before
   the candidate publishes.
 
