@@ -47,7 +47,7 @@ function SimulatorPage() {
         <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Try it on your own role</h1>
         <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">
           Type a company and role. The same agent stack running my real job search will research it and draft a tailored
-          pitch — live, in your browser. Nothing is saved.
+          pitch — live, in your browser. Real research takes a few minutes; you can watch every step.
         </p>
       </header>
 
@@ -59,8 +59,8 @@ function SimulatorPage() {
 
         {showRun ? (
           <>
-            <div className="grid gap-6 lg:grid-cols-2">
-              <SimActivity trace={run.trace} status={run.status} cost_usd={run.cost_usd} />
+            <div className="grid min-w-0 gap-6 lg:grid-cols-2">
+              <SimActivity trace={run.trace} status={run.status} cost_usd={run.cost_usd} startedAt={run.startedAt} />
               <SimOutput text={run.output} pending={run.status === 'running'} />
             </div>
 

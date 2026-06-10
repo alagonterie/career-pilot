@@ -55,6 +55,27 @@ test('no route scrolls horizontally at a phone width', async ({ page }) => {
   }
 })
 
+// The mid-run 2-pane view carries the long mono trace lines — the overflow
+// case the static input-view check above can't catch (§24.31 Δ; found on a
+// real phone). Drives the mock run, then measures with content present.
+test('the mid-run simulator view does not scroll horizontally on mobile', async ({ page }) => {
+  await page.goto('/simulator')
+  await expect(async () => {
+    if (await page.getByTestId('sim-activity').isVisible()) return
+    await page.getByLabel('Company name').fill('Wayne Enterprises')
+    await page.getByLabel('Role / title').fill('Principal Engineer')
+    await page.getByRole('button', { name: /run simulation/i }).click()
+    await expect(page.getByTestId('sim-activity')).toBeVisible({ timeout: 2000 })
+  }).toPass({ timeout: 15_000 })
+  await expect(page.getByTestId('sim-trace-subagent').first()).toBeVisible()
+  await expect(page.getByTestId('sim-results')).toBeVisible() // run done → output present too
+
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  )
+  expect(overflow, 'horizontal overflow on the mid-run /simulator view').toBeLessThanOrEqual(1)
+})
+
 test('the top nav collapses to a working hamburger menu', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Jane Doe', level: 1 })).toBeVisible()

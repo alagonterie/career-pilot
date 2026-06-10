@@ -81,6 +81,14 @@ test.describe('/simulator — the recruiter simulator, frontend <-> backend', ()
     await expect(page.getByTestId('sim-output-body')).toContainText('Tailored resume')
     await expect(page.getByTestId('share-talk')).toBeVisible()
 
+    // The persisted run activity, collapsed by default, expands on demand (§24.31 Δ).
+    const toggle = page.getByTestId('share-activity-toggle')
+    await expect(toggle).toContainText(/see how this run worked/i)
+    await expect(page.getByTestId('sim-activity')).toHaveCount(0)
+    await toggle.click()
+    await expect(page.getByTestId('sim-activity')).toBeVisible()
+    await expect(page.getByTestId('sim-trace-subagent').first()).toContainText('research-company')
+
     const a11y = await new AxeBuilder({ page }).analyze()
     expect(a11y.violations).toEqual([])
 

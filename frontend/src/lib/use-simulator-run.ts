@@ -41,6 +41,8 @@ export interface SimRunState {
   output: string
   cost_usd: number | null
   elapsedMs: number | null
+  /** Run start (ms epoch) while a run is active — drives the elapsed ticker. */
+  startedAt: number | null
   errorMessage: string | null
   input: SimRunInput | null
   start: (input: SimRunInput) => void
@@ -65,6 +67,7 @@ export function useSimulatorRun(): SimRunState {
   const [output, setOutput] = React.useState('')
   const [cost, setCost] = React.useState<number | null>(null)
   const [elapsedMs, setElapsedMs] = React.useState<number | null>(null)
+  const [startedAt, setStartedAt] = React.useState<number | null>(null)
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
   const [input, setInput] = React.useState<SimRunInput | null>(null)
 
@@ -86,6 +89,7 @@ export function useSimulatorRun(): SimRunState {
     setOutput('')
     setCost(null)
     setElapsedMs(null)
+    setStartedAt(null)
     setErrorMessage(null)
     setInput(null)
   }, [])
@@ -104,6 +108,7 @@ export function useSimulatorRun(): SimRunState {
     setErrorMessage(null)
     setInput(runInput)
     startedRef.current = Date.now()
+    setStartedAt(startedRef.current)
 
     void (async () => {
       let id: string
@@ -196,5 +201,5 @@ export function useSimulatorRun(): SimRunState {
     })()
   }, [])
 
-  return { status, runId, trace, output, cost_usd: cost, elapsedMs, errorMessage, input, start, reset }
+  return { status, runId, trace, output, cost_usd: cost, elapsedMs, startedAt, errorMessage, input, start, reset }
 }

@@ -262,8 +262,8 @@ export function seedDeterministicSimulatorRun(db: Database.Database): void {
   db.prepare(
     `INSERT INTO simulator_runs
        (id, ts, visitor_company, visitor_role, jd_excerpt, tailored_resume,
-        outreach_draft, total_cost_cents, total_latency_ms, cache_hit_count, shareable, expires_at)
-     VALUES (@id, @ts, @company, @role, @jd, @resume, @outreach, @cost, @latency, @cache, 1, @expires)`,
+        outreach_draft, total_cost_cents, total_latency_ms, cache_hit_count, shareable, expires_at, trace_json)
+     VALUES (@id, @ts, @company, @role, @jd, @resume, @outreach, @cost, @latency, @cache, 1, @expires, @trace)`,
   ).run({
     id: 'det-sim-1',
     ts: '2026-06-01T12:00:00Z',
@@ -288,6 +288,35 @@ export function seedDeterministicSimulatorRun(db: Database.Database): void {
     latency: 22000,
     cache: 1,
     expires: '2099-01-01T00:00:00Z',
+    // Mirrors the live wire shape — the share page's expandable activity
+    // section (§24.31 Δ) renders from this.
+    trace: JSON.stringify([
+      { t: 'tool', name: 'analyze_jd', input_summary: '{"role":"Principal Engineer"}', parent_tool_use_id: null },
+      {
+        t: 'subagent',
+        subagent: 'research-company',
+        input_summary: '{"description":"Research Wayne Enterprises engineering signal"}',
+        parent_tool_use_id: null,
+      },
+      {
+        t: 'tool',
+        name: 'WebSearch',
+        input_summary: '{"query":"Wayne Enterprises engineering"}',
+        parent_tool_use_id: 'toolu_research',
+      },
+      {
+        t: 'subagent',
+        subagent: 'tailor-resume',
+        input_summary: '{"description":"Rank + rewrite top bullets"}',
+        parent_tool_use_id: null,
+      },
+      {
+        t: 'subagent',
+        subagent: 'draft-outreach',
+        input_summary: '{"description":"Tone-matched cold email"}',
+        parent_tool_use_id: null,
+      },
+    ]),
   });
 }
 

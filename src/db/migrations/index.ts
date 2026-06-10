@@ -34,6 +34,7 @@ import { migration124 } from './124-public-funnel-view.js';
 import { migration125 } from './125-funnel-events-proactive.js';
 import { migration126 } from './126-win-confidence-rationale.js';
 import { migration127 } from './127-interview-kits.js';
+import { migration128 } from './128-simulator-trace.js';
 
 export interface Migration {
   version: number;
@@ -75,6 +76,7 @@ const migrations: Migration[] = [
   migration125,
   migration126,
   migration127,
+  migration128,
 ];
 
 export function runMigrations(db: Database.Database): void {
