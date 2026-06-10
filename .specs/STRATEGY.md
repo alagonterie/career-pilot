@@ -4942,6 +4942,28 @@ DoD (F3 additions): the `build-interview-kit` invocation prompt carries a `## Jo
 
 ---
 
+#### 24.58 /momentum mobile defects — min-content overflow, missing scroll-lock, drawer pop
+
+**Finding (2026-06-10, owner phone test; all three reproduced with the real dev-box funnel payload — 80px measured overflow at 393px).**
+
+1. **Horizontal overflow is data-dependent, which is why CI's overflow guard passed.** The board's *base* (phone) layout is bare `grid` with no column template — the implicit track sizes to content **min-width**. `truncate` sets `white-space: nowrap`, and an overflow-hidden element still *contributes* its full single-line width as min-content, so a real-world role title ("Senior Software Engineer, Distributed Systems (Remote-friendly but US only)") forces a 448px column on a 393px viewport. The `sm:`/`lg:` breakpoints were never exposed — Tailwind's `grid-cols-N` compiles to `repeat(N, minmax(0,1fr))`, which clamps min-width to 0. Only the un-templated base lacked the clamp. Fixture titles are short → CI green while the box overflowed.
+2. **The dialog contract lacks a body scroll-lock.** `useDialog` does focus-trap + `inert`, but `inert` blocks *interaction*, not scroll: with the drawer open, touch scroll chains to the body (probe: `body` scrollable, `overflow: visible`), producing the owner's "page scrolling behind a briefly exposed gap" (overscroll rubber-banding exposing the backdrop edge).
+3. **The drawer pops with zero transition.** Combined with (1)'s overflowed page — where opening focuses the panel and yanks the visual viewport back — the open reads as "instantly zoomed in awkwardly."
+
+**What lands:**
+1. `FunnelBoard` + `FunnelBoardSkeleton` gain explicit `grid-cols-1` on the base layout (the `minmax(0,1fr)` clamp at every breakpoint). **CI gap closed at the data layer:** one deterministic-seed application gets a real-shaped long role title so the mobile overflow guard exercises the min-content path forever (funnel visual baselines re-blessed).
+2. `useDialog` adds a **body scroll-lock** (save/restore `document.body.style.overflow`) — both consumers (the `/momentum` drawer AND the `/architecture` node modal) inherit it. The drawer panel gets `overscroll-contain`; the backdrop gets `touch-action: none`. (If iOS rubber-banding persists on the owner's re-test, escalate to the `position:fixed` body-lock technique — noted, not built.)
+3. The drawer becomes a `motion` element with a short slide-in from the right (its §8.5 identity — a drawer — made visible; reduced-motion-safe via the root `MotionConfig`; visual snapshots unaffected — `animations: 'disabled'`).
+
+**Definition of done.**
+1. The mobile overflow guard passes WITH a long-title application in the seed (and fails on the un-clamped grid if reverted); real-payload probe shows 0 overflow.
+2. With the drawer open, the body does not scroll (unit-or-E2E asserted via the lock style); closing restores the prior overflow style; the architecture modal inherits the lock.
+3. The drawer animates in (and still passes the §8.5 focus/Esc/restore E2E unchanged).
+4. Suites + axe green; `funnel.png` / `mobile-momentum.png` re-blessed; deployed to dev; owner re-test on the phone is the final gate.
+5. Spec deltas: this §24.58; PORTAL §13 gains the base-grid clamp + scroll-lock as standing mobile rules.
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.

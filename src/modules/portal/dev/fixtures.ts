@@ -172,7 +172,11 @@ const DET_FUNNEL_SEEDS: DetFunnelSeed[] = [
   {
     company: 'Acme Corp',
     label: 'fintech-a',
-    role: 'Senior Software Engineer',
+    // Deliberately long + real-shaped (§24.58): one seeded title MUST exceed a
+    // phone viewport's width as nowrap min-content, so the mobile overflow
+    // guard exercises the grid min-width clamp (short titles kept CI green
+    // while real box data overflowed).
+    role: 'Senior Software Engineer, Distributed Systems (Remote-friendly but US only)',
     status: 'APPLIED',
     publicState: 'obfuscated',
     win: 40,
