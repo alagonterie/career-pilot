@@ -4890,6 +4890,26 @@ DoD (F3 additions): the `build-interview-kit` invocation prompt carries a `## Jo
 
 ---
 
+#### 24.56 Apply links on surfaced leads + URL-safe Telegram markdown (shortener: not needed)
+
+**Finding (2026-06-10, owner: "job apply links always needed on new leads").** The data layer is already complete — all three scrape sources fill `apply_url` (Greenhouse `absolute_url`, Lever `applyUrl`, SerpApi `apply_options[0].link` falling back to `source_url`; box-verified 24/24 leads filled, zero NULLs) and both lead-reading actions return it (`query_job_leads` is `SELECT *`; `claim_killer_matches` projects `source_url` + `apply_url` explicitly). The gaps are presentation-side:
+
+1. **The daily briefing's "On the radar" renders no link.** The persona's step-5 instruction says "Title, company, llm_score" and the worked example shows bare lines — the owner reads 5 leads each morning with no way to click through. (Killer-match already instructs a raw `source_url` per lead — correct there, and the raw URL earns a Telegram link preview on a 1–2-lead push.)
+2. **The Telegram legacy-Markdown sanitizer corrupts URLs containing underscores.** `sanitizeTelegramLegacyMarkdown` counts `*`/`_` across the WHOLE message and strips them all when the count is odd. Real lead URLs carry underscores — box data shows `?gh_jid=7535803` (Greenhouse!), `utm_campaign=google_jobs_apply`, `…-travel_869` — so a killer-match push with one such URL becomes `?ghjid=…`, a broken link. Drive `kit_url`s (IDs allow `_`) are exposed to the same bug. This is live today, independent of the briefing change.
+
+**What lands (one pass):**
+1. **Sanitizer URL protection (`telegram-markdown-sanitize.ts`).** Bare URLs (`https?://\S+`) and markdown link *targets* are placeholder-swapped exactly like code spans BEFORE the bullet/HR/bold/delimiter-balance transforms, and restored after. Prose-level balancing behavior is unchanged; URLs pass through byte-identical. Unit tests: the `gh_jid` killer-match case, a `utm_…` SerpApi apply link inside `[title](url)`, a Drive-ID `kit_url`, odd-underscore prose alongside an intact URL, and the existing suite untouched.
+2. **Persona briefing links.** "On the radar" lines become markdown links on the title — `• [«Title» — «Company»](source_url) · 87` — and the worked example updates to match. Same `source_url`-first rationale as killer-match (apply deep-links like Workday's `/apply` can 404; the view page always works; `apply_url` is the explicit-apply affordance, surfaced on request). A general persona line: any time a lead is surfaced (briefing, "show me…", "tell me more about…"), carry its link — a lead the candidate can't click through to is half-surfaced.
+3. **Shortener decision: NOT NEEDED — deferred indefinitely.** The original question was "3rd-party vs roll-our-own." Answer: neither. Telegram legacy Markdown renders `[text](url)` natively, so long URLs hide behind link text in lists; the raw-URL surfaces (killer-match) want the full URL for the preview card; click-tracking is a non-goal. If a need ever materializes (a plain-text surface, or analytics), roll our own Worker `/go/<id>` redirect (no 3rd party — owner preference, and the lead `id` is already a stable key) — but do not build it speculatively.
+
+**Definition of done.**
+1. Sanitizer: a message containing `?gh_jid=…` (or any odd-underscore URL) keeps the URL byte-identical; `[title](url-with-underscores)` survives; prose-only odd-delimiter stripping still works; full host suite green.
+2. Persona: briefing step 5 + worked example carry `[Title — Company](source_url)` lines; the lead-surfacing rule is stated once, generally; killer-match section unchanged (already correct).
+3. Box-verified after deploy: the next briefing (or a manually triggered one) renders clickable radar links in Telegram; a URL-bearing push arrives uncorrupted.
+4. Spec deltas: this §24.56; no schema/tool changes (the data layer was already complete).
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
