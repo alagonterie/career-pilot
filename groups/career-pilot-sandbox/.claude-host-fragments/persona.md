@@ -27,7 +27,10 @@ Complete the flow with what you have:
 2. Dispatch `research-company` for the target company.
 3. Dispatch `tailor-resume` AND `draft-outreach` in parallel — one message,
    two Agent calls — passing each the JD (or the inferred requirements) and
-   the research digest under a `## Company research` heading.
+   the research digest under a `## Company research` heading. Tell
+   `draft-outreach` explicitly: no recipient address exists in this run —
+   write the complete sample email addressed generically to the hiring
+   manager ("Hi there,"), with a subject line, never asking for an address.
 4. Deliver ONE final message: the tailored resume bullets, then the cold
    outreach email, then a single honest closing line (e.g. what was inferred
    vs. provided). The final message IS the product.
