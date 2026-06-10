@@ -1,7 +1,31 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import type * as React from 'react'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { AuditEvent } from '~/lib/use-activity-stream'
+
+// Isolate from the router — the trace [ref] is a <Link> into the /pipeline
+// drawer (§24.60). The anchor stand-in builds the href from to+search so the
+// link target stays assertable.
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({
+    to,
+    search,
+    children,
+    className,
+    'data-testid': testId,
+  }: {
+    to?: string
+    search?: { app?: string }
+    children?: React.ReactNode
+    className?: string
+    'data-testid'?: string
+  }) => (
+    <a href={search?.app ? `${to}?app=${search.app}` : to} className={className} data-testid={testId}>
+      {children}
+    </a>
+  ),
+}))
 
 import { LogStream } from './LogStream'
 
@@ -165,6 +189,60 @@ describe('LogStream', () => {
     const events = [ev({ seq: 1, ts: new Date().toISOString(), summary: 'fresh' })]
     render(<LogStream events={events} status="open" count={1} />)
     expect(screen.queryByTestId('trace-date')).not.toBeInTheDocument()
+  })
+
+  it('renders [ref] as a deep-link into that application’s /pipeline drawer (§24.60)', () => {
+    render(<LogStream events={[EVENTS[0]]} status="open" count={1} />)
+    const link = screen.getByTestId('trace-ref-link')
+    expect(link).toHaveAttribute('href', '/pipeline?app=fintech-a')
+    expect(link).toHaveTextContent('[fintech-a]')
+  })
+
+  it('carries the single "cast" InfoTip on the header — the six agents, one tip (§24.60)', () => {
+    render(<LogStream events={[]} status="open" count={0} />)
+    fireEvent.click(screen.getByRole('button', { name: 'About: who the agents are' }))
+    const panel = screen.getByTestId('info-tip-panel')
+    for (const name of [
+      'research-company',
+      'tailor-resume',
+      'draft-outreach',
+      'build-interview-kit',
+      'scrape-jobs',
+      'pipeline-scribe',
+    ]) {
+      expect(within(panel).getByText(name)).toBeInTheDocument()
+    }
+    expect(panel).toHaveTextContent(/orchestrator/i)
+  })
+
+  it('filters to one application via appFilter, AND-composed with the chips (§24.60)', () => {
+    const events = [
+      ev({ seq: 1, application_ref: 'fintech-a', summary: 'reply logged' }),
+      ev({ seq: 2, application_ref: 'devtools-b', summary: 'other app' }),
+      ev({ seq: 3, application_ref: 'fintech-a', proactive: 1, summary: 'follow-up drafted' }),
+    ]
+    render(<LogStream events={events} status="open" count={3} appFilter="fintech-a" />)
+    expect(screen.getAllByTestId('trace-line')).toHaveLength(2) // seq 1 + 3
+    expect(screen.queryByText('other app')).not.toBeInTheDocument()
+    // AND-composes: the Proactive chip narrows within the app filter
+    fireEvent.click(screen.getByTestId('trace-chip-proactive'))
+    expect(screen.getAllByTestId('trace-line')).toHaveLength(1)
+    expect(screen.getByText('follow-up drafted')).toBeInTheDocument()
+  })
+
+  it('renders the dismissible app-filter chip and clears via its handler (§24.60)', () => {
+    const onClear = vi.fn()
+    render(<LogStream events={[EVENTS[0]]} status="open" count={1} appFilter="fintech-a" onClearAppFilter={onClear} />)
+    const chip = screen.getByTestId('trace-app-filter')
+    expect(chip).toHaveTextContent('[fintech-a] ×')
+    fireEvent.click(chip)
+    expect(onClear).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the live-window honesty copy when the app filter matches nothing (§24.60)', () => {
+    render(<LogStream events={[EVENTS[0]]} status="open" count={1} appFilter="ghost-app" />)
+    expect(screen.getByTestId('trace-empty')).toHaveTextContent(/live window/i)
+    expect(screen.getByTestId('trace-empty')).toHaveTextContent(/not the full history/i)
   })
 
   it('renders a category=turn row as a batch-sealing separator, not an action line (§24.35 Pass C)', () => {

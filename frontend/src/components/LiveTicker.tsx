@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 
 import { LiveCursor, StateNote } from '~/components/states'
@@ -93,7 +94,18 @@ export function LiveTicker({
                   desktop keeps the single-line truncating terminal row. mr-2 matches
                   the row's gap-x-2 so desktop is unchanged. */}
                 <span className="line-clamp-2 w-full min-w-0 sm:line-clamp-none sm:block sm:w-auto sm:flex-1 sm:truncate">
-                  {e.application_ref ? <span className="mr-2 text-muted-foreground">[{e.application_ref}]</span> : null}
+                  {/* [ref] deep-links into that application's /pipeline drawer
+                      (§24.60) — dotted underline as the touch-visible affordance. */}
+                  {e.application_ref ? (
+                    <Link
+                      to="/pipeline"
+                      search={{ app: e.application_ref }}
+                      data-testid="ticker-ref-link"
+                      className="mr-2 text-muted-foreground underline decoration-muted-foreground/50 decoration-dotted underline-offset-2 transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      [{e.application_ref}]
+                    </Link>
+                  ) : null}
                   <span className="text-foreground">{e.summary}</span>
                 </span>
                 {e.model_used ? <span className="text-muted-foreground">{e.model_used}</span> : null}

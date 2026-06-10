@@ -1,3 +1,4 @@
+import { InfoTip } from '~/components/InfoTip'
 import { Skeleton } from '~/components/ui/skeleton'
 import { deriveStatTiles, type FunnelApplication } from '~/lib/use-funnel'
 
@@ -6,7 +7,9 @@ import { deriveStatTiles, type FunnelApplication } from '~/lib/use-funnel'
  * funnel rows (no new endpoint). Values carry `data-testid="stat-value"` so the
  * visual baseline can mask the date-windowed numbers (they drift); the labels
  * are stable. `loading` swaps the values for skeletons (§24.36 36.1) so the row
- * keeps its shape while the funnel poll is in flight.
+ * keeps its shape while the funnel poll is in flight. Each label carries an
+ * InfoTip with the tile's honest derivation (§24.60) — the copy lives with the
+ * math in `deriveStatTiles`.
  */
 export function StatTiles({ apps, loading = false }: { apps: FunnelApplication[]; loading?: boolean }) {
   const tiles = deriveStatTiles(apps)
@@ -14,7 +17,10 @@ export function StatTiles({ apps, loading = false }: { apps: FunnelApplication[]
     <div data-testid="funnel-stats" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       {tiles.map((t) => (
         <div key={t.label} className="rounded-lg border border-border bg-card p-4">
-          <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">{t.label}</p>
+          <p className="flex items-center gap-1.5 font-mono text-xs uppercase tracking-widest text-muted-foreground">
+            <span className="min-w-0 truncate">{t.label}</span>
+            <InfoTip label={t.label}>{t.tip}</InfoTip>
+          </p>
           {loading ? (
             <Skeleton className="mt-2 h-8 w-12" />
           ) : (

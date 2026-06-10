@@ -72,15 +72,22 @@ test.describe('/pipeline — the funnel board, frontend <-> backend', () => {
     // Focus lands in the dialog shell on open.
     await expect(panel).toBeFocused()
 
-    // Tab moves into the dialog's only tabbable (Close), and the trap keeps it
-    // there — Tab off the end and Shift+Tab off the top both stay inside.
+    // Tab cycles the dialog's tabbables (Close → Live activity → the win-
+    // confidence InfoTip, §24.60) and the trap wraps at both ends — focus
+    // never escapes to the page behind.
     const close = panel.getByRole('button', { name: 'Close panel' })
+    const liveLink = panel.getByTestId('detail-live-link')
+    const winTip = panel.getByRole('button', { name: 'About: win confidence' })
     await page.keyboard.press('Tab')
     await expect(close).toBeFocused()
     await page.keyboard.press('Tab')
+    await expect(liveLink).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(winTip).toBeFocused()
+    await page.keyboard.press('Tab') // off the end → wraps to the start
     await expect(close).toBeFocused()
-    await page.keyboard.press('Shift+Tab')
-    await expect(close).toBeFocused()
+    await page.keyboard.press('Shift+Tab') // off the top → wraps to the end
+    await expect(winTip).toBeFocused()
 
     // Escape closes and focus returns to the triggering card.
     await page.keyboard.press('Escape')
@@ -134,6 +141,22 @@ test.describe('/pipeline — the funnel board, frontend <-> backend', () => {
     await page.goto('/pipeline?app=not-a-real-ref')
     await expect(page.getByTestId('funnel-card').first()).toBeVisible()
     await expect(page.getByRole('dialog')).toBeHidden()
+  })
+
+  test('stat tiles + the drawer explain themselves via InfoTips (§24.60)', async ({ page }) => {
+    await page.goto('/pipeline')
+    // A stat tile's honest derivation opens on tap.
+    await page.getByRole('button', { name: 'About: Applications YTD' }).click()
+    await expect(page.getByTestId('info-tip-panel')).toContainText(/calendar year/i)
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('info-tip-panel')).toBeHidden()
+
+    // The drawer's win-confidence tip (the seeded public OFFER carries a score).
+    await page.getByText('Wayne Enterprises').click()
+    const panel = page.getByRole('dialog', { name: 'Wayne Enterprises' })
+    await expect(panel).toBeVisible()
+    await panel.getByRole('button', { name: 'About: win confidence' }).click()
+    await expect(page.getByTestId('info-tip-panel')).toContainText(/not a probability/i)
   })
 
   test('the shared header nav reaches /pipeline and back', async ({ page }) => {

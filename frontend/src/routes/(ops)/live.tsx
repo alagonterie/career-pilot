@@ -26,6 +26,12 @@ import { deriveTelemetryView, useTelemetry } from '~/lib/use-telemetry'
 // ops pages exist).
 export const Route = createFileRoute('/(ops)/live')({
   component: LivePage,
+  // §24.60: `?app=«application_ref»` filters the trace stream to one
+  // application (the /pipeline drawer's "Live activity →" destination).
+  // Anything non-string is dropped — same contract as /pipeline's param.
+  validateSearch: (search: Record<string, unknown>): { app?: string } => ({
+    app: typeof search.app === 'string' && search.app.length > 0 ? search.app : undefined,
+  }),
   head: () =>
     seo({
       title: 'Live — Jane Doe',
@@ -42,6 +48,13 @@ function LivePage() {
   const { data: funnel, status: funnelStatus } = useFunnel(API_BASE)
   const { events, status, count } = useActivityStream(API_BASE, { limit: 60 })
   const { data: telemetry, status: telemetryStatus } = useTelemetry(API_BASE)
+  const { app: appFilter } = Route.useSearch()
+  const navigate = Route.useNavigate()
+  // Dismissing the app-filter chip clears the param via replace — arriving from
+  // the drawer link, back should return to /pipeline, not re-apply the filter.
+  const clearAppFilter = (): void => {
+    void navigate({ search: {}, replace: true })
+  }
 
   const view = deriveTelemetryView(telemetry)
   const apps = funnel?.applications ?? []
@@ -65,7 +78,13 @@ function LivePage() {
             desktop focus order is unaffected and the primary content leads. */}
         <div className="order-2 grid grid-cols-1 gap-4 lg:order-3 lg:grid-cols-3">
           <div className="lg:col-span-2">
-            <LogStream events={events} status={status} count={count} />
+            <LogStream
+              events={events}
+              status={status}
+              count={count}
+              appFilter={appFilter}
+              onClearAppFilter={clearAppFilter}
+            />
           </div>
           <div className="flex flex-col gap-4">
             <Panel
