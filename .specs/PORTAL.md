@@ -416,7 +416,9 @@ Each `TraceLine` is collapsible: the top-level row shows agent + summary + total
 
 The stream auto-scrolls until the visitor manually scrolls up, at which point a `↓ jump to live` button appears (Slack-style).
 
-Filter chips above the stream: `[All] [Reactive] [Proactive] [Research] [Tailor] [Outreach] [Prep] [Scrape] [System]`.
+Filter chips above the stream: `[All] [Reactive] [Proactive] [Research] [Tailor] [Outreach] [Prep] [Scrape] [Scribe] [System]`.
+
+> **Build note (STRATEGY §24.60 — interactivity pass 2).** Three trace-stream additions: (1) a rendered `[«application_ref»]` on a trace line (and on the home ticker's rows) is a **deep-link** into that application's `/pipeline` drawer — dotted underline as the touch-visible affordance; (2) the header carries a single **"the cast" InfoTip** — one ⓘ listing the six subagents with one-line roles plus what an unlabeled row is (the orchestrator) — chosen over per-occurrence name tips, which were rejected as clutter; (3) the stream accepts **`/live?app=«ref»`** (the drawer's "Live activity →" link lands here): a dismissible `[«ref»] ×` chip AND-composes with the agent chips, filtering to that application's rows **within the live window only** — it is not an archival query, and the no-match state says so. The per-application timeline endpoint stays deferred (§24.27).
 
 > **Backend note — trace telemetry capture (updated per STRATEGY §24.34/§24.55).** The per-line metrics are captured per-*turn* (a `category='turn'` seal row carrying model / tokens / cost / cache / latency — the SDK resolves cost only per `query()` call), populated for **every** owner turn (§24.55 lifted the original portal-worthy gate). Cache state renders quantitatively — `cache NN%` from `cache_read_pct` (share of prompt tokens served from cache) — never as a boolean badge (an agent turn virtually always reads *some* cache, so `cache✓` carried no information). Action rows keep their progressive lanes (render-if-present).
 
@@ -655,6 +657,8 @@ Click a card → side panel opens with:
 - A "win confidence" % (low rigor — a heuristic, labeled as such)
 
 > **Build note (per STRATEGY §24.57).** The drawer is deep-linkable: `/pipeline?app=«application_ref»` opens that card's panel once the funnel data loads (an unknown ref is a no-op; closing the panel clears the param). The `/live` Recent-outcomes rows link here — a static outcome list becomes navigation into the drawer that already existed.
+
+> **Build note (STRATEGY §24.60 — interactivity pass 2).** The drawer + tiles grow their explainers and the reverse link: (1) the **win-confidence section gets an InfoTip** — an AI-scored 0–100 estimate recomputed as recruiter signals arrive (stage, response cadence, tone); the rationale sentence is the model's own; a heuristic, not a probability; (2) each of the **four stat tiles gets an InfoTip** with its honest derivation (calendar windows, active-only averaging, the heuristic label); (3) the drawer gains a **"Live activity →" link** to `/live?app=«ref»` — that application's rows filtered out of the live trace window (the honest version of a "related artifacts" modal; the per-application timeline endpoint stays deferred). Trace lines link back here (§5.2), so the two pages now cross-navigate per application in both directions.
 
 > **Backend note.** The richest source for "sanitized recent activity" is the funnel-curator's per-company narratives (`funnel_curator_output`, already captured privately). Surfacing them is V1-scoped but **built in Phase 6** alongside this panel and **gated on the Pass 3 LLM sanitization review** (STRATEGY.md §24.12): the narratives are free-form prose where regex + exact-name redaction isn't sufficient. Until then this panel renders from the structured `funnel_events` timeline + `public_funnel_view`.
 

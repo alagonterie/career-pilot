@@ -4993,6 +4993,30 @@ DoD (F3 additions): the `build-interview-kit` invocation prompt carries a `## Jo
 
 ---
 
+#### 24.60 Portal interactivity pass 2 (Track G)
+
+**Owner register, 2026-06-10 (the second interactivity batch; first = §24.57).** Five items, all presentation-only — every piece of data involved is already on the wire (`application_ref` rides audit rows, `win_confidence` + rationale ride `/api/funnel`, the stat tiles derive client-side). Zero backend, zero schema.
+
+**What lands:**
+
+1. **`[application_ref]` is a deep-link everywhere the feed renders it.** The /live trace lines AND the home ticker rows currently render `[«ref»]` as inert text; both become `Link → /pipeline?app=«ref»` — the same drawer deep-link contract Recent-outcomes already uses (§24.57). Affordance is a dotted underline (hover styling alone is invisible on a phone). A stale ref that no longer resolves in the funnel is the established no-op (drawer simply doesn't open) — honest, no special casing. Turn-seal rows carry no ref and are untouched.
+2. **Win-confidence InfoTip (drawer).** An ⓘ beside the drawer's "Win confidence" heading: an AI-scored 0–100 estimate of reaching an offer, recomputed as recruiter signals arrive (stage, response cadence, tone); the sentence below it is the model's own one-line rationale; a heuristic, not a probability. The existing "not a promise" footnote stays.
+3. **Stat-tile InfoTips.** Each of the four `/pipeline` tiles gets an ⓘ beside its label carrying the honest derivation — including the calendar-window caveats (YTD = applied this calendar year; interviews = *entered* an interview stage this calendar month), that Offers counts applications currently at the offer stage, and that Avg days active is a mean over still-active applications only (closed excluded; labeled heuristic).
+4. **"The cast" InfoTip (trace-stream header).** ONE ⓘ beside the "Agent trace stream" heading listing the six subagents with one-line, visitor-vocabulary roles (research-company, tailor-resume, draft-outreach, build-interview-kit, scrape-jobs, pipeline-scribe) plus a line explaining unlabeled rows (the orchestrator — the agent that runs the show). **Decision recorded:** per-occurrence InfoTips on every agent name in the stream were considered and rejected as clutter; one header-level explainer is the answer to "the agent names need explaining."
+5. **Drawer → filtered /live.** The honest version of the owner's "related artifacts modal" idea: the drawer gains a **"Live activity →"** link to `/live?app=«ref»`. `/live` accepts the `app` search param; the trace stream shows a dismissible filter chip (`[«ref»] ×`) that AND-composes with the agent chips; dismissing it clears the param (replace, no history spam). **Honesty rule:** the filter applies to the live window (the recent backlog + tail the stream holds), NOT an archival per-application query — the no-match empty state says exactly that. The real per-application timeline endpoint stays deferred (§24.27); this link surfaces what exists without inventing a data layer.
+
+**Interaction notes (verified against the shipped primitives):** the InfoTip portal node is appended to `<body>` *after* `useDialog`'s inert walk runs, so a tip opened inside the drawer stays interactive; Esc with a tip open inside the drawer closes tip *and* drawer together (the drawer's capture-phase key listener always fires; accepted — both surfaces' Esc contracts say "close"). Scroll-dismiss means scrolling the drawer closes the tip — the standard tooltip contract.
+
+**Definition of done.**
+1. Every rendered `[«ref»]` in the home ticker + /live trace is a working `/pipeline?app=` deep-link (unit + e2e: tap a trace ref → the drawer opens on that application).
+2. The win-confidence, four stat-tile, and cast InfoTips open with the specified copy; axe stays green (unit + e2e).
+3. From the drawer, "Live activity →" lands on `/live?app=«ref»` with the filter chip visible and only that application's rows shown; dismissing the chip clears the param and restores the full stream (e2e).
+4. The app filter AND-composes with the agent chips; the filtered-to-nothing state renders the live-window honesty copy, not the generic no-match line (unit).
+5. Suites + both tscs + format green; visual baselines re-blessed where headers/tiles changed; deployed to dev; owner phone pass is the final gate.
+6. Spec deltas: this §24.60; PORTAL §5.2 + §5.4 build notes.
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
