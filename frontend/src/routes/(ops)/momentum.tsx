@@ -14,6 +14,11 @@ import { useFunnel, type FunnelApplication } from '~/lib/use-funnel'
 // pathless group → the URL is `/momentum`.
 export const Route = createFileRoute('/(ops)/momentum')({
   component: MomentumPage,
+  // Drawer deep-link (§24.57): `?app=«application_ref»` opens that card's
+  // DetailPanel once the funnel loads. Anything non-string is dropped.
+  validateSearch: (search: Record<string, unknown>): { app?: string } => ({
+    app: typeof search.app === 'string' && search.app.length > 0 ? search.app : undefined,
+  }),
   head: () =>
     seo({
       title: 'Momentum — Jane Doe',
@@ -28,6 +33,33 @@ function MomentumPage() {
   const { data, status } = useFunnel(API_BASE)
   const [selected, setSelected] = React.useState<FunnelApplication | null>(null)
   const apps = data?.applications ?? []
+  const { app: appParam } = Route.useSearch()
+  const navigate = Route.useNavigate()
+
+  // Deep-link open (§24.57): once the funnel loads, `?app=«ref»` selects that
+  // card (an unknown ref is a no-op). CONSUME-ONCE: the effect fires a single
+  // time — without the guard, closing the drawer races the param-clearing
+  // navigation and the stale param immediately re-opens it. Any explicit user
+  // interaction also consumes the deep link.
+  const deepLinkDone = React.useRef(false)
+  React.useEffect(() => {
+    if (deepLinkDone.current || !appParam || apps.length === 0) return
+    deepLinkDone.current = true
+    const match = apps.find((a) => a.application_ref === appParam)
+    if (match) setSelected(match)
+  }, [appParam, apps])
+
+  // Selecting/closing keeps the param in sync so the drawer state is shareable.
+  const select = (app: FunnelApplication): void => {
+    deepLinkDone.current = true
+    setSelected(app)
+    void navigate({ search: { app: app.application_ref }, replace: true })
+  }
+  const close = (): void => {
+    deepLinkDone.current = true
+    setSelected(null)
+    void navigate({ search: {}, replace: true })
+  }
 
   return (
     <>
@@ -60,7 +92,7 @@ function MomentumPage() {
             </StateNote>
           </div>
         ) : (
-          <FunnelBoard apps={apps} onSelect={setSelected} />
+          <FunnelBoard apps={apps} onSelect={select} />
         )}
 
         <footer className="border-t border-border pt-6 text-[11px] leading-relaxed text-muted-foreground">
@@ -69,7 +101,7 @@ function MomentumPage() {
         </footer>
       </main>
 
-      <DetailPanel app={selected} onClose={() => setSelected(null)} />
+      <DetailPanel app={selected} onClose={close} />
     </>
   )
 }

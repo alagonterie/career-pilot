@@ -1,9 +1,28 @@
 import { render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { ArchitectureData, SystemMode } from '~/lib/use-architecture'
 import type { FunnelApplication } from '~/lib/use-funnel'
 import type { TelemetryView } from '~/lib/use-telemetry'
+
+// Isolate from the router — RecentOutcomesPanel rows are <Link>s (the §24.57
+// /momentum deep-link), which would need a RouterProvider. An anchor stand-in
+// keeps the content + testids assertable (the SimFallback.test pattern).
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({
+    children,
+    className,
+    'data-testid': testId,
+  }: {
+    children?: React.ReactNode
+    className?: string
+    'data-testid'?: string
+  }) => (
+    <a className={className} data-testid={testId}>
+      {children}
+    </a>
+  ),
+}))
 
 import { FunnelCompact } from './FunnelCompact'
 import {
@@ -191,5 +210,27 @@ describe('FunnelCompact + RecentOutcomes', () => {
     // devtools-b (05-25) is more recent than fintech-a (05-14) → first
     expect(items[0]).toHaveTextContent('devtools-b')
     expect(items[1]).toHaveTextContent('[fintech-a]')
+  })
+
+  it('renders each outcome as a deep-link into the /momentum drawer (§24.57)', () => {
+    render(<RecentOutcomesPanel apps={APPS} />)
+    expect(screen.getAllByTestId('recent-outcome-link')).toHaveLength(2)
+  })
+})
+
+describe('InfoTip explainers on the metric jargon (§24.57)', () => {
+  it('CostCachePanel carries info triggers for spend · est and the cache rate', () => {
+    const view: TelemetryView = { local: LOCAL, hasTurns: true }
+    render(<CostCachePanel view={view} />)
+    const triggers = screen.getAllByTestId('info-tip-trigger')
+    expect(triggers.length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByLabelText('About: spend · est')).toBeInTheDocument()
+    expect(screen.getByLabelText('About: cache rate')).toBeInTheDocument()
+  })
+
+  it('TelemetryPanel carries an info trigger on turn p50', () => {
+    const view: TelemetryView = { local: LOCAL, hasTurns: true }
+    render(<TelemetryPanel view={view} />)
+    expect(screen.getByLabelText('About: turn p50')).toBeInTheDocument()
   })
 })

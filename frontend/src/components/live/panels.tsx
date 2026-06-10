@@ -1,5 +1,7 @@
+import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 
+import { InfoTip } from '~/components/InfoTip'
 import { ModeBanner } from '~/components/architecture/ModeBanner'
 import { StateNote } from '~/components/states'
 import { Skeleton } from '~/components/ui/skeleton'
@@ -58,14 +60,18 @@ export function Panel({
   )
 }
 
-/** A single big-number readout. */
-function Metric({ value, label, testId }: { value: string; label: string; testId?: string }) {
+/** A single big-number readout. `info` hangs an InfoTip off the label —
+ * the §24.57 explain-on-tap affordance for metric jargon. */
+function Metric({ value, label, testId, info }: { value: string; label: string; testId?: string; info?: ReactNode }) {
   return (
     <div className="flex flex-col">
       <span data-testid={testId} className="font-mono text-2xl font-semibold tabular-nums text-foreground">
         {value}
       </span>
-      <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{label}</span>
+      <span className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+        {label}
+        {info ? <InfoTip label={label}>{info}</InfoTip> : null}
+      </span>
     </div>
   )
 }
@@ -205,7 +211,13 @@ export function TelemetryPanel({ view, status }: { view: TelemetryView; status?:
         <>
           <div className="grid grid-cols-3 gap-3">
             <Metric value={local.turns_total.toLocaleString()} label="turns" />
-            {local.turn_p50_ms != null ? <Metric value={fmtLatency(local.turn_p50_ms)} label="turn p50" /> : null}
+            {local.turn_p50_ms != null ? (
+              <Metric
+                value={fmtLatency(local.turn_p50_ms)}
+                label="turn p50"
+                info="Median whole-turn API duration across captured agent turns — one turn is a full agent invocation (often many model calls), not a single request. p95 is the slow tail."
+              />
+            ) : null}
             {local.turn_p95_ms != null ? <Metric value={fmtLatency(local.turn_p95_ms)} label="turn p95" /> : null}
           </div>
           {local.top_model ? (
@@ -267,10 +279,15 @@ export function CostCachePanel({ view, status }: { view: TelemetryView; status?:
             testId="local-spend"
             value={`$${((local.turn_cost_cents_total + local.sim_cost_cents_total) / 100).toFixed(2)}`}
             label="spend · est"
+            info="Lifetime estimated LLM spend: the owner agent's per-turn usage plus public simulator runs, priced by the SDK — an estimate, not a bill (server-side fees like web search aren't included)."
           />
           {local.cache_hit_rate != null ? (
-            <p className="font-mono text-[11px] text-muted-foreground">
+            <p className="inline-flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
               {Math.round(local.cache_hit_rate * 100)}% of prompt tokens served from cache.
+              <InfoTip label="cache rate">
+                Prompt caching re-serves unchanged context (the agent&apos;s instructions, tools, history) instead of
+                reprocessing it — cached tokens cost about a tenth of fresh ones. Higher is cheaper.
+              </InfoTip>
             </p>
           ) : null}
         </>
@@ -326,17 +343,27 @@ export function RecentOutcomesPanel({ apps, status }: { apps: FunnelApplication[
         <p className="font-mono text-xs text-muted-foreground">No activity yet.</p>
       ) : (
         <ol data-testid="recent-outcomes" className="flex flex-col gap-1.5 font-mono text-xs">
+          {/* Each row deep-links into the /momentum drawer for that application
+              (§24.57) — the static outcome list becomes navigation into the
+              detail panel that already exists there. */}
           {recent.map((a) => {
             const isPublic = a.public_state === 'public'
             return (
-              <li key={a.application_ref} className="flex items-center justify-between gap-2">
-                <span className="truncate text-foreground">
-                  {isPublic ? a.application_ref : `[${a.application_ref}]`}
-                </span>
-                <span className="flex items-center gap-2">
-                  <span className="uppercase tracking-wider text-muted-foreground">{a.stage}</span>
-                  {isPublic ? <span className="text-primary">◆</span> : null}
-                </span>
+              <li key={a.application_ref}>
+                <Link
+                  to="/momentum"
+                  search={{ app: a.application_ref }}
+                  data-testid="recent-outcome-link"
+                  className="group flex items-center justify-between gap-2 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <span className="truncate text-foreground group-hover:underline">
+                    {isPublic ? a.application_ref : `[${a.application_ref}]`}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <span className="uppercase tracking-wider text-muted-foreground">{a.stage}</span>
+                    {isPublic ? <span className="text-primary">◆</span> : null}
+                  </span>
+                </Link>
               </li>
             )
           })}

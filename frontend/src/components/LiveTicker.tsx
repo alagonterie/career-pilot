@@ -4,10 +4,18 @@ import { LiveCursor, StateNote } from '~/components/states'
 import type { StreamStatus } from '~/lib/sse'
 import { eventSourceLabel, type AuditEvent } from '~/lib/use-activity-stream'
 
-function hhmm(ts: string): string {
+/**
+ * The ticker clock (§24.57): today's events render `HH:MM`; an event from a
+ * previous local day swaps in its date — `«Mon D» HH:MM` — in the same slot.
+ * The ticker can't afford divider rows (it's a 5-line teaser), so the day
+ * rides the clock; width stays phone-safe.
+ */
+function tickerClock(ts: string): string {
   const d = new Date(ts)
   if (Number.isNaN(d.getTime())) return '--:--'
-  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+  const time = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+  if (d.toDateString() === new Date().toDateString()) return time
+  return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${time}`
 }
 
 /**
@@ -68,7 +76,7 @@ export function LiveTicker({
               the bottom — that ordering is the hierarchy. */}
             {shown.map((e) => (
               <li key={e.seq} data-testid="ticker-row" className="flex flex-wrap items-center gap-x-2">
-                <span className="tabular-nums text-muted-foreground">{hhmm(e.ts)}</span>
+                <span className="whitespace-nowrap tabular-nums text-muted-foreground">{tickerClock(e.ts)}</span>
                 <span className="text-accent-cool">{eventSourceLabel(e)}</span>
                 {e.proactive ? (
                   <span

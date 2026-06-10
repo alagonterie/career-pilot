@@ -60,6 +60,21 @@ describe('LiveTicker', () => {
     expect(screen.getByText('opus-4-7')).toBeInTheDocument()
   })
 
+  it('prefixes the date on an event from a previous day, plain HH:MM today (§24.57)', () => {
+    render(
+      <LiveTicker
+        status="open"
+        events={[
+          ev({ seq: 1, ts: '2026-06-02T16:42:00Z', summary: 'older' }),
+          ev({ seq: 2, ts: new Date().toISOString(), summary: 'fresh' }),
+        ]}
+      />,
+    )
+    const rows = screen.getAllByTestId('ticker-row')
+    expect(rows[0]).toHaveTextContent(/Jun 2 \d{2}:\d{2}/)
+    expect(rows[1]).not.toHaveTextContent(/[A-Z][a-z]{2} \d/)
+  })
+
   it('omits absent lanes (progressive rendering — never faked data)', () => {
     render(
       <LiveTicker
