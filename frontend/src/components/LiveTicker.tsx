@@ -89,7 +89,6 @@ export function LiveTicker({
                   <span className="text-foreground">{e.summary}</span>
                 </span>
                 {e.model_used ? <span className="text-muted-foreground">{e.model_used}</span> : null}
-                {e.cache_hit ? <span className="text-muted-foreground">(cache hit)</span> : null}
               </li>
             ))}
           </ol>

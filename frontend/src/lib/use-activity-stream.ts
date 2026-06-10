@@ -5,9 +5,11 @@ import { connectActivityStream, type StreamStatus } from './sse'
 
 /**
  * A sanitized public_audit_trail row as delivered over /api/activity[/stream].
- * The telemetry lanes (model/tokens/cost/cache/latency) are nullable — populated
- * by a later capture phase (§24.24); the compact ticker shows model+cache, the
- * /live LogStream shows them all, each rendered only when present (progressive).
+ * The telemetry lanes (model/tokens/cost/cache/latency) are nullable — carried
+ * by `category='turn'` rows (§24.34 per-turn capture), rendered only when
+ * present (progressive). `cache_read_pct` is the quantitative cache lane
+ * (§24.55: share of prompt tokens served from cache, 0–100); `cache_hit` is the
+ * legacy boolean — still delivered, no longer rendered (it was always true).
  */
 export interface AuditEvent {
   seq: number
@@ -20,6 +22,7 @@ export interface AuditEvent {
   tokens: number | null
   cost_cents: number | null
   cache_hit: number | null
+  cache_read_pct: number | null
   latency_ms: number | null
   summary: string
 }

@@ -30,6 +30,11 @@ export interface TelemetryLocal {
   turns_24h: number;
   turn_cost_cents_total: number;
   turn_cost_cents_24h: number;
+  // Simulator spend (§24.55) — the public sandbox's per-run SDK estimates
+  // (simulator_runs.total_cost_cents), summed so the Cost & cache panel shows
+  // the COMBINED estimate. Without these the panel omitted a whole spend lane.
+  sim_cost_cents_total: number;
+  sim_cost_cents_24h: number;
   /** 0..1 — Σ cache_read / Σ all prompt tokens over the 24h turns; null if no data. */
   cache_hit_rate: number | null;
   /** p50/p95 of per-turn duration_api_ms over the 24h turns; null if no data. */
@@ -61,10 +66,15 @@ function percentile(sorted: number[], p: number): number | null {
 
 function computeLocal(): TelemetryLocal {
   const db = getDb();
-  const sim = db.prepare('SELECT COUNT(*) AS n FROM simulator_runs').get() as { n: number };
+  const sim = db
+    .prepare('SELECT COUNT(*) AS n, COALESCE(SUM(total_cost_cents), 0) AS cents FROM simulator_runs')
+    .get() as { n: number; cents: number };
   const evTotal = db.prepare('SELECT COUNT(*) AS n FROM public_audit_trail').get() as { n: number };
   const cutoff = new Date(Date.now() - 86_400_000).toISOString();
   const ev24 = db.prepare('SELECT COUNT(*) AS n FROM public_audit_trail WHERE ts >= ?').get(cutoff) as { n: number };
+  const sim24 = db
+    .prepare('SELECT COALESCE(SUM(total_cost_cents), 0) AS cents FROM simulator_runs WHERE ts >= ?')
+    .get(cutoff) as { cents: number };
 
   // All captured turn rows. The windowed counts (turns_24h / spend-today) gate on
   // `ts`; the derived lanes (cache rate, p50/p95, top model) aggregate over ALL
@@ -128,6 +138,8 @@ function computeLocal(): TelemetryLocal {
     turns_24h: turns24,
     turn_cost_cents_total: costTotal,
     turn_cost_cents_24h: cost24,
+    sim_cost_cents_total: sim.cents,
+    sim_cost_cents_24h: sim24.cents,
     cache_hit_rate: promptTotal > 0 ? cacheRead / promptTotal : null,
     turn_p50_ms: percentile(durations, 50),
     turn_p95_ms: percentile(durations, 95),

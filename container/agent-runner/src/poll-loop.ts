@@ -489,11 +489,13 @@ async function processQuery(
         // (send_message) mid-turn, or the message may not need a response
         // at all — either way the turn is finished.
         markCompleted(initialBatchIds);
-        // §24.34: when the turn did portal-worthy work (made ≥1 record_* call),
-        // emit a fire-and-forget per-turn telemetry row. Owner-only host-side
-        // (registerOwnerOnly) — a sandbox emission is rejected by the perimeter,
-        // so no group check is needed here. Never blocks turn teardown.
-        if (event.telemetry && event.telemetry.record_calls > 0) {
+        // §24.34/§24.55: emit a fire-and-forget per-turn telemetry row for EVERY
+        // turn — the original "portal-worthy" gate (record_calls > 0) made the
+        // /live spend a sample, not a total (§24.55 lifted it; record_calls
+        // stays in details as data). Owner-only host-side (registerOwnerOnly) —
+        // a sandbox emission is rejected by the perimeter, so no group check is
+        // needed here. Never blocks turn teardown.
+        if (event.telemetry) {
           const t = event.telemetry;
           void sendActionNoWait('career_pilot.record_turn_telemetry', {
             model_used: t.model_used,

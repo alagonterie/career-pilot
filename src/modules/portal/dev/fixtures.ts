@@ -38,6 +38,8 @@ export interface AuditSeed {
   tokens?: number | null;
   cost_cents?: number | null;
   cache_hit?: 0 | 1;
+  /** Quantitative cache lane (§24.55) — share of prompt tokens served from cache, 0–100. */
+  cache_read_pct?: number | null;
   latency_ms?: number | null;
   /** Per-turn details (duration_api_ms + model_usage) — drives the §24.47 telemetry lanes. */
   details_json?: string | null;
@@ -48,9 +50,9 @@ export function insertAuditRow(db: Database.Database, row: AuditSeed): void {
   db.prepare(
     `INSERT INTO public_audit_trail
        (id, seq, ts, category, agent_name, proactive, application_ref,
-        model_used, tokens, cost_cents, cache_hit, latency_ms, details_json, summary)
+        model_used, tokens, cost_cents, cache_hit, cache_read_pct, latency_ms, details_json, summary)
      VALUES (@id, @seq, @ts, @category, @agent_name, @proactive, @application_ref,
-        @model_used, @tokens, @cost_cents, @cache_hit, @latency_ms, @details_json, @summary)`,
+        @model_used, @tokens, @cost_cents, @cache_hit, @cache_read_pct, @latency_ms, @details_json, @summary)`,
   ).run({
     id: `dev-${row.seq}`,
     seq: row.seq,
@@ -63,6 +65,7 @@ export function insertAuditRow(db: Database.Database, row: AuditSeed): void {
     tokens: row.tokens ?? null,
     cost_cents: row.cost_cents ?? null,
     cache_hit: row.cache_hit ?? 0,
+    cache_read_pct: row.cache_read_pct ?? null,
     latency_ms: row.latency_ms ?? null,
     details_json: row.details_json ?? null,
     summary: row.summary,
@@ -131,6 +134,7 @@ export function seedDeterministicBacklog(db: Database.Database): void {
     tokens: 18400,
     cost_cents: 6,
     cache_hit: 1,
+    cache_read_pct: 90,
     latency_ms: 2100,
     // details_json drives the §24.47 telemetry lanes (cache rate, turn p50, top
     // model) — fixed values so the /live visual baseline stays deterministic:
@@ -477,6 +481,7 @@ function seedAuditBacklog(db: Database.Database): void {
         tokens: 8000 + ((i * 137) % 30000),
         cost_cents: 3 + (i % 12),
         cache_hit: i % 2 === 0 ? 1 : 0,
+        cache_read_pct: 55 + ((i * 7) % 41),
         latency_ms: 1200 + ((i * 53) % 4000),
         summary: 'turn complete',
       });
@@ -608,6 +613,7 @@ export function buildSyntheticEvent(state: GeneratorState): Omit<AuditSeed, 'seq
       tokens: 9000 + ((t * 211) % 28000),
       cost_cents: 3 + (t % 10),
       cache_hit: t % 2 === 0 ? 1 : 0,
+      cache_read_pct: 55 + ((t * 11) % 41),
       latency_ms: 1300 + ((t * 67) % 3800),
       summary: 'turn complete',
     };

@@ -16,6 +16,7 @@ function ev(p: Partial<AuditEvent> & { seq: number }): AuditEvent {
     tokens: null,
     cost_cents: null,
     cache_hit: null,
+    cache_read_pct: null,
     latency_ms: null,
     summary: 'an event',
     ...p,
@@ -33,6 +34,7 @@ const EVENTS: AuditEvent[] = [
     tokens: 3400,
     cost_cents: 2,
     cache_hit: 1,
+    cache_read_pct: 84,
     latency_ms: 4200,
     summary: 'mapped the org',
   }),
@@ -58,13 +60,13 @@ describe('LogStream', () => {
     expect(screen.getByText('3,400 tok')).toBeInTheDocument()
     expect(screen.getByText('4.2s')).toBeInTheDocument()
     expect(screen.getByText('$0.020')).toBeInTheDocument()
-    expect(screen.getByText('cache✓')).toBeInTheDocument()
+    expect(screen.getByText('cache 84%')).toBeInTheDocument()
   })
 
   it('omits absent lanes — never faked (progressive rendering)', () => {
     render(<LogStream events={[EVENTS[0]]} status="open" count={1} />)
     expect(screen.getByText('[fintech-a]')).toBeInTheDocument()
-    expect(screen.queryByText('cache✓')).not.toBeInTheDocument()
+    expect(screen.queryByText(/cache \d+%/)).not.toBeInTheDocument()
     expect(screen.queryByTestId('trace-proactive')).not.toBeInTheDocument()
     // category is the fallback source label when agent_name is null, aliased for
     // display (the 'funnel' category renders as 'momentum' — §5.2 / §8.1)
@@ -134,13 +136,14 @@ describe('LogStream', () => {
       tokens: 18400,
       cost_cents: 6,
       cache_hit: 1,
+      cache_read_pct: 90,
       latency_ms: 2100,
     })
     render(<LogStream events={[EVENTS[0], turn]} status="open" count={2} />)
     const seal = screen.getByTestId('trace-turn')
     expect(seal).toHaveTextContent('opus-4-8')
     expect(seal).toHaveTextContent('18,400 tok')
-    expect(seal).toHaveTextContent('cache✓')
+    expect(seal).toHaveTextContent('cache 90%')
     // the turn row is the seal — NOT one of the action lines
     expect(screen.getAllByTestId('trace-line')).toHaveLength(1)
   })

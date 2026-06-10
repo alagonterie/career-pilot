@@ -30,6 +30,8 @@ const LOCAL = {
   turns_24h: 1,
   turn_cost_cents_total: 10,
   turn_cost_cents_24h: 4,
+  sim_cost_cents_total: 50,
+  sim_cost_cents_24h: 24,
   cache_hit_rate: 0.66,
   turn_p50_ms: 15000,
   turn_p95_ms: 31000,
@@ -114,16 +116,39 @@ describe('TelemetryPanel', () => {
 })
 
 describe('CostCachePanel', () => {
-  it('shows the estimated spend + cache line from local turn data when turns exist (§24.47)', () => {
+  it('shows the COMBINED estimated spend (agent turns + simulator) + cache line (§24.55)', () => {
     const view: TelemetryView = { local: LOCAL, hasTurns: true }
     render(<CostCachePanel view={view} />)
-    expect(screen.getByTestId('local-spend')).toHaveTextContent('$0.10') // 10 cents total, est
+    expect(screen.getByTestId('local-spend')).toHaveTextContent('$0.60') // 10c turns + 50c sim
     expect(screen.getByText(/66% of prompt tokens/)).toBeInTheDocument()
-    expect(screen.getByText('$0.04 today')).toBeInTheDocument()
+    // the windowed line breaks today down by lane
+    expect(screen.getByText('$0.28 today')).toBeInTheDocument() // 4c + 24c
+    expect(screen.getByText('agent $0.04')).toBeInTheDocument()
+    expect(screen.getByText('sim $0.24')).toBeInTheDocument()
   })
 
-  it('shows the honest pending state when no turns are captured', () => {
-    const view: TelemetryView = { local: { ...LOCAL, turns_total: 0 }, hasTurns: false }
+  it('renders the headline from simulator spend alone when no turns are captured (§24.55)', () => {
+    const view: TelemetryView = {
+      local: { ...LOCAL, turns_total: 0, turn_cost_cents_total: 0, turn_cost_cents_24h: 0 },
+      hasTurns: false,
+    }
+    render(<CostCachePanel view={view} />)
+    expect(screen.getByTestId('local-spend')).toHaveTextContent('$0.50')
+    expect(screen.queryByTestId('cost-pending')).not.toBeInTheDocument()
+  })
+
+  it('shows the honest pending state when no spend at all is captured', () => {
+    const view: TelemetryView = {
+      local: {
+        ...LOCAL,
+        turns_total: 0,
+        turn_cost_cents_total: 0,
+        turn_cost_cents_24h: 0,
+        sim_cost_cents_total: 0,
+        sim_cost_cents_24h: 0,
+      },
+      hasTurns: false,
+    }
     render(<CostCachePanel view={view} />)
     expect(screen.getByTestId('cost-pending')).toBeInTheDocument()
   })

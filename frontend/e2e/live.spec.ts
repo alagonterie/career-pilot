@@ -63,9 +63,12 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
     // batch-sealing separator carrying the real metrics (model from model_used),
     // not a peer action line.
     await expect(trace.getByTestId('trace-turn')).toContainText('opus-4-8')
-    // COST & CACHE shows the est spend summed over the turn rows (§24.47); the
-    // "est" qualifier now lives in the metric label, so the value is just "$0.06".
-    await expect(page.getByTestId('local-spend')).toHaveText('$0.06')
+    // §24.55: the seal's cache lane is quantitative (share of prompt tokens
+    // served from cache), never a boolean badge.
+    await expect(trace.getByTestId('trace-turn')).toContainText('cache 90%')
+    // COST & CACHE shows the COMBINED est spend (§24.55): the seeded turn row
+    // ($0.06) + the seeded deterministic simulator run ($0.04).
+    await expect(page.getByTestId('local-spend')).toHaveText('$0.10')
 
     // A filter chip narrows the stream: System = non-subagent events only, so the
     // single research-company line disappears.

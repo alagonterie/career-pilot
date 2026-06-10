@@ -16,6 +16,7 @@ function ev(partial: Partial<AuditEvent> & { seq: number }): AuditEvent {
     tokens: null,
     cost_cents: null,
     cache_hit: null,
+    cache_read_pct: null,
     latency_ms: null,
     summary: 'an event',
     ...partial,
@@ -49,7 +50,6 @@ describe('LiveTicker', () => {
             agent_name: 'research-company',
             proactive: 1,
             model_used: 'opus-4-7',
-            cache_hit: 1,
             summary: 'digging in',
           }),
         ]}
@@ -58,7 +58,6 @@ describe('LiveTicker', () => {
     expect(screen.getByText('research-company')).toBeInTheDocument()
     expect(screen.getByTestId('proactive-marker')).toBeInTheDocument()
     expect(screen.getByText('opus-4-7')).toBeInTheDocument()
-    expect(screen.getByText('(cache hit)')).toBeInTheDocument()
   })
 
   it('omits absent lanes (progressive rendering — never faked data)', () => {
@@ -70,7 +69,6 @@ describe('LiveTicker', () => {
     )
     expect(screen.getByText('[fintech-a]')).toBeInTheDocument()
     expect(screen.queryByTestId('proactive-marker')).not.toBeInTheDocument()
-    expect(screen.queryByText('(cache hit)')).not.toBeInTheDocument()
     // category is the fallback source label when agent_name is null, aliased for
     // display (the 'funnel' category renders as 'momentum' — §5.2 / §8.1)
     expect(screen.getByText('momentum')).toBeInTheDocument()
