@@ -75,4 +75,34 @@ describe('sanitizeTelegramLegacyMarkdown', () => {
     const input = '```\n---\n```';
     expect(sanitizeTelegramLegacyMarkdown(input)).toBe(input);
   });
+
+  // URL protection (§24.56): real lead URLs carry underscores — they must
+  // never poison the odd-delimiter strip and must pass through byte-identical.
+
+  it('keeps a bare URL with an odd underscore count intact (the gh_jid killer-match case)', () => {
+    const input = 'Anthropic just posted:\n\nhttps://boards.greenhouse.io/anthropic/jobs/4567?gh_jid=4567';
+    expect(sanitizeTelegramLegacyMarkdown(input)).toBe(input);
+  });
+
+  it('keeps a markdown link target with utm underscores intact (the SerpApi apply-link case)', () => {
+    const input = '• [Staff Engineer — Acorns](https://jobs.ashbyhq.com/acorns/cf23?utm_source=google_jobs_apply) · 91';
+    expect(sanitizeTelegramLegacyMarkdown(input)).toBe(
+      '• [Staff Engineer — Acorns](https://jobs.ashbyhq.com/acorns/cf23?utm_source=google_jobs_apply) · 91',
+    );
+  });
+
+  it('keeps a Drive kit_url whose file ID contains underscores intact', () => {
+    const input = 'practice kit: https://docs.google.com/document/d/1aB_cD-eF_gH/edit';
+    expect(sanitizeTelegramLegacyMarkdown(input)).toBe(input);
+  });
+
+  it('still strips odd-delimiter prose while leaving an adjacent URL untouched', () => {
+    const out = sanitizeTelegramLegacyMarkdown('file_name has _one italic_\nhttps://example.com/a_b_c');
+    expect(out).toBe('filename has one italic\nhttps://example.com/a_b_c');
+  });
+
+  it('does not let a link target swallow its closing paren', () => {
+    const out = sanitizeTelegramLegacyMarkdown('see [docs](https://example.com/x_y) now');
+    expect(out).toBe('see [docs](https://example.com/x_y) now');
+  });
 });
