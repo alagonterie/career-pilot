@@ -5017,6 +5017,27 @@ DoD (F3 additions): the `build-interview-kit` invocation prompt carries a `## Jo
 
 ---
 
+#### 24.61 Application-attributed subagent progress (`record_progress.application_id`)
+
+**Motivation (owner ask, 2026-06-10 — follow-on to §24.60).** §24.60 made `[application_ref]` a deep-link, but on the live box only `mirrorFunnelEvent` rows (real stage changes) carry refs — and measured on dev, the entire post-reset audit trail was 24 `subagent_progress` + 16 `turn` rows with **zero** ref-bearing rows. So in practice the ticker/trace links never appear and the drawer's "Live activity →" filter can never match, even though most of those progress rows WERE about a specific application. Fix at the source: a progress row carries the application ref when the work is app-scoped. (The §24.60 e2e fixtures already seed progress rows with refs — a shape production never wrote until now; this makes the fixture honest.)
+
+**Design — the privacy rule is load-bearing:**
+
+1. **The container passes the internal `application_id`; the host derives the public ref.** The `record_progress` MCP schema gains an optional `application_id`. The host handler resolves it against `applications` and derives the ref with the same rule as `mirrorFunnelEvent` (`public_state==='public' ? company_name : obfuscated_label`). The subagent never authors the public label — a container echoing a real company name would be a leak vector. Unknown/missing/empty id → the row inserts ref-less (today's shape); never an error.
+2. **`details_json` records the `application_id`** so policy flips can re-derive. Server-side only: `/api/activity` projects named columns and never delivers `details_json`.
+3. **Resanitize covers progress refs.** `resanitizeApplicationAuditTrail` additionally re-derives `application_ref` on `subagent_progress` rows whose `details_json.application_id` matches the flipped application — this closes the dangerous **un-reveal** direction (a real name stored as the ref while public, then `public_state` flipped back). The progress row's summary *text* is not re-derived — unlike funnel rows there is no canonical private source to re-mirror from; that's a pre-existing property of progress rows, unchanged here.
+4. **Prompts.** The persona gains a standing dispatch rule: a brief that concerns an existing application includes `application_id: <id>`. The app-scoped subagents echo it on every `record_progress` call: `research-company` / `tailor-resume` / `draft-outreach` **when the brief carries one** (conditional — these are shared with the sandbox, whose briefs never include one, so sandbox behavior is unchanged), and `build-interview-kit` **always** (its contract already requires `application_id`). `scrape-jobs` and `pipeline-scribe` stay ref-less: pool/sweep work isn't one application's story, and the scribe's per-app moves already mirror as ref-bearing funnel rows.
+5. **Frontend: zero change.** `application_ref` on progress rows already renders, links, and filters (§24.60).
+
+**Definition of done.**
+1. Host unit/integration: a `record_progress` call with `application_id` lands a row whose `application_ref` is the obfuscated label (and the real name for a `public` application); unknown id → ref-less row with an ok response; omitted → today's behavior byte-for-byte. Both sanitizer paths (sync Pass 1+2 and the async Pass-3 branch) carry the ref.
+2. Host unit: `resanitizeApplicationAuditTrail` re-derives progress refs on a label rename, a reveal, and an un-reveal.
+3. Container `record_progress` tool schema carries the optional param and forwards it (container typecheck green; image rebuild rides the deploy).
+4. Persona + the four app-scoped subagent definitions updated (no spec refs in runtime artifacts).
+5. Deployed to dev; the next app-scoped dispatch lands progress rows with tappable `[ref]` lines on /live — the owner's original "I can't test the ref links" gap closes as a side effect.
+
+---
+
 ## Part VI: Open questions
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
