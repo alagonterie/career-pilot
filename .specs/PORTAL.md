@@ -1412,6 +1412,9 @@ The portal is **phone-primary responsive**, not desktop-only. A page that overfl
 - **Every grid declares its column template at the base breakpoint** (`grid-cols-1`, not bare `grid`): an un-templated implicit track sizes to content *min-width*, and a `truncate`d element still contributes its full nowrap line as min-content — so one long real-world string blows the page out sideways while short fixture data keeps CI green. Pair the rule with at least one real-shaped long string in the deterministic seeds.
 - **Open dialogs scroll-lock the body** (in the shared `useDialog`, so every dialog inherits it): `inert` stops interaction but not scroll-chaining; without the lock, touch scroll moves the page behind the open drawer.
 
+**Standing layout-stability rule (added per STRATEGY §24.62, learned on desktop):**
+- **The root reserves its scrollbar gutter** (`html { scrollbar-gutter: stable }`): on classic-scrollbar platforms the root scrollbar comes and goes with page height and with `useDialog`'s scroll-lock, and every centered `max-w-*` layout shifts by half a scrollbar width when it does — the header wobbles between pages and content jumps sideways under opening dialogs. The reserved gutter makes both impossible; overlay-scrollbar platforms are unaffected.
+
 ---
 
 ## 14. Open questions
