@@ -65,10 +65,10 @@ The model that prevents both:
    the connective rail (§8.4) pulls them forward toward /contact.
 ```
 
-- **The home is the funnel mouth.** Its five viewports (§5.1) *are* connective tissue: each hands off a directed next step (funnel strip → `/momentum`, live ticker → `/live`, simulator pitch → `/simulator`, resume teaser → `/work` + `/contact`). A fully-built home channels; a hero-only home leaks.
+- **The home is the funnel mouth.** Its five viewports (§5.1) *are* connective tissue: each hands off a directed next step (funnel strip → `/pipeline`, live ticker → `/live`, simulator pitch → `/simulator`, resume teaser → `/work` + `/contact`). A fully-built home channels; a hero-only home leaks.
 - **`/live` is the hub.** It's where the one register-crossing CTA lands (§3.5) and where intent forks: the skeptic deepens into `/architecture` + the repo, the "prove-it" visitor pivots to `/simulator`, the convinced visitor converts at `/contact`.
 - **`/contact` is the single sink.** Every surface offers a path to it, and it accepts **carried context** (the role/company a simulator run was about, the surface the visitor came from) so converting is one low-friction step, not a cold form.
-- **Every deep surface offers a next step.** No `/live`, `/momentum`, `/architecture`, `/simulator`, or `/work` is a terminus: each carries the **connective rail** (§8.4) — a constant convert path (→ `/contact`) plus 1-2 contextual deepen/pivot options. The top nav (§8.1) independently supports free "bounce anywhere" movement; the rail adds *directed* pull so an interested visitor is led forward rather than left to find their own way.
+- **Every deep surface offers a next step.** No `/live`, `/pipeline`, `/architecture`, `/simulator`, or `/work` is a terminus: each carries the **connective rail** (§8.4) — a constant convert path (→ `/contact`) plus 1-2 contextual deepen/pivot options. The top nav (§8.1) independently supports free "bounce anywhere" movement; the rail adds *directed* pull so an interested visitor is led forward rather than left to find their own way.
 
 This journey is not new scope invented here — it's the persona paths above + the §3.5 register transitions made physical. What it adds is the **connective tissue**: the rail (§8.4), the home build-out (§5.1), and a real `/contact` sink (§5.7) — turning five strong-but-isolated surfaces into a path that deepens and converts. STRATEGY.md §24.30 carries the delivery decomposition (the "conversion spine").
 
@@ -82,7 +82,7 @@ The portal is visually split between two registers:
 Used on `/`, `/work`, `/contact`. Generous whitespace, large typography, restrained color, one focal element per viewport-height. Conveys product taste; doesn't intimidate the non-technical visitor.
 
 ### B. Operations register: Bloomberg/mission-control density
-Used on `/live`, `/momentum`, `/architecture`. Dense multi-panel layouts, monospace numeric data, streaming text, abundant real-time signals. Conveys engineering depth; rewards visitors who clicked "see it work."
+Used on `/live`, `/pipeline`, `/architecture`. Dense multi-panel layouts, monospace numeric data, streaming text, abundant real-time signals. Conveys engineering depth; rewards visitors who clicked "see it work."
 
 A visitor moves between registers via deliberate transitions. The landing page hero contains exactly one CTA that crosses the register boundary: `[ See it work → ]` → opens `/live`.
 
@@ -117,7 +117,7 @@ Motion: limited. The only auto-animating element on `/` is a single pulsing "●
 |---|---|---|
 | `StatusPill` | Both | Real-time on `/`; one per system status (e.g. "🟢 OPEN FOR OFFERS") |
 | `LiveTicker` | Both | Compact on `/`, expanded on `/live` |
-| `FunnelStrip` | Both | Compact 5-stage strip on `/`, full-detail board on `/momentum` |
+| `FunnelStrip` | Both | Compact 5-stage strip on `/`, full-detail board on `/pipeline` |
 | `Card` | Landing | Glass-y surface, used for resume content, contact form |
 | `Panel` | Ops | Bordered, dense, no padding |
 | `LogStream` | Ops | Append-only terminal-like component, monospace |
@@ -145,7 +145,7 @@ Motion: limited. The only auto-animating element on `/` is a single pulsing "●
 
 **Why TanStack Start (vs Next.js 15):**
 
-- **Type-safe routing end-to-end.** Every route param, search param, loader return, and `<Link>` target is inferred by the compiler. Critical for our dashboard pages with multi-param state: `/live?filter=tailor&since=<ts>`, `/momentum?reveal=fintech-b`, `/simulator/results/:id`. Rename a route → TS catches every call site.
+- **Type-safe routing end-to-end.** Every route param, search param, loader return, and `<Link>` target is inferred by the compiler. Critical for our dashboard pages with multi-param state: `/live?filter=tailor&since=<ts>`, `/pipeline?reveal=fintech-b`, `/simulator/results/:id`. Rename a route → TS catches every call site.
 - **No RSC mental tax.** Server functions are typed RPC; no `"use client"`/`"use server"` poisoning, no "can't import from server component" footguns, no hydration-mismatch landmines.
 - **Smaller framework footprint** → easier to stay under the 3 MiB Cloudflare Worker compressed bundle cap (free tier).
 - **Engineering-taste signal.** The audience for this portal includes engineering hiring managers and senior peers — they recognize TanStack Start as a thoughtful 2026 choice. Next.js is universally recognized but uninteresting.
@@ -159,7 +159,7 @@ Motion: limited. The only auto-animating element on `/` is a single pulsing "●
 3. **3 MiB compressed Worker budget on Cloudflare's free tier.** Audit any dep addition. TanStack Start ships less framework code than Next.js, giving more headroom.
 4. **SSE consumers** prefer `fetch`-with-stream-reader over `EventSource` so we can set custom headers (e.g., auth) — and to multiplex over HTTP/2 (Cloudflare default), sidestepping the browser 6-connection HTTP/1.1 cap on `EventSource`.
 5. **Server functions for forms.** `/contact` submission flows through a TanStack Start server function (typed RPC) that calls the native-`http` backend via Cloudflare Tunnel. No client-side API key handling.
-6. **Search params as first-class state.** Filter chips on `/live`, reveal toggles on `/momentum`, and pagination on `/simulator/results` use TanStack Router's typed `useSearch()` instead of ad-hoc URL parsing — deep-linkable, type-safe, refresh-safe.
+6. **Search params as first-class state.** Filter chips on `/live`, reveal toggles on `/pipeline`, and pagination on `/simulator/results` use TanStack Router's typed `useSearch()` instead of ad-hoc URL parsing — deep-linkable, type-safe, refresh-safe.
 7. **Reduced-motion is a structural guarantee, not per-component discipline** (STRATEGY §24.36 36.4). Two animation systems, two complementary mechanisms: a global `@media (prefers-reduced-motion: reduce)` reset in `app.css` neutralizes looping/decorative CSS *animations* + smooth-scroll (skeletons' `animate-pulse`, the stream `LiveCursor`, the ●live dot, any future one — scoped to animations, not a blanket transition reset, which is the standard interpretation), and a single root `MotionConfig reducedMotion="user"` makes *all* motion/react animations (the grow-modal, the funnel card layout) respect it — so neither system can regress a new animation past the guarantee.
 8. **Two stream-reconnect models, both deliberate.** The activity stream reconnects (`connecting → open → reconnecting`, exponential backoff, resume via `?since=<lastSeq>`) — surfaced by `LiveIndicator` (the dot pulses only while `open`) + the trace/ticker connecting/empty/offline states. The **simulator** stream does *not* reconnect — a torn-down sandbox can't resume mid-run, so a drop ends the run (`SimFallback`). Correct difference in lifecycle, not an inconsistency.
 
@@ -175,7 +175,7 @@ Motion: limited. The only auto-animating element on `/` is a single pulsing "●
 /                    Landing — hero + funnel + activity hook + simulator CTA
 /live                Real-time ops dashboard (the "dig in")
 /simulator           Recruiter Simulator (interactive sandbox)
-/momentum            Funnel race detail + history + outcomes (visitor label "Momentum"; internal name = funnel)
+/pipeline            Funnel race detail + history + outcomes (visitor label "Job Pipeline"; internal name = funnel)
 /architecture        Live system architecture + current state
 /work                Resume / experience / projects / writing
 /contact             Recruiter contact form + direct contact options
@@ -245,7 +245,7 @@ A horizontal 5-stage strip with the visitor's eye-line drawn left to right:
   4 active        2 active         1 active                     
 ```
 
-Each dot = one application. Color reflects state. Hovering shows obfuscated label ("Series-B fintech, applied 12 days ago"). Clicking the strip opens `/momentum`. No real company names on this page.
+Each dot = one application. Color reflects state. Hovering shows obfuscated label ("Series-B fintech, applied 12 days ago"). Clicking the strip opens `/pipeline`. No real company names on this page.
 
 Below the strip, a single sentence:
 > *Companies are obfuscated until each process closes — [see anonymization policy](/about#anonymization).*
@@ -272,7 +272,7 @@ The `◆ proactive` marker calls out events the agent initiated on its own — t
 
 Compact, dense, monospace. This is the bridge from landing register to ops register. The visitor who clicks `Watch live →` is self-selecting into the deep view.
 
-> **Build note (STRATEGY §24.35 Pass A).** The ticker's `watch live →` link to `/live` (mockup above) was specified but unbuilt through 8.x — the shipped `LiveTicker` rendered no link, dead-ending Viewport 3 (the only path on was the top nav). §24.35 Pass A builds it as a page-supplied `<Link>` via an optional header slot (the component stays router-free), and adds the analogous `/live` FUNNEL-panel → `/momentum` link.
+> **Build note (STRATEGY §24.35 Pass A).** The ticker's `watch live →` link to `/live` (mockup above) was specified but unbuilt through 8.x — the shipped `LiveTicker` rendered no link, dead-ending Viewport 3 (the only path on was the top nav). §24.35 Pass A builds it as a page-supplied `<Link>` via an optional header slot (the component stays router-free), and adds the analogous `/live` FUNNEL-panel → `/pipeline` link.
 
 > **Build note (STRATEGY §24.35 Pass C).** The compact ticker **drops `category='turn'` rows** — those per-turn cost summaries (§24.34) are the `/live` trace stream's story (where they render as a batch-sealing separator); on a 5-line teaser they're noise. The ticker shows the action events; the turn-cost rollup lives on `/live`.
 >
@@ -313,13 +313,13 @@ Three-column on desktop, stacked on mobile. The resume content is hand-curated, 
 - Link to `/about`
 - "Built with [stack list]" — small grey text
 
-> **Build note (the funnel mouth — STRATEGY §24.30 / Sub-milestone 8.1).** The home is the mouth of the conversion funnel (§2): each viewport hands the visitor a directed next step. Phase 6.1 shipped only the hero (Viewport 1) + the live ticker (Viewport 3), so today the home channels into `/live` and leaks every other path. Sub-milestone 8.1 builds Viewport 2 (the **funnel strip**, a compact `FunnelStrip` over `/api/funnel` → `/momentum`) + Viewport 5 (the **resume+contact teaser** → `/work` + `/contact`) and rewires the hero's "Talk to me →" from its `mailto:` placeholder to `/contact`; the **simulator pitch** (Viewport 4 → `/simulator`) lands in 8.2 with that route.
+> **Build note (the funnel mouth — STRATEGY §24.30 / Sub-milestone 8.1).** The home is the mouth of the conversion funnel (§2): each viewport hands the visitor a directed next step. Phase 6.1 shipped only the hero (Viewport 1) + the live ticker (Viewport 3), so today the home channels into `/live` and leaks every other path. Sub-milestone 8.1 builds Viewport 2 (the **funnel strip**, a compact `FunnelStrip` over `/api/funnel` → `/pipeline`) + Viewport 5 (the **resume+contact teaser** → `/work` + `/contact`) and rewires the hero's "Talk to me →" from its `mailto:` placeholder to `/contact`; the **simulator pitch** (Viewport 4 → `/simulator`) lands in 8.2 with that route.
 
 ---
 
 ### 5.2 `/live` — Real-time ops dashboard
 
-> **Source-label aliasing (owner call, 2026-06-03).** The activity feed (ticker + trace) shows each event's source — `agent_name`, else `category`. Two internal source ids contain "funnel" (`category='funnel'`, `agent_name='funnel-curator'`); they're **aliased for display** to `momentum` / `momentum-curator` so nothing reads "funnel" on the public surface (the §8.1 rule). Surface-only: the audit vocabulary + filter chips still key on the real internal ids.
+> **Source-label aliasing (owner call, 2026-06-03; vocabulary updated per STRATEGY §24.59, 2026-06-10).** The activity feed (ticker + trace) shows each event's source — `agent_name`, else `category`. Historical audit rows keep internal ids containing "funnel" (`category='funnel'`, `agent_name='funnel-curator'` — the subagent's pre-rename name); they're **aliased for display** to `pipeline` / `pipeline-scribe` so nothing reads "funnel" on the public surface (the §8.1 rule). New rows carry `agent_name='pipeline-scribe'` natively. Surface-only for the category: the audit vocabulary keys stay internal; the filter chips match on id *lists* (old + new ids → one chip).
 
 **Purpose:** This is the "dig in" page. The technical visitor sees real-time, real-data, real-system signals that prove the architecture isn't smoke.
 
@@ -421,7 +421,7 @@ Filter chips above the stream: `[All] [Reactive] [Proactive] [Research] [Tailor]
 > **Backend note — trace telemetry capture (updated per STRATEGY §24.34/§24.55).** The per-line metrics are captured per-*turn* (a `category='turn'` seal row carrying model / tokens / cost / cache / latency — the SDK resolves cost only per `query()` call), populated for **every** owner turn (§24.55 lifted the original portal-worthy gate). Cache state renders quantitatively — `cache NN%` from `cache_read_pct` (share of prompt tokens served from cache) — never as a boolean badge (an agent turn virtually always reads *some* cache, so `cache✓` carried no information). Action rows keep their progressive lanes (render-if-present).
 
 #### Panel: `FUNNEL (compact)`
-A reduced version of the funnel race. Same data as `/momentum` but compacted to one row.
+A reduced version of the funnel race. Same data as `/pipeline` but compacted to one row.
 
 #### Panel: `COST & CACHE`
 Two numbers:
@@ -625,9 +625,9 @@ The `Talk to me` button pre-fills the contact form on `/contact` with the compan
 
 ---
 
-### 5.4 `/momentum` — the funnel race detail (visitor label: **Momentum**)
+### 5.4 `/pipeline` — the funnel race detail (visitor label: **Job Pipeline**)
 
-> **Naming (owner call, 2026-06-03).** Route + visitor label = **Momentum** / `/momentum` (the gamified horse-race framing; see §8.1). Everything internal stays **funnel** — `/api/funnel`, `public_funnel_view`, the `Funnel*` components, `funnel_events`, `funnel-curator`. The rest of this section uses "funnel" as that internal domain term.
+> **Naming (owner call, 2026-06-10; supersedes "Momentum", 2026-06-03; see STRATEGY §24.59).** Route + visitor label = **Job Pipeline** / `/pipeline` (with a redirect from the old `/pipeline`, `?app=` preserved). "Momentum" was the gamified horse-race framing but failed instant-understandability; "Job Pipeline" says what the page is, and the "Job" prefix disambiguates from CI/CD pipelines for a dev audience. Everything internal stays **funnel** — `/api/funnel`, `public_funnel_view`, the `Funnel*` components, `funnel_events`, the `funnel_curator_*` config keys (the subagent itself is renamed `pipeline-scribe`, §24.59). The rest of this section uses "funnel" as that internal domain term.
 
 **Purpose:** The gamified deep-dive into the candidate's job search. Recruiter sees motion ("this person is in demand"), engineer sees a real pipeline tracker.
 
@@ -654,7 +654,7 @@ Click a card → side panel opens with:
 - Sanitized recent activity for that application (resume tailoring count, outreach drafted, etc.)
 - A "win confidence" % (low rigor — a heuristic, labeled as such)
 
-> **Build note (per STRATEGY §24.57).** The drawer is deep-linkable: `/momentum?app=«application_ref»` opens that card's panel once the funnel data loads (an unknown ref is a no-op; closing the panel clears the param). The `/live` Recent-outcomes rows link here — a static outcome list becomes navigation into the drawer that already existed.
+> **Build note (per STRATEGY §24.57).** The drawer is deep-linkable: `/pipeline?app=«application_ref»` opens that card's panel once the funnel data loads (an unknown ref is a no-op; closing the panel clears the param). The `/live` Recent-outcomes rows link here — a static outcome list becomes navigation into the drawer that already existed.
 
 > **Backend note.** The richest source for "sanitized recent activity" is the funnel-curator's per-company narratives (`funnel_curator_output`, already captured privately). Surfacing them is V1-scoped but **built in Phase 6** alongside this panel and **gated on the Pass 3 LLM sanitization review** (STRATEGY.md §24.12): the narratives are free-form prose where regex + exact-name redaction isn't sufficient. Until then this panel renders from the structured `funnel_events` timeline + `public_funnel_view`.
 
@@ -777,7 +777,7 @@ Below the diagram: a panel labeled `WHAT YOU'RE LOOKING AT`:
 
 > **Build note (Sub-milestone 7.2, STRATEGY §24.28).** **Ships now:** the SVG system map (three regions, a curated faithful subset of the diagram above), a system-mode banner (`live_mode` SHADOW/LIVE + `pause_state`), per-node status badges, the node click-through side panel, and the "what you're looking at" prose+links panel — all from `GET /api/architecture` + `GET /api/system-status` via a polling hook. **The honesty rule:** a status badge lights up only for a node we actually probe (host pause-state, `backend` online, container runtime, active sessions); every other node (the external triggers, Portkey, the Anthropic API, sanitization, the tunnel/edge) renders as **structure with no health claim** — an outline marker, never a fake-green dot — with a legend stating the distinction. This is the same render-if-present discipline as the trace-telemetry lanes (§24.24). **Deferred:** live probes for the structural nodes (a Portkey health read, per-subagent activity, tunnel/worker reachability) and the per-node "recent log excerpts / recent calls" in the side panel — both need the §24.24 telemetry-capture family; until then the side panel shows the node's description + the live facts we do have + a line-anchored code link. **Enrichment (post-build):** an owner **actor** node ("Jane Doe", no status badge) with a bidirectional Telegram edge; **bidirectional** edges for the duplex relationships only (owner↔Telegram, Web-sandbox↔Router, Telegram↔Router, Router↔Session-DB) while triggers/spawns/LLM-calls/append stay one-way; and, since a technical visitor reads this page, every third-party node (Portkey, Anthropic, Telegram, Cloudflare, Google) carries a what-it-is/how-used description **plus an external doc link** even though we don't own it.
 
-> **Build note (STRATEGY §24.35 Pass B).** The node click-through is now a **grow-into-centered-modal** (motion `layoutId` shared-element from the node's box → centered; reduced-motion → instant), not a right drawer (`/momentum`'s `DetailPanel` keeps its drawer — intentional divergence). The `pub-sanitize` ("Sanitization") node's modal **hosts the live anonymization demo** — the real sanitizer over synthetic input, lazy-fetched on open, relocated here from `/live` (§5.2) because it proves the very pipeline that node *is*. That node therefore carries a distinct `▶` **interactive marker** (not the structural `◇`), and the "what you're looking at" panel gains a **"see the sanitizer run →"** control that opens it — so the privacy proof isn't buried behind a guess.
+> **Build note (STRATEGY §24.35 Pass B).** The node click-through is now a **grow-into-centered-modal** (motion `layoutId` shared-element from the node's box → centered; reduced-motion → instant), not a right drawer (`/pipeline`'s `DetailPanel` keeps its drawer — intentional divergence). The `pub-sanitize` ("Sanitization") node's modal **hosts the live anonymization demo** — the real sanitizer over synthetic input, lazy-fetched on open, relocated here from `/live` (§5.2) because it proves the very pipeline that node *is*. That node therefore carries a distinct `▶` **interactive marker** (not the structural `◇`), and the "what you're looking at" panel gains a **"see the sanitizer run →"** control that opens it — so the privacy proof isn't buried behind a guess.
 
 ---
 
@@ -975,7 +975,7 @@ On `/` landing ticker (compact):
 16:24  parse_email    ▸ gmail webhook    haiku
 ```
 
-In `/momentum` per-application timeline:
+In `/pipeline` per-application timeline:
 ```
 2026-05-25  ◆ followup drafted (pending owner approval)
 2026-05-22  ◆ funnel: APPLIED → SCREENING (gmail signal)
@@ -1016,9 +1016,9 @@ The agent learns from outcomes. Rejection-as-fuel is the canonical case.
 5. Free-form answers stored in `rejection_learnings` (private) keyed to the application + role category.
 6. **Future fuel:** every subsequent `research-company` and `tailor-resume` run for similar companies/roles includes a context block:
    > *"Prior learnings from similar attempts:* [bulleted, anonymized excerpts]*"*
-7. **Optional portal publication:** the candidate can flip `reflection_published: true` per learning. Published reflections show on the application's `/momentum` detail panel as a "What I learned" block, with the company still obfuscated unless `public_state = 'public'`.
+7. **Optional portal publication:** the candidate can flip `reflection_published: true` per learning. Published reflections show on the application's `/pipeline` detail panel as a "What I learned" block, with the company still obfuscated unless `public_state = 'public'`.
 
-**Why this matters for the showcase:** A hiring manager who lands on `/momentum` and sees a closed/rejected entry with a handwritten reflection ("*I underestimated their bar for systems design — leaning into Designing Data-Intensive Applications before my next big-tech round*") thinks: *this is someone who learns in public*. That signal is much harder to fake than competence claims.
+**Why this matters for the showcase:** A hiring manager who lands on `/pipeline` and sees a closed/rejected entry with a handwritten reflection ("*I underestimated their bar for systems design — leaning into Designing Data-Intensive Applications before my next big-tech round*") thinks: *this is someone who learns in public*. That signal is much harder to fake than competence claims.
 
 **Other feedback loops in the same family:**
 
@@ -1128,12 +1128,12 @@ Both are required for a real send: `LIVE_MODE=true` AND owner approves the speci
 
 Minimal. Logo / wordmark left, links right:
 ```
-  Jane Doe    Live    Momentum    Architecture    Simulator    Work    Contact
+  Jane Doe    Live    Job Pipeline    Architecture    Simulator    Work    Contact
 ```
 
-**Order (owner call, 2026-06-03):** lead with the wow (`/live`, the real-time hub the home "See it work →" CTA targets), then its drill-ins (`Momentum`, `Architecture`), then the personal/conversion tail (`Simulator`, `Work`, `Contact`). This clusters the ops surfaces then the personal ones — and ends on the `/contact` sink. (Supersedes the earlier interleaved `/live · /simulator · /funnel · /work` ordering; `/architecture` had also never been listed here.)
+**Order (owner call, 2026-06-03):** lead with the wow (`/live`, the real-time hub the home "See it work →" CTA targets), then its drill-ins (`Job Pipeline`, `Architecture`), then the personal/conversion tail (`Simulator`, `Work`, `Contact`). This clusters the ops surfaces then the personal ones — and ends on the `/contact` sink. (Supersedes the earlier interleaved `/live · /simulator · /funnel · /work` ordering; `/architecture` had also never been listed here.)
 
-**"Momentum" = the visitor-facing label for the funnel page** (owner call, 2026-06-03). "Funnel" read as sales jargon and clashed with the page's *gamified, horse-race* intent (applications racing to an offer — "things are moving, this person's in demand"), which is deliberately warmer than the cool/technical `Architecture` + `Live`. The route is **`/momentum`**; **all internal naming stays "funnel"** — `/api/funnel`, `public_funnel_view`, the `Funnel*` components, the `funnel_events` table, the `funnel-curator` subagent. So: public surface = Momentum, internal domain = funnel.
+**"Job Pipeline" = the visitor-facing label for the funnel page** (owner call, 2026-06-10 per STRATEGY §24.59; supersedes "Momentum", 2026-06-03, which itself superseded "Funnel"). "Funnel" read as sales jargon; "Momentum" was warmer but not instantly understandable. The route is **`/pipeline`** (`/pipeline` redirects); **all internal naming stays "funnel"** — `/api/funnel`, `public_funnel_view`, the `Funnel*` components, the `funnel_events` table, the `funnel_curator_*` config keys. So: public surface = Job Pipeline, internal domain = funnel.
 
 The wordmark is the persona name, **not a domain** — the deployed site is `hire.<DOMAIN>` (`hire.example.com` placeholder) per the locked domain pattern; the earlier `janedoe.dev` here was a stray placeholder, reconciled in STRATEGY §24.25. Sticky on scroll. On mobile, collapses to a **hamburger** (the responsive contract for the nav — and every page — is §13).
 
@@ -1174,7 +1174,7 @@ A single `ConnectiveRail` component fed a per-route config, hosted by the regist
 | `/` (home) | Talk to me → `/contact` | See it work → `/live` | Try it → `/simulator` |
 | `/live` (the hub) | Talk to me → `/contact` | How it works → `/architecture` | Run it on your role → `/simulator` |
 | `/architecture` | Talk to me → `/contact` | Read the code → GitHub repo | See it run → `/live` |
-| `/momentum` | Talk to me → `/contact` | Watch it live → `/live` | — |
+| `/pipeline` | Talk to me → `/contact` | Watch it live → `/live` | — |
 | `/work` | Talk to me → `/contact` | See the system → `/live` | — |
 | `/simulator` (results) | Talk to me (context-prefilled) → `/contact` | Share results | Try another |
 | `/about` | Talk to me → `/contact` | Read the code → GitHub | See it run → `/live` |
@@ -1188,7 +1188,7 @@ Register-aware styling: clean and spacious in the marketing register, dense and 
 
 ### 8.5 Dialogs (modal/drawer) — focus & a11y contract
 
-Two surfaces open as a modal overlay: the `/momentum` card drawer (a right-edge `DetailPanel`) and the `/architecture` node modal (a centered `NodePanel` that grows from its diagram node). They look different on purpose — a drawer vs. a `layoutId` modal — but they owe the visitor the **same modal behavior**, so it lives in one shared `useDialog` hook rather than being re-derived per surface (where the next dialog inherits whatever the last one missed).
+Two surfaces open as a modal overlay: the `/pipeline` card drawer (a right-edge `DetailPanel`) and the `/architecture` node modal (a centered `NodePanel` that grows from its diagram node). They look different on purpose — a drawer vs. a `layoutId` modal — but they owe the visitor the **same modal behavior**, so it lives in one shared `useDialog` hook rather than being re-derived per surface (where the next dialog inherits whatever the last one missed).
 
 The contract, when a dialog is open:
 
@@ -1247,7 +1247,7 @@ Backend tables:
 
 #### `public_funnel_view` — the current-state read-model
 
-`public_audit_trail` is an append-only *event log*; the funnel surfaces (`/` strip, `/momentum` board, `/live` compact funnel) need *current state per application*. `public_funnel_view` is a maintained physical projection table (one row per application), written by a host-side hook on every `applications` / `funnel_events` write — the same best-effort, post-commit discipline as the `public_audit_trail` mirror. Columns:
+`public_audit_trail` is an append-only *event log*; the funnel surfaces (`/` strip, `/pipeline` board, `/live` compact funnel) need *current state per application*. `public_funnel_view` is a maintained physical projection table (one row per application), written by a host-side hook on every `applications` / `funnel_events` write — the same best-effort, post-commit discipline as the `public_audit_trail` mirror. Columns:
 
 | Column | Meaning |
 |---|---|
@@ -1257,8 +1257,8 @@ Backend tables:
 | `role_title`, `status` | current canonical status (see the pinned status vocabulary) |
 | `stage` | the derived 5-stage value for the funnel strip (Applied / Screening / Tech / Final / Offer, + terminal) |
 | `applied_at`, `stage_entered_at`, `last_activity_at` | timestamps — the API/frontend computes "days in stage / pipeline" at read time (never precomputed, so a row never goes stale) |
-| `win_confidence` | heuristic %, labeled low-rigor on `/momentum` |
-| `published_learning` | sanitized excerpt of the latest published reflection for this application (nullable) — feeds the `/momentum` "What I learned" block (§6.7) without the API ever reading the private `learnings` table |
+| `win_confidence` | heuristic %, labeled low-rigor on `/pipeline` |
+| `published_learning` | sanitized excerpt of the latest published reflection for this application (nullable) — feeds the `/pipeline` "What I learned" block (§6.7) without the API ever reading the private `learnings` table |
 
 When an application's obfuscation policy changes (`public_state` flip, label/name edit), the hook refreshes the row so `application_ref` reflects current intent — mirroring the retroactive resanitization already done for `public_audit_trail`.
 
@@ -1278,7 +1278,7 @@ When an application's obfuscation policy changes (`public_state` flip, label/nam
 
 > **Build note (STRATEGY §24.36 / Sub-milestone 36.1).** These states get a **consistent visual language** (a shared skeleton primitive for content-shaped areas; the honest "not connected / offline" treatment for degraded externals; concise inline copy for streams) instead of the current ad-hoc per-page handling. Because the seeded E2E/dev DB is always instant + populated, the loading/empty/error states are otherwise unreachable in tests — so a **mock-only request override** (`?__state=loading|empty|error`, honored only by the dev/E2E API, never production) makes each state reachable for `@visual` snapshots, driven live in dev by a small **state-switcher** panel. A production-facing state-preview toggle is deferred (V2_IDEAS #16) — a live site serving fake loading/error states would undercut the "everything here is real" credibility.
 >
-> **Dimensional-stability standard (Tier 2 — owner call, 2026-06-03; the bar for every async surface, here and in §24.36 36.2–36.5 + the §24.37 mobile work).** A state change must never yank surrounding content: (a) the **loading skeleton reserves the loaded layout's footprint** so loading→ok is ≈zero layout shift (the frequent, watched transition); (b) **empty/error center their message within a reserved region** (a sensible min-height) rather than collapsing the surface to a bare line — and without ballooning into a large empty void on a very tall surface (a ~900px diagram's error state reserves a comfortable framed region, not its full height). Grid-composed surfaces (the `/live` panel grid) are stabilized by the grid row sizing to its tallest cell; single-surface pages (`/momentum`, `/architecture`) reserve their region explicitly.
+> **Dimensional-stability standard (Tier 2 — owner call, 2026-06-03; the bar for every async surface, here and in §24.36 36.2–36.5 + the §24.37 mobile work).** A state change must never yank surrounding content: (a) the **loading skeleton reserves the loaded layout's footprint** so loading→ok is ≈zero layout shift (the frequent, watched transition); (b) **empty/error center their message within a reserved region** (a sensible min-height) rather than collapsing the surface to a bare line — and without ballooning into a large empty void on a very tall surface (a ~900px diagram's error state reserves a comfortable framed region, not its full height). Grid-composed surfaces (the `/live` panel grid) are stabilized by the grid row sizing to its tallest cell; single-surface pages (`/pipeline`, `/architecture`) reserve their region explicitly.
 >
 > **Error boundaries vs offline states (STRATEGY §24.36 / Sub-milestone 36.3).** Two distinct failure modes get two treatments. An **expected async failure** (the backend is unreachable / 500s — the "Backend down" + "Portkey down" rows above) surfaces through each polling hook as the honest per-surface **offline `StateNote`** (streams: "reconnecting") — this *is* the backend-down fallback, chosen granular over a single page-level banner so each panel says exactly what it can't reach. An **unexpected render throw** (a component crash) is caught by a styled, recoverable **`RouteErrorBoundary`** — the cross-cutting boundary wired as the router `defaultErrorComponent` (so it renders inside the layout `<Outlet/>` with the header + rail still present — never a chromeless page) and the root `errorComponent` (last-resort). On-brand copy + a **Try again** (router invalidate) + **Go home**; the raw error/stack is dev-only (visitors never see a trace). Reached for tests via a mock-only synthetic-crash route (the client-side counterpart to the `?__state` seam). **Deferred (not buildable / not yet present):** the *deployed* "Cloudflare Worker serves a stale cached build" path (a Phase 9/10 deploy concern) and the table's **"footer status shows red"** (the §8.2 footer itself is deferred to the `/about` pass).
 
@@ -1387,24 +1387,24 @@ The portal is **phone-primary responsive**, not desktop-only. A page that overfl
 
 | Surface | Behavior below `md` |
 |---|---|
-| **Top nav (§8.1)** | *The one universal break.* The horizontal link row (`Live · Momentum · Architecture · Simulator · Work · Contact` + wordmark ≈ 431px) overflows every page → horizontal scroll, the last link clipped, the wordmark wrapped. Collapses to a **hamburger** (below). |
+| **Top nav (§8.1)** | *The one universal break.* The horizontal link row (`Live · Job Pipeline · Architecture · Simulator · Work · Contact` + wordmark > 431px) overflows every page → horizontal scroll, the last link clipped, the wordmark wrapped. Collapses to a **hamburger** (below). |
 | `/` home · `/work` · `/contact` · `/simulator` (input) · `/simulator/results/$id` | **Already correct** — single-column stack; forms, cards, and chip rows reflow; fits to 320px. No change beyond the shared header. |
 | `/architecture` (§5.5) | The SVG **scales to fit** the width (whole-system-at-a-glance — the point of an architecture diagram — is preserved). Detail comes from **tapping a node** (the §8.5 node modal, rendered as a **bottom-sheet** on phones), not from reading the shrunk labels. Native pinch-zoom remains a bonus escape hatch. |
 | `/live` (§5.2) | **Trace-first.** The live trace stream leads (the "agent working now" wow is immediately visible, not buried); the stat panels (system status, sessions, container pool, telemetry, cost, recent outcomes) stack below. **All panels kept** — honest and complete. On a phone each entry stacks: a compact metadata row (`time · agent · ◆`) with the **`[ref]` + message on their own full-width line below** (the ref leads the sentence — no orphaned-ref raggedness); the desktop single-row terminal layout is restored at `sm+`. The message **wraps fully on `/live`** (the readable log); the home live-activity ticker (§5.1) **clamps it to 2 lines** (`…` if longer) so one long action can't swallow the teaser. |
-| `/momentum` (§5.4) | The board's desktop horse-race flattens to a **vertical stack** of stage sections (top-to-bottom = progress toward an offer); **zero-count stages collapse to a slim row** so empty stages don't each eat a screen. |
+| `/pipeline` (§5.4) | The board's desktop horse-race flattens to a **vertical stack** of stage sections (top-to-bottom = progress toward an offer); **zero-count stages collapse to a slim row** so empty stages don't each eat a screen. |
 
 **The hamburger (§8.1).** Below **`sm`** (640px — where the full row no longer fits; tablets keep it) the header keeps the wordmark left and shows a hamburger button right; tapping it opens a labeled **disclosure** menu carrying the six nav links. It's built as a disclosure — `aria-expanded` / `aria-controls`, and Escape / outside-click / link-tap all close it — **not** a modal: a nav menu doesn't trap focus or inert the page (the **§8.5** contract is for the modal overlays). Each menu link is a ≥44px tap target. The header stays sticky; at `sm+` the full horizontal row returns unchanged.
 
-**Tap targets.** Interactive controls meet **≥44px** on phones (WCAG 2.5.5 / Apple HIG): the hamburger, the `/architecture` nodes, the `/momentum` cards, the `/live` trace filter chips. The architecture nodes also carry a mobile-only **"tap a node for detail"** cue (there's no hover affordance on touch).
+**Tap targets.** Interactive controls meet **≥44px** on phones (WCAG 2.5.5 / Apple HIG): the hamburger, the `/architecture` nodes, the `/pipeline` cards, the `/live` trace filter chips. The architecture nodes also carry a mobile-only **"tap a node for detail"** cue (there's no hover affordance on touch).
 
 **Decisions (owner-delegated, recon-grounded — the alternatives and why-not):**
 - **`/architecture` SVG → scale-to-fit + tap-for-detail.** Not *min-width + horizontal pan* (a two-axis scroll trap, and it loses the at-a-glance gestalt), and not a *separate mobile diagram* (two representations to keep in sync). The readable detail already lives in the node modals we built (§8.5). *Escape hatch:* a modest min-width pan if build-time review finds the labels too cramped.
 - **`/live` → trace-first, keep all panels.** Not *collapsible stat panels* (hides info + adds interaction cost a skimming visitor doesn't want) and not *current order* (buries the centerpiece below four panels). The fix is purely ordering. *Escape hatch:* condense the stat panels if the scroll proves too long.
-- **`/momentum` → vertical stack + compact empties.** Not *horizontal scroll-snap* (off-screen columns are a discoverability anti-pattern and fight the page's vertical scroll). The race metaphor is a desktop affordance; readability wins on the phone.
+- **`/pipeline` → vertical stack + compact empties.** Not *horizontal scroll-snap* (off-screen columns are a discoverability anti-pattern and fight the page's vertical scroll). The race metaphor is a desktop affordance; readability wins on the phone.
 
 **Carried over unchanged:** the reduced-motion guarantee (§3.5) and the dialog focus/a11y contract (§8.5) apply on mobile as on desktop; the bottom-sheet node modal honors both.
 
-**Standing mobile rules (added per STRATEGY §24.58, learned from the /momentum phone defects):**
+**Standing mobile rules (added per STRATEGY §24.58, learned from the /pipeline phone defects):**
 - **Every grid declares its column template at the base breakpoint** (`grid-cols-1`, not bare `grid`): an un-templated implicit track sizes to content *min-width*, and a `truncate`d element still contributes its full nowrap line as min-content — so one long real-world string blows the page out sideways while short fixture data keeps CI green. Pair the rule with at least one real-shaped long string in the deterministic seeds.
 - **Open dialogs scroll-lock the body** (in the shared `useDialog`, so every dialog inherits it): `inert` stops interaction but not scroll-chaining; without the lock, touch scroll moves the page behind the open drawer.
 
