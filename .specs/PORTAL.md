@@ -180,9 +180,11 @@ Motion: limited. The only auto-animating element on `/` is a single pulsing "●
 /work                Resume / experience / projects / writing
 /contact             Recruiter contact form + direct contact options
 /about               Why this exists, methodology, FAQ (footer link only)
+/kit                 Interview-kit dossier (?app=«ref»&round=«round»; linked from the /pipeline drawer)
 
 API routes (consumed by the frontend)
 /api/funnel          GET — sanitized funnel state
+/api/kit             GET — one kit's public projection (?app=«ref»&round=«ROUND»; sealed sections carry counts, never text)
 /api/activity        GET — sanitized recent activity (last 50 events)
 /api/activity/stream GET — SSE stream of live sanitized events
 /api/telemetry       GET — aggregate metrics (cache rate, cost, etc.)
@@ -679,6 +681,8 @@ Footer: A short methodology block:
 
 > **Build note (STRATEGY §24.35 Pass D).** Two refinements: (1) the per-card bar now renders **`win_confidence`** (the heuristic, with a muted `~N%` label) rather than the card's stage position — the column already conveys the stage, so the bar carries new per-card info; null `win_confidence` → no bar. (2) The board holds a **stable height regardless of per-lane card counts** — `items-start` (sparse/empty lanes no longer balloon to match the tallest) plus a fixed lane height with internal scroll, so a lane that piles up scrolls internally instead of jumping the whole board (and the footer/rail below it). Observed live on `dev:mock` (six cards piled into `OFFER` ballooned the board to 763px before the fix).
 
+> **Build note (STRATEGY §24.65 — interview-kit surfacing).** Two additions feeding the §5.9 dossier page: (1) a funnel card whose application has kits carries a small **`▤ kit` mono chip** (`▤ 2 kits` when several) in the same glyph register as `◆ public` — the board-level existence cue; (2) the drawer gains an **"Interview prep" section** (after the fact grid): one document-row per kit — round label + interview type + interview date (day granularity) + an `archived` badge where applicable — each row a link with a `→` affordance into `/kit?app=«ref»&round=«round»`, plus an InfoTip explaining what a kit is and the sealing model. All kits show, **including archived** (§24.65 D1) — a closed process keeps its prep story. Metadata rides `/api/funnel` (`interview_kits` per application); kit *content* never does.
+
 ---
 
 ### 5.5 `/architecture` — Live system map
@@ -907,6 +911,57 @@ bash setup.sh        # installs Node, pnpm, Docker, OneCLI, builds the container
 The setup script is the same NanoClaw `nanoclaw.sh` flow — fresh-machine to running agent in one command, with handoffs to Claude Code for failure recovery.
 
 This page exists so a curious visitor never has to wonder "is any of this for real" — they can read the methodology.
+
+---
+
+### 5.9 `/kit` — Interview-kit dossier (STRATEGY §24.65)
+
+**Purpose:** Surface the agent's richest artifact — the two-part interview kit (§24.53) — as a *real document with visibly sealed sections*. The privacy model is the centerpiece, not an apology: a visitor sees a genuine prep dossier whose identifying sections are honestly redacted while the process is live, and shown in full once the application is revealed post-close.
+
+**Reached from:** the §5.4 drawer's "Interview prep" rows → `/kit?app=«ref»&round=«round»` (query params, matching the established `?app=` deep-link convention). Browser back lands on `/pipeline?app=«ref»`, which re-opens the drawer (URL-as-source-of-truth, §24.58) — the navigation-stack feel with zero new dialog code. Deliberately **not** a second dialog stacked over the drawer: `useDialog` is single-layer (§8.5), and a long document wants a page, not a modal.
+
+**Layout (ops register, document treatment):**
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  [ai-infra-a]                                    INTERVIEW KIT│
+│  Senior Platform Engineer                                     │
+│  ROUND TECH_SCREEN · TYPE technical_screen · JUN 12 · ACTIVE  │
+│  ── This process is live — sections that would identify the   │
+│     company are sealed. Revealed post-close, it shows in full.│
+├──────────┬───────────────────────────────────────────────────┤
+│ Part 1   │  ## Part 1 — Interviewer operating manual         │
+│  Your    │  *read by the interviewer Claude during the       │
+│  role    │   voice mock*                                     │
+│  Rubric  │                                                   │
+│ ⊘ Themes │  ### Your role                                    │
+│ ⊘ Ground │  Conduct a realistic technical screen for…        │
+│ ⊘ Gaps   │                                                   │
+│ Part 2   │  ### Scoring rubric                               │
+│ ⊘ Signal │  - Problem decomposition — strong: …              │
+│  Lean    │                                                   │
+│ ⊘ Ask    │  ### Question themes                              │
+│          │  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓                       │
+│ (sticky  │  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓                              │
+│  rail;   │  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓                          │
+│  chips   │  8 question themes · sealed while this process is │
+│  on      │  live — they quote the job description.           │
+│  mobile) │  …                                                │
+└──────────┴───────────────────────────────────────────────────┘
+```
+
+- **Masthead** — document-style header: mono title in the drawer's bracket convention (`[ai-infra-a]`, real name + `◆ public` when revealed), role title, then a mono fact strip (`ROUND · TYPE · INTERVIEW DATE · ACTIVE/ARCHIVED`). Below it the **reveal banner**: obfuscated → "This process is live — sections that would identify the company are sealed. If the process is revealed post-close, the kit shows in full." / public → "◆ revealed post-close — shown in full."
+- **Sticky section nav (TOC)** built from the kit's deterministic sections: desktop a slim left rail, mobile a horizontal chip row pinned under the masthead; scroll-spy highlights the section in view. Sealed sections appear **in** the TOC with a `⊘` glyph — the full structure is visible even when content isn't (provable depth).
+- **Two-part framing** — Part 1 and Part 2 render as visually distinct documents with honest sub-captions: Part 1 *"read by the interviewer Claude during the voice mock"*; Part 2 *"the candidate's phone cheat-sheet"* (a tighter card, like the pocket artifact it is). The kit's own design intent becomes the visual story.
+- **Sealed-section treatment (the centerpiece)** — the real section header, then one **redaction bar** per withheld item (striped CSS bars, `aria-hidden`, deterministic per-index widths so visual baselines hold), plus a visible caption: *"6 grounding facts · sealed while this process is live — they'd identify the company."* Gap notes carry their own: *"sealed while live — names what the candidate would be probed on."* The seal is server-side (§24.65): the payload never contains withheld text; the bars are decoration over an already-safe wire.
+- **Content sections** — the shared markdownish renderer (extracted from the simulator output pane), `max-w-prose` reading measure, one subtle entrance fade (root MotionConfig handles reduced-motion).
+- **Footer honesty copy** — built by the `build-interview-kit` subagent; lives as a Google Doc in the candidate's private Drive; conducted live as a voice mock; this page is the public projection.
+
+**Calibration (decided, don't re-litigate):** YES to redaction bars, sealed-glyph TOC, two-part framing, dossier masthead, one entrance motion. NO to typewriter/declassify-on-hover effects (would imply the content exists client-side — it doesn't), page-flip/3D, and shimmer over redactions (confusable with loading). A "was sealed while live" marker on revealed kits is a recorded v1.1 flourish.
+
+**States (§10 discipline):** loading skeleton (masthead + a few bars); unknown ref/round or no kit → an honest empty state with a link back to `/pipeline`; a kit whose content predates markdown capture (§24.65 backfill miss) → metadata masthead + "content not captured for kits built before this feature."
+
+**Load behavior:** `/api/kit` is fetched once on page open — a kit is static once built; no polling. Realistic kits are 1–3k words (~10–30 KB JSON) — plain render, no virtualization.
 
 ---
 
@@ -1405,6 +1460,7 @@ The portal is **phone-primary responsive**, not desktop-only. A page that overfl
 | `/architecture` (§5.5) | The SVG **scales to fit** the width (whole-system-at-a-glance — the point of an architecture diagram — is preserved). Detail comes from **tapping a node** (the §8.5 node modal, rendered as a **bottom-sheet** on phones), not from reading the shrunk labels. **Pinch-zoom is scoped to the diagram itself** (STRATEGY §24.64): two fingers on the diagram zoom/pan only the map (clamped 1–3×, a “reset” chip restores 1× and page scrolling); the rest of the page never zooms. Native page pinch remains untouched everywhere else. |
 | `/live` (§5.2) | **Trace-first.** The live trace stream leads (the "agent working now" wow is immediately visible, not buried); the stat panels (system status, sessions, container pool, telemetry, cost, recent outcomes) stack below. **All panels kept** — honest and complete. On a phone each entry stacks: a compact metadata row (`time · agent · ◆`) with the **`[ref]` + message on their own full-width line below** (the ref leads the sentence — no orphaned-ref raggedness); the desktop single-row terminal layout is restored at `sm+`. The message **wraps fully on `/live`** (the readable log); the home live-activity ticker (§5.1) **clamps it to 2 lines** (`…` if longer) so one long action can't swallow the teaser. |
 | `/pipeline` (§5.4) | The board's desktop horse-race flattens to a **vertical stack** of stage sections (top-to-bottom = progress toward an offer); **zero-count stages collapse to a slim row** so empty stages don't each eat a screen. |
+| `/kit` (§5.9) | Single-column document: the TOC rail becomes a **horizontal chip row pinned under the masthead** (scrollable, sealed `⊘` chips included); Part 2's pocket card goes full-width; redaction bars + captions reflow naturally. No horizontal overflow at 320px. |
 
 **The hamburger (§8.1).** Below **`sm`** (640px — where the full row no longer fits; tablets keep it) the header keeps the wordmark left and shows a hamburger button right; tapping it opens a labeled **disclosure** menu carrying the six nav links. It's built as a disclosure — `aria-expanded` / `aria-controls`, and Escape / outside-click / link-tap all close it — **not** a modal: a nav menu doesn't trap focus or inert the page (the **§8.5** contract is for the modal overlays). Each menu link is a ≥44px tap target. The header stays sticky; at `sm+` the full horizontal row returns unchanged.
 
