@@ -116,8 +116,9 @@ function Lane({ children, title, tone }: { children: React.ReactNode; title: str
  * lanes rendered progressively (the §24.24 honesty rule — a lane appears only
  * when the row carries it; nothing is ever faked). A `category='turn'` row
  * renders as a batch-sealing separator (the per-turn metrics inline in a rule),
- * not a peer action line (§24.35 Pass C). Smooth-scroll when motion is allowed;
- * an instant jump under prefers-reduced-motion.
+ * not a peer action line (§24.35 Pass C). The pinned auto-follow jumps
+ * instantly (a smooth follow unsticks itself — see the effect below); the
+ * "jump to live" button smooth-scrolls when motion is allowed.
  */
 export function LogStream({
   events,
@@ -152,15 +153,18 @@ export function LogStream({
   // constant and a length-keyed effect would never re-fire — auto-scroll dies.
   const newestSeq = visible.length > 0 ? visible[visible.length - 1].seq : 0
 
-  // Stay pinned to the newest line while the visitor is "stuck" to the bottom —
-  // smooth when motion is allowed, an instant jump under reduced-motion (the
-  // `typeof` guard also covers jsdom, where Element.scrollTo isn't implemented).
+  // Stay pinned to the newest line while the visitor is "stuck" to the bottom.
+  // The pinned follow is an INSTANT jump (§24.62): a smooth follow self-defeats
+  // — its own animation frames fire onScroll with the bottom still >24px away,
+  // which unsticks the pin. On load the backlog arrives in chunks, so a chunk
+  // landing mid-animation reliably parked the stream mid-history behind a
+  // "jump to live" button. Smooth scrolling stays on the user-initiated jump
+  // button below, where the long travel is actually felt.
   React.useEffect(() => {
     const el = scrollRef.current
     if (!stuck || !el) return
-    if (reduce || typeof el.scrollTo !== 'function') el.scrollTop = el.scrollHeight
-    else el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-  }, [newestSeq, stuck, reduce])
+    el.scrollTop = el.scrollHeight
+  }, [newestSeq, stuck])
 
   const onScroll = (e: React.UIEvent<HTMLOListElement>): void => {
     const el = e.currentTarget
