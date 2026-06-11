@@ -1,3 +1,4 @@
+import { REPO_URL } from '~/lib/site'
 import type { ArchitectureData, SystemMode } from '~/lib/use-architecture'
 
 // The system map as data (PORTAL §5.5). A curated, faithful subset of the spec's
@@ -84,7 +85,7 @@ export const NODES: ArchNode[] = [
     region: 'triggers',
     probe: 'structural',
     description: 'The owner channel — a Telegram bot the candidate chats with; the agent replies back through it.',
-    source: 'src/channels/adapter.ts',
+    source: 'src/channels/telegram.ts',
     link: 'https://core.telegram.org/bots',
     linkLabel: 'Telegram Bot API',
     x: 25,
@@ -107,11 +108,12 @@ export const NODES: ArchNode[] = [
   },
   {
     id: 'trig-google',
-    label: 'Gmail · Calendar',
+    label: 'Google Workspace',
     region: 'triggers',
     probe: 'structural',
     description:
-      'Recruiter replies (Gmail) and interview events (Calendar) wake the system via close-detection; outreach drafts are written back through a Gmail tool.',
+      'Recruiter replies (Gmail) and interview events (Calendar) wake the system — a polling close-detection loop, not webhooks. The agent writes back too: reversible Gmail drafts, and interview-prep kit Docs in the candidate’s own Drive.',
+    source: 'src/modules/career-pilot/close-detection-bootstrap.ts',
     link: 'https://developers.google.com/workspace',
     linkLabel: 'Google Workspace APIs',
     x: 389,
@@ -124,7 +126,8 @@ export const NODES: ArchNode[] = [
     label: 'Cron sweep',
     region: 'triggers',
     probe: 'structural',
-    description: 'Periodic host sweep — due tasks, recurrence, and stale-application detection.',
+    description:
+      'Periodic host sweep — delivers due scheduled work (the morning briefing, the pipeline sweep), advances recurring tasks, and recovers stuck containers.',
     source: 'src/host-sweep.ts',
     x: 571,
     y: 122,
@@ -134,18 +137,6 @@ export const NODES: ArchNode[] = [
 
   // HOST — the long-running Node process.
   {
-    id: 'host-router',
-    label: 'Router · Sweep',
-    region: 'host',
-    probe: 'pause',
-    description: 'Routes inbound messages and runs the sweep loop. Status tracks the pause-state ladder.',
-    source: 'src/router.ts',
-    x: 162,
-    y: 234,
-    w: 188,
-    h: NODE_H,
-  },
-  {
     id: 'host-db',
     label: 'Session DB',
     region: 'host',
@@ -153,7 +144,33 @@ export const NODES: ArchNode[] = [
     description:
       'Per-session message store — inbound (host writes, container reads) and outbound (container writes, host reads + delivers).',
     source: 'src/db/session-db.ts',
-    x: 410,
+    x: 58,
+    y: 234,
+    w: 188,
+    h: NODE_H,
+  },
+  {
+    id: 'host-router',
+    label: 'Router · Sweep',
+    region: 'host',
+    probe: 'pause',
+    description: 'Routes inbound messages and runs the sweep loop. Status tracks the pause-state ladder.',
+    source: 'src/router.ts',
+    x: 286,
+    y: 234,
+    w: 188,
+    h: NODE_H,
+  },
+  {
+    id: 'host-onecli',
+    label: 'OneCLI gateway',
+    region: 'host',
+    probe: 'structural',
+    description:
+      'The credential perimeter — inherited with the NanoClaw fork and kept. Every outbound HTTPS call a container makes rides this proxy, and the real secrets (the Portkey key, the job-search API key, Google OAuth tokens) are injected on the wire. A container never holds a real credential.',
+    link: 'https://github.com/onecli/onecli',
+    linkLabel: 'OneCLI on GitHub',
+    x: 514,
     y: 234,
     w: 188,
     h: NODE_H,
@@ -178,7 +195,9 @@ export const NODES: ArchNode[] = [
     region: 'container',
     probe: 'sessions',
     description: 'The Claude Agent SDK loop. Healthy when at least one session is actively running.',
-    source: 'src/providers/claude.ts',
+    // NOT the host's same-named src/providers/claude.ts (that file is the
+    // Portkey provider *config*) — the loop lives in the agent-runner tree.
+    source: 'container/agent-runner/src/providers/claude.ts',
     x: 286,
     y: 346,
     w: 188,
@@ -190,7 +209,9 @@ export const NODES: ArchNode[] = [
     region: 'container',
     probe: 'structural',
     description:
-      'research-company, tailor-resume, draft-outreach, build-interview-kit, scrape-jobs, pipeline-scribe — each makes its own LLM calls.',
+      'Six specialists the orchestrator dispatches. research-company and tailor-resume are read-only; draft-outreach writes reversible Gmail drafts; build-interview-kit writes prep-kit Docs to Drive; scrape-jobs fills the job-leads pool; pipeline-scribe curates the public pipeline view. Each makes its own LLM calls.',
+    link: `${REPO_URL}/tree/master/groups/career-pilot/.claude/agents-src`,
+    linkLabel: 'Agent definitions (repo)',
     x: 514,
     y: 346,
     w: 188,
@@ -202,12 +223,12 @@ export const NODES: ArchNode[] = [
     region: 'container',
     probe: 'structural',
     description:
-      "LLM gateway. Every model call from the container (orchestrator + subagents) routes through Portkey's Model Catalog → Anthropic — unified keys, fallback, and cost/latency analytics. A service we configure, not own; PORTKEY_BYPASS falls back to calling Anthropic directly.",
+      "LLM gateway. Every model call routes through Portkey's Model Catalog → Anthropic: the orchestrator and subagents in the container, and the host's own calls (the sanitizer's semantic pass, win-confidence scoring). Unified keys, fallback, cost/latency traces. A service we configure, not own; a bypass env falls back to calling Anthropic directly.",
     link: 'https://portkey.ai/docs/product/model-catalog',
     linkLabel: 'Portkey Model Catalog',
     x: 162,
     y: 430,
-    w: 188,
+    w: 164,
     h: NODE_H,
   },
   {
@@ -219,9 +240,22 @@ export const NODES: ArchNode[] = [
       'The Claude models behind the gateway (Opus / Sonnet / Haiku). External — every reasoning and tool-use turn is a call here.',
     link: 'https://docs.anthropic.com',
     linkLabel: 'Anthropic API docs',
-    x: 410,
+    x: 360,
     y: 430,
-    w: 188,
+    w: 164,
+    h: NODE_H,
+  },
+  {
+    id: 'cont-jobs',
+    label: 'Job search API',
+    region: 'container',
+    probe: 'structural',
+    description:
+      'A commercial Google-Jobs search index. The scrape-jobs subagent queries it for live postings, which land in the job-leads pool the orchestrator continuously re-reads while scouting. Not an LLM call — a plain HTTPS fetch, with the API key injected in flight by the OneCLI gateway.',
+    source: 'container/agent-runner/src/mcp-tools/scrape-jobs.ts',
+    x: 558,
+    y: 430,
+    w: 164,
     h: NODE_H,
   },
 
@@ -231,7 +265,8 @@ export const NODES: ArchNode[] = [
     label: 'Sanitization',
     region: 'public',
     probe: 'structural',
-    description: 'Strips PII and obfuscates companies before anything reaches the public tables.',
+    description:
+      'Three passes before anything reaches a public table: deterministic PII scrubbing, company-name obfuscation, then an LLM semantic pass that genericizes products and events. The fail-safe is withhold — a line that can’t be sanitized is never published.',
     source: 'src/modules/portal/sanitizer.ts',
     demo: 'sanitizer',
     x: 58,
@@ -244,7 +279,8 @@ export const NODES: ArchNode[] = [
     label: 'public_audit_trail',
     region: 'public',
     probe: 'backend',
-    description: 'Append-only sanitized event log — the source for the live ticker and activity feed.',
+    description:
+      'Append-only sanitized event log with a monotonic cursor — the source for the live ticker and the activity feed, resumable mid-stream after a dropped connection.',
     source: 'src/modules/portal/public-audit.ts',
     x: 286,
     y: 546,
@@ -269,7 +305,8 @@ export const NODES: ArchNode[] = [
     region: 'public',
     probe: 'structural',
     description:
-      'Cloudflare Tunnel exposes the API (incl. SSE); a Worker serves this page from the edge. Infra we configure, not own.',
+      'The browser talks only to the Worker: it serves this page from the edge and proxies every /api/* call — JSON and the live SSE stream — through an Access-gated Cloudflare Tunnel to the host, authenticating with a service token. Infra we configure, not own.',
+    source: 'frontend/src/routes/api/$.ts',
     link: 'https://developers.cloudflare.com',
     linkLabel: 'Cloudflare Workers + Tunnel',
     x: 286,
@@ -289,6 +326,10 @@ export const EDGES: ArchEdge[] = [
   { from: 'trig-cron', to: 'host-router' },
   { from: 'host-router', to: 'host-db', bidirectional: true },
   { from: 'host-router', to: 'cont-runtime' },
+  // The egress proxy is duplex by nature — containers call out through it and
+  // credentials come back injected in flight. Drawn to the runtime because the
+  // runtime is what wires each spawned container through the gateway.
+  { from: 'host-onecli', to: 'cont-runtime', bidirectional: true },
   { from: 'cont-runtime', to: 'cont-orch' },
   { from: 'cont-orch', to: 'cont-subagents' },
   { from: 'cont-orch', to: 'cont-portkey' },
@@ -296,6 +337,9 @@ export const EDGES: ArchEdge[] = [
   // the gateway (ANTHROPIC_BASE_URL is container-wide → Portkey → Anthropic).
   { from: 'cont-subagents', to: 'cont-portkey' },
   { from: 'cont-portkey', to: 'cont-anthropic' },
+  // Not an LLM path: scrape-jobs fetches the jobs index directly (OneCLI
+  // injects the key on the wire).
+  { from: 'cont-subagents', to: 'cont-jobs' },
   { from: 'cont-orch', to: 'pub-sanitize' },
   { from: 'pub-sanitize', to: 'pub-audit' },
   { from: 'pub-audit', to: 'pub-api' },

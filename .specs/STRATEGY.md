@@ -5122,6 +5122,8 @@ DoD (F3 additions): the `build-interview-kit` invocation prompt carries a `## Jo
 
 **PORTAL §5.5 reconciliation (same spec commit).** The §5.5 ASCII diagram + region prose have drifted from the shipped system and from this audit: `prep-interview` (renamed), `pipeline-scribe` missing, "ORCHESTRATOR (Opus 4.7)" (model tiers are config — no version claim), "subagents (read-only)" (four of six write), "Gmail / Calendar webhooks" (it's polling close-detection), the Phase-1 tool list, and the Tunnel→Worker public-path direction (D12). Update the ASCII + prose to shipped truth, including the two added nodes as decided.
 
+**Δ (owner review, 2026-06-10): D1–D3 resolved — all recommendations approved.** D1 = **(a) alias** ("Job search API", generic copy, generic source link). D2 = **(a) add OneCLI**, with one amendment: the node links **OneCLI's public GitHub repo** (github.com/onecli/onecli) rather than the onecli.sh docs. D3 = **(a) keep the `janedoe` placeholder** until the repo-public flip; the link-rot on the deployed page is a recorded known pre-public state. Owner also set a **render-quality gate**: the original diagram took real effort to land clean, so the build ships only after a before/after screenshot comparison holds the new layout to the same standard (rides DoD 6).
+
 **Definition of done.**
 1. Every table verdict above landed in `nodes.ts` / the route, in **one build commit** after the owner review resolves D1–D3.
 2. Every node satisfies the quality bar (live facts, resolving source link, external doc link, or demo); the footer agent-definitions link targets the committed `agents-src/` path.
