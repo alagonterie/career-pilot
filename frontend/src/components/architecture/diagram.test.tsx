@@ -76,6 +76,12 @@ describe('ArchDiagram', () => {
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'cont-orch' }))
   })
 
+  it('renders the §24.63 additions as structural nodes (OneCLI gateway + the aliased jobs API)', () => {
+    render(<ArchDiagram arch={ARCH} mode={MODE} selectedId={null} onSelect={() => {}} />)
+    expect(screen.getByTestId('arch-node-host-onecli')).toHaveAttribute('data-status', 'structural')
+    expect(screen.getByTestId('arch-node-cont-jobs')).toHaveAttribute('data-status', 'structural')
+  })
+
   it('renders the owner as an actor — no status suffix in its accessible name', () => {
     render(<ArchDiagram arch={ARCH} mode={MODE} selectedId={null} onSelect={() => {}} />)
     const owner = screen.getByTestId('arch-node-owner')
@@ -150,6 +156,33 @@ describe('NodePanel', () => {
       'href',
       expect.stringContaining('portkey.ai'),
     )
+  })
+
+  it('links the OneCLI node to its public GitHub repo and is honest about the inheritance', () => {
+    render(<NodePanel node={byId('host-onecli')} status="structural" arch={ARCH} mode={MODE} onClose={() => {}} />)
+    expect(screen.getByRole('link', { name: /OneCLI on GitHub/ })).toHaveAttribute(
+      'href',
+      'https://github.com/onecli/onecli',
+    )
+    expect(screen.getByText(/inherited with the NanoClaw fork/i)).toBeInTheDocument()
+  })
+
+  it('keeps the jobs-API node vendor-aliased (the §24.63 D1 decision)', () => {
+    const jobs = byId('cont-jobs')
+    expect(`${jobs.label} ${jobs.description}`).not.toMatch(/serpapi/i)
+    // Quality bar still holds without naming the vendor: a resolving source link.
+    render(<NodePanel node={jobs} status="structural" arch={ARCH} mode={MODE} onClose={() => {}} />)
+    expect(screen.getByRole('link', { name: /scrape-jobs\.ts/ })).toBeInTheDocument()
+  })
+
+  it('anchors the orchestrator source in the agent-runner tree, not the host provider config (§24.63)', () => {
+    expect(byId('cont-orch').source).toBe('container/agent-runner/src/providers/claude.ts')
+  })
+
+  it('gives the edge node the Worker-proxy source link (the D12 public path)', () => {
+    render(<NodePanel node={byId('pub-edge')} status="structural" arch={ARCH} mode={MODE} onClose={() => {}} />)
+    expect(screen.getByRole('link', { name: /routes\/api/ })).toBeInTheDocument()
+    expect(screen.getByText(/browser talks only to the Worker/i)).toBeInTheDocument()
   })
 
   it('closes on the close button and Escape', () => {

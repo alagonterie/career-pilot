@@ -97,7 +97,7 @@ function ArchitecturePage() {
               CLAUDE.md ↗
             </a>
             <a
-              href={`${REPO_URL}/tree/master/groups/career-pilot/.claude/agents`}
+              href={`${REPO_URL}/tree/master/groups/career-pilot/.claude/agents-src`}
               target="_blank"
               rel="noreferrer"
               className="hover:underline"

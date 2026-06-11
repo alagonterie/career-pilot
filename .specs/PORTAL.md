@@ -690,77 +690,84 @@ Footer: A short methodology block:
 ```
                                 ┌─────────────────────────────────────────┐
 TRIGGERS ────────────────────►  │  HOST (Node)                            │
-                                │                                          │
-   Telegram (the candidate)   ──►   │  [Channel Adapters ●]                    │
-   Portal sandbox (web)   ──►   │       │                                  │
-   Gmail / Calendar       ──►   │       ▼                                  │
-     webhooks                   │  [Router ●] ─► writes to session inbound │
-   Cron sweep (60s)       ──►   │  [Sweep  ●] ─► due tasks, recurrence,   │
-                                │                stale detection           │
-                                │       │                                  │
-                                │       ▼                                  │
-                                │  [Session DB] (inbound + outbound .db)   │
-                                │       │                                  │
-                                ▼       ▼                                  │
+                                │                                         │
+   Telegram (the candidate) ──► │  [Router ●] ─► writes to session inbound│
+   Portal sandbox (web)     ──► │  [Sweep  ●] ─► due scheduled work,      │
+   Google Workspace         ──► │                recurrence, stuck-       │
+     (Gmail · Calendar ·        │                container recovery       │
+      Drive — close-detection   │       │                                 │
+      polling; drafts + kit     │       ▼                                 │
+      Docs written back)        │  [Session DB] (inbound + outbound .db)  │
+   Cron sweep (60s)         ──► │                                         │
+                                │  [OneCLI gateway ◇] — container egress  │
+                                │    proxy; credentials injected on the   │
+                                │    wire (a container never holds one)   │
+                                ▼       ▼                                 │
                 ┌───────────────────────────────────────┐                 │
                 │  CONTAINER (Bun) per session          │  ◀── isolated   │
-                │                                        │      per         │
-                │  @anthropic-ai/claude-agent-sdk        │      session     │
-                │       │                                │                  │
-                │       ▼                                │                  │
-                │  ORCHESTRATOR (Opus 4.7)               │                  │
-                │       │                                │                  │
-                │       ├─► tools (in-process):          │                  │
-                │       │     analyze_jd                 │                  │
-                │       │     parse_email                │                  │
-                │       │     sanitize_text              │                  │
-                │       │     update_application         │                  │
-                │       │     record_funnel_event        │                  │
-                │       │     save_outreach_draft        │                  │
-                │       │     schedule_followup          │                  │
-                │       │     send_message               │                  │
-                │       │                                │                  │
-                │       └─► subagents (read-only):       │                  │
-                │             research-company           │                  │
-                │             ├─ tailor-resume    ┐ par- │                  │
-                │             └─ draft-outreach   ┘ allel│                  │
-                │             prep-interview            │                  │
-                │             scrape-jobs               │                  │
-                │             │                          │                  │
-                │             ▼                          │                  │
-                │       [Portkey AI Gateway ●]           │                  │
-                │             │                          │                  │
-                │             ▼                          │                  │
-                │       [Anthropic Claude API ●]         │                  │
-                └────────────────────────────────────────┘                  │
-                                                                            │
-                                ┌───────────────────────────────────────┐  │
-                                │  PUBLIC                                │  │
-                                │                                        │  │
-                                │  [Sanitization pipeline ●]             │  │
-                                │       │                                │  │
-                                │       ▼                                │  │
-                                │  [public_audit_trail DB]               │  │
-                                │       │                                │  │
-                                │       ▼                                │  │
-                                │  [Public API ●]   ─► REST + SSE        │  │
-                                │       │                                │  │
-                                │       ▼                                │  │
-                                │  [Cloudflare Tunnel ●]                 │  │
-                                │       │                                │  │
-                                └───────┼────────────────────────────────┘  │
-                                        ▼                                    │
-                                  [Cloudflare Worker ●]  ◀── this page is   │
-                                                              served from   │
-                                                              here          │
-                                                                            │
-                                                                            ▼
-                                                                       (you are here)
+                │                                       │      per        │
+                │  @anthropic-ai/claude-agent-sdk       │      session    │
+                │       │                               │                 │
+                │       ▼                               │                 │
+                │  ORCHESTRATOR (model tier per config) │                 │
+                │       │                               │                 │
+                │       ├─► tools (in-process MCP):     │                 │
+                │       │     analyze_jd                │                 │
+                │       │     update_application        │                 │
+                │       │     record_funnel_event       │                 │
+                │       │     record_progress           │                 │
+                │       │     create_gmail_draft        │                 │
+                │       │     query_job_leads  …        │                 │
+                │       │                               │                 │
+                │       └─► subagents (six):            │                 │
+                │             research-company  (read)  │                 │
+                │             tailor-resume     (read)  │                 │
+                │             draft-outreach            │                 │
+                │               (reversible Gmail drafts)│                │
+                │             build-interview-kit       │                 │
+                │               (kit Docs → Drive)      │                 │
+                │             scrape-jobs (job_leads) ──┼─► [Job search   │
+                │             pipeline-scribe           │    API ◇]       │
+                │               (public funnel view)    │                 │
+                │             │                         │                 │
+                │             ▼                         │                 │
+                │       [Portkey AI Gateway ◇]          │                 │
+                │         (every LLM path — incl. the   │                 │
+                │          host's own: sanitizer pass 3,│                 │
+                │          win-confidence scoring)      │                 │
+                │             │                         │                 │
+                │             ▼                         │                 │
+                │       [Anthropic Claude API ◇]        │                 │
+                └───────────────────────────────────────┘                 │
+                                                                          │
+                                ┌───────────────────────────────────────┐ │
+                                │  PUBLIC                               │ │
+                                │                                       │ │
+                                │  [Sanitization pipeline ◇]            │ │
+                                │    (3 passes; fail-safe = withhold)   │ │
+                                │       │                               │ │
+                                │       ▼                               │ │
+                                │  [public_audit_trail DB ●]            │ │
+                                │       │                               │ │
+                                │       ▼                               │ │
+                                │  [Public API ●]   ─► REST + SSE       │ │
+                                │       │                               │ │
+                                │       ▼                               │ │
+                                │  [Cloudflare Tunnel ◇]                │ │
+                                │       │ ▲ service-token auth          │ │
+                                └───────┼─┼─────────────────────────────┘ │
+                                        ▼ │                               │
+                                  [Cloudflare Worker ◇] ◀── serves this   │
+                                    page AND proxies every /api/* call    │
+                                    (JSON + SSE) — the browser talks      │
+                                    ONLY to the Worker                    │
+                                                                          ▼
+                                                                     (you are here)
 ```
 
 The diagram has three regions:
-- **TRIGGERS** — what can wake the system: chat input from the candidate, sandbox visitors, Google Workspace webhooks, the cron sweep.
-- **HOST + CONTAINER** — NanoClaw's two-process model. The host orchestrates; the container is where the agent loop runs.
+- **TRIGGERS** — what can wake the system: chat input from the candidate, sandbox visitors, Google Workspace close-detection polling, the cron sweep.
+- **HOST + CONTAINER** — NanoClaw's two-process model. The host orchestrates (and holds the OneCLI credential perimeter); the container is where the agent loop runs.
 - **PUBLIC** — the read-only sanitized path that feeds this very page.
 
 Each `●` is a live status badge:
@@ -782,6 +789,8 @@ Below the diagram: a panel labeled `WHAT YOU'RE LOOKING AT`:
 > **Build note (Sub-milestone 7.2, STRATEGY §24.28).** **Ships now:** the SVG system map (three regions, a curated faithful subset of the diagram above), a system-mode banner (`live_mode` SHADOW/LIVE + `pause_state`), per-node status badges, the node click-through side panel, and the "what you're looking at" prose+links panel — all from `GET /api/architecture` + `GET /api/system-status` via a polling hook. **The honesty rule:** a status badge lights up only for a node we actually probe (host pause-state, `backend` online, container runtime, active sessions); every other node (the external triggers, Portkey, the Anthropic API, sanitization, the tunnel/edge) renders as **structure with no health claim** — an outline marker, never a fake-green dot — with a legend stating the distinction. This is the same render-if-present discipline as the trace-telemetry lanes (§24.24). **Deferred:** live probes for the structural nodes (a Portkey health read, per-subagent activity, tunnel/worker reachability) and the per-node "recent log excerpts / recent calls" in the side panel — both need the §24.24 telemetry-capture family; until then the side panel shows the node's description + the live facts we do have + a line-anchored code link. **Enrichment (post-build):** an owner **actor** node ("Jane Doe", no status badge) with a bidirectional Telegram edge; **bidirectional** edges for the duplex relationships only (owner↔Telegram, Web-sandbox↔Router, Telegram↔Router, Router↔Session-DB) while triggers/spawns/LLM-calls/append stay one-way; and, since a technical visitor reads this page, every third-party node (Portkey, Anthropic, Telegram, Cloudflare, Google) carries a what-it-is/how-used description **plus an external doc link** even though we don't own it.
 
 > **Build note (STRATEGY §24.35 Pass B).** The node click-through is now a **grow-into-centered-modal** (motion `layoutId` shared-element from the node's box → centered; reduced-motion → instant), not a right drawer (`/pipeline`'s `DetailPanel` keeps its drawer — intentional divergence). The `pub-sanitize` ("Sanitization") node's modal **hosts the live anonymization demo** — the real sanitizer over synthetic input, lazy-fetched on open, relocated here from `/live` (§5.2) because it proves the very pipeline that node *is*. That node therefore carries a distinct `▶` **interactive marker** (not the structural `◇`), and the "what you're looking at" panel gains a **"see the sanitizer run →"** control that opens it — so the privacy proof isn't buried behind a guess.
+
+> **Build note (STRATEGY §24.63 — the Track I audit, 2026-06-10).** The ASCII above and every node's modal copy were reconciled to the shipped system: the D12 Worker-proxy public path, the three-pass sanitizer (fail-safe = withhold), the current six subagents with their writer/read-only split, Google Workspace as polling + write-back (drafts, Drive kit Docs), no model-version claims. Two nodes added: the **OneCLI gateway** (host band — the copy is honest that it was inherited with the NanoClaw fork; links its public GitHub repo) and an **aliased "Job search API"** (the vendor goes unnamed on the page per §24.63 D1 — active Google litigation — while the repo still names it internally). Dev-only fixtures (recruiter-sim, dev inspector) are deliberately not drawn. The diagram layout grew two slots (host band → three, container external row → three) with the same 760×736 viewBox.
 
 ---
 
