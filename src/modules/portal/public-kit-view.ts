@@ -82,14 +82,38 @@ function sealed(section: ParsedKitSection, override?: { id: string; title: strin
   };
 }
 
-/** mirrorFunnelEvent's defense-in-depth net: did a non-public real company name survive? */
+/**
+ * mirrorFunnelEvent's defense-in-depth net, alias-aware (§24.65 Δ): did a
+ * non-public real company name — OR any of its aliases — survive? The alias
+ * leg is load-bearing: a kit naturally says "AMD" while the stored
+ * company_name is "Advanced Micro Devices, Inc" (found live on dev during the
+ * Track J backfill) — scanning the canonical name alone misses the form the
+ * prose actually uses.
+ */
 function leaksNonPublicCompany(db: Database.Database, text: string): boolean {
   try {
     const nonPublic = db
-      .prepare(`SELECT company_name FROM applications WHERE public_state != 'public' AND company_name != ''`)
-      .all() as { company_name: string }[];
+      .prepare(
+        `SELECT company_name, company_aliases FROM applications WHERE public_state != 'public' AND company_name != ''`,
+      )
+      .all() as { company_name: string; company_aliases: string | null }[];
     const lower = text.toLowerCase();
-    return nonPublic.some(({ company_name }) => lower.includes(company_name.toLowerCase()));
+    for (const { company_name, company_aliases } of nonPublic) {
+      if (lower.includes(company_name.toLowerCase())) return true;
+      if (company_aliases) {
+        try {
+          const aliases = JSON.parse(company_aliases) as unknown;
+          if (Array.isArray(aliases)) {
+            for (const a of aliases) {
+              if (typeof a === 'string' && a.length > 1 && lower.includes(a.toLowerCase())) return true;
+            }
+          }
+        } catch {
+          // Unparseable aliases column — the name check above still ran.
+        }
+      }
+    }
+    return false;
   } catch (err) {
     log.error('public-kit-view: defense-in-depth scan failed', { err });
     // Fail CLOSED here (unlike the operator-toggleable audit-row net): kit

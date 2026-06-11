@@ -174,6 +174,21 @@ describe('upsertPublicKitView (§24.65)', () => {
     expect(JSON.stringify(sections)).not.toMatch(/zorblax/i);
   });
 
+  it('defense-in-depth scans ALIASES too — the legal-name-vs-short-form gap (§24.65 Δ)', async () => {
+    // The shape found live on dev during the backfill: company_name is the
+    // legal name, the kit prose says the short form. The scan's alias leg is
+    // what catches it (here inside a compound token Pass 2's word-boundary
+    // replace also misses).
+    seedApp({ id: 'app-1', company: 'Advanced Micro Devices, Inc', label: 'misc-a' });
+    db.prepare(`UPDATE applications SET company_aliases = '["AMD"]' WHERE id = 'app-1'`).run();
+    seedKit('app-1', 'TECH_SCREEN', '### Your role\nDiscuss AMDGPU kernel scheduling tradeoffs.\n');
+    await upsertPublicKitView(db, 'app-1');
+
+    const sections = readSections('app-1');
+    expect(sections[0]).toMatchObject({ id: 'your-role', kind: 'withheld' });
+    expect(JSON.stringify(sections)).not.toMatch(/amd/i);
+  });
+
   it('NULL markdown (pre-§24.65 kit) projects a metadata-only row', async () => {
     seedApp({ id: 'app-1', company: 'Initech Systems', label: 'fintech-a' });
     seedKit('app-1', 'TECH_SCREEN', null);

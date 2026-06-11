@@ -191,6 +191,27 @@ describe('mirrorFunnelEvent', () => {
     expect(readAuditRows()).toHaveLength(0);
   });
 
+  it('drops the row when a non-public company ALIAS survives sanitization (§24.65 Δ)', async () => {
+    seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a' });
+    // The real-world shape found live on dev: legal name stored, prose uses the
+    // short form. "AMDGPU" survives Pass 2's word-boundary replace of the alias
+    // "AMD"; the substring scan must still catch it.
+    seedApp({
+      id: 'app-2',
+      company_name: 'Advanced Micro Devices, Inc',
+      company_aliases: '["AMD"]',
+      obfuscated_label: 'misc-a',
+    });
+    seedEvent({
+      id: 'fe-1',
+      application_id: 'app-1',
+      payload: JSON.stringify({ note: 'compared notes on AMDGPU kernel scheduling' }),
+    });
+
+    expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('dropped');
+    expect(readAuditRows()).toHaveLength(0);
+  });
+
   it('writes the row when the operator disables defense-in-depth', async () => {
     seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a' });
     seedApp({ id: 'app-2', company_name: 'PartnerCo', obfuscated_label: '' });
