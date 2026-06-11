@@ -184,6 +184,50 @@ test('/architecture pinch zooms only the diagram; reset restores page scrolling 
   await expect(page.getByTestId('arch-zoom-reset')).toHaveCount(0)
 })
 
+test('/kit TOC steppers scroll the page BOTH directions (§24.65 Δ)', async ({ page }) => {
+  // Regression for the probed Chromium one-smooth-scroll-at-a-time trap: the
+  // strip's auto-scroll cancelled the page scroll whenever the target chip sat
+  // outside the strip (always on ‹; on › once the jump reached an off-strip
+  // chip). The fix sequences them — strip instantly first, page scroll a frame
+  // later — so every step must actually travel.
+  await page.goto('/kit?app=ai-infra-a&round=TECH_SCREEN')
+  await expect(page.getByTestId('kit-sealed-grounding')).toBeVisible()
+  await expect(page.getByTestId('kit-dossier')).toHaveCSS('opacity', '1')
+
+  const y = () => page.evaluate(() => Math.round(window.scrollY))
+  const settle = async () => {
+    let last = -1
+    await expect
+      .poll(async () => {
+        const now = await y()
+        const stable = now === last
+        last = now
+        return stable
+      })
+      .toBe(true)
+    return last
+  }
+
+  const positions: number[] = []
+  for (let i = 0; i < 3; i++) {
+    await page.getByTestId('kit-toc-next').tap()
+    positions.push(await settle())
+  }
+  // Three content sections (your-role, scoring-rubric, lean-into) — strictly downward.
+  expect(positions[0]).toBeGreaterThan(0)
+  expect(positions[1]).toBeGreaterThan(positions[0])
+  expect(positions[2]).toBeGreaterThan(positions[1])
+
+  // Back up — both ‹ steps must travel (the always-broken direction).
+  await page.getByTestId('kit-toc-prev').tap()
+  const back1 = await settle()
+  expect(back1).toBeLessThan(positions[2])
+  await page.getByTestId('kit-toc-prev').tap()
+  const back2 = await settle()
+  expect(back2).toBeLessThan(back1)
+  expect(back2).toBe(positions[0]) // lands exactly back on the first section
+})
+
 test('key mobile surfaces are axe-clean (incl. the open nav menu)', async ({ page }) => {
   await page.goto('/')
   await openMenu(page)
