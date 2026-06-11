@@ -162,31 +162,48 @@ export function KitDossier({ kit }: { kit: KitPayload }) {
   const stripRef = React.useRef<HTMLDivElement>(null)
   useScrollSpy(ids, setActive, suppressUntil)
 
-  const jump = (id: string): void => {
-    suppressUntil.current = Date.now() + 900
-    setActive(id)
-    const el = document.querySelector(`[data-kit-section="${id}"]`)
-    el?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
-  }
-
-  // Keep the active chip visible inside the horizontal strip (the prev/next
-  // steppers can move the highlight to a chip that's scrolled out of view).
-  // INSTANT, not smooth: Chromium runs ONE smooth-scroll animation at a time,
-  // so a smooth strip scroll CANCELLED the in-flight smooth page scroll —
-  // which only fired when the target chip was out of view, i.e. always on ‹
-  // (strip scrolled right, prev chip off-left) and on long › jumps. The
-  // owner's "back scrolling doesn't work at all / forward mostly works"
-  // (§24.65 Δ).
-  React.useEffect(() => {
+  // Bring a chip into the strip's view, instantly.
+  const revealChip = React.useCallback((id: string): void => {
     const strip = stripRef.current
-    if (!strip || !active) return
-    const chip = strip.querySelector<HTMLElement>(`[data-section-id="${active}"]`)
+    if (!strip) return
+    const chip = strip.querySelector<HTMLElement>(`[data-section-id="${id}"]`)
     if (!chip) return
     const left = chip.offsetLeft - strip.offsetLeft
     if (left < strip.scrollLeft || left + chip.offsetWidth > strip.scrollLeft + strip.clientWidth) {
       strip.scrollTo?.({ left: Math.max(0, left - 24), behavior: 'auto' })
     }
-  }, [active])
+  }, [])
+
+  // The two scrolls (strip + page) must NEVER overlap in time: Chromium kills
+  // the document's in-flight smooth scroll when ANY programmatic scroll —
+  // even an instant one on a different element — lands (probed: ‹ moved 0px,
+  // long › died mid-flight, exactly when the chip was out of strip view; the
+  // round-2 "make the strip scroll instant" fix wasn't enough, §24.65 Δ).
+  // So: strip first (instant, synchronous), page scroll one frame later, and
+  // the effect below skips jump-driven active changes entirely.
+  const jumpHandledStrip = React.useRef(false)
+  const jump = (id: string): void => {
+    suppressUntil.current = Date.now() + 900
+    jumpHandledStrip.current = true
+    setActive(id)
+    revealChip(id)
+    const el = document.querySelector(`[data-kit-section="${id}"]`)
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => el?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }))
+    } else {
+      el?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+    }
+  }
+
+  // Observer-driven active changes (the user scrolling the page themselves)
+  // still keep the chip visible; a user-driven scroll has no animation to kill.
+  React.useEffect(() => {
+    if (jumpHandledStrip.current) {
+      jumpHandledStrip.current = false
+      return
+    }
+    if (active) revealChip(active)
+  }, [active, revealChip])
 
   // Prev/next step between sections WITH CONTENT (§24.65 Δ, owner ask): on a
   // phone the sealed chips dominate the strip, so finding the next readable
