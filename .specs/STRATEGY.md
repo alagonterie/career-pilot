@@ -5132,6 +5132,25 @@ DoD (F3 additions): the `build-interview-kit` invocation prompt carries a `## Jo
 5. D1–D3 outcomes recorded as a Δ on this section.
 6. Owner pass (desktop + phone): every node "feels worth diving into" — the final gate.
 
+#### 24.64 Scoped pinch-zoom on the /architecture diagram (Track I stretch)
+
+**Owner register, 2026-06-10.** On a phone, enjoying the diagram basically requires zoom, but native page pinch zooms *everything* — awkward when the rest of the page reads fine at 1×. Wanted: pinch-to-zoom that affects **only the diagram**.
+
+**Approach (chosen over a fullscreen-viewer modal — an extra hop, and modal-in-modal with the node panels gets awkward — and over +/− buttons alone, which are the recorded fallback if pinch proves flaky on some iOS version):**
+
+1. **One transform layer** inside the diagram wrapper holds BOTH the SVG and the node-button overlay — they already share the wrapper's coordinate space, so scaling the layer keeps tap targets glued to their nodes. `transform: translate(tx,ty) scale(s)`, origin `0 0`, scale clamped **[1, 3]**, translate clamped so content always covers the viewport (no white gutters).
+2. **Gesture model (touch pointers only; mouse untouched):** at rest (s=1) the wrapper is `touch-action: pan-y` — one finger scrolls the page exactly as today, while two-finger pinch is *not* a pan-y gesture, so the browser leaves it to us (this is also what suppresses native page-zoom while the gesture starts on the diagram). Zoomed (s>1) the wrapper flips to `touch-action: none` — one finger pans the diagram (clamped), pinch keeps scaling; scaling back down near 1 snaps to identity and returns scroll to the page.
+3. **A "⤺ Reset zoom" chip** (the /live jump-to-live affordance pattern) overlays the diagram while s>1 — the honest exit, and the escape hatch from the "one finger no longer scrolls the page" mode.
+4. **The math is pure and rolled our own** (`frontend/src/lib/pinch-zoom.ts`: pinch-update + pan-update + clamping, ≈60 lines) — no `react-zoom-pan-pinch`: its wrapper divs would sit between the `layoutId` node buttons and the modal grow animation, and we only need a fraction of its surface.
+5. **Node taps keep working at any scale** — the buttons live in the transformed layer; the `layoutId` grow measures real bounding boxes, so the modal still grows from the (scaled) node.
+
+**Definition of done.**
+1. On a touch device: pinch on the diagram zooms only the diagram (page header/prose unaffected); one-finger page scroll at rest is unchanged; one finger pans when zoomed; the reset chip restores 1× and page scrolling.
+2. Pure transform math unit-tested (scale clamp, translate clamp, pinch anchor, snap-to-identity).
+3. Mobile e2e: synthetic two-touch pinch (CDP `Input.dispatchTouchEvent`) → the layer's transform changes + the chip appears; reset restores identity; a node tap at zoom still opens its panel.
+4. Zero visual-baseline change at rest (identity transform = today's render); axe green; suites + tsc + format green; deploy green.
+5. Owner phone pass — pinch feel + the iOS Safari check — is the final gate.
+
 ---
 
 ## Part VI: Open questions
