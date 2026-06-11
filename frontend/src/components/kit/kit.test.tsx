@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import type { KitPayload, KitSection } from '~/lib/use-kit'
@@ -99,6 +99,59 @@ describe('KitDossier (§24.65 / PORTAL §5.9)', () => {
     )
     expect(screen.getByTestId('kit-redaction-bars').children.length).toBeLessThanOrEqual(8)
     expect(screen.getByText(/^23 question themes/)).toBeInTheDocument()
+  })
+})
+
+describe('KitDossier TOC steppers + tap-owned highlight (§24.65 Δ)', () => {
+  const STEPPER_SECTIONS: KitSection[] = [
+    { id: 'your-role', title: 'Your role', part: 1, kind: 'content', body: 'a', item_count: 1 },
+    {
+      id: 'question-themes',
+      title: 'Question themes',
+      part: 1,
+      kind: 'withheld',
+      item_count: 3,
+      withheld_reason: 'sealed',
+    },
+    {
+      id: 'grounding',
+      title: 'Grounding + caveats',
+      part: 1,
+      kind: 'withheld',
+      item_count: 4,
+      withheld_reason: 'sealed',
+    },
+    { id: 'lean-into', title: 'Lean into', part: 2, kind: 'content', body: 'b', item_count: 1 },
+  ]
+
+  function activeIds() {
+    return screen
+      .getAllByTestId('kit-toc-entry')
+      .filter((el) => el.getAttribute('data-active') === 'true')
+      .map((el) => el.getAttribute('data-section-id'))
+  }
+
+  it('a tapped chip owns the highlight — even a short sealed section between sealed neighbors', () => {
+    render(<KitDossier kit={payload(STEPPER_SECTIONS)} />)
+    fireEvent.click(
+      screen.getAllByTestId('kit-toc-entry').find((el) => el.getAttribute('data-section-id') === 'question-themes')!,
+    )
+    expect(activeIds()).toEqual(['question-themes', 'question-themes']) // both navs (chips + rail)
+  })
+
+  it('next/prev step between sections WITH CONTENT, skipping the sealed run', () => {
+    render(<KitDossier kit={payload(STEPPER_SECTIONS)} />)
+    const next = screen.getByTestId('kit-toc-next')
+    const prev = screen.getByTestId('kit-toc-prev')
+
+    expect(prev).toBeDisabled() // nothing readable before the start
+    fireEvent.click(next)
+    expect(activeIds()[0]).toBe('your-role')
+    fireEvent.click(next) // skips the two sealed sections
+    expect(activeIds()[0]).toBe('lean-into')
+    expect(screen.getByTestId('kit-toc-next')).toBeDisabled() // no readable section after
+    fireEvent.click(screen.getByTestId('kit-toc-prev'))
+    expect(activeIds()[0]).toBe('your-role')
   })
 })
 

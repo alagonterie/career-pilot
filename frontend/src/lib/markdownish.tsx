@@ -2,18 +2,28 @@ import * as React from 'react'
 
 /**
  * The hand-rolled markdown-ish renderer (§24.31 Δ, extracted §24.65) — shared
- * by the simulator output pane and the /kit dossier. Handles the narrow shapes
- * the agent actually emits: `#`–`####` headings, `-` lists, `---` rules,
- * `**bold**` / `` `code` `` inline, blank-line paragraphs. Still no dependency.
+ * by the simulator output pane and the /kit dossier. Handles the shapes the
+ * agent emits AND the Google Docs→markdown export dialect the backfilled kits
+ * arrive in (§24.65 Δ): `#`–`####` headings, `-`/`*`/`+` bullets, `1.`/`1)`
+ * ordered lists, pipe tables, `---` rules, `**bold**` / `` `code` `` inline,
+ * backslash-escaped punctuation (`\+`, `R\&D`), blank-line paragraphs. Still
+ * no dependency.
  */
+
+/** Docs→markdown escapes literal punctuation (`\+`, `\*real\*`, `R\&D`) —
+ * show the character, not the backslash. Applied to plain text segments only
+ * (code spans stay raw). */
+function unescapeMd(text: string): string {
+  return text.replace(/\\([\\`*_{}[\]()#+\-.!&>~|"'])/g, '$1')
+}
+
 export function renderInline(text: string): React.ReactNode {
   const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g)
-  if (parts.length === 1) return text
   return parts.map((p, i) => {
     if (p.startsWith('**') && p.endsWith('**') && p.length > 4) {
       return (
         <strong key={i} className="font-semibold text-foreground">
-          {p.slice(2, -2)}
+          {unescapeMd(p.slice(2, -2))}
         </strong>
       )
     }
@@ -24,32 +34,107 @@ export function renderInline(text: string): React.ReactNode {
         </code>
       )
     }
-    return p
+    return unescapeMd(p)
   })
 }
 
 const HR_RE = /^(-{3,}|\*{3,}|_{3,})$/
+const BULLET_RE = /^[-*+]\s+/
+const ORDERED_RE = /^\d+[.)]\s+/
+// A table separator row (`|---|---|` / `|:--|--:|`), tolerant of spacing.
+const TABLE_SEP_RE = /^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/
+
+/** Split one `| a | b |` row into trimmed cells. */
+function tableCells(line: string): string[] {
+  return line
+    .replace(/^\s*\|/, '')
+    .replace(/\|\s*$/, '')
+    .split('|')
+    .map((c) => c.trim())
+}
+
+function renderTable(lines: string[], key: string): React.ReactNode {
+  const hasHeader = lines.length > 1 && TABLE_SEP_RE.test(lines[1])
+  const header = hasHeader ? tableCells(lines[0]) : null
+  const body = (hasHeader ? lines.slice(2) : lines).map(tableCells)
+  return (
+    <div key={key} className="my-3 overflow-x-auto">
+      <table className="w-full border-collapse text-sm">
+        {header ? (
+          <thead>
+            <tr>
+              {header.map((c, i) => (
+                <th
+                  key={i}
+                  className="border border-border bg-muted/40 px-2 py-1.5 text-left font-mono text-[11px] uppercase tracking-wider text-muted-foreground"
+                >
+                  {renderInline(c)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+        ) : null}
+        <tbody>
+          {body.map((row, r) => (
+            <tr key={r}>
+              {row.map((c, i) => (
+                <td key={i} className="border border-border px-2 py-1.5 align-top leading-relaxed text-foreground/90">
+                  {renderInline(c)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
 
 export function renderMarkdownish(text: string): React.ReactNode {
   const lines = text.split('\n')
   const out: React.ReactNode[] = []
   let list: string[] = []
+  let ordered: string[] = []
+  let table: string[] = []
 
   const flushList = (key: string): void => {
-    if (list.length === 0) return
-    out.push(
-      <ul key={`ul-${key}`} className="my-2 ml-4 list-disc space-y-1 text-sm leading-relaxed text-foreground/90">
-        {list.map((li, i) => (
-          <li key={i}>{renderInline(li)}</li>
-        ))}
-      </ul>,
-    )
-    list = []
+    if (list.length > 0) {
+      out.push(
+        <ul key={`ul-${key}`} className="my-2 ml-4 list-disc space-y-1 text-sm leading-relaxed text-foreground/90">
+          {list.map((li, i) => (
+            <li key={i}>{renderInline(li)}</li>
+          ))}
+        </ul>,
+      )
+      list = []
+    }
+    if (ordered.length > 0) {
+      out.push(
+        <ol key={`ol-${key}`} className="my-2 ml-4 list-decimal space-y-1 text-sm leading-relaxed text-foreground/90">
+          {ordered.map((li, i) => (
+            <li key={i}>{renderInline(li)}</li>
+          ))}
+        </ol>,
+      )
+      ordered = []
+    }
+    if (table.length > 0) {
+      out.push(renderTable(table, `tbl-${key}`))
+      table = []
+    }
   }
 
   lines.forEach((raw, i) => {
     const line = raw.trimEnd()
     const heading = line.match(/^(#{1,4})\s+(.*)$/)
+    // Pipe-table rows accumulate until a non-table line flushes the block.
+    if (line.trimStart().startsWith('|')) {
+      if (list.length > 0 || ordered.length > 0) flushList(String(i))
+      table.push(line.trim())
+      return
+    }
+    if (table.length > 0) flushList(String(i))
+
     if (HR_RE.test(line.trim())) {
       flushList(String(i))
       out.push(<hr key={`hr-${i}`} className="my-4 border-border" />)
@@ -70,8 +155,12 @@ export function renderMarkdownish(text: string): React.ReactNode {
           </h4>
         ),
       )
-    } else if (line.startsWith('- ')) {
-      list.push(line.slice(2))
+    } else if (BULLET_RE.test(line)) {
+      if (ordered.length > 0) flushList(String(i))
+      list.push(line.replace(BULLET_RE, ''))
+    } else if (ORDERED_RE.test(line)) {
+      if (list.length > 0) flushList(String(i))
+      ordered.push(line.replace(ORDERED_RE, ''))
     } else if (line.length === 0) {
       flushList(String(i))
     } else {

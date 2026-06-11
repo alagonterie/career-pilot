@@ -195,9 +195,15 @@ test.describe('/pipeline — the funnel board, frontend <-> backend', () => {
     await expect(page.getByTestId('kit-masthead')).toContainText('Wayne Enterprises')
     await expect(page.getByTestId('kit-banner-public')).toContainText('revealed post-close')
     // Real content renders — incl. the sections that would be sealed while live.
-    await expect(page.getByTestId('kit-section-scoring-rubric')).toContainText('Problem decomposition')
+    // This fixture carries the Drive-export dialect (§24.65 Δ): the rubric is a
+    // pipe TABLE, lists use `*`/`1.`, punctuation arrives backslash-escaped.
+    const rubric = page.getByTestId('kit-section-scoring-rubric')
+    await expect(rubric.locator('table')).toBeVisible()
+    await expect(rubric).toContainText('Problem decomposition')
     await expect(page.getByTestId('kit-section-gap-notes')).toContainText('Kubernetes operators')
     await expect(page.getByText('Part 2 — Candidate quick-reference')).toBeVisible()
+    // No escape backslashes or pipe-soup survive the renderer.
+    await expect(page.getByTestId('kit-dossier')).not.toContainText('\\+')
 
     // Browser back lands on /pipeline?app=… → the drawer re-opens (URL is the
     // source of truth, §24.58) — the stack feel with zero new dialog code.

@@ -77,28 +77,38 @@ function SectionBlock({ section }: { section: KitSection }) {
   )
 }
 
-/** Scroll-spy over the rendered sections: the TOC highlights the one in view. */
-function useScrollSpy(ids: string[]): string | null {
-  const [active, setActive] = React.useState<string | null>(null)
+/**
+ * Scroll-spy over the rendered sections. The observation band starts at the
+ * tap-scroll landing offset (scroll-mt-24 = 96px) so the section a TOC tap
+ * scrolls to is the one that lights up — the owner's phone pass caught the
+ * old viewport-percentage band skipping short sealed sections and
+ * highlighting their neighbor (§24.65 Δ). A tap also sets the highlight
+ * explicitly and suppresses the observer while the smooth scroll settles.
+ */
+function useScrollSpy(
+  ids: string[],
+  setActive: (id: string | null) => void,
+  suppressUntil: React.MutableRefObject<number>,
+): void {
   React.useEffect(() => {
     if (ids.length === 0 || typeof IntersectionObserver === 'undefined') return
     const observer = new IntersectionObserver(
       (entries) => {
+        if (Date.now() < suppressUntil.current) return
         // Topmost intersecting section wins; entries arrive unordered.
         const visible = entries
           .filter((e) => e.isIntersecting)
           .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
         if (visible.length > 0) setActive(visible[0].target.getAttribute('data-kit-section'))
       },
-      { rootMargin: '-30% 0px -60% 0px' },
+      { rootMargin: '-96px 0px -55% 0px' },
     )
     for (const id of ids) {
       const el = document.querySelector(`[data-kit-section="${id}"]`)
       if (el) observer.observe(el)
     }
     return () => observer.disconnect()
-  }, [ids])
-  return active
+  }, [ids, setActive, suppressUntil])
 }
 
 function TocEntry({
@@ -118,7 +128,9 @@ function TocEntry({
       type="button"
       onClick={() => onSelect(section.id)}
       data-testid="kit-toc-entry"
+      data-section-id={section.id}
       data-sealed={sealed || undefined}
+      data-active={active || undefined}
       className={cn(
         'font-mono text-[11px] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         variant === 'rail' ? 'block w-full truncate py-1 text-left' : 'shrink-0 rounded-full border px-2.5 py-1',
@@ -140,11 +152,39 @@ function TocEntry({
 export function KitDossier({ kit }: { kit: KitPayload }) {
   const sections = kit.sections
   const ids = React.useMemo(() => sections.map((s) => s.id), [sections])
-  const active = useScrollSpy(ids)
+  const [active, setActive] = React.useState<string | null>(null)
+  // While a tap-initiated smooth scroll settles, the observer stays quiet so
+  // the tapped chip keeps the highlight (it owns it; the spy resumes after).
+  const suppressUntil = React.useRef(0)
+  const stripRef = React.useRef<HTMLDivElement>(null)
+  useScrollSpy(ids, setActive, suppressUntil)
 
   const jump = (id: string): void => {
-    document.querySelector(`[data-kit-section="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    suppressUntil.current = Date.now() + 900
+    setActive(id)
+    const el = document.querySelector(`[data-kit-section="${id}"]`)
+    el?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
   }
+
+  // Keep the active chip visible inside the horizontal strip (the prev/next
+  // steppers can move the highlight to a chip that's scrolled out of view).
+  React.useEffect(() => {
+    const strip = stripRef.current
+    if (!strip || !active) return
+    const chip = strip.querySelector<HTMLElement>(`[data-section-id="${active}"]`)
+    if (!chip) return
+    const left = chip.offsetLeft - strip.offsetLeft
+    if (left < strip.scrollLeft || left + chip.offsetWidth > strip.scrollLeft + strip.clientWidth) {
+      strip.scrollTo?.({ left: Math.max(0, left - 24), behavior: 'smooth' })
+    }
+  }, [active])
+
+  // Prev/next step between sections WITH CONTENT (§24.65 Δ, owner ask): on a
+  // phone the sealed chips dominate the strip, so finding the next readable
+  // section meant scrolling the strip to hunt for an un-⊘ chip.
+  const activeIdx = active ? ids.indexOf(active) : -1
+  const nextContent = sections.find((s, i) => i > activeIdx && s.kind === 'content')
+  const prevContent = [...sections.slice(0, Math.max(0, activeIdx))].reverse().find((s) => s.kind === 'content')
 
   // Render in document order, emitting the part framing when the part changes.
   const blocks: React.ReactNode[] = []
@@ -180,15 +220,40 @@ export function KitDossier({ kit }: { kit: KitPayload }) {
       transition={{ duration: 0.25, ease: 'easeOut' }}
       className="lg:grid lg:grid-cols-[11rem_1fr] lg:gap-8"
     >
-      {/* Mobile: a horizontal chip row pinned under the site header (h-14 + border). */}
+      {/* Mobile: a horizontal chip row pinned under the site header. top-14
+          (56px) tucks 1px under the header's border — top-[57px] left a
+          subpixel sliver of page content visible between them on phones
+          (§24.65 Δ, owner phone pass). */}
       <nav
         aria-label="Kit sections (quick nav)"
         data-testid="kit-toc"
-        className="sticky top-[57px] z-10 -mx-6 flex gap-2 overflow-x-auto border-b border-border bg-background/95 px-6 py-2 backdrop-blur lg:hidden"
+        className="sticky top-14 z-10 -mx-6 flex items-center gap-1 border-b border-border bg-background/95 px-2 py-2 backdrop-blur lg:hidden"
       >
-        {sections.map((s) => (
-          <TocEntry key={s.id} section={s} active={active === s.id} onSelect={jump} variant="chip" />
-        ))}
+        <button
+          type="button"
+          aria-label="Previous section with content"
+          data-testid="kit-toc-prev"
+          disabled={!prevContent}
+          onClick={() => prevContent && jump(prevContent.id)}
+          className="shrink-0 rounded-full border border-border px-2 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          ‹
+        </button>
+        <div ref={stripRef} className="flex min-w-0 flex-1 gap-2 overflow-x-auto px-1">
+          {sections.map((s) => (
+            <TocEntry key={s.id} section={s} active={active === s.id} onSelect={jump} variant="chip" />
+          ))}
+        </div>
+        <button
+          type="button"
+          aria-label="Next section with content"
+          data-testid="kit-toc-next"
+          disabled={!nextContent}
+          onClick={() => nextContent && jump(nextContent.id)}
+          className="shrink-0 rounded-full border border-border px-2 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          ›
+        </button>
       </nav>
 
       {/* Desktop: a slim sticky rail. */}

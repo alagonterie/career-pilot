@@ -95,8 +95,15 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
 
   test('the trace header explains the cast via one InfoTip (§24.60)', async ({ page }) => {
     await page.goto('/live')
-    await page.getByRole('button', { name: 'About: who the agents are' }).click()
+    // Retried like funnel.spec's stat-tile tip (§24.65 Δ): under parallel-
+    // worker load a click can land during hydration / a late layout settle
+    // (the tip closes on scroll), so a single click is racy.
     const panel = page.getByTestId('info-tip-panel')
+    await expect(async () => {
+      if (await panel.isVisible()) return
+      await page.getByRole('button', { name: 'About: who the agents are' }).click()
+      await expect(panel).toBeVisible({ timeout: 1000 })
+    }).toPass({ timeout: 15_000 })
     await expect(panel).toContainText('pipeline-scribe')
     await expect(panel).toContainText('build-interview-kit')
     await expect(panel).toContainText(/orchestrator/i)

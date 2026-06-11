@@ -116,4 +116,38 @@ describe('parseKitSections (§24.65)', () => {
     const ids = parseKitSections(md).map((s) => s.id);
     expect(ids).toEqual(['recent-signal', 'recent-signal-2']);
   });
+
+  it('parses the Docs→markdown roundtrip dialect (observed live on both backfilled kits)', () => {
+    // The export bold-wraps headings, demotes the Part 2 heading to `## ---`
+    // + a standalone bold paragraph, uses `*` bullets + `1.` ordered lists,
+    // and appends a trailing `## ---`.
+    const md = [
+      '## **Part 1 — Interviewer Operating Manual**',
+      '',
+      '### **Your role**',
+      'Conduct a technical screen. Probe weak reasoning.',
+      '',
+      '### **Question themes**',
+      '1. **Theme one:** opener.',
+      '1. **Theme two:** opener.',
+      '',
+      '## ---',
+      '',
+      '**Part 2 — Candidate Quick-Reference**',
+      '',
+      '### **Recent signal**',
+      '* **Q1 earnings:** revenue \\+38% YoY.',
+      '* **Partnership:** joint engineering.',
+      '',
+      '## ---',
+    ].join('\n');
+    const sections = parseKitSections(md);
+    expect(sections.map((s) => [s.id, s.part, s.cls, s.itemCount])).toEqual([
+      ['your-role', 1, 'safe', 1],
+      ['question-themes', 1, 'identifying', 2],
+      ['recent-signal', 2, 'identifying', 2],
+    ]);
+    // No phantom sections from the `## ---` rules or the bold part line.
+    expect(sections.some((s) => s.cls === 'unknown')).toBe(false);
+  });
 });
