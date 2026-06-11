@@ -138,6 +138,49 @@ test('/architecture nodes stay tappable and open the detail sheet on mobile', as
   await expect(page.getByRole('dialog')).toBeVisible()
 })
 
+test('/architecture pinch zooms only the diagram; reset restores page scrolling (§24.64)', async ({ page }) => {
+  await page.goto('/architecture')
+  await expect(page.getByTestId('arch-node-host-router')).toHaveAttribute('data-status', 'healthy')
+
+  const diagram = page.getByTestId('arch-diagram')
+  const box = await diagram.boundingBox()
+  const cx = box!.x + box!.width / 2
+  const cy = box!.y + box!.height / 2
+
+  // Playwright's touchscreen has no pinch — drive two raw touch points apart
+  // via CDP. CDP touch events synthesize the pointer events the handler reads.
+  const cdp = await page.context().newCDPSession(page)
+  const pts = (d: number) => [
+    { x: cx - d, y: cy, id: 0 },
+    { x: cx + d, y: cy, id: 1 },
+  ]
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pts(20) })
+  for (const d of [40, 60, 80]) {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts(d) })
+  }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+
+  // Only the diagram's transform layer scaled — the page header is untouched
+  // and the wrapper traded page scroll for map panning.
+  const layer = page.getByTestId('arch-zoom-layer')
+  await expect.poll(async () => layer.evaluate((el) => el.style.transform)).toContain('scale')
+  const scale = await layer.evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).a)
+  expect(scale).toBeGreaterThan(1)
+  await expect(diagram).toHaveCSS('touch-action', 'none')
+  await expect(page.getByRole('heading', { name: 'Architecture' })).toBeVisible()
+
+  // A plain tap (true touch — .click() would synthesize mouse events the
+  // touch-only handler never sees) still opens a node sheet while zoomed.
+  await page.getByTestId('arch-node-cont-orch').tap()
+  await expect(page.getByTestId('arch-node-panel')).toBeVisible()
+  await page.getByRole('button', { name: 'Close panel' }).click()
+
+  // The reset chip is the honest exit: identity transform + page scroll back.
+  await page.getByTestId('arch-zoom-reset').click()
+  await expect(diagram).toHaveCSS('touch-action', 'pan-y')
+  await expect(page.getByTestId('arch-zoom-reset')).toHaveCount(0)
+})
+
 test('key mobile surfaces are axe-clean (incl. the open nav menu)', async ({ page }) => {
   await page.goto('/')
   await openMenu(page)
