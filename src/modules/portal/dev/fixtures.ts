@@ -23,7 +23,9 @@
  */
 import type Database from 'better-sqlite3';
 
+import { upsertInterviewKit } from '../../career-pilot/interview-kit-store.js';
 import { upsertPublicFunnelView } from '../public-funnel-view.js';
+import { upsertPublicKitView } from '../public-kit-view.js';
 
 // ── low-level helpers ──────────────────────────────────────────────────────
 
@@ -256,6 +258,172 @@ export function seedDeterministicFunnel(db: Database.Database): void {
     });
     upsertPublicFunnelView(db, id);
   }
+}
+
+// ── interview-kit fixtures (§24.65 — /kit dossier + drawer "Interview prep") ─
+
+/**
+ * A realistic fixture kit following the build-interview-kit two-part outline
+ * verbatim, so the /kit page + the §24.65 section-policy projection are
+ * exercised against real structure. Company-specific lines mention the company
+ * by name on purpose — the projection's Pass 2 redaction (obfuscated apps) and
+ * the reveal tier (public apps) are what's under test/demo.
+ */
+function buildFixtureKitMarkdown(company: string, role: string): string {
+  return [
+    '## Part 1 — Interviewer operating manual',
+    '',
+    '### Your role',
+    // One physical line per paragraph — the markdownish renderer treats every
+    // non-empty line as its own <p>, so hard-wrapping fragments the prose.
+    `Conduct a realistic technical screen for ${role} at ${company}. Ask one question at a time and wait for the spoken answer. Push back on weak reasoning; never hand over the answer. Escalate difficulty as the candidate succeeds, and close with honest scored feedback against the rubric below.`,
+    '',
+    '### Scoring rubric',
+    '- Problem decomposition — strong: names subproblems and an attack order unprompted; weak: dives into code.',
+    '- Distributed-systems tradeoffs — strong: reasons from failure modes and consistency budgets; weak: recites tools.',
+    '- Efficiency awareness — strong: estimates cost/latency before optimizing; weak: optimizes blind.',
+    '- Code correctness — strong: tests edge cases aloud; weak: declares victory on the happy path.',
+    '- Communication — strong: thinks aloud, flags uncertainty; weak: silent leaps to answers.',
+    '',
+    '### Question themes',
+    `- Multi-region failover (the JD asks for "design for regional outage") — opener: "Walk me through what ${company} should do in the first 60 seconds of a region loss."`,
+    '- Event-pipeline backpressure (JD: "billions of events/day") — opener: "Your ingestion lag doubles overnight. Where do you look first?"',
+    '- Cost-per-query awareness (JD: "own serving economics") — opener: "Your bill doubled but traffic did not. Diagnose."',
+    '- Schema-migration safety (JD: "zero-downtime migrations") — opener: "Sequence a backwards-compatible column rename."',
+    '',
+    '### Grounding + caveats',
+    `- ${company} raised a major round this spring; the eng blog credits a platform rebuild.`,
+    '- Stack signal: Go services, Kafka backbone, Kubernetes operators in production.',
+    '- The JD is explicit about on-call ownership — probe operational maturity.',
+    '- Research digest was fresh (under a week old) at kit-build time.',
+    '',
+    '### Gap notes (probe these honestly)',
+    '- The JD wants Kubernetes operators in production; the resume shows Helm-level work — probe the adjacent strength (release automation) honestly.',
+    '- JD names Kafka; the master resume leans on a managed pub/sub — test transferable fundamentals, not tool trivia.',
+    '',
+    '## Part 2 — Candidate quick-reference',
+    '',
+    '### Recent signal',
+    `- ${company} shipped a realtime product line last month.`,
+    '- Engineering blog post on their event-pipeline rebuild drew wide attention.',
+    '- Leadership added a VP of Platform this quarter.',
+    '',
+    '### Lean into',
+    '- The multi-region ingestion pipeline (4B+ events/day) — name the consistency tradeoffs you made.',
+    '- The 38% p99 latency win via edge caching + read-model projections.',
+    '- The zero-downtime datastore migration you led — it maps onto their migration pain.',
+    '',
+    '### Questions to ask',
+    '- How far along is the operator rollout the platform team blogged about?',
+    '- What does on-call actually look like for this team week to week?',
+    '- Which part of the event pipeline still keeps the team up at night?',
+  ].join('\n');
+}
+
+interface KitSeed {
+  applicationId: string;
+  company: string;
+  role: string;
+  round: string;
+  interviewAt: string | null;
+  archived?: boolean;
+}
+
+async function seedKits(db: Database.Database, seeds: KitSeed[]): Promise<void> {
+  for (const s of seeds) {
+    const kitId = upsertInterviewKit(db, {
+      application_id: s.applicationId,
+      round: s.round,
+      interview_type:
+        s.round === 'SCREENING' ? 'recruiter_screen' : s.round === 'FINAL' ? 'final_round' : 'technical_screen',
+      drive_file_id: `fixture-${s.applicationId}-${s.round}`,
+      drive_url: `https://docs.google.com/document/d/fixture-${s.applicationId}-${s.round}/edit`,
+      title: `Interview Kit — ${s.company} — ${s.round} — 2026-06-01`,
+      interview_at: s.interviewAt,
+      markdown: buildFixtureKitMarkdown(s.company, s.role),
+    });
+    if (s.archived) {
+      db.prepare(
+        `UPDATE interview_kits SET status = 'archived', archived_at = '2026-06-05T09:00:00Z' WHERE id = ?`,
+      ).run(kitId);
+    }
+  }
+  const apps = new Set(seeds.map((s) => s.applicationId));
+  for (const id of apps) {
+    await upsertPublicKitView(db, id);
+    upsertPublicFunnelView(db, id);
+  }
+}
+
+/**
+ * Kits for the deterministic E2E funnel (§24.65): the public OFFER app (Wayne
+ * Enterprises) carries two ARCHIVED kits with full readable content — the
+ * revealed dossier; the obfuscated TECH_SCREEN app (ai-infra-a) carries one
+ * ACTIVE kit — the sealed skeleton. Do NOT change without re-blessing the kit
+ * visual baselines.
+ */
+export async function seedDeterministicKits(db: Database.Database): Promise<void> {
+  await seedKits(db, [
+    {
+      applicationId: 'det-app-3', // Initech / ai-infra-a, obfuscated, TECH_SCREEN
+      company: 'Initech',
+      role: 'Senior AI Specialist',
+      round: 'TECH_SCREEN',
+      interviewAt: '2026-06-18T16:00:00Z',
+    },
+    {
+      applicationId: 'det-app-5', // Wayne Enterprises, public, OFFER
+      company: 'Wayne Enterprises',
+      role: 'Principal Engineer',
+      round: 'SCREENING',
+      interviewAt: '2026-05-06T17:00:00Z',
+      archived: true,
+    },
+    {
+      applicationId: 'det-app-5',
+      company: 'Wayne Enterprises',
+      role: 'Principal Engineer',
+      round: 'TECH_SCREEN',
+      interviewAt: '2026-05-14T17:00:00Z',
+      archived: true,
+    },
+  ]);
+}
+
+/** Kits for the rich dev seed — same shape, dev-app ids (incl. one FINAL-round active kit). */
+export async function seedRichKits(db: Database.Database): Promise<void> {
+  await seedKits(db, [
+    {
+      applicationId: 'dev-app-3', // Initech / ai-infra-a, obfuscated, TECH_SCREEN
+      company: 'Initech',
+      role: 'Senior AI Specialist',
+      round: 'TECH_SCREEN',
+      interviewAt: '2026-06-18T16:00:00Z',
+    },
+    {
+      applicationId: 'dev-app-5', // Stark Industries / devtools-a, obfuscated, FINAL
+      company: 'Stark Industries',
+      role: 'Staff DevX Engineer',
+      round: 'FINAL',
+      interviewAt: null,
+    },
+    {
+      applicationId: 'dev-app-6', // Wayne Enterprises, public, OFFER
+      company: 'Wayne Enterprises',
+      role: 'Principal Engineer',
+      round: 'SCREENING',
+      interviewAt: '2026-05-06T17:00:00Z',
+      archived: true,
+    },
+    {
+      applicationId: 'dev-app-6',
+      company: 'Wayne Enterprises',
+      role: 'Principal Engineer',
+      round: 'TECH_SCREEN',
+      interviewAt: '2026-05-14T17:00:00Z',
+      archived: true,
+    },
+  ]);
 }
 
 // ── deterministic simulator run (E2E share page — fixed row) ────────────────

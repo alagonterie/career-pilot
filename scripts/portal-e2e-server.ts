@@ -33,6 +33,7 @@ import {
   nextAuditSeq,
   seedDeterministicBacklog,
   seedDeterministicFunnel,
+  seedDeterministicKits,
   seedDeterministicSimulatorRun,
   seedSessions,
   type AuditSeed,
@@ -99,6 +100,7 @@ async function main(): Promise<void> {
 
   seedDeterministicBacklog(db);
   seedDeterministicFunnel(db);
+  await seedDeterministicKits(db);
   seedDeterministicSimulatorRun(db);
   seedSessions(db);
 

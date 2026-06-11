@@ -18,6 +18,7 @@ const ROUTES = [
   '/pipeline',
   '/architecture',
   '/live',
+  '/kit?app=ai-infra-a&round=TECH_SCREEN', // §24.65 — chips + redaction bars must reflow
 ]
 
 // Navigate + wait for the route's primary content so the layout has settled
@@ -30,6 +31,8 @@ async function gotoStable(page: Page, path: string): Promise<void> {
     await expect(page.getByTestId('trace-stream')).toBeVisible()
   } else if (path === '/pipeline') {
     await expect(page.getByTestId('funnel-board')).toBeVisible()
+  } else if (path.startsWith('/kit')) {
+    await expect(page.getByTestId('kit-masthead')).toBeVisible()
   } else {
     await expect(page.locator('h1').first()).toBeVisible()
   }
@@ -217,6 +220,13 @@ test('mobile pipeline matches visual baseline', { tag: '@visual' }, async ({ pag
     fullPage: true,
     mask: [page.getByTestId('funnel-card-age'), page.getByTestId('stat-value')],
   })
+})
+
+test('mobile kit dossier (sealed) matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  await page.goto('/kit?app=ai-infra-a&round=TECH_SCREEN')
+  await expect(page.getByTestId('kit-banner-sealed')).toBeVisible()
+  await expect(page.getByTestId('kit-sealed-grounding')).toBeVisible()
+  await expect(page).toHaveScreenshot('mobile-kit-sealed.png', { animations: 'disabled', fullPage: true })
 })
 
 test('mobile architecture matches visual baseline', { tag: '@visual' }, async ({ page }) => {

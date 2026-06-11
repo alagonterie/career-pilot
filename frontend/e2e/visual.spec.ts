@@ -46,6 +46,30 @@ test('funnel page matches visual baseline', { tag: '@visual' }, async ({ page })
   })
 })
 
+test('kit dossier (revealed) matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  // The public OFFER's kit — full content, both parts, no masks needed (the
+  // fixture's interview dates are fixed; nothing wall-clock-derived renders).
+  await page.goto('/kit?app=Wayne%20Enterprises&round=TECH_SCREEN')
+  await expect(page.getByTestId('kit-banner-public')).toBeVisible()
+  await expect(page.getByTestId('kit-section-gap-notes')).toBeVisible()
+  await expect(page).toHaveScreenshot('kit-public.png', {
+    animations: 'disabled',
+    fullPage: true,
+  })
+})
+
+test('kit dossier (sealed) matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  // The live obfuscated app's kit — the redaction-bar skeleton (deterministic
+  // per-index bar widths, §24.65).
+  await page.goto('/kit?app=ai-infra-a&round=TECH_SCREEN')
+  await expect(page.getByTestId('kit-banner-sealed')).toBeVisible()
+  await expect(page.getByTestId('kit-sealed-grounding')).toBeVisible()
+  await expect(page).toHaveScreenshot('kit-sealed.png', {
+    animations: 'disabled',
+    fullPage: true,
+  })
+})
+
 test('architecture page matches visual baseline', { tag: '@visual' }, async ({ page }) => {
   await page.goto('/architecture')
   await expect(page.getByRole('heading', { name: 'Architecture', level: 1 })).toBeVisible()
