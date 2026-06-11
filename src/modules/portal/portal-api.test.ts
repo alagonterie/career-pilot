@@ -150,6 +150,93 @@ describe('GET /api/funnel', () => {
     expect(body.applications[0].days_in_stage).toBeNull();
     expect(body.applications[0].days_in_pipeline).toBeNull();
   });
+
+  it('carries interview_kits metadata from kits_json (§24.65); empty array when none', async () => {
+    seedFunnel({ id: 'app-1', ref: 'fintech-a', status: 'TECH_SCREEN', stage: 'tech' });
+    seedFunnel({ id: 'app-2', ref: 'ai-infra-a', status: 'APPLIED', stage: 'applied' });
+    getDb()
+      .prepare(`UPDATE public_funnel_view SET kits_json = @kits WHERE application_id = 'app-1'`)
+      .run({
+        kits: JSON.stringify([
+          {
+            round: 'TECH_SCREEN',
+            interview_type: 'technical_screen',
+            interview_at: '2026-06-15T17:00:00Z',
+            status: 'active',
+            created_at: '2026-06-10T00:00:00Z',
+            has_content: true,
+          },
+        ]),
+      });
+
+    const body = (await (await fetch(`${base}/api/funnel`)).json()) as {
+      applications: Array<{ application_ref: string; interview_kits: Array<Record<string, unknown>> }>;
+    };
+    const withKit = body.applications.find((a) => a.application_ref === 'fintech-a')!;
+    expect(withKit.interview_kits).toHaveLength(1);
+    expect(withKit.interview_kits[0]).toMatchObject({ round: 'TECH_SCREEN', status: 'active', has_content: true });
+    expect(body.applications.find((a) => a.application_ref === 'ai-infra-a')!.interview_kits).toEqual([]);
+  });
+});
+
+// ── /api/kit (§24.65) ──────────────────────────────────────────────────────
+
+function seedKitView(opts: { application_id: string; round: string; sections: unknown[] }): void {
+  getDb()
+    .prepare(
+      `INSERT INTO public_kit_view (application_id, round, interview_type, interview_at, status, sections_json, updated_at)
+       VALUES (@application_id, @round, 'technical_screen', '2026-06-15T17:00:00Z', 'active', @sections_json, '2026-06-10T00:00:00Z')`,
+    )
+    .run({ ...opts, sections_json: JSON.stringify(opts.sections) });
+}
+
+describe('GET /api/kit', () => {
+  it('serves the public projection by ref + round, reading only public tables', async () => {
+    seedFunnel({ id: 'app-1', ref: 'fintech-a', status: 'TECH_SCREEN', stage: 'tech' });
+    seedKitView({
+      application_id: 'app-1',
+      round: 'TECH_SCREEN',
+      sections: [
+        { id: 'your-role', title: 'Your role', part: 1, kind: 'content', body: 'Conduct…', item_count: 1 },
+        {
+          id: 'gap-notes',
+          title: 'Gap notes',
+          part: 1,
+          kind: 'withheld',
+          item_count: 2,
+          withheld_reason: '2 gap notes · sealed while live — names what the candidate would be probed on',
+        },
+      ],
+    });
+
+    // round is case-normalized.
+    const res = await fetch(`${base}/api/kit?app=fintech-a&round=tech_screen`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown> & { sections: Array<Record<string, unknown>> };
+    expect(body).toMatchObject({
+      application_ref: 'fintech-a',
+      public_state: 'obfuscated',
+      round: 'TECH_SCREEN',
+      interview_type: 'technical_screen',
+      status: 'active',
+    });
+    expect(body.sections).toHaveLength(2);
+    expect(body.sections[1]).toMatchObject({ kind: 'withheld' });
+    // §24.65 hard invariant: the payload never carries a Doc title or Drive url.
+    const flat = JSON.stringify(body);
+    expect(flat).not.toContain('docs.google.com');
+    expect(flat).not.toContain('drive');
+    expect(flat).not.toContain('Interview Kit —');
+  });
+
+  it('404s for an unknown ref, an unknown round, and a kit-less application; 400 without params', async () => {
+    seedFunnel({ id: 'app-1', ref: 'fintech-a', status: 'TECH_SCREEN', stage: 'tech' });
+    expect((await fetch(`${base}/api/kit?app=nope&round=TECH_SCREEN`)).status).toBe(404);
+    expect((await fetch(`${base}/api/kit?app=fintech-a&round=FINAL`)).status).toBe(404);
+    expect((await fetch(`${base}/api/kit?app=fintech-a&round=TECH_SCREEN`)).status).toBe(404);
+    expect((await fetch(`${base}/api/kit`)).status).toBe(400);
+    expect((await fetch(`${base}/api/kit?app=fintech-a`)).status).toBe(400);
+  });
 });
 
 // ── /api/activity ──────────────────────────────────────────────────────────

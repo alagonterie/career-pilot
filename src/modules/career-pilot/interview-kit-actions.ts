@@ -20,6 +20,8 @@ import { getDb } from '../../db/connection.js';
 import { insertMessage } from '../../db/session-db.js';
 import { getConfig } from '../../get-config.js';
 import { log } from '../../log.js';
+import { upsertPublicFunnelView } from '../portal/public-funnel-view.js';
+import { upsertPublicKitView } from '../portal/public-kit-view.js';
 import type { Session } from '../../types.js';
 
 import { createDoc, createFolder, docUrl, kitMarkdownToHtml, moveFile, updateDocContent } from './drive-client.js';
@@ -174,6 +176,7 @@ export async function handlePersistInterviewKit(
       drive_url: driveUrl,
       title,
       interview_at: interviewAt,
+      markdown,
     });
 
     log.info('interview-kit persisted', { kitId, applicationId, round, updated: !!existing });
@@ -181,6 +184,11 @@ export async function handlePersistInterviewKit(
       ok: true,
       data: { kit_id: kitId, drive_url: driveUrl, drive_file_id: driveFileId, round },
     });
+
+    // §24.65: refresh the public projections AFTER the response frame (same
+    // best-effort discipline as every other writer — both functions never throw).
+    await upsertPublicKitView(db, applicationId);
+    upsertPublicFunnelView(db, applicationId);
   } catch (err) {
     log.error('handlePersistInterviewKit failed', { err });
     writeResponse(inDb, requestId, {
@@ -225,7 +233,12 @@ export async function archiveKitsForApplication(db: Database.Database, applicati
       log.error('archiveKitsForApplication: one kit failed', { kitId: kit.id, err });
     }
   }
-  if (archived > 0) log.info('interview-kit: archived kits for application', { applicationId, count: archived });
+  if (archived > 0) {
+    log.info('interview-kit: archived kits for application', { applicationId, count: archived });
+    // §24.65: the archived status is public metadata — re-project.
+    await upsertPublicKitView(db, applicationId);
+    upsertPublicFunnelView(db, applicationId);
+  }
   return archived;
 }
 
@@ -238,13 +251,20 @@ export async function runKitCleanupSweep(db: Database.Database): Promise<{ archi
   const folderId = getConfig<string>(db, 'interview_kit_drive_folder_id', '');
   const archiveId = getConfig<string>(db, 'interview_kit_drive_archive_folder_id', '');
   let archived = 0;
+  const touchedApps = new Set<string>();
   for (const kit of kits) {
     try {
       await archiveOneKit(db, kit, folderId, archiveId);
       archived++;
+      touchedApps.add(kit.application_id);
     } catch (err) {
       log.error('runKitCleanupSweep: one kit failed', { kitId: kit.id, err });
     }
+  }
+  // §24.65: re-project each touched application (archived status is public metadata).
+  for (const appId of touchedApps) {
+    await upsertPublicKitView(db, appId);
+    upsertPublicFunnelView(db, appId);
   }
   log.info('interview-kit cleanup sweep', { archived, threshold_days: staleDays });
   return { archived };

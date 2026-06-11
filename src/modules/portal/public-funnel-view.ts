@@ -176,15 +176,43 @@ export function upsertPublicFunnelView(db: Database.Database, applicationId: str
       ? sanitize(app.win_confidence_rationale, { application_id: applicationId, db })
       : null;
 
+    // kits_json (§24.65): per-kit existence metadata for the /pipeline drawer —
+    // ALL kits incl. archived (D1: a closed process keeps its prep story).
+    // Enums + timestamps only; the kit's title/drive_url/markdown never land here.
+    let kitsJson: string | null = null;
+    try {
+      const kits = db
+        .prepare(
+          `SELECT round, interview_type, interview_at, status, created_at,
+                  CASE WHEN markdown IS NOT NULL AND markdown != '' THEN 1 ELSE 0 END AS has_content
+             FROM interview_kits
+            WHERE application_id = ?
+            ORDER BY created_at ASC, rowid ASC`,
+        )
+        .all(applicationId) as Array<{
+        round: string;
+        interview_type: string;
+        interview_at: string | null;
+        status: string;
+        created_at: string;
+        has_content: number;
+      }>;
+      if (kits.length > 0) {
+        kitsJson = JSON.stringify(kits.map((k) => ({ ...k, has_content: k.has_content === 1 })));
+      }
+    } catch (err) {
+      log.warn('upsertPublicFunnelView: kits_json lookup failed', { applicationId, err });
+    }
+
     db.prepare(
       `INSERT INTO public_funnel_view (
          application_id, application_ref, public_state, role_title, status, stage,
          applied_at, stage_entered_at, last_activity_at, win_confidence,
-         win_confidence_rationale, published_learning, updated_at
+         win_confidence_rationale, published_learning, kits_json, updated_at
        ) VALUES (
          @application_id, @application_ref, @public_state, @role_title, @status, @stage,
          @applied_at, @stage_entered_at, @last_activity_at, @win_confidence,
-         @win_confidence_rationale, @published_learning, @updated_at
+         @win_confidence_rationale, @published_learning, @kits_json, @updated_at
        )
        ON CONFLICT(application_id) DO UPDATE SET
          application_ref          = excluded.application_ref,
@@ -198,6 +226,7 @@ export function upsertPublicFunnelView(db: Database.Database, applicationId: str
          win_confidence           = excluded.win_confidence,
          win_confidence_rationale = excluded.win_confidence_rationale,
          published_learning       = excluded.published_learning,
+         kits_json                = excluded.kits_json,
          updated_at               = excluded.updated_at`,
     ).run({
       application_id: app.id,
@@ -212,6 +241,7 @@ export function upsertPublicFunnelView(db: Database.Database, applicationId: str
       win_confidence: app.win_confidence ?? null,
       win_confidence_rationale: winRationale,
       published_learning: publishedLearning,
+      kits_json: kitsJson,
       updated_at: new Date().toISOString(),
     });
   } catch (err) {

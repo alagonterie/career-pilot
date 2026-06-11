@@ -56,6 +56,8 @@ export interface InterviewKitRow {
   status: string; // 'active' | 'archived'
   created_at: string;
   archived_at: string | null;
+  /** Kit source markdown (§24.65) — NULL for kits persisted pre-migration-130. */
+  markdown: string | null;
 }
 
 export interface UpsertInterviewKitInput {
@@ -66,6 +68,8 @@ export interface UpsertInterviewKitInput {
   drive_url: string;
   title: string;
   interview_at?: string | null;
+  /** Omitted/undefined ⇒ an existing row's stored markdown is preserved. */
+  markdown?: string | null;
 }
 
 function newKitId(): string {
@@ -84,10 +88,10 @@ export function upsertInterviewKit(db: Database.Database, input: UpsertInterview
   db.prepare(
     `INSERT INTO interview_kits (
        id, application_id, round, interview_type, drive_file_id, drive_url,
-       title, interview_at, status, created_at, archived_at
+       title, interview_at, markdown, status, created_at, archived_at
      ) VALUES (
        @id, @application_id, @round, @interview_type, @drive_file_id, @drive_url,
-       @title, @interview_at, 'active', @now, NULL
+       @title, @interview_at, @markdown, 'active', @now, NULL
      )
      ON CONFLICT(application_id, round) DO UPDATE SET
        interview_type = excluded.interview_type,
@@ -95,6 +99,7 @@ export function upsertInterviewKit(db: Database.Database, input: UpsertInterview
        drive_url      = excluded.drive_url,
        title          = excluded.title,
        interview_at   = excluded.interview_at,
+       markdown       = COALESCE(excluded.markdown, interview_kits.markdown),
        status         = 'active',
        archived_at    = NULL`,
   ).run({
@@ -106,6 +111,7 @@ export function upsertInterviewKit(db: Database.Database, input: UpsertInterview
     drive_url: input.drive_url,
     title: input.title,
     interview_at: input.interview_at ?? null,
+    markdown: input.markdown ?? null,
     now: new Date().toISOString(),
   });
   const row = db
@@ -115,7 +121,7 @@ export function upsertInterviewKit(db: Database.Database, input: UpsertInterview
 }
 
 const KIT_COLUMNS = `id, application_id, round, interview_type, drive_file_id, drive_url,
-                     title, interview_at, status, created_at, archived_at`;
+                     title, interview_at, status, created_at, archived_at, markdown`;
 
 /** The kit for (application, round), or undefined — the create-vs-update / idempotency guard. */
 export function getKitByApplicationRound(
