@@ -5070,6 +5070,66 @@ DoD (F3 additions): the `build-interview-kit` invocation prompt carries a `## Jo
 
 **Δ (build): visual-baseline determinism was racing the live-push (latent, surfaced by this track).** The e2e harness runs one shared in-memory DB per Playwright invocation, `fullyParallel`: the smoke-spec live-push inserts a wall-clock audit row mid-run, and any @visual capture of /live or the home ticker that loses that race bakes a nondeterministic row into the comparison (the committed baselines happened to be capture-first — pure scheduling luck, which this track's new spec file reshuffled into losing). Fixed structurally with **project ordering**: `chromium` (the desktop @visual captures — the name is load-bearing, see the gotcha) → `mobile-chromium` (its own @visual baselines; its simulator flow mutates run rows) → `chromium-functional` (the functional suite incl. the pusher), chained via Playwright `dependencies`. In CI (`--grep-invert @visual`) the chain is a no-op. Re-blessing baselines now always happens against the pristine seed. **Gotcha recorded:** Playwright's default snapshot path embeds the project name (`funnel-chromium-win32.png`), so the project owning `visual.spec.ts` must keep the name `chromium` — renaming it silently forks every baseline to a new auto-created filename while the committed ones rot as unused orphans (and the fork even auto-passes, hiding itself).
 
+#### 24.63 /architecture audit (Track I)
+
+**Owner register, 2026-06-10 (the third TODO batch's first large item).** The `/architecture` page (PORTAL §5.5, built §24.28 + §24.35 Pass B) was last reconciled with the system several phases ago. Audit the diagram + every node's modal content against the *shipped* system; quality bar: **every node carries at least one of — live probe facts, a resolving repo source link, an external doc link, or a demo — and reads as worth diving into.** The desktop node-click smoothness + scrollbar nitpicks from the same batch were handled in §24.62 (the gutter); this section is content + structure.
+
+**Audit method.** Every claim below was verified against code on 2026-06-10 (file reads, not memory): the Worker proxy (`frontend/src/routes/api/$.ts`), the sanitizer pipeline (`sanitizer.ts` + `sanitizer-pass3.ts`), the host LLM call sites (`sanitizer-pass3.ts`, `win-confidence.ts`, `recruiter-sim/prose.ts`), the SDK loop (`container/agent-runner/src/providers/claude.ts`), SerpApi wiring (`serpapi-search.ts` header — OneCLI query-param injection), host-sweep semantics, and the committed group layout (`agents-src/`, not `agents/`).
+
+**Page-level findings.**
+
+| Item | Verdict | Finding |
+|---|---|---|
+| Footer `agent definitions ↗` link | **fix** | Points at `groups/career-pilot/.claude/agents` — NOT a committed path (only `agents-src/` is in git) → 404. Retarget to `.claude/agents-src`. |
+| All repo source links | **owner decision D3** | `REPO_URL` is the committed `janedoe` placeholder AND the real repo is currently **private** — every line-anchored code link on the deployed page 404s twice over. Options in the decision register below. |
+| Header/explainer prose, legend, mode banner, edge caption | keep | Accurate. |
+
+**Per-node verdicts (16 nodes).**
+
+| Node | Verdict | Finding / change |
+|---|---|---|
+| `owner` | keep | Accurate. |
+| `trig-telegram` | fix-link | Source → `src/channels/telegram.ts` (the actual adapter; `adapter.ts` is the interface). |
+| `trig-web` | keep | Accurate. |
+| `trig-google` | fix-copy | (a) The wake path is **polling close-detection** (`close-detection-bootstrap.ts`), not webhooks (PORTAL ASCII drift). (b) Google **Drive** is now a third surface — `persist_interview_kit` writes per-interview kit Docs to the candidate's career account (§24.53): label gains Drive, copy covers the kit write-back beside the Gmail drafts. Add source: `src/modules/career-pilot/close-detection-bootstrap.ts`. Edge stays one-way (the write-backs flow through container tools → host actions, not through the router). |
+| `trig-cron` | fix-copy | The sweep does due-task delivery, recurrence, and stuck-container recovery; the scheduled flows (07:30 pipeline-scribe, 08:00 briefing) ride it as recurring tasks. "Stale-application detection" belongs to pipeline-scribe + close-detection, not the sweep — reword honestly. |
+| `host-router` | keep | Accurate; pause-ladder probe correct. |
+| `host-db` | keep | Accurate (inbound/outbound per-session split). |
+| `cont-runtime` | keep | Accurate. |
+| `cont-orch` | **fix-link** | Source points at host `src/providers/claude.ts` — that file is the *Portkey provider container config*, not the loop the description claims. The SDK loop is `container/agent-runner/src/providers/claude.ts`. Same basename, wrong tree — exactly the silent-drift failure mode. |
+| `cont-subagents` | fix-copy | Quality bump: name the writer/read-only split (draft-outreach → reversible Gmail drafts; build-interview-kit → Drive kit Docs; scrape-jobs → the job_leads pool; pipeline-scribe → the public funnel read-model; research-company + tailor-resume read-only). Add a link to the committed agent definitions (`agents-src/` tree). |
+| `cont-portkey` | fix-copy | "Every model call **from the container**" is now incomplete: the HOST also calls Haiku through Portkey (sanitizer Pass 3 §24.12, win-confidence scoring, recruiter-sim prose — the §24.44 "ALL LLM paths" rule). Copy says so; node stays drawn in the container band (its dominant traffic) with the host path named in the modal. |
+| `cont-anthropic` | keep | Accurate (no model-version claim — deliberately; tiers are config). |
+| `pub-sanitize` | fix-copy | The pipeline is now **three passes** (§24.12): deterministic PII regex (Pass 1) + company/alias obfuscation (Pass 2) + an LLM semantic pass (Pass 3 — genericizes products/events/paraphrases; **fail-safe = withhold**, a row that can't be sanitized is never written). The demo stays; the modal copy should state the withhold rule — it's the strongest privacy fact on the page. |
+| `pub-audit` | keep | Accurate; optionally mention the monotonic `seq` cursor (what makes the live stream resumable). |
+| `pub-api` | keep | Accurate. |
+| `pub-edge` | **fix-copy + source** | §24.39 **D12 reversal** never landed here: the copy still describes the tunnel exposing the API to the browser. Truth: **the browser talks ONLY to the Worker** — it serves the page AND proxies `/api/*` (JSON *and* the SSE stream) over the Access-gated tunnel using a service token. Add source: `frontend/src/routes/api/$.ts`. |
+
+**Adds (owner-flagged, both recommended).**
+
+| Node | Placement | Content |
+|---|---|---|
+| **OneCLI credential gateway** (owner decision D2) | HOST band, third slot; structural; edge(s) toward the external-API row ("credentials injected on the wire") | The egress perimeter: every container outbound HTTPS call rides its proxy, and credentials are injected in flight — the Portkey key, the job-search API key (query-param), Google OAuth — so **the container never holds a real secret**. Honesty requirement: the copy says we **inherited it with the NanoClaw fork** and kept + scoped it, not that we chose it. External link: onecli.sh docs. |
+| **Job search API** (alias — owner decision D1) | CONTAINER band, second row grows to three slots; structural; edge `cont-subagents →` it | scrape-jobs pulls live Google-Jobs postings into the `job_leads` pool (§24.50) — the orchestrator's world-model for proactive scouting. Source link: `container/agent-runner/src/mcp-tools/scrape-jobs.ts` (generic filename). Vendor naming is decision D1. |
+
+**Excluded, deliberately (recorded so it isn't re-litigated):** the recruiter-sim and the dev inspector are **dev-only fixtures** — the map shows the production-shaped system; drawing dev scaffolding as architecture would mislead. Per-MCP-tool nodes stay out (the modal copy can name key tools; 20+ tool boxes is noise).
+
+**Decision register (the owner-review gate for this section).**
+
+- **D1 — job-search vendor naming.** Context verified 2026-06-10: **Google v. SerpApi** (N.D. Cal., filed 2025-12-19) — DMCA claims over alleged circumvention of Google's SearchGuard anti-bot system; SerpApi's motion to dismiss heard 2026-05-19, **no ruling found as of today**. Customers are not defendants and API *use* isn't what's litigated, so this is presentation discretion, not legal exposure — but a hiring showcase shouldn't headline a vendor mid-lawsuit with Google. Options: **(a) alias — label "Job search API", generic copy, generic source link (recommended)**; (b) name SerpApi with a doc link; (c) omit the node. Caveat recorded either way: the repo names the vendor internally (`serpapi-search.ts`), so an alias is a soft veil, not concealment.
+- **D2 — OneCLI node.** **(a) add, with the inherited-from-the-fork honesty in the node copy (recommended)** — it's load-bearing for the security story (the "container never holds a real secret" invariant); (b) leave out.
+- **D3 — repo source links.** Options: **(a) keep the committed `janedoe` placeholder; flip when the repo goes public (recommended)** — the links are part of the open-source story and the repo-public flip is already a Phase 9/10 prod item; (b) wire a deploy-time `VITE_REPO_URL` override now (still 404s while the repo is private — buys nothing yet); (c) hide source links until public (fails this section's quality bar). If (a): record the link-rot explicitly as a known pre-public state.
+
+**PORTAL §5.5 reconciliation (same spec commit).** The §5.5 ASCII diagram + region prose have drifted from the shipped system and from this audit: `prep-interview` (renamed), `pipeline-scribe` missing, "ORCHESTRATOR (Opus 4.7)" (model tiers are config — no version claim), "subagents (read-only)" (four of six write), "Gmail / Calendar webhooks" (it's polling close-detection), the Phase-1 tool list, and the Tunnel→Worker public-path direction (D12). Update the ASCII + prose to shipped truth, including the two added nodes as decided.
+
+**Definition of done.**
+1. Every table verdict above landed in `nodes.ts` / the route, in **one build commit** after the owner review resolves D1–D3.
+2. Every node satisfies the quality bar (live facts, resolving source link, external doc link, or demo); the footer agent-definitions link targets the committed `agents-src/` path.
+3. PORTAL §5.5 ASCII + prose reconciled (no model-version claims, current subagent set + writer split, D12 public path, the added nodes).
+4. `diagram.test.tsx` updated for the new node set/edges; architecture visual baselines (desktop + mobile) re-blessed; axe green; suites + both tscs + format green; deploy green.
+5. D1–D3 outcomes recorded as a Δ on this section.
+6. Owner pass (desktop + phone): every node "feels worth diving into" — the final gate.
+
 ---
 
 ## Part VI: Open questions
