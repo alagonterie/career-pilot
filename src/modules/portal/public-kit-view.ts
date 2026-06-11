@@ -10,11 +10,17 @@
  *   public (revealed post-close) → every section renders; deterministic
  *     sanitize() still runs (Pass 1 PII + Pass 2 redaction of OTHER non-public
  *     companies a kit might mention).
- *   obfuscated (live) → 'safe' sections render through the full public path
- *     (sanitize + the Pass 3 belt, withhold-on-fail) and a defense-in-depth
- *     company scan; 'identifying' / 'gap' / 'unknown' sections are SEALED —
- *     the projection emits the section's existence, item count, and an honest
- *     caption, never its text.
+ *   obfuscated (live) → 'safe' sections render through the DETERMINISTIC
+ *     pipeline (Pass 1 + Pass 2) + the alias-aware fail-CLOSED company scan;
+ *     'identifying' / 'gap' / 'unknown' sections are SEALED — the projection
+ *     emits the section's existence, item count, and an honest caption, never
+ *     its text.
+ *
+ *   Pass 3 is deliberately NOT in this path (§24.65 Δ): its rewriter prompt is
+ *   tuned for one-line activity strings, and on kit-length instruction-shaped
+ *   prose it ROLE-PLAYS the section instead of sanitizing it (observed live:
+ *   Haiku returned a fabricated interview transcript, ok:true). The kit belt
+ *   is the deterministic scan; entity coverage comes from alias hygiene.
  *
  * The seal is server-side by construction: withheld text never lands in
  * `public_kit_view`, so it can never reach the wire. No kit title and no
@@ -29,7 +35,7 @@ import type Database from 'better-sqlite3';
 import { log } from '../../log.js';
 
 import { parseKitSections, type ParsedKitSection } from './kit-sections.js';
-import { sanitize, sanitizeForPublic } from './sanitizer.js';
+import { sanitize } from './sanitizer.js';
 
 export interface PublicKitSection {
   id: string;
@@ -122,13 +128,12 @@ function leaksNonPublicCompany(db: Database.Database, text: string): boolean {
   }
 }
 
-async function projectSections(
+function projectSections(
   db: Database.Database,
   applicationId: string,
   isPublic: boolean,
   markdown: string,
-  obfuscatedLabel?: string,
-): Promise<PublicKitSection[]> {
+): PublicKitSection[] {
   const parsed = parseKitSections(markdown);
   const out: PublicKitSection[] = [];
   let sealedUnknowns = 0;
@@ -159,13 +164,10 @@ async function projectSections(
       continue;
     }
 
-    // Safe section on a live app: full public pipeline + the company-scan net.
-    const { text, ok } = await sanitizeForPublic(section.body, {
-      application_id: applicationId,
-      db,
-      obfuscatedLabel,
-    });
-    if (!ok || leaksNonPublicCompany(db, text)) {
+    // Safe section on a live app: deterministic sanitize (Pass 1+2 — NOT
+    // Pass 3, see the module header) + the alias-aware company-scan net.
+    const text = sanitize(section.body, { application_id: applicationId, db });
+    if (leaksNonPublicCompany(db, text)) {
       out.push({
         id: section.id,
         title: section.title,
@@ -195,9 +197,9 @@ async function projectSections(
  */
 export async function upsertPublicKitView(db: Database.Database, applicationId: string): Promise<void> {
   try {
-    const app = db
-      .prepare('SELECT public_state, obfuscated_label FROM applications WHERE id = ?')
-      .get(applicationId) as { public_state: string | null; obfuscated_label: string | null } | undefined;
+    const app = db.prepare('SELECT public_state FROM applications WHERE id = ?').get(applicationId) as
+      | { public_state: string | null }
+      | undefined;
 
     if (!app) {
       db.prepare('DELETE FROM public_kit_view WHERE application_id = ?').run(applicationId);
@@ -231,7 +233,7 @@ export async function upsertPublicKitView(db: Database.Database, applicationId: 
       // metadata-only row; the page renders an honest "content not captured".
       const sections =
         kit.markdown && kit.markdown.trim().length > 0
-          ? await projectSections(db, applicationId, isPublic, kit.markdown, app.obfuscated_label ?? undefined)
+          ? projectSections(db, applicationId, isPublic, kit.markdown)
           : [];
 
       db.prepare(
