@@ -97,9 +97,13 @@ export function FunnelBoard({
             ))}
           </div>
         ) : (
-          <p data-testid="funnel-offboard-empty" className="font-mono text-xs text-muted-foreground">
-            Nothing bookmarked or closed yet.
-          </p>
+          // min-h = one card row (114px, the measured FunnelCard footprint), so
+          // loading→empty holds the same ground as loading→cards (§24.62).
+          <div className="flex min-h-[114px] items-center">
+            <p data-testid="funnel-offboard-empty" className="font-mono text-xs text-muted-foreground">
+              Nothing bookmarked or closed yet.
+            </p>
+          </div>
         )}
       </section>
     </>
@@ -136,7 +140,8 @@ export function FunnelBoardSkeleton() {
 
 /** The loading twin of the always-rendered Bookmarked & closed strip (§24.62):
  * without it the strip pops in under the board on load and shifts everything
- * below. Header + one card-height row — the loaded strip's minimum footprint. */
+ * below. Header + one card-height row, with the skeletons sized to the real
+ * FunnelCard footprint (114px measured) so loading→loaded doesn't resize. */
 export function FunnelOffboardSkeleton() {
   return (
     <section aria-label="Bookmarked and closed" data-testid="funnel-offboard-skeleton" className="mt-4">
@@ -145,7 +150,7 @@ export function FunnelOffboardSkeleton() {
       </h2>
       <div className="flex flex-wrap gap-2">
         {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-16 min-w-[10rem] flex-1 sm:max-w-[14rem]" />
+          <Skeleton key={i} className="h-[114px] min-w-[10rem] flex-1 sm:max-w-[14rem]" />
         ))}
       </div>
     </section>
