@@ -460,13 +460,19 @@ describe('mirrorFunnelEvent', () => {
 
     // ── §24.61: subagent_progress rows attribute via details_json's
     // application_id; their ref is re-derived in place on a policy flip.
-    function seedProgressRow(opts: { id: string; application_id?: string; application_ref: string | null }): void {
+    function seedProgressRow(opts: {
+      id: string;
+      application_id?: string;
+      application_ref: string | null;
+      summary?: string;
+    }): void {
       db.prepare(
         `INSERT INTO public_audit_trail (id, seq, ts, category, agent_name, proactive, application_ref, summary, details_json)
          VALUES (@id, (SELECT COALESCE(MAX(seq), 0) + 1 FROM public_audit_trail),
-                 '2026-05-28T00:00:00Z', 'subagent_progress', 'tailor-resume', 0, @application_ref, 'ranking bullets', @details_json)`,
+                 '2026-05-28T00:00:00Z', 'subagent_progress', 'tailor-resume', 0, @application_ref, @summary, @details_json)`,
       ).run({
         id: opts.id,
+        summary: opts.summary ?? 'ranking bullets',
         application_ref: opts.application_ref,
         details_json: JSON.stringify({
           stage: 'ranking-bullets',
@@ -496,6 +502,26 @@ describe('mirrorFunnelEvent', () => {
         application_ref: string | null;
       };
       expect(row.application_ref).toBe('fintech-a');
+    });
+
+    it('re-sanitizes attributed progress summary TEXT in place — a late-added alias gets redacted (§24.65 Δ)', async () => {
+      seedApp({ id: 'app-1', company_name: 'Advanced Micro Devices, Inc', obfuscated_label: 'misc-a' });
+      // Mirrored before the alias existed: "AMD" sits in the public summary.
+      seedProgressRow({
+        id: 'prog-1',
+        application_id: 'app-1',
+        application_ref: 'misc-a',
+        summary: 'AMD tech screen research digest strong',
+      });
+
+      db.prepare(`UPDATE applications SET company_aliases = '["AMD"]' WHERE id = 'app-1'`).run();
+      await resanitizeApplicationAuditTrail(db, 'app-1');
+
+      const row = db.prepare("SELECT summary FROM public_audit_trail WHERE id = 'prog-1'").get() as {
+        summary: string;
+      };
+      expect(row.summary).toContain('[REDACTED:misc-a]');
+      expect(row.summary).not.toMatch(/\bAMD\b/);
     });
 
     it('re-derives progress refs on a label rename; unrelated progress rows untouched (§24.61)', async () => {
