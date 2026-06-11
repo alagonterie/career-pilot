@@ -25,7 +25,7 @@ import type Database from 'better-sqlite3';
 
 import { log } from '../../log.js';
 
-import { sanitizeForPublic } from './sanitizer.js';
+import { sanitize, sanitizeForPublic } from './sanitizer.js';
 
 const DEFAULT_PUBLIC_SUMMARY_MAX_CHARS = 500;
 const DEFAULT_AUDIT_DROP_ON_UNMATCHED_COMPANY = true;
@@ -304,20 +304,26 @@ export async function resanitizeApplicationAuditTrail(
   // application_id; their stored application_ref was derived under the OLD
   // policy. Re-derive in place so a reveal flip (and especially an un-reveal —
   // a real name stored as the ref while public) reflects current intent. The
-  // summary TEXT is not re-derived — unlike funnel rows there is no canonical
-  // private source to re-mirror progress prose from (pre-existing property).
+  // summary TEXT is not re-derived from a private source (none exists), but it
+  // IS re-run through the deterministic sanitizer in place (§24.65 Δ): an
+  // alias added after the row was mirrored — the live "AMD" vs "Advanced
+  // Micro Devices, Inc" gap — gets redacted retroactively. Asymmetric by
+  // design: re-sanitizing never un-redacts on a reveal flip.
   let progressRefsUpdated = 0;
   try {
     const ref = publicApplicationRef(db, applicationId);
-    const upd = db
+    const rows = db
       .prepare(
-        `UPDATE public_audit_trail
-            SET application_ref = @ref
+        `SELECT id, summary FROM public_audit_trail
           WHERE category = 'subagent_progress'
-            AND json_extract(details_json, '$.application_id') = @applicationId`,
+            AND json_extract(details_json, '$.application_id') = ?`,
       )
-      .run({ ref, applicationId });
-    progressRefsUpdated = upd.changes;
+      .all(applicationId) as Array<{ id: string; summary: string | null }>;
+    const upd = db.prepare('UPDATE public_audit_trail SET application_ref = @ref, summary = @summary WHERE id = @id');
+    for (const row of rows) {
+      upd.run({ id: row.id, ref, summary: row.summary ? sanitize(row.summary, { db }) : row.summary });
+      progressRefsUpdated++;
+    }
   } catch (err) {
     log.error('resanitizeApplicationAuditTrail: progress-ref rederive failed', { applicationId, err });
   }
