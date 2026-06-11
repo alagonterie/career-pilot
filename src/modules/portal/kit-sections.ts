@@ -94,6 +94,23 @@ function parsePartHeader(headingText: string): number | null {
   return n === 1 || n === 2 ? n : null;
 }
 
+/** Heading text that is only rule punctuation (`## ---`) — a Docs→markdown
+ * export artifact, not a section. Observed live on both backfilled kits. */
+function isRuleHeading(headingText: string): boolean {
+  return /^[-_*\s]+$/.test(headingText);
+}
+
+/**
+ * A standalone bold paragraph that IS the part header (`**Part 2 — …**`) —
+ * the Docs→markdown roundtrip demotes the `## Part 2` heading to `## ---`
+ * followed by this bold line. Observed live on both backfilled kits.
+ */
+function parseBoldPartLine(line: string): number | null {
+  const m = line.trim().match(/^\*\*(.+?)\*\*:?$/);
+  if (!m) return null;
+  return parsePartHeader(m[1]);
+}
+
 /** Count list items; fall back to blank-line-separated paragraphs; ≥1 when non-empty. */
 function countItems(body: string): number {
   const lines = body.split('\n');
@@ -147,12 +164,23 @@ export function parseKitSections(markdown: string): ParsedKitSection[] {
   for (const raw of lines) {
     const heading = raw.match(/^(#{1,4})\s+(.+?)\s*$/);
     if (!heading) {
+      // Docs-export shape: the part header arrives as a standalone bold
+      // paragraph rather than a `##` heading.
+      const boldPart = parseBoldPartLine(raw);
+      if (boldPart != null) {
+        flush();
+        part = boldPart;
+        continue;
+      }
       buf.push(raw);
       continue;
     }
     const text = heading[2];
-    const partNum = heading[1].length <= 2 ? parsePartHeader(text) : null;
     flush();
+    // `## ---` (a rule rendered as a heading) opens nothing — skipping it
+    // instead of classifying keeps it from minting a phantom sealed section.
+    if (isRuleHeading(text)) continue;
+    const partNum = heading[1].length <= 2 ? parsePartHeader(text) : null;
     if (partNum != null) {
       part = partNum;
       continue;

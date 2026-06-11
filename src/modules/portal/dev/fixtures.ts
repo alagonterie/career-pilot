@@ -320,6 +320,67 @@ function buildFixtureKitMarkdown(company: string, role: string): string {
   ].join('\n');
 }
 
+/**
+ * The same kit in the Google-Docs→markdown EXPORT dialect (§24.65 Δ): the
+ * backfilled real kits arrive via Drive `files.export`, which bold-wraps
+ * headings, demotes the Part 2 heading to `## ---` + a bold paragraph, ships
+ * the rubric as a pipe table, uses `*` bullets + repeated `1.` ordered items,
+ * and backslash-escapes punctuation. One fixture kit mirrors that shape so
+ * the parser hardening + renderer dialect stay exercised end-to-end
+ * (the §24.58 real-shaped-seed rule).
+ */
+function buildDocExportKitMarkdown(company: string, role: string): string {
+  return [
+    '## **Part 1 — Interviewer Operating Manual**',
+    '',
+    '### **Your role**',
+    `Conduct a realistic technical screen for ${role} at ${company}. Ask one question at a time; wait for the spoken answer; probe weak reasoning (e.g., "what happens when X fails?"). Do NOT hand over the answer. Escalate difficulty as the candidate succeeds \\+ close with honest scored feedback.`,
+    '',
+    '### **Scoring rubric**',
+    '| Dimension | Strong | Weak |  ',
+    '|-----------|--------|------|  ',
+    '| **Problem decomposition** | names subproblems \\+ an attack order unprompted | dives into code |  ',
+    '| **Distributed-systems tradeoffs** | reasons from failure modes \\+ consistency budgets | recites tools |  ',
+    '| **Efficiency awareness** | estimates cost/latency before optimizing | optimizes blind |  ',
+    '| **Communication** | thinks aloud, flags uncertainty | silent leaps |',
+    '',
+    '### **Question themes**',
+    `1. **Multi-region failover:** the JD asks for "design for regional outage" — opener: "Walk me through what ${company} should do in the first 60 seconds of a region loss."`,
+    '1. **Event-pipeline backpressure:** JD names "billions of events/day" — opener: "Your ingestion lag doubles overnight. Where do you look first?"',
+    '1. **Cost-per-query awareness:** JD: "own serving economics" — opener: "Your bill doubled but traffic did not. Diagnose."',
+    '',
+    '### **Grounding \\+ caveats**',
+    `* ${company} raised a major round this spring; the eng blog credits a platform rebuild \\+ R\\&D spend.`,
+    '* Stack signal: Go services, Kafka backbone, Kubernetes operators in production.',
+    '* The JD is explicit about on-call ownership — probe operational maturity.',
+    '',
+    '### **Gap notes (probe these honestly)**',
+    '**Kubernetes operators** — The JD wants operators in production; the resume shows Helm-level work. Probe the adjacent honest strength (release automation) instead of assuming experience.  ',
+    '**Kafka depth** — JD names Kafka; the master resume leans on a managed pub/sub. Test transferable fundamentals, not tool trivia.',
+    '',
+    '## ---',
+    '',
+    '**Part 2 — Candidate Quick-Reference**',
+    '',
+    '### **Recent signal**',
+    `* **Realtime launch:** ${company} shipped a realtime product line last month.`,
+    '* **Eng blog:** post on their event-pipeline rebuild drew wide attention.',
+    '* **Leadership:** added a VP of Platform this quarter.',
+    '',
+    '### **Lean into**',
+    '* **Multi-region ingestion pipeline** (4B\\+ events/day) — name the consistency tradeoffs you made.',
+    '* **38% p99 latency win** via edge caching \\+ read-model projections.',
+    '* **Zero-downtime datastore migration** you led — it maps onto their migration pain.',
+    '',
+    '### **Questions to ask**',
+    '* How far along is the operator rollout the platform team blogged about?',
+    '* What does on-call actually look like for this team week to week?',
+    '* Which part of the event pipeline still keeps the team up at night?',
+    '',
+    '## ---',
+  ].join('\n');
+}
+
 interface KitSeed {
   applicationId: string;
   company: string;
@@ -327,6 +388,8 @@ interface KitSeed {
   round: string;
   interviewAt: string | null;
   archived?: boolean;
+  /** 'doc-export' mirrors the Drive backfill dialect; default = authored. */
+  style?: 'authored' | 'doc-export';
 }
 
 async function seedKits(db: Database.Database, seeds: KitSeed[]): Promise<void> {
@@ -340,7 +403,10 @@ async function seedKits(db: Database.Database, seeds: KitSeed[]): Promise<void> 
       drive_url: `https://docs.google.com/document/d/fixture-${s.applicationId}-${s.round}/edit`,
       title: `Interview Kit — ${s.company} — ${s.round} — 2026-06-01`,
       interview_at: s.interviewAt,
-      markdown: buildFixtureKitMarkdown(s.company, s.role),
+      markdown:
+        s.style === 'doc-export'
+          ? buildDocExportKitMarkdown(s.company, s.role)
+          : buildFixtureKitMarkdown(s.company, s.role),
     });
     if (s.archived) {
       db.prepare(
@@ -386,6 +452,9 @@ export async function seedDeterministicKits(db: Database.Database): Promise<void
       round: 'TECH_SCREEN',
       interviewAt: '2026-05-14T17:00:00Z',
       archived: true,
+      // The visible-content fixture carries the Drive-export dialect so the
+      // table/list/escape rendering is exercised + baselined (§24.65 Δ).
+      style: 'doc-export',
     },
   ]);
 }
@@ -422,6 +491,7 @@ export async function seedRichKits(db: Database.Database): Promise<void> {
       round: 'TECH_SCREEN',
       interviewAt: '2026-05-14T17:00:00Z',
       archived: true,
+      style: 'doc-export',
     },
   ]);
 }
