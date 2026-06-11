@@ -52,7 +52,10 @@ function SectionBlock({ section }: { section: KitSection }) {
       data-kit-section={section.id}
       data-testid={sealed ? `kit-sealed-${section.id}` : `kit-section-${section.id}`}
       aria-labelledby={`kit-h-${section.id}`}
-      className="scroll-mt-24"
+      // Mobile clears the header (57px) + the sticky chip bar (~43px) — 96px
+      // tucked the first line under the bar (owner phone pass, §24.65 Δ);
+      // desktop has only the header, so the tighter offset returns at lg.
+      className="scroll-mt-28 lg:scroll-mt-24"
     >
       <h3
         id={`kit-h-${section.id}`}
