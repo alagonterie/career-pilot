@@ -14,6 +14,8 @@ export function FunnelCard({ app, onSelect }: { app: FunnelApplication; onSelect
   // The bar shows win_confidence (a low-rigor heuristic) rather than restating
   // the stage the card is already filed under (§24.35 Pass D, #8).
   const win = app.win_confidence
+  // §24.65: kit-existence cue in the same glyph register as `◆ public`.
+  const kitCount = app.interview_kits?.length ?? 0
 
   return (
     <button
@@ -39,9 +41,20 @@ export function FunnelCard({ app, onSelect }: { app: FunnelApplication; onSelect
 
       {app.role_title ? <p className="mt-1 truncate text-xs text-muted-foreground">{app.role_title}</p> : null}
 
-      <p data-testid="funnel-card-age" className="mt-2 font-mono text-[11px] tabular-nums text-muted-foreground">
-        {app.days_in_stage != null ? `${app.days_in_stage}d in stage` : '—'}
-      </p>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <p data-testid="funnel-card-age" className="font-mono text-[11px] tabular-nums text-muted-foreground">
+          {app.days_in_stage != null ? `${app.days_in_stage}d in stage` : '—'}
+        </p>
+        {kitCount > 0 ? (
+          <span
+            data-testid="funnel-card-kit"
+            className="shrink-0 font-mono text-[10px] text-muted-foreground"
+            title="interview kits prepared — open the card for details"
+          >
+            ▤ {kitCount > 1 ? `${kitCount} kits` : 'kit'}
+          </span>
+        ) : null}
+      </div>
 
       {win != null ? (
         <div className="mt-2 flex items-center gap-1.5" title="win confidence — a low-rigor heuristic">

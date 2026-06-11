@@ -7,6 +7,19 @@ import { usePolledJson, type PollStatus } from './use-polled-json'
  * `application_ref` is the obfuscated label, or the real company name when
  * `public_state === 'public'` (the reveal tier, PORTAL §5.4).
  */
+/**
+ * Per-kit existence metadata (§24.65) — enums + timestamps only; kit CONTENT
+ * never rides the polled funnel payload (the /kit page fetches `/api/kit`).
+ */
+export interface KitMeta {
+  round: string
+  interview_type: string
+  interview_at: string | null
+  status: string
+  created_at: string
+  has_content: boolean
+}
+
 export interface FunnelApplication {
   /** Opaque, unique per-application id — the stable React key + motion layoutId.
    * (`application_ref` is the obfuscated label and is shared across a company's
@@ -26,6 +39,8 @@ export interface FunnelApplication {
   published_learning: string | null
   days_in_stage: number | null
   days_in_pipeline: number | null
+  /** Interview kits prepared for this application (§24.65) — all, incl. archived. */
+  interview_kits?: KitMeta[]
 }
 
 export interface FunnelResponse {

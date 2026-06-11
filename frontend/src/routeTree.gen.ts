@@ -16,6 +16,7 @@ import { Route as ApiSplatRouteImport } from './routes/api/$'
 import { Route as opsPipelineRouteImport } from './routes/(ops)/pipeline'
 import { Route as opsMomentumRouteImport } from './routes/(ops)/momentum'
 import { Route as opsLiveRouteImport } from './routes/(ops)/live'
+import { Route as opsKitRouteImport } from './routes/(ops)/kit'
 import { Route as opsDevRouteImport } from './routes/(ops)/dev'
 import { Route as opsCrashRouteImport } from './routes/(ops)/crash'
 import { Route as opsArchitectureRouteImport } from './routes/(ops)/architecture'
@@ -55,6 +56,11 @@ const opsMomentumRoute = opsMomentumRouteImport.update({
 const opsLiveRoute = opsLiveRouteImport.update({
   id: '/live',
   path: '/live',
+  getParentRoute: () => opsRouteRoute,
+} as any)
+const opsKitRoute = opsKitRouteImport.update({
+  id: '/kit',
+  path: '/kit',
   getParentRoute: () => opsRouteRoute,
 } as any)
 const opsDevRoute = opsDevRouteImport.update({
@@ -100,6 +106,7 @@ export interface FileRoutesByFullPath {
   '/architecture': typeof opsArchitectureRoute
   '/crash': typeof opsCrashRoute
   '/dev': typeof opsDevRoute
+  '/kit': typeof opsKitRoute
   '/live': typeof opsLiveRoute
   '/momentum': typeof opsMomentumRoute
   '/pipeline': typeof opsPipelineRoute
@@ -114,6 +121,7 @@ export interface FileRoutesByTo {
   '/architecture': typeof opsArchitectureRoute
   '/crash': typeof opsCrashRoute
   '/dev': typeof opsDevRoute
+  '/kit': typeof opsKitRoute
   '/live': typeof opsLiveRoute
   '/momentum': typeof opsMomentumRoute
   '/pipeline': typeof opsPipelineRoute
@@ -131,6 +139,7 @@ export interface FileRoutesById {
   '/(ops)/architecture': typeof opsArchitectureRoute
   '/(ops)/crash': typeof opsCrashRoute
   '/(ops)/dev': typeof opsDevRoute
+  '/(ops)/kit': typeof opsKitRoute
   '/(ops)/live': typeof opsLiveRoute
   '/(ops)/momentum': typeof opsMomentumRoute
   '/(ops)/pipeline': typeof opsPipelineRoute
@@ -147,6 +156,7 @@ export interface FileRouteTypes {
     | '/architecture'
     | '/crash'
     | '/dev'
+    | '/kit'
     | '/live'
     | '/momentum'
     | '/pipeline'
@@ -161,6 +171,7 @@ export interface FileRouteTypes {
     | '/architecture'
     | '/crash'
     | '/dev'
+    | '/kit'
     | '/live'
     | '/momentum'
     | '/pipeline'
@@ -177,6 +188,7 @@ export interface FileRouteTypes {
     | '/(ops)/architecture'
     | '/(ops)/crash'
     | '/(ops)/dev'
+    | '/(ops)/kit'
     | '/(ops)/live'
     | '/(ops)/momentum'
     | '/(ops)/pipeline'
@@ -241,6 +253,13 @@ declare module '@tanstack/react-router' {
       path: '/live'
       fullPath: '/live'
       preLoaderRoute: typeof opsLiveRouteImport
+      parentRoute: typeof opsRouteRoute
+    }
+    '/(ops)/kit': {
+      id: '/(ops)/kit'
+      path: '/kit'
+      fullPath: '/kit'
+      preLoaderRoute: typeof opsKitRouteImport
       parentRoute: typeof opsRouteRoute
     }
     '/(ops)/dev': {
@@ -319,6 +338,7 @@ interface opsRouteRouteChildren {
   opsArchitectureRoute: typeof opsArchitectureRoute
   opsCrashRoute: typeof opsCrashRoute
   opsDevRoute: typeof opsDevRoute
+  opsKitRoute: typeof opsKitRoute
   opsLiveRoute: typeof opsLiveRoute
   opsMomentumRoute: typeof opsMomentumRoute
   opsPipelineRoute: typeof opsPipelineRoute
@@ -328,6 +348,7 @@ const opsRouteRouteChildren: opsRouteRouteChildren = {
   opsArchitectureRoute: opsArchitectureRoute,
   opsCrashRoute: opsCrashRoute,
   opsDevRoute: opsDevRoute,
+  opsKitRoute: opsKitRoute,
   opsLiveRoute: opsLiveRoute,
   opsMomentumRoute: opsMomentumRoute,
   opsPipelineRoute: opsPipelineRoute,

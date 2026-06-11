@@ -16,15 +16,21 @@ vi.mock('@tanstack/react-router', () => ({
     'data-testid': testId,
   }: {
     to?: string
-    search?: { app?: string }
+    search?: Record<string, string | undefined>
     children?: React.ReactNode
     className?: string
     'data-testid'?: string
-  }) => (
-    <a href={search?.app ? `${to}?app=${search.app}` : to} className={className} data-testid={testId}>
-      {children}
-    </a>
-  ),
+  }) => {
+    const qs = Object.entries(search ?? {})
+      .filter(([, v]) => v != null)
+      .map(([k, v]) => `${k}=${v}`)
+      .join('&')
+    return (
+      <a href={qs ? `${to}?${qs}` : to} className={className} data-testid={testId}>
+        {children}
+      </a>
+    )
+  },
 }))
 
 import { DetailPanel } from './DetailPanel'
@@ -144,6 +150,35 @@ describe('FunnelCard win-confidence bar (§24.35 Pass D)', () => {
   })
 })
 
+describe('FunnelCard kit chip (§24.65)', () => {
+  const kit = (round: string, status = 'active') => ({
+    round,
+    interview_type: 'technical_screen',
+    interview_at: null,
+    status,
+    created_at: '2026-06-01T00:00:00Z',
+    has_content: true,
+  })
+
+  it('shows the ▤ chip when kits exist (count when several)', () => {
+    render(<FunnelCard app={app({ application_ref: 'x', interview_kits: [kit('TECH_SCREEN')] })} onSelect={() => {}} />)
+    expect(screen.getByTestId('funnel-card-kit')).toHaveTextContent('▤ kit')
+
+    render(
+      <FunnelCard
+        app={app({ application_ref: 'y', interview_kits: [kit('SCREENING', 'archived'), kit('TECH_SCREEN')] })}
+        onSelect={() => {}}
+      />,
+    )
+    expect(screen.getAllByTestId('funnel-card-kit')[1]).toHaveTextContent('▤ 2 kits')
+  })
+
+  it('shows no chip without kits', () => {
+    render(<FunnelCard app={app({ application_ref: 'z' })} onSelect={() => {}} />)
+    expect(screen.queryByTestId('funnel-card-kit')).not.toBeInTheDocument()
+  })
+})
+
 describe('StatTiles', () => {
   it('renders the four labeled tiles', () => {
     render(<StatTiles apps={APPS} />)
@@ -213,6 +248,53 @@ describe('DetailPanel', () => {
   it('links to this application’s filtered /live activity (§24.60)', () => {
     render(<DetailPanel app={APPS[4]} onClose={() => {}} />)
     expect(screen.getByTestId('detail-live-link')).toHaveAttribute('href', '/live?app=Wayne Enterprises')
+  })
+
+  it('lists interview kits — incl. archived — linking into the /kit dossier (§24.65)', () => {
+    render(
+      <DetailPanel
+        app={app({
+          application_ref: 'ai-infra-a',
+          stage: 'tech',
+          interview_kits: [
+            {
+              round: 'SCREENING',
+              interview_type: 'recruiter_screen',
+              interview_at: '2026-05-06T17:00:00Z',
+              status: 'archived',
+              created_at: '2026-05-01T00:00:00Z',
+              has_content: true,
+            },
+            {
+              round: 'TECH_SCREEN',
+              interview_type: 'technical_screen',
+              interview_at: '2026-06-18T16:00:00Z',
+              status: 'active',
+              created_at: '2026-06-01T00:00:00Z',
+              has_content: true,
+            },
+          ],
+        })}
+        onClose={() => {}}
+      />,
+    )
+    const section = screen.getByTestId('detail-kits')
+    const links = within(section).getAllByTestId('detail-kit-link')
+    expect(links).toHaveLength(2)
+    expect(links[0]).toHaveAttribute('href', '/kit?app=ai-infra-a&round=SCREENING')
+    expect(links[0]).toHaveTextContent('Recruiter screen')
+    expect(links[0]).toHaveTextContent('archived')
+    expect(links[1]).toHaveAttribute('href', '/kit?app=ai-infra-a&round=TECH_SCREEN')
+    expect(links[1]).toHaveTextContent('Technical screen')
+    expect(links[1]).toHaveTextContent('Jun 18')
+    // The section explains itself (what a kit is + the sealing model).
+    fireEvent.click(within(section).getByRole('button', { name: 'About: interview prep' }))
+    expect(screen.getByTestId('info-tip-panel')).toHaveTextContent(/sealed while the process is live/i)
+  })
+
+  it('omits the Interview prep section when the application has no kits', () => {
+    render(<DetailPanel app={APPS[0]} onClose={() => {}} />)
+    expect(screen.queryByTestId('detail-kits')).not.toBeInTheDocument()
   })
 })
 

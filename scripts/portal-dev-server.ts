@@ -29,6 +29,7 @@ import {
   newGeneratorState,
   seedDeterministicSimulatorRun,
   seedRichFixture,
+  seedRichKits,
 } from '../src/modules/portal/dev/fixtures.js';
 import { startPortalApi, stopPortalApi } from '../src/modules/portal/api.js';
 
@@ -52,6 +53,7 @@ async function main(): Promise<void> {
   const db = initTestDb();
   runMigrations(db);
   seedRichFixture(db);
+  await seedRichKits(db);
   seedDeterministicSimulatorRun(db);
 
   const { port } = await startPortalApi({ host: '127.0.0.1', port: API_PORT });

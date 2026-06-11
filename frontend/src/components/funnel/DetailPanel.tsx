@@ -5,6 +5,7 @@ import * as React from 'react'
 import { InfoTip } from '~/components/InfoTip'
 import { useDialog } from '~/lib/use-dialog'
 import type { FunnelApplication } from '~/lib/use-funnel'
+import { kitDate, roundLabel } from '~/lib/use-kit'
 
 function Fact({ label, value }: { label: string; value: string }) {
   return (
@@ -98,6 +99,54 @@ export function DetailPanel({ app, onClose }: { app: FunnelApplication | null; o
         >
           Live activity →
         </Link>
+
+        {/* §24.65: interview kits prepared for this application — all rounds,
+            incl. archived (a closed process keeps its prep story). Each row
+            links into the /kit dossier; content there is policy-gated
+            server-side (sealed while the process is live, full on reveal). */}
+        {app.interview_kits && app.interview_kits.length > 0 ? (
+          <section aria-labelledby="kits-heading" data-testid="detail-kits" className="flex flex-col gap-2">
+            <h3
+              id="kits-heading"
+              className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-widest text-muted-foreground"
+            >
+              Interview prep
+              <InfoTip label="interview prep">
+                The moment an application enters an interview round, the agent builds a two-part mock-interview kit — an
+                interviewer manual for a voice-mock Claude plus a phone cheat-sheet — as a private Google Doc. Sections
+                that would identify the company stay sealed while the process is live; revealed applications show their
+                kits in full.
+              </InfoTip>
+            </h3>
+            <ul className="flex flex-col gap-1.5">
+              {app.interview_kits.map((kit) => (
+                <li key={kit.round}>
+                  <Link
+                    to="/kit"
+                    search={{ app: app.application_ref, round: kit.round }}
+                    data-testid="detail-kit-link"
+                    className="flex items-baseline justify-between gap-3 rounded-md border border-border px-3 py-2 transition-colors hover:border-primary/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <span className="min-w-0 truncate font-mono text-xs text-foreground">
+                      ▤ {roundLabel(kit.round)}
+                      {kit.interview_at ? (
+                        <span className="ml-2 text-muted-foreground">{kitDate(kit.interview_at)}</span>
+                      ) : null}
+                      {kit.status === 'archived' ? (
+                        <span className="ml-2 text-[10px] uppercase tracking-wider text-muted-foreground">
+                          archived
+                        </span>
+                      ) : null}
+                    </span>
+                    <span aria-hidden="true" className="shrink-0 font-mono text-xs text-accent-cool">
+                      →
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
         {win != null ? (
           <section aria-labelledby="win-heading" className="flex flex-col gap-2">
