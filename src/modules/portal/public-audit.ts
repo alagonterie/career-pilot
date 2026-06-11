@@ -155,15 +155,34 @@ export async function mirrorFunnelEvent(db: Database.Database, eventId: string):
   );
   if (dropOnLeak) {
     try {
+      // Alias-aware (§24.65 Δ): prose often uses a short form ("AMD") while
+      // company_name holds the legal name ("Advanced Micro Devices, Inc") —
+      // scanning the canonical name alone misses the form text actually uses.
       const nonPublic = db
-        .prepare(`SELECT company_name FROM applications WHERE public_state != 'public' AND company_name != ''`)
-        .all() as { company_name: string }[];
+        .prepare(
+          `SELECT company_name, company_aliases FROM applications WHERE public_state != 'public' AND company_name != ''`,
+        )
+        .all() as { company_name: string; company_aliases: string | null }[];
       const sanitizedLower = sanitized.toLowerCase();
-      for (const { company_name } of nonPublic) {
-        if (sanitizedLower.includes(company_name.toLowerCase())) {
+      for (const { company_name, company_aliases } of nonPublic) {
+        const needles = [company_name];
+        if (company_aliases) {
+          try {
+            const aliases = JSON.parse(company_aliases) as unknown;
+            if (Array.isArray(aliases)) {
+              for (const a of aliases) {
+                if (typeof a === 'string' && a.length > 1) needles.push(a);
+              }
+            }
+          } catch {
+            // Unparseable aliases column — the name check still runs.
+          }
+        }
+        const leaked = needles.find((n) => sanitizedLower.includes(n.toLowerCase()));
+        if (leaked) {
           log.warn('mirrorFunnelEvent: real company name survived sanitization — dropping row', {
             eventId,
-            leaked: company_name,
+            leaked,
           });
           return 'dropped';
         }
