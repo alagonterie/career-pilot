@@ -155,6 +155,18 @@ interface FunnelViewRow {
   win_confidence: number | null;
   win_confidence_rationale: string | null;
   published_learning: string | null;
+  kits_json: string | null;
+}
+
+/** Parse a public_funnel_view kits_json column into the API's interview_kits array. */
+function parseKitsJson(raw: string | null): unknown[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 function handleFunnel(res: http.ServerResponse, cors: Record<string, string>): void {
@@ -162,16 +174,20 @@ function handleFunnel(res: http.ServerResponse, cors: Record<string, string>): v
     .prepare(
       `SELECT application_id, application_ref, public_state, role_title, status, stage,
               applied_at, stage_entered_at, last_activity_at, win_confidence,
-              win_confidence_rationale, published_learning
+              win_confidence_rationale, published_learning, kits_json
          FROM public_funnel_view`,
     )
     .all() as FunnelViewRow[];
 
   const now = Date.now();
-  const applications = rows.map((r) => ({
+  const applications = rows.map(({ kits_json, ...r }) => ({
     ...r,
     days_in_stage: daysSince(r.stage_entered_at, now),
     days_in_pipeline: daysSince(r.applied_at, now),
+    // §24.65: per-kit existence metadata for the drawer's "Interview prep"
+    // section — enums + timestamps only; kit CONTENT rides /api/kit, never
+    // this polled payload.
+    interview_kits: parseKitsJson(kits_json),
   }));
 
   const stage_counts: Record<string, number> = {};
@@ -180,6 +196,81 @@ function handleFunnel(res: http.ServerResponse, cors: Record<string, string>): v
   }
 
   json(res, 200, { applications, stage_counts }, cors);
+}
+
+/**
+ * §24.65: one kit's public projection for the /kit dossier page.
+ * `?app=«application_ref»&round=«ROUND»` — the ref is the public key the
+ * frontend holds (same first-match resolution rule as the /pipeline drawer;
+ * the two-public-apps-one-company collision is the accepted §24.62 behavior).
+ * Reads ONLY public tables (public_funnel_view → public_kit_view); sealed
+ * sections carry counts + captions, never text. 404 when absent.
+ */
+function handleKit(url: URL, res: http.ServerResponse, cors: Record<string, string>): void {
+  const ref = url.searchParams.get('app') ?? '';
+  const round = (url.searchParams.get('round') ?? '').toUpperCase();
+  if (!ref || !round) {
+    json(res, 400, { error: 'bad_request', message: 'app and round query params are required' }, cors);
+    return;
+  }
+
+  const db = getDb();
+  const app = db
+    .prepare(
+      `SELECT application_id, application_ref, public_state, role_title
+         FROM public_funnel_view WHERE application_ref = ? LIMIT 1`,
+    )
+    .get(ref) as
+    | { application_id: string; application_ref: string; public_state: string; role_title: string | null }
+    | undefined;
+  if (!app) {
+    json(res, 404, { error: 'not_found' }, cors);
+    return;
+  }
+
+  const kit = db
+    .prepare(
+      `SELECT round, interview_type, interview_at, status, sections_json, updated_at
+         FROM public_kit_view WHERE application_id = ? AND round = ?`,
+    )
+    .get(app.application_id, round) as
+    | {
+        round: string;
+        interview_type: string;
+        interview_at: string | null;
+        status: string;
+        sections_json: string;
+        updated_at: string;
+      }
+    | undefined;
+  if (!kit) {
+    json(res, 404, { error: 'not_found' }, cors);
+    return;
+  }
+
+  let sections: unknown[] = [];
+  try {
+    const parsed = JSON.parse(kit.sections_json);
+    if (Array.isArray(parsed)) sections = parsed;
+  } catch {
+    sections = [];
+  }
+
+  json(
+    res,
+    200,
+    {
+      application_ref: app.application_ref,
+      public_state: app.public_state,
+      role_title: app.role_title,
+      round: kit.round,
+      interview_type: kit.interview_type,
+      interview_at: kit.interview_at,
+      status: kit.status,
+      sections,
+    },
+    cors,
+  );
 }
 
 function handleActivity(url: URL, res: http.ServerResponse, cors: Record<string, string>): void {
@@ -592,6 +683,7 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
     if (forced) return applyForcedState(forced, path, req, res, cors);
 
     if (method === 'GET' && path === '/api/funnel') return handleFunnel(res, cors);
+    if (method === 'GET' && path === '/api/kit') return handleKit(url, res, cors);
     if (method === 'GET' && path === '/api/activity/stream') return handleActivityStream(req, res, url, cors);
     if (method === 'GET' && path === '/api/activity') return handleActivity(url, res, cors);
     if (method === 'GET' && path === '/api/telemetry') return await handleTelemetry(res, cors);

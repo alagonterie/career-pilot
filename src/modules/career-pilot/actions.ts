@@ -31,6 +31,7 @@ import { mirrorFunnelEvent, publicApplicationRef, resanitizeApplicationAuditTrai
 import { sanitize, sanitizeForPublic } from '../portal/sanitizer.js';
 import { pass3Active } from '../portal/sanitizer-pass3.js';
 import { isKnownApplicationStatus, upsertPublicFunnelView } from '../portal/public-funnel-view.js';
+import { upsertPublicKitView } from '../portal/public-kit-view.js';
 import type { Session } from '../../types.js';
 
 import { reactToStatusTransitions } from './interview-kit-trigger.js';
@@ -861,20 +862,29 @@ export async function handleUpdateApplication(
     // Gated on the obfuscation-policy fields actually changing (before/after
     // snapshot diff — robust to obfuscated_label being immutable here) and
     // on the operator preference.
-    if (getConfig<boolean>(db, 'sanitization_resanitize_on_application_update')) {
-      const after = db
-        .prepare('SELECT obfuscated_label, company_name, company_aliases, public_state FROM applications WHERE id = ?')
-        .get(id) as ObfuscationSnapshot | undefined;
-      if (after && obfuscationPolicyChanged(existing, after)) {
-        try {
-          await resanitizeApplicationAuditTrail(db, id);
-        } catch (resanErr) {
-          log.error('resanitizeApplicationAuditTrail threw despite internal try/catch', {
-            id,
-            resanErr,
-          });
-        }
+    const after = db
+      .prepare('SELECT obfuscated_label, company_name, company_aliases, public_state FROM applications WHERE id = ?')
+      .get(id) as ObfuscationSnapshot | undefined;
+    const policyChanged = !!after && obfuscationPolicyChanged(existing, after);
+
+    if (policyChanged && getConfig<boolean>(db, 'sanitization_resanitize_on_application_update')) {
+      try {
+        await resanitizeApplicationAuditTrail(db, id);
+      } catch (resanErr) {
+        log.error('resanitizeApplicationAuditTrail threw despite internal try/catch', {
+          id,
+          resanErr,
+        });
       }
+    }
+
+    // §24.65: a policy flip changes which kit sections the dossier read-model
+    // may show — re-project BOTH directions (reveal → sections fill in;
+    // un-reveal → identifying sections seal again). Gated on the policy
+    // actually changing (re-projection runs Pass 3 over safe sections);
+    // ordinary kit writes re-project themselves in interview-kit-actions.
+    if (policyChanged) {
+      await upsertPublicKitView(db, id);
     }
 
     // Refresh the public funnel read-model (application_ref / stage / activity
