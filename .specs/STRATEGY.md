@@ -5151,6 +5151,52 @@ DoD (F3 additions): the `build-interview-kit` invocation prompt carries a `## Jo
 4. Zero visual-baseline change at rest (identity transform = today's render); axe green; suites + tsc + format green; deploy green.
 5. Owner phone pass — pinch feel + the iOS Safari check — is the final gate.
 
+#### 24.65 Interview-kit public surfacing (Track J)
+
+**Owner register, 2026-06-10 (3rd TODO batch, design-heaviest item; design conversation held 2026-06-11).** Interview kits (§24.53) are the agent's richest artifact — a two-part Google Doc built the instant an application enters an interview stage — and they're invisible on the public portal. Surface them. The hard constraint going in: kits hold real company names in private Drive docs.
+
+**Decision register (owner-resolved 2026-06-11, plan-mode conversation).**
+
+- **D1 — drawer scope: all kits, including archived.** The /pipeline drawer's kit section lists one line per round, with archived status shown honestly. Active-only was rejected: kits archive on terminal transitions, so the section would vanish exactly when the story gets good (an offer).
+- **D2 — content model: real kits, per-section policy, reveal-tier unlock.** The owner's earlier "one fully fictionalized showcase sample kit" idea is **superseded** — every kit on the portal is real. The owner first leaned "all kits through the 3-layer sanitizer"; the conversation surfaced two facts that reshaped it: (a) Pass 2 redacts the company *name*, but kit content is saturated with contextually identifying facts (quoted JD phrasing, funding/launch/leadership "recent signal", tech stack) that survive name redaction; (b) the **Gap notes** section names the candidate's honest weak spots — published mid-process, the company's own recruiters (the portal's target audience) could read the candidate's prep and weaknesses for their own live process. Resolution: the kit's **deterministic eight-section structure** turns sanitization into a per-section policy (table below), and the existing per-application reveal tier (`public_state='public'`, flipped post-close with the company's awareness) is the full unlock — a revealed process shows its kits complete. Line-count truncation was rejected (fragile cut point — Part 2's identifying "Recent signal" lands after safe content; reads arbitrary rather than principled).
+- **D3 — ambition: deterministic section policy now; LLM rewrite deferred.** An LLM "generalize the identifying facts" pass over withheld sections (withhold-on-fail) is the recorded upgrade path if the sealed placeholders feel thin in practice — not built now (extra LLM call per kit persist; leak-or-empty failure mode; generalized fact lists tend to read as mush).
+
+**Per-section policy (the heart of it).** Kit sections per the `build-interview-kit` prompt's fixed outline:
+
+| Kit section | Class | Obfuscated (live) app | Public (revealed) app |
+|---|---|---|---|
+| `Your role` | safe | real, sanitized | real |
+| `Scoring rubric` | safe | real, sanitized | real |
+| `Lean into` | safe (candidate's own resume facts; /work already shows the resume) | real, sanitized | real |
+| `Question themes` | identifying (quotes JD phrasing — googleable) | sealed + item count | real |
+| `Grounding + caveats` | identifying (funding/launches/stack de-anonymize past Pass 2) | sealed + item count | real |
+| `Recent signal` | identifying | sealed + item count | real |
+| `Questions to ask` | identifying | sealed + item count | real |
+| `Gap notes` | strategy leak (names the candidate's weak spots) | **always sealed while live** | real |
+| unknown/unrecognized section | — | sealed (fail-safe) | real (Pass 1 still) |
+
+"Sanitized" = the full existing pipeline (Pass 1 regex PII + Pass 2 company redaction + the Pass 3 belt where wired, per the public-audit text path) + the defense-in-depth company scan per section — a scan hit seals that section. Public apps still run the pipeline (Pass 2 redacts *other* non-public companies a kit might mention).
+
+**Hard privacy invariants.** `interview_kits.title` and `drive_url` carry the real company name → never on any public surface, ever. The public API reads only `public_*` tables. Sealed content is sealed **server-side by construction** — the wire payload never contains withheld text; everything visual (redaction bars) is decoration over an already-safe payload. Unknown sections default to sealed.
+
+**Data flow.**
+
+1. **Persist:** `persist_interview_kit` already carries the kit markdown; `handlePersistInterviewKit` now stores it on the row (new private `interview_kits.markdown` column — re-projection and reveal flips never need Drive reads), then post-write re-projects (same best-effort discipline as every other writer).
+2. **Projection:** new `public_kit_view` read-model (PK `(application_id, round)`; columns: round, interview_type, interview_at, status, `sections_json`, updated_at — no title, no drive_url). `upsertPublicKitView(db, applicationId)` parses the stored markdown (`kit-sections.ts`, tolerant header matcher → safe/sealed classes + per-section item counts), applies the policy for the app's current `public_state`, sanitizes surviving content, and writes `sections_json` = `[{id, title, kind: 'content'|'withheld', body?, item_count?, withheld_reason?}]`. Kits persisted before this section (no stored markdown) project as metadata-only (`sections_json: []`); a one-time best-effort Drive `files.export` backfill on the box fills history where it can.
+3. **Drawer metadata:** `public_funnel_view` gains `kits_json` (all kits per app: round, interview_type, interview_at, status, created_at, has_content), computed inside `upsertPublicFunnelView`.
+4. **Re-projection triggers:** kit persist, kit archive (terminal transition + the cleanup sweep), and **both directions of the policy flip** — wherever `resanitizeApplicationAuditTrail` runs, the kit view re-projects too (reveal → sections fill in; un-reveal → identifying sections seal again).
+5. **API:** `/api/funnel` emits `interview_kits` per application (metadata only — kit content never rides the polled payload); new `GET /api/kit?app=«ref»&round=«ROUND»` resolves ref→application via `public_funnel_view` (first-match; the two-public-apps-one-company collision is the accepted §24.62 behavior) and serves the `public_kit_view` row; 404 when absent. Fetched once per page open, not polled (a kit is static once built).
+
+**Presentation ("the dossier") — full UX spec in PORTAL §5.9.** Summary: funnel cards carry a `▤ kit` mono chip; the drawer's "Interview prep" section lists kit rows linking to `/kit?app=«ref»&round=«round»`; the kit page renders the complete document skeleton — masthead + reveal banner, sticky TOC with sealed-section `⊘` glyphs, Part 1/Part 2 framing, real content where safe, and **redaction bars with honest captions** ("6 grounding facts · sealed while this process is live — they'd identify the company") where sealed. Browser back from the kit page lands on `/pipeline?app=«ref»`, which re-opens the drawer (URL-as-source-of-truth, §24.58) — the navigation-stack feel with zero new dialog code.
+
+**Deferred (recorded):** the D3 LLM generalization rewrite; a "was sealed while live" marker on revealed kits (v1.1 flourish); per-application timeline endpoint (§24.27, unchanged).
+
+**Definition of done.**
+1. Host: parser + projection + API unit-tested (policy classes, public↔obfuscated flip both directions, defense-in-depth seal, NULL-markdown metadata-only, unknown-section fail-safe); a test enforces no `title`/`drive_url` in any `public_*` write or `/api/kit` payload; suites + both tscs + format green.
+2. Frontend: drawer section + card chip + kit page per PORTAL §5.9; functional e2e covers drawer row → kit page (real rubric line on the public fixture; sealed placeholder with count on the obfuscated fixture; browser back re-opens the drawer); new visual baselines (kit public + sealed, desktop + mobile) blessed and eyeballed; axe green.
+3. Deploy green; box backfill outcome surfaced; live checks: sealed skeleton on an obfuscated app, full kit after a public flip, re-sealed after flipping back.
+4. Owner phone pass on the dossier page — the final gate.
+
 ---
 
 ## Part VI: Open questions
