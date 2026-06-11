@@ -171,6 +171,12 @@ export function KitDossier({ kit }: { kit: KitPayload }) {
 
   // Keep the active chip visible inside the horizontal strip (the prev/next
   // steppers can move the highlight to a chip that's scrolled out of view).
+  // INSTANT, not smooth: Chromium runs ONE smooth-scroll animation at a time,
+  // so a smooth strip scroll CANCELLED the in-flight smooth page scroll —
+  // which only fired when the target chip was out of view, i.e. always on ‹
+  // (strip scrolled right, prev chip off-left) and on long › jumps. The
+  // owner's "back scrolling doesn't work at all / forward mostly works"
+  // (§24.65 Δ).
   React.useEffect(() => {
     const strip = stripRef.current
     if (!strip || !active) return
@@ -178,7 +184,7 @@ export function KitDossier({ kit }: { kit: KitPayload }) {
     if (!chip) return
     const left = chip.offsetLeft - strip.offsetLeft
     if (left < strip.scrollLeft || left + chip.offsetWidth > strip.scrollLeft + strip.clientWidth) {
-      strip.scrollTo?.({ left: Math.max(0, left - 24), behavior: 'smooth' })
+      strip.scrollTo?.({ left: Math.max(0, left - 24), behavior: 'auto' })
     }
   }, [active])
 
