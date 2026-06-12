@@ -108,8 +108,26 @@ If you find yourself wanting to change any of these, surface it explicitly to th
 | Host package management | `pnpm` |
 | Container/agent-runner package management | `bun` (separate dep tree) |
 | Ad-hoc DB queries | `pnpm exec tsx scripts/q.ts data/v2.db "..."` (NanoClaw convention) |
+| Health / triage | `pnpm health` (`--json`, `--no-live`; exit 2 on critical) — see "Debugging & triage" below |
 
 See STRATEGY.md §21 for full reference.
+
+---
+
+## Debugging & triage — start here
+
+**When something seems broken (missed digest, failed flow, "is X working?"), the first move is the health check, not log/schema archaeology:**
+
+```bash
+# On the box:
+pnpm health --json
+# From the dev machine (Tailscale):
+tailscale ssh root@career-pilot-dev "cd /opt/career-pilot-dev && sudo -u career-pilot bash -c 'set -a; . ./.env; set +a; pnpm health --json'"
+```
+
+It checks every known failure shape (queue starvation, dead recurrence chains, orphan responses, delivery backlog, auth-failure streaks, a LIVE Gmail-token/gateway probe), and every non-ok finding carries a concrete `next_step` command — the report is the runbook.
+
+**For "is X failing / since when / how often" questions, query `request_telemetry`** (central DB): one row per outbound API request at every choke point our code owns — successes AND failures with HTTP status, tokens/cost for LLM calls, `traffic_class` (ops/chat/sandbox/host) for context-cost analysis. Canonical copy-paste queries + the full finding catalog live in **`.specs/RECOVERY.md` §0 (Triage)**. Portkey's dashboard remains the human view of LLM traffic; `request_telemetry` is the queryable one and the only place failures are durable.
 
 ---
 
