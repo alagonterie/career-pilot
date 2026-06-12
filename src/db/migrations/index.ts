@@ -37,6 +37,7 @@ import { migration127 } from './127-interview-kits.js';
 import { migration128 } from './128-simulator-trace.js';
 import { migration129 } from './129-cache-read-pct.js';
 import { migration130 } from './130-kit-public-surfacing.js';
+import { migration131 } from './131-request-telemetry.js';
 
 export interface Migration {
   version: number;
@@ -81,6 +82,7 @@ const migrations: Migration[] = [
   migration128,
   migration129,
   migration130,
+  migration131,
 ];
 
 export function runMigrations(db: Database.Database): void {

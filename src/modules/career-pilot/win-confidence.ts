@@ -14,22 +14,19 @@
  *
  * Best-effort: with no PORTKEY_API_KEY, under PORTKEY_BYPASS, with no active
  * applications, or on any failure, scores are left unchanged (the board renders
- * `win_confidence` as "—"). Never throws.
+ * `win_confidence` as "—"). Never throws. The Portkey call goes through the
+ * shared host helper (src/llm-fetch.ts, §24.68 D5), which records a
+ * request_telemetry row on both outcomes.
  */
 import type Database from 'better-sqlite3';
 
+import { callPortkeyChat, portkeyConfigured } from '../../llm-fetch.js';
 import { log } from '../../log.js';
-import { buildPortkeyMetadata } from '../../portkey.js';
 import { upsertPublicFunnelView } from '../portal/public-funnel-view.js';
 
 import { readCandidateProfile } from './render-persona.js';
 
 const HAIKU_MODEL = 'claude-haiku-4-5';
-
-/** True when a host-side Portkey call is possible (key present, not bypassed). */
-function portkeyConfigured(): boolean {
-  return !!process.env.PORTKEY_API_KEY && process.env.PORTKEY_BYPASS !== 'true';
-}
 
 export interface WinConfidenceResult {
   /** Active applications the LLM scored. */
@@ -39,31 +36,14 @@ export interface WinConfidenceResult {
 }
 
 async function callHaikuJson(prompt: string, traceId?: string): Promise<string> {
-  const base = process.env.PORTKEY_BASE_URL || 'https://api.portkey.ai/v1';
-  const provider = process.env.PORTKEY_AI_PROVIDER || 'anthropic-default';
-  // Observability headers (§24.46): tag the surface + group the sweep's call.
-  const headers: Record<string, string> = {
-    'content-type': 'application/json',
-    'x-portkey-api-key': process.env.PORTKEY_API_KEY as string,
-  };
-  const metadata = buildPortkeyMetadata({ environment: process.env.ENVIRONMENT, surface: 'win-confidence' });
-  if (Object.keys(metadata).length > 0) headers['x-portkey-metadata'] = JSON.stringify(metadata);
-  if (traceId) headers['x-portkey-trace-id'] = traceId;
-  const res = await fetch(`${base}/chat/completions`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      model: `@${provider}/${HAIKU_MODEL}`,
-      max_tokens: 1000,
-      messages: [{ role: 'user', content: prompt }],
-    }),
-    signal: AbortSignal.timeout(20_000),
+  const result = await callPortkeyChat({
+    surface: 'win-confidence',
+    messages: [{ role: 'user', content: prompt }],
+    maxTokens: 1000,
+    model: HAIKU_MODEL,
+    traceId,
   });
-  if (!res.ok) throw new Error(`portkey HTTP ${res.status}`);
-  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
-  const text = data.choices?.[0]?.message?.content;
-  if (typeof text !== 'string') throw new Error('portkey: no content in completion');
-  return text;
+  return result.text;
 }
 
 /** A compact summary of the candidate (the "fit" side) for the scoring prompt. */

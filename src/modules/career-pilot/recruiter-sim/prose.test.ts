@@ -78,7 +78,7 @@ describe('recruiter-sim prose', () => {
     const res = await enrichBody(intent, 1, intent.appId ?? undefined);
     expect(res.usedLlm).toBe(true);
     expect(headers['x-portkey-trace-id']).toBe('sim-1'); // intent.appId → groups the app's emails
-    expect(JSON.parse(headers['x-portkey-metadata'])).toEqual({ environment: 'dev', surface: 'recruiter-sim' });
+    expect(JSON.parse(headers['x-portkey-metadata'])).toEqual({ environment: 'dev', surface: 'recruiter-sim-prose' });
   });
 
   it('sanitizeProse trims, strips a Subject line and surrounding quotes, and caps length', () => {

@@ -7,19 +7,17 @@
  * is used verbatim. The engine never hard-depends on the model (boilerplate ATS
  * email is realistic on its own; Haiku just adds variety).
  *
- * Routes through the locked LLM gateway — Portkey's Model Catalog — exactly as
- * the rest of the system's LLM does: a host fetch to api.portkey.ai
- * /v1/chat/completions with the AI-Provider slug in the model field
- * (`@<provider>/claude-haiku-4-5`) + the host PORTKEY_API_KEY. Host-side Portkey
- * is sanctioned (the host carries the key via the systemd EnvironmentFile
- * drop-in; the /live analytics panel uses the same key), and this puts the sim's
- * spend in Portkey's observability. (Gotcha learned at build: the catalog slug
- * goes in the MODEL field as `@provider/model`, NOT an `x-portkey-provider`
- * header — that header returns 400 "Invalid provider passed".)
+ * The Portkey call itself lives in the shared host helper (src/llm-fetch.ts,
+ * §24.68 D5), which records a request_telemetry row on both outcomes and reads
+ * the response usage — so `estCostUsd` is the ACTUAL priced cost when usage is
+ * available, falling back to the flat estimate. The flat HAIKU_EST_COST_USD
+ * stays as the PRE-call budget gate (actuals are unknowable before the call).
  */
+import { callPortkeyChat, portkeyConfigured } from '../../../llm-fetch.js';
 import { log } from '../../../log.js';
-import { buildPortkeyMetadata } from '../../../portkey.js';
 import type { InjectEmailIntent } from './types.js';
+
+export { portkeyConfigured };
 
 const HAIKU_MODEL = 'claude-haiku-4-5';
 /** Conservative flat per-call estimate (a ~200-tok prompt + ~150-tok output on Haiku). */
@@ -29,11 +27,6 @@ export interface ProseResult {
   body: string;
   usedLlm: boolean;
   estCostUsd: number;
-}
-
-/** True when a Portkey enrichment call is even possible (key present, not bypassed). */
-export function portkeyConfigured(): boolean {
-  return !!process.env.PORTKEY_API_KEY && process.env.PORTKEY_BYPASS !== 'true';
 }
 
 /**
@@ -51,35 +44,6 @@ export function sanitizeProse(text: string): string {
   return out.slice(0, 1500);
 }
 
-async function callHaiku(prompt: string, traceId?: string): Promise<string> {
-  const base = process.env.PORTKEY_BASE_URL || 'https://api.portkey.ai/v1';
-  const provider = process.env.PORTKEY_AI_PROVIDER || 'anthropic-default';
-  // Observability headers (§24.46): tag the surface + group the application's
-  // emails into one trace. No PII (env / surface / app-id slugs only).
-  const headers: Record<string, string> = {
-    'content-type': 'application/json',
-    'x-portkey-api-key': process.env.PORTKEY_API_KEY as string,
-  };
-  const metadata = buildPortkeyMetadata({ environment: process.env.ENVIRONMENT, surface: 'recruiter-sim' });
-  if (Object.keys(metadata).length > 0) headers['x-portkey-metadata'] = JSON.stringify(metadata);
-  if (traceId) headers['x-portkey-trace-id'] = traceId;
-  const res = await fetch(`${base}/chat/completions`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      model: `@${provider}/${HAIKU_MODEL}`,
-      max_tokens: 320,
-      messages: [{ role: 'user', content: prompt }],
-    }),
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!res.ok) throw new Error(`portkey HTTP ${res.status}`);
-  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
-  const text = data.choices?.[0]?.message?.content;
-  if (typeof text !== 'string') throw new Error('portkey: no content in completion');
-  return sanitizeProse(text);
-}
-
 /**
  * Return the email body for an intent: the Haiku-enriched version when Portkey
  * is configured AND there is budget left, otherwise the deterministic backbone.
@@ -94,8 +58,16 @@ export async function enrichBody(
   if (!portkeyConfigured() || budgetRemainingUsd < HAIKU_EST_COST_USD) return deterministic;
   try {
     const prompt = `${intent.prosePrompt}\n\nDraft to rewrite (keep the facts, improve the wording):\n${intent.deterministicBody}`;
-    const body = await callHaiku(prompt, traceId);
-    return { body, usedLlm: true, estCostUsd: HAIKU_EST_COST_USD };
+    const result = await callPortkeyChat({
+      surface: 'recruiter-sim-prose',
+      messages: [{ role: 'user', content: prompt }],
+      maxTokens: 320,
+      model: HAIKU_MODEL,
+      traceId,
+    });
+    const body = sanitizeProse(result.text);
+    const estCostUsd = result.costMicrousd != null ? result.costMicrousd / 1_000_000 : HAIKU_EST_COST_USD;
+    return { body, usedLlm: true, estCostUsd };
   } catch (err) {
     log.warn('recruiter-sim: prose enrich failed, using deterministic body', { err });
     return deterministic;
