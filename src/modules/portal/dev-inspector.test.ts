@@ -298,6 +298,30 @@ describe('buildDevKnobs', () => {
     expect(getConfig<boolean>(db, 'ops_mirror_to_chat')).toBe(false);
     expect(applyKnobWrite(db, { key: 'ops_transcript_rotate_age_days', reset: true }).status).toBe(200);
   });
+
+  it('exposes the §24.68 telemetry knobs with write validation', () => {
+    const db = getDb();
+    const telemetryKeys = buildDevKnobs(db)
+      .knobs.filter((k) => k.group === 'telemetry')
+      .map((k) => k.key)
+      .sort();
+    expect(telemetryKeys).toEqual([
+      'health_check_interval_sec',
+      'health_failure_streak_threshold',
+      'request_telemetry_retention_days',
+      'telemetry_capture',
+    ]);
+
+    expect(applyKnobWrite(db, { key: 'request_telemetry_retention_days', value: 7 }).status).toBe(200);
+    expect(getConfig<number>(db, 'request_telemetry_retention_days')).toBe(7);
+    expect(applyKnobWrite(db, { key: 'request_telemetry_retention_days', value: 0 }).status).toBe(400); // below min
+    expect(applyKnobWrite(db, { key: 'health_check_interval_sec', value: 59 }).status).toBe(400); // below min
+    expect(applyKnobWrite(db, { key: 'telemetry_capture', value: false }).status).toBe(200);
+    expect(getConfig<boolean>(db, 'telemetry_capture')).toBe(false);
+    expect(applyKnobWrite(db, { key: 'health_failure_streak_threshold', value: 5 }).status).toBe(200);
+    expect(applyKnobWrite(db, { key: 'telemetry_capture', reset: true }).status).toBe(200);
+    expect(getConfig<boolean>(db, 'telemetry_capture')).toBe(true); // back to the default
+  });
 });
 
 // ── buildDevState ─────────────────────────────────────────────────────────────

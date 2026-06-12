@@ -162,6 +162,15 @@ async function sweep(): Promise<void> {
     ensureOpsTopology();
     // MODULE-HOOK:career-pilot-ops-bootstrap:end
 
+    // 0b. Observability maintenance (STRATEGY.md §24.68): prune the
+    // request_telemetry retention window + run the proactive health check
+    // (deduped owner alert on NEW critical findings). Internally throttled
+    // per step; best-effort, never throws.
+    // MODULE-HOOK:career-pilot-observability:start
+    const { runTelemetryMaintenance } = await import('./modules/career-pilot/health-alert.js');
+    await runTelemetryMaintenance();
+    // MODULE-HOOK:career-pilot-observability:end
+
     const sessions = getActiveSessions();
     for (const session of sessions) {
       await sweepSession(session);
