@@ -5231,6 +5231,40 @@ DoD (F3 additions): the `build-interview-kit` invocation prompt carries a `## Jo
 3. Host suite + tsc + format green; deployed to the dev box; the orphan count stays at zero across a multi-day observation window (the §24.40 sim keeps generating round-trips).
 4. Daily briefing observed arriving again on consecutive mornings (the original symptom, closed by the one-off + this fix keeping the window clear).
 
+#### 24.67 Session topology — ops/chat split (Deep Dive 1, 2026-06-12)
+
+The first of the three §24.66-registered deep dives. **Problem:** the owner agent group runs one infinite `shared`-mode session; owner conversation, all five host-bootstrapped machine series (daily-briefing, killer-match, close-detection, funnel-curator, job-scrape), and their action round-trips share one SDK transcript (835 KB after 5 days). Every wake — including a 6 AM killer-match tick — cold-resumes the whole thing, so context-per-request grows without bound, re-reading machine-tick history the DB already holds. The DB (job_leads, funnel state, applications) *is* the world-model; transcript history of machine ticks is dead-weight context cost. The pile-up is also what created the §24.66 starvation conditions.
+
+**Decision register (owner, 2026-06-12 plan-mode conversation):**
+
+- **D1 — Ops-session split.** The five host-bootstrapped machine series move to a dedicated long-lived **ops session**; the chat session keeps owner conversation and owner-created conversational reminders. Chosen over (a) rotation-tuning-only — machine ticks would keep interleaving into chat context between rotations, and rotations would wipe conversational continuity too; and (b) per-tick ephemeral sessions — see D3.
+- **D2 — Mirror to chat.** Owner-visible ops output (daily briefing, killer-match pings) is also written into the chat session as a context-only row (`trigger=0`, no wake, no LLM turn) so a reply like "tell me more about #2" has its referent in front of the chat agent. Toggle: `ops_mirror_to_chat` (default true).
+- **D3 — Rotation, not ephemerality.** Per-tick sessions rejected: upstream transcript rotation (`maybeRotateContinuation`, archives to `conversations/` then resets the SDK session) tuned aggressively for the ops session gives the same context isolation while keeping a rolling 1–2 day machine-memory window, one session row instead of thousands, and zero new lifecycle machinery.
+
+**Design.**
+
+| Traffic class | Session | Rotation |
+|---|---|---|
+| Owner Telegram conversation + owner-created reminders | chat session (existing, `thread_id IS NULL`) | upstream defaults (12 MB / 14 d) |
+| Five host-bootstrapped series + their cp-resp round-trips | ops session (`thread_id = 'internal:career-pilot-ops'`) | `ops_transcript_rotate_bytes` (512 KB) / `ops_transcript_rotate_age_days` (2 d), archives to `conversations/ops/` |
+| Sandbox simulator runs | per-thread sessions (existing) | unchanged |
+
+- **Ops session identity:** same agent group + same owner messaging group + reserved synthetic thread id. Shared-mode routing matches `thread_id IS NULL` strictly, so the ops row is invisible to inbound routing; host-sweep wakes it on due tasks; a host-sweep MODULE-HOOK ensures the session + its five series idempotently (bootstraps move out of container-runner's spawn path) and retires misplaced live series from non-ops sessions (self-healing migration — no manual box op).
+- **Default replies still reach the owner:** destinations are projected per-group into every session on wake, and `writeSessionRouting` writes `thread_id: null` for `internal:`-prefixed thread ids so the synthetic id never leaks to the Telegram adapter as a reply thread.
+- **Per-class rotation env** is pushed at container spawn from `getConfig()` only for ops spawns (`CLAUDE_TRANSCRIPT_ROTATE_BYTES`/`_AGE_DAYS` + `NANOCLAW_CONVERSATIONS_DIR=/workspace/agent/conversations/ops`). Chat session keeps upstream defaults. All three new keys (`ops_transcript_rotate_bytes`, `ops_transcript_rotate_age_days`, `ops_mirror_to_chat`) live in defaults.json and surface in the dev inspector under a new `sessions` knob group (next-ops-spawn semantics, like `dev_model_tier`). The raw upstream env knobs stay out of the inspector: env-tier outranks preferences, so an inspector write could be silently masked.
+- **Starvation fix (owned here per §24.66):** `getPendingMessages` now filters consumed (acked) rows *before* applying the newest-N cap — the §24.66 outage shape (stale rows permanently hiding older due tasks) becomes structurally impossible, with the incident's exact geometry as a regression test.
+- **Dev-inspector sweep retarget:** `applyDevSweep`'s one-shot pipeline-scribe trigger targets the ops session explicitly (its old `findSessionByAgentGroup` lookup returns the *newest* active session — post-split, the wrong one).
+
+**Fork deviations introduced (track for `/update-nanoclaw`):** (1) `container/agent-runner/src/db/messages-in.ts` filter-before-limit; (2) `src/session-manager.ts` `writeSessionRouting` `internal:` thread-id handling; (3) `src/container-runner.ts` career-pilot bootstrap block removed + ops rotation env push. Registered in NANOCLAW_INTERNALS.md §11.
+
+**Definition of done.**
+1. Ops session created exactly once (idempotent across sweep ticks); the five series live in it; misplaced live copies in the chat session are retired. Unit-tested.
+2. Mirror writes the `trigger=0` copy into the chat session only for ops-sourced channel deliveries; toggle respected. Unit-tested.
+3. `getPendingMessages` regression test: >`maxMessagesPerPrompt` stale acked rows above an older unacked row — the old row is still returned.
+4. All tunables flow through `getConfig()`; the three keys are dev-inspector-writable with validation.
+5. Full suite + both tscs + format green; deployed to dev; box verification: next gated tick wakes the ops container and the gate round-trip works; daily briefing arrives next morning with its mirror row in the chat session and a reply in Telegram shows the chat agent has the briefing context.
+6. Success metric over the following days: Portkey per-request input tokens for machine ticks drop to the fresh-transcript floor and stay there post-rotation; owner-chat requests stop carrying machine-tick history.
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
