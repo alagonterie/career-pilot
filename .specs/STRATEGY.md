@@ -5265,6 +5265,48 @@ The first of the three §24.66-registered deep dives. **Problem:** the owner age
 5. Full suite + both tscs + format green; deployed to dev; box verification: next gated tick wakes the ops container and the gate round-trip works; daily briefing arrives next morning with its mirror row in the chat session and a reply in Telegram shows the chat agent has the briefing context.
 6. Success metric over the following days: Portkey per-request input tokens for machine ticks drop to the fresh-transcript floor and stay there post-rotation; owner-chat requests stop carrying machine-tick history.
 
+#### 24.68 Observability — request telemetry + health checks (Deep Dive 2, 2026-06-12)
+
+The second §24.66-registered deep dive. **Problem:** we have no durable record of outbound-request outcomes. The incident's 2-day Gmail-401 streak existed only in rotating log lines; host-side LLM calls book flat estimates (prose: $0.002/call) or discard response usage entirely (win-confidence; container rank-leads); failed requests record nothing anywhere; and triage took four probes of schema archaeology that one query should have answered. Portkey stays the human dashboard, but its free tier has no admin API and it only sees LLM traffic.
+
+**Decision register (owner, 2026-06-12 plan-mode conversation):**
+
+- **D-A — Integration-agnostic table.** Not LLM-only: `request_telemetry` carries `provider` + `surface` columns with LLM token/cost columns nullable, and every choke point *our code owns* writes a row — success AND failure (status code, truncated error). Owned: host Portkey fetches, Gmail/Calendar inject + probes, Drive client, job-board adapters; container rank-leads/SerpAPI/funnel-curator fetches. Not owned (no choke point): the gmail MCP server's calls, WebFetch/WebSearch internals — covered by live probes + OneCLI gateway logs instead.
+- **D-B — Health check = library + CLI + proactive alert.** `runHealthChecks()` is a host library; `scripts/health-check.ts` (`pnpm health`) is a thin CLI over it; a throttled host-sweep step alerts the owner's Telegram on NEW critical findings, deduped via a persisted `health_alert_state` table (one alert per finding until it clears; re-occurrence re-alerts). Alert delivery uses the contact-relay direct-adapter pattern — no agent wake, no LLM spend.
+- **D-C — Sandbox telemetry via handler branch.** `career_pilot.record_turn_telemetry` re-registers from owner-only to plain, branching internally: owner → public `turn` row (unchanged) + private telemetry row; sandbox → private telemetry row ONLY. The "sandbox never lands a public row" invariant moves from registration-level to handler-level, pinned by an integration test.
+- **D1 — cost unit `cost_microusd INTEGER`** (cost_cents floors sub-cent Haiku calls to 0; a typical prose call ≈ 950 µUSD). Computed at write time from the `llm_pricing_usd_per_mtok` defaults map; agent-turn rows convert SDK cost_cents ×10,000. `public_audit_trail.cost_cents` and its consumers untouched.
+- **D2 — recorder `src/request-telemetry.ts`** (top-level — choke points span core/portal/career-pilot); best-effort never-throws; honors the existing `telemetry_capture` kill switch (D7: it now gates both tables and joins the dev inspector under a new `telemetry` knob group).
+- **D4 — traffic_class** ∈ `host|ops|chat|sandbox`: `host` = host-issued; container-issued rows are classed HOST-side from the session in hand (`isOpsSession` → ops; non-owner group → sandbox; else chat). Container payloads never carry class/session/cost — trust boundary.
+- **D5 — shared host LLM helper `src/llm-fetch.ts`** replaces the three duplicated Portkey fetches (recruiter-sim prose, win-confidence, sanitizer pass 3) and reads response `usage` defensively (OpenAI and Anthropic shapes; raw usage kept in `details_json` during the observation window — the `/v1/chat/completions` usage shape for Anthropic models is unverified until box rollout).
+- **D8 — latency is wall-clock at the choke point** (`onecli run -- curl` paths include spawn/gateway overhead — accepted).
+
+**Schema (migration 131):** `request_telemetry(id, ts, provider, surface, traffic_class CHECK(...), session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_microusd, latency_ms, status_code, ok, error, trace_id, details_json)` with indexes on `(ts)`, `(provider, ok, ts)` (streaks), `(traffic_class, ts)` (the §24.67 context-floor metric, now self-serve instead of Portkey-dashboard-only), `(surface, ts)` (last-success). Plus `health_alert_state(finding_id PK, severity, first_alerted_at, last_seen_at, cleared_at)`. Retention: a host-sweep prune step (`request_telemetry_retention_days`, default 30).
+
+**Health-finding catalog (stable ids; every non-ok finding carries a concrete `next_step` command/query — the report IS the runbook):**
+
+| id | severity | detects |
+|---|---|---|
+| `stale-due-pending:<session>` | critical | due `pending` trigger=1 rows older than threshold — the §24.66 starvation signature |
+| `dead-series:<seriesId>` | critical | an ops series whose newest row completed with no pending successor, or successor overdue |
+| `orphan-responses:<session>` | warn | pending `cp-resp-*` rows above count threshold (TTL sweep broken) |
+| `outbound-backlog:<session>` | warn | due undelivered `messages_out` above threshold |
+| `auth-failure:<provider>` | critical | any 401/403 telemetry row in the last 24 h — the Gmail-401 detector |
+| `failure-streak:<provider>` | critical | newest N rows for a provider all failed |
+| `stale-surface:<surface>` | warn | a surface whose newest success is older than threshold |
+| `gmail-token` / `onecli-gateway` | critical | LIVE probe (`users/me/profile` via the gateway): exec failure ⇒ gateway down; 401/403 ⇒ token dead while OneCLI still reports "connected" |
+
+**Config keys (all four-tier, defaults.json):** `request_telemetry_retention_days` 30, `request_telemetry_prune_interval_sec` 3600, `llm_fetch_timeout_ms` 20000, `llm_pricing_usd_per_mtok` (per-model $/MTok map), `health_check_interval_sec` 3600, `health_stale_pending_threshold_sec` 900, `health_series_overdue_threshold_sec` 7200, `health_orphan_response_warn_count` 25, `health_outbound_backlog_warn_count` 10, `health_failure_streak_threshold` 3, `health_surface_stale_hours` 48. Inspector knobs (group `telemetry`): `telemetry_capture`, `request_telemetry_retention_days`, `health_check_interval_sec`, `health_failure_streak_threshold`.
+
+**Claude-session DX (owner-directed):** this infrastructure's primary user is often a Claude Code session debugging the system — so the same change updates root `CLAUDE.md` (a "Debugging & triage — start here" section: `pnpm health --json` first, `request_telemetry` as the first query target) and RECOVERY.md (a Triage section: finding→response table + canonical q.ts recipes over `request_telemetry`).
+
+**Definition of done.**
+1. Every owned choke point (prose, win-confidence, sanitizer pass 3, sim inject gmail/calendar, profile probe, greenhouse/lever adapters, drive client, rank-leads, serpapi-search, funnel-curator gmail/calendar, agent turns) writes success AND failure rows. Unit/integration-tested per site.
+2. A simulated 401 produces an `auth-failure` critical within one health interval and exactly ONE Telegram alert until cleared; re-occurrence after clearing re-alerts. Tested (dedupe, throttle, clear).
+3. `pnpm health` exits non-zero on critical, supports `--json` and `--no-live`; findings carry `next_step`.
+4. Agent-turn rows carry correct traffic_class for chat/ops/sandbox; sandbox writes NO public_audit_trail row; existing public consumers (portkey-analytics, /live) unchanged and green.
+5. Prune holds retention (TTL boundary tested); all tunables via `getConfig()`; knobs validated backend + frontend.
+6. Both suites + tscs + format green; box verification: real-usage shape confirmed on a prose row (or the tokens-null floor documented + the `/v1/messages` follow-up registered), class spot-checks (ops tick / chat / sandbox run), a forced gateway outage round-trips alert → silence → clear → re-alert, and CLAUDE.md/RECOVERY.md triage docs land with the code.
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
