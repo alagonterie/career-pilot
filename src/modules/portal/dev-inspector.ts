@@ -50,7 +50,7 @@ export function isDevEnv(): boolean {
 // ── the write allow-list + per-knob validation specs ─────────────────────────
 
 export type KnobType = 'boolean' | 'number' | 'cron' | 'enum';
-export type KnobGroup = 'sim' | 'pacing' | 'budget' | 'polling' | 'models' | 'sessions';
+export type KnobGroup = 'sim' | 'pacing' | 'budget' | 'polling' | 'models' | 'sessions' | 'telemetry';
 
 export interface KnobSpec {
   type: KnobType;
@@ -172,6 +172,40 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     group: 'sessions',
     label: 'Mirror ops output to chat',
     note: 'Owner-visible ops-session output (daily briefing, killer-match pings) is copied into the chat session as silent context so replies have their referent. Applies to the next delivery.',
+  },
+  // ── observability (§24.68) ──
+  telemetry_capture: {
+    type: 'boolean',
+    group: 'telemetry',
+    label: 'Telemetry capture',
+    note: 'Kill switch for BOTH the public per-turn rows (/live panels) and the private request_telemetry table. Applies to the next request.',
+  },
+  request_telemetry_retention_days: {
+    type: 'number',
+    group: 'telemetry',
+    label: 'Request-telemetry retention (days)',
+    min: 1,
+    max: 365,
+    integer: true,
+    note: 'Rows older than this are pruned by the host-sweep maintenance step.',
+  },
+  health_check_interval_sec: {
+    type: 'number',
+    group: 'telemetry',
+    label: 'Health-check interval (s)',
+    min: 60,
+    max: 86_400,
+    integer: true,
+    note: 'Cadence of the proactive host-side health run (new critical findings alert the owner Telegram once until cleared).',
+  },
+  health_failure_streak_threshold: {
+    type: 'number',
+    group: 'telemetry',
+    label: 'Failure-streak threshold',
+    min: 1,
+    max: 50,
+    integer: true,
+    note: 'A provider whose newest N requests ALL failed raises a critical finding.',
   },
   // ── dev model tier (§24.43) ──
   dev_model_tier: {
