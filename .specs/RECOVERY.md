@@ -10,6 +10,7 @@ You're not going to break this thing. The kill switches exist so you can stop it
 
 | Symptom | Procedure |
 |---|---|
+| Something seems broken and I don't know what | [§0 Triage — start here](#0-triage--start-here) |
 | I want to silence the bot for a few hours | [§1 Soft pause](#1-soft-pause-pause--resume) |
 | Cost is spiking / unexpected behavior / traffic surge | [§2 Emergency halt](#2-emergency-halt-halt--diagnose--resume) |
 | I think something's compromised / agent did something bad | [§3 Killswitch + SSH recovery](#3-killswitch--ssh-recovery) |
@@ -21,6 +22,66 @@ You're not going to break this thing. The kill switches exist so you can stop it
 | Cloudflare Tunnel disconnected | [§9 Cloudflare Tunnel recovery](#9-cloudflare-tunnel-recovery) |
 | DB feels corrupt | [§10 DB restore from backup](#10-db-restore-from-backup) |
 | I edited an application's obfuscation directly in SQL / a public name is leaking in the audit trail | [§11 Resanitize an application's public audit trail](#11-resanitize-an-applications-public-audit-trail) |
+
+---
+
+## 0. Triage — start here
+
+**First move for any "something seems broken" report: run the health check.** It covers every failure shape from the 2026-06 incident class in one pass, and every non-ok finding prints a concrete `next_step` — the report is the runbook.
+
+```bash
+# On the box (/opt/career-pilot-dev as the service user, env loaded):
+pnpm health              # human-readable; exit 0 = no criticals, 2 = critical(s)
+pnpm health --json       # machine-readable (for Claude sessions / tooling)
+pnpm health --no-live    # skip the live Gmail/gateway probe
+
+# One-liner from a dev machine (Tailscale):
+tailscale ssh root@career-pilot-dev "cd /opt/career-pilot-dev && sudo -u career-pilot bash -c 'set -a; . ./.env; set +a; pnpm health --json'"
+```
+
+The same checks also run host-side on a timer (`health_check_interval_sec`, default hourly) and ping the owner's Telegram **once per new critical finding** until it clears (dedupe ledger: `health_alert_state`).
+
+### Finding catalog — what each id means and what to do
+
+| Finding id | Severity | Meaning | Response |
+|---|---|---|---|
+| `stale-due-pending:<session>` | critical | Due wake-able rows stuck `pending` — queue starvation; that session's work (digests, tasks) silently stopped | Inspect the queue with the printed q.ts query; check host-sweep logs for that session; suspect the §24.66 LIMIT-window shape if rows sit below newer clutter |
+| `dead-series:<id>` | critical | A recurring machine series has no scheduled next occurrence (or it's overdue) — the recurrence chain died | The host-sweep ops bootstrap self-heals missing series within ~10 min; if it persists, check `ops series bootstrapped` log lines and the ops session's inbound.db |
+| `orphan-responses:<session>` | warn | `cp-resp-*` rows piling up — the orphan TTL sweep isn't keeping the prompt window clear | Check logs for `orphan response sweep failed`; verify `action_response_orphan_ttl_sec` |
+| `outbound-backlog:<session>` | warn | Due outbound messages not delivering | Check logs for `Message delivery failed`; channel adapter / Telegram trouble |
+| `auth-failure:<provider>` | critical | 401/403s recorded in the last 24 h | For gmail/calendar: reconnect in the OneCLI UI; publish the GCP consent screen to production to stop the 7-day expiry. Others: query `request_telemetry` for the error detail |
+| `failure-streak:<provider>` | critical | The newest N requests to a provider ALL failed | Provider outage, dead credential, or quota — the printed query shows the errors |
+| `stale-surface:<surface>` | warn | A call site is active but hasn't succeeded inside the window | Query that surface's recent rows; usually a softer echo of one of the above |
+| `gmail-token` | critical | LIVE probe says the token is dead — even if OneCLI shows "connected" | Reconnect in OneCLI UI; publish the consent screen |
+| `onecli-gateway` | critical | `onecli run` cannot execute — every gateway-injected credential path is down | `systemctl status onecli` / `onecli start` on the box |
+
+### Canonical telemetry queries (`request_telemetry`, central DB)
+
+Run from the repo root: `pnpm exec tsx scripts/q.ts data/v2.db "<sql>"`.
+
+```sql
+-- Per-provider success/failure counts, last 24h ("is X failing, how often?")
+SELECT provider, ok, COUNT(*) n FROM request_telemetry
+ WHERE ts >= datetime('now', '-1 day') GROUP BY provider, ok ORDER BY provider;
+
+-- Recent auth failures with detail
+SELECT ts, provider, surface, status_code, error FROM request_telemetry
+ WHERE status_code IN (401, 403) ORDER BY ts DESC LIMIT 20;
+
+-- Last success per surface ("how long has X been broken?")
+SELECT surface, MAX(ts) last_any, MAX(CASE WHEN ok = 1 THEN ts END) last_ok
+  FROM request_telemetry GROUP BY surface ORDER BY surface;
+
+-- Context-floor trend per traffic class (the §24.67 success metric, self-serve)
+SELECT traffic_class, date(ts) day, COUNT(*) turns, CAST(AVG(input_tokens) AS INT) avg_input
+  FROM request_telemetry WHERE surface = 'agent-turn'
+ GROUP BY traffic_class, day ORDER BY day DESC, traffic_class;
+
+-- Estimated spend by surface, last 7 days (microUSD → USD)
+SELECT surface, ROUND(SUM(cost_microusd) / 1e6, 4) usd, COUNT(*) n
+  FROM request_telemetry WHERE ts >= datetime('now', '-7 day') AND cost_microusd IS NOT NULL
+ GROUP BY surface ORDER BY usd DESC;
+```
 
 ---
 
