@@ -414,6 +414,14 @@ async function deliverMessage(
     fileCount: files?.length,
   });
 
+  // Owner-visible output from the career-pilot ops session also lands in the
+  // chat session as accumulated context — trigger=0, no wake (STRATEGY.md
+  // §24.67 D2). No-op for every other session; never throws.
+  // MODULE-HOOK:career-pilot-ops-mirror:start
+  const { mirrorOpsDeliveryToChat } = await import('./modules/career-pilot/ops-session.js');
+  mirrorOpsDeliveryToChat(session, msg);
+  // MODULE-HOOK:career-pilot-ops-mirror:end
+
   clearOutbox(session.agent_group_id, session.id, msg.id);
 
   return platformMsgId;

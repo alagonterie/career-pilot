@@ -43,6 +43,16 @@ function isPathInside(parent: string, child: string): boolean {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
+/**
+ * Reserved prefix for host-created synthetic session thread ids (e.g. the
+ * career-pilot ops session). These ids exist only to key a distinct session
+ * row — they are NOT platform threads, so writeSessionRouting nulls them in
+ * the default reply routing (the chat-sdk bridge passes thread ids verbatim
+ * to adapters, and "internal:..." is meaningless to Telegram et al.).
+ * Inbound platform thread ids can never collide: no adapter emits this prefix.
+ */
+export const INTERNAL_THREAD_PREFIX = 'internal:';
+
 /** Root directory for all session data. */
 export function sessionsBaseDir(): string {
   return path.join(DATA_DIR, 'v2-sessions');
@@ -170,17 +180,21 @@ export function writeSessionRouting(agentGroupId: string, sessionId: string): vo
     }
   }
 
+  // Synthetic host-created thread ids are session keys, not platform threads —
+  // never hand them to a channel adapter as a reply target.
+  const routingThreadId = session.thread_id?.startsWith(INTERNAL_THREAD_PREFIX) ? null : session.thread_id;
+
   const db = openInboundDb(agentGroupId, sessionId);
   try {
     upsertSessionRouting(db, {
       channel_type: channelType,
       platform_id: platformId,
-      thread_id: session.thread_id,
+      thread_id: routingThreadId,
     });
   } finally {
     db.close();
   }
-  log.debug('Session routing written', { sessionId, channelType, platformId, threadId: session.thread_id });
+  log.debug('Session routing written', { sessionId, channelType, platformId, threadId: routingThreadId });
 }
 
 /**

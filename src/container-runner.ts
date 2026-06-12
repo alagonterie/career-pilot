@@ -27,17 +27,11 @@ import { composeGroupClaudeMd, composeSubagentDefinitions } from './claude-md-co
 import { getAgentGroup } from './db/agent-groups.js';
 import { getDb, hasTable } from './db/connection.js';
 import { initGroupFilesystem } from './group-init.js';
-import { ensureCloseDetectionTask } from './modules/career-pilot/close-detection-bootstrap.js';
-import { ensureDailyBriefingTask } from './modules/career-pilot/daily-briefing-bootstrap.js';
-import { ensureFunnelCuratorTask } from './modules/career-pilot/funnel-curator-bootstrap.js';
-import { ensureJobScrapeTask } from './modules/career-pilot/scrape-jobs-bootstrap.js';
-import { ensureKillerMatchTask } from './modules/career-pilot/killer-match-bootstrap.js';
 import { renderPersonaForGroup, renderSandboxCandidateForGroup } from './modules/career-pilot/render-persona.js';
 import { getPauseState, type PauseState } from './modules/portal/system-modes.js';
 import { stopTypingRefresh } from './modules/typing/index.js';
 import { log } from './log.js';
 import { validateAdditionalMounts } from './modules/mount-security/index.js';
-import { openInboundDb } from './session-manager.js';
 // Provider host-side config barrel — each provider that needs host-side
 // container setup self-registers on import.
 import './providers/index.js';
@@ -153,7 +147,15 @@ async function spawnContainer(session: Session): Promise<void> {
   // Materialize container.json from DB — writes fresh file and returns
   // the config object, threaded through provider resolution, buildMounts,
   // and buildContainerArgs so we don't re-read.
-  const containerConfig = materializeContainerJson(agentGroup.id);
+  let containerConfig = materializeContainerJson(agentGroup.id);
+
+  // Per-class transcript rotation (STRATEGY.md §24.67): the career-pilot ops
+  // session spawns with aggressive rotation env; every other session passes
+  // through unchanged. Never throws.
+  // MODULE-HOOK:career-pilot-ops-rotation-env:start
+  const { applyOpsSpawnEnv } = await import('./modules/career-pilot/ops-session.js');
+  containerConfig = applyOpsSpawnEnv(containerConfig, session, agentGroup);
+  // MODULE-HOOK:career-pilot-ops-rotation-env:end
 
   // Resolve the effective provider + any host-side contribution it declares
   // (extra mounts, env passthrough). Computed once and threaded through both
@@ -294,63 +296,10 @@ function buildMounts(
   // for every other group on the host.
   if (agentGroup.folder === 'career-pilot') {
     renderPersonaForGroup(agentGroup);
-
-    // Heartbeat bootstraps (Phase 3.1 §24.6 + §24.7): idempotently
-    // schedule the recurring tasks on each spawn. Uses NanoClaw's
-    // existing schedule_task/messages_in machinery — see the
-    // `*-bootstrap.ts` siblings and the host-sweep recurrence loop at
-    // `src/host-sweep.ts`. Failures here are logged but do not block
-    // the spawn — the agent can still operate, and the next spawn
-    // will retry.
-    try {
-      const inDb = openInboundDb(agentGroup.id, session.id);
-      try {
-        const briefingRes = ensureDailyBriefingTask(getDb(), inDb, agentGroup, session);
-        if (briefingRes.action === 'inserted') {
-          log.info('Heartbeat bootstrap: daily-briefing task scheduled', {
-            sessionId: session.id,
-            recurrence: briefingRes.recurrence,
-            nextFireAt: briefingRes.nextFireAt,
-          });
-        }
-        const killerRes = ensureKillerMatchTask(getDb(), inDb, agentGroup, session);
-        if (killerRes.action === 'inserted') {
-          log.info('Heartbeat bootstrap: killer-match task scheduled', {
-            sessionId: session.id,
-            recurrence: killerRes.recurrence,
-            nextFireAt: killerRes.nextFireAt,
-          });
-        }
-        const curatorRes = ensureFunnelCuratorTask(getDb(), inDb, agentGroup, session);
-        if (curatorRes.action === 'inserted') {
-          log.info('Heartbeat bootstrap: funnel-curator task scheduled', {
-            sessionId: session.id,
-            recurrence: curatorRes.recurrence,
-            nextFireAt: curatorRes.nextFireAt,
-          });
-        }
-        const closeDetectionRes = ensureCloseDetectionTask(getDb(), inDb, agentGroup, session);
-        if (closeDetectionRes.action === 'inserted') {
-          log.info('Heartbeat bootstrap: close-detection task scheduled', {
-            sessionId: session.id,
-            recurrence: closeDetectionRes.recurrence,
-            nextFireAt: closeDetectionRes.nextFireAt,
-          });
-        }
-        const jobScrapeRes = ensureJobScrapeTask(getDb(), inDb, agentGroup, session);
-        if (jobScrapeRes.action === 'inserted') {
-          log.info('Heartbeat bootstrap: job-scrape task scheduled', {
-            sessionId: session.id,
-            recurrence: jobScrapeRes.recurrence,
-            nextFireAt: jobScrapeRes.nextFireAt,
-          });
-        }
-      } finally {
-        inDb.close();
-      }
-    } catch (err) {
-      log.warn('Heartbeat bootstrap failed (non-fatal)', { sessionId: session.id, err });
-    }
+    // The recurring-series bootstraps that used to run here moved to the
+    // host-sweep MODULE-HOOK `career-pilot-ops-bootstrap` (STRATEGY.md
+    // §24.67): the series belong to the dedicated ops session, not to
+    // whichever session happens to be spawning.
   } else if (agentGroup.folder === 'career-pilot-sandbox') {
     // §24.54: the public simulator gets the resume-grade candidate subset
     // (no comp floor, no quiet hours) so tailor-resume/draft-outreach have

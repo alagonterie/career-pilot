@@ -152,6 +152,16 @@ async function sweep(): Promise<void> {
   if (!running) return;
 
   try {
+    // 0. Keep the career-pilot ops-session topology in place (STRATEGY.md
+    // §24.67): the dedicated machine-traffic session exists, the five
+    // recurring series live in it, misplaced live copies elsewhere are
+    // retired. Internally throttled + idempotent; never throws. Before the
+    // session loop so a session created here is swept from its first tick.
+    // MODULE-HOOK:career-pilot-ops-bootstrap:start
+    const { ensureOpsTopology } = await import('./modules/career-pilot/ops-session.js');
+    ensureOpsTopology();
+    // MODULE-HOOK:career-pilot-ops-bootstrap:end
+
     const sessions = getActiveSessions();
     for (const session of sessions) {
       await sweepSession(session);
