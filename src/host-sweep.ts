@@ -190,6 +190,15 @@ async function sweepSession(session: Session): Promise<void> {
       syncProcessingAcks(inDb, outDb);
     }
 
+    // 1b. Expire orphaned action-response rows (cp-resp-* past their consumer's
+    // polling deadline) so they can't crowd real work out of the poll loop's
+    // newest-N prompt window (STRATEGY.md §24.66). Before the due-count below
+    // so a freshly expired pile stops masking due tasks within one tick.
+    // MODULE-HOOK:career-pilot-orphan-responses:start
+    const { expireOrphanedActionResponses } = await import('./modules/career-pilot/orphan-responses.js');
+    expireOrphanedActionResponses(inDb, session);
+    // MODULE-HOOK:career-pilot-orphan-responses:end
+
     // 2. Wake a container if work is due and nothing is running. Ordered
     // before the crashed-container cleanup so a fresh container gets a chance
     // to clean its own orphan processing_ack rows on startup (see

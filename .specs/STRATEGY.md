@@ -5209,9 +5209,27 @@ DoD (F3 additions): the `build-interview-kit` invocation prompt carries a `## Jo
 3. Deploy green; box backfill outcome surfaced; live checks: sealed skeleton on an obfuscated app, full kit after a public flip, re-sealed after flipping back.
 4. Owner phone pass on the dossier page — the final gate.
 
----
+#### 24.66 Inbound-queue starvation incident + action-response orphan sweep (2026-06-12)
 
-## Part VI: Open questions
+**Incident (owner-reported: "no daily digest the last couple mornings").** Triage found **three independent failures** that presented as one:
+
+1. **Queue starvation killed the digests (the actual outage).** The container's pending-message query takes the newest `maxMessagesPerPrompt` (10) due rows by `ORDER BY seq DESC LIMIT N` *before* any consumption filtering. Twenty orphaned `career_pilot_response` rows (seqs 490–1096) sat permanently above the June-10 `daily-briefing` (seq 480) and `close-detection` (seq 440) task rows — so those two tasks never entered the prompt window, never completed, and `handleRecurrence` (which fans out from *completed* rows) never scheduled the next occurrence. The series silently died while newer tasks (killer-match, job-scrape — always higher seq than the orphan pile) kept working. **Standing lesson: in this queue, anything pending below ~N stale rows is invisible forever — stale `pending` rows are not inert clutter, they are an outage in progress.**
+2. **The orphans are structural, not incidental.** The §6.1 action round-trip gives the container's `sendAction` a 10 s response-polling deadline; the host's response row (`cp-resp-<requestId>`, `trigger:0`) landing after that deadline is addressed to nobody — nothing ever consumes or completes it. ~20 accumulated over 4 days (≈2–5/day); any cleanup-free design re-clogs the window within days.
+3. **Separately: Gmail OAuth refresh-token expiry (the 401s).** `recruiter-sim` inject + `pipeline-scribe` deltas started failing mid-day June 11 — exactly 7 days after the OneCLI Gmail connect (2026-06-04), the GCP **Testing-status consent screen's 7-day refresh-token lifetime**. OneCLI's `apps get` kept reporting `connected` (stored state, not token validity). Owner reconnected 2026-06-12 (verified by a live `users/me/profile` 200 through the gateway). **Open owner follow-up: publish the GCP OAuth consent screen to "In production"** or this recurs weekly. Until then, treat any future "empty deltas / inject failed" as first-suspect token expiry.
+
+**Remediation (decided 2026-06-12).**
+
+- **One-off (applied to the dev box):** orphaned `cp-resp` rows older than 10 minutes marked `completed`; the two starved tasks became visible and the recurrence chains resume.
+- **Code fix — host-side orphan sweep:** a career-pilot MODULE-HOOK in `sweepSession` completes `pending` `cp-resp-*` rows older than `action_response_orphan_ttl_sec` (defaults.json, **300 s** — generous vs. the 10 s consumer deadline, so a live `sendAction` poll can never lose its response to the sweep). Host-side because the host writes inbound.db (the one-writer-per-file invariant); best-effort, never throws, same discipline as every sweep step.
+- **Not fixed here (recorded):** the `LIMIT`-before-filter starvation shape is upstream behavior — patching the query is upstream-deviation territory and belongs to the session-topology deep dive (below), which may eliminate the long-queue conditions instead.
+
+**Registered follow-ups (owner, 2026-06-12 — the three deep dives, in order):** (1) **session topology** — the owner session is one infinite `shared`-mode transcript (835 KB + subagent transcripts after 5 days, no rotation overrides → upstream 12 MB/14 d defaults) that every scheduled tick cold-resumes; design which traffic classes (owner conversation vs. machine-generated heartbeats/digests) belong in which sessions + rotation tuning; success metric = context tokens per request class in Portkey. (2) **observability** — own per-request LLM telemetry at our choke points in our own DB (Portkey stays the human dashboard; its free tier has no admin API); plus an on-box health-check script (this incident was four probes of schema archaeology that one "stale pending rows + auth-failure streak" query would have caught). (3) **portal enhancements** consuming that data model. Each gets its own design conversation + spec section before code.
+
+**Definition of done (the orphan-sweep fix).**
+1. Sweep completes only expired unconsumed `cp-resp` rows (age > TTL, status `pending`); a fresh row inside the TTL is untouched; non-`cp-resp` system rows untouched. Unit-tested including the TTL boundary.
+2. `action_response_orphan_ttl_sec` flows through `getConfig()` (no magic numbers).
+3. Host suite + tsc + format green; deployed to the dev box; the orphan count stays at zero across a multi-day observation window (the §24.40 sim keeps generating round-trips).
+4. Daily briefing observed arriving again on consecutive mornings (the original symptom, closed by the one-off + this fix keeping the window clear).
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
