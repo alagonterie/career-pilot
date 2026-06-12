@@ -92,6 +92,7 @@
     "portal_sse_keepalive_ms": 15000,
     "portal_telemetry_cache_ms": 30000,
     "portal_architecture_cache_ms": 5000,
+    "action_response_orphan_ttl_sec": 300,
     "telemetry_capture": true,
     "simulator_enabled": true,
     "simulator_max_turns": 30,
