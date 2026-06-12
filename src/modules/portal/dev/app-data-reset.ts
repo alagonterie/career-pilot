@@ -77,15 +77,21 @@ export function wipeTables(db: Database.Database, tables: readonly string[]): Re
  * Remove the contents of `<dataDir>/v2-sessions/*` — conversation transcripts and
  * the per-session inbound DBs. The directory stays; only its entries go (the next
  * session start recreates its own dir + re-bootstraps the recurring crons).
- * Returns the number of entries removed. Tolerates absence.
+ * Returns the number of entries removed. Tolerates absence, and tolerates a
+ * locked entry (an open DB handle — EBUSY on Windows): best-effort, skip and
+ * continue rather than failing the whole reset.
  */
 export function clearSessionTranscripts(dataDir: string): number {
   const sessionsDir = path.join(dataDir, 'v2-sessions');
   if (!fs.existsSync(sessionsDir)) return 0;
   let removed = 0;
   for (const entry of fs.readdirSync(sessionsDir)) {
-    removed++;
-    fs.rmSync(path.join(sessionsDir, entry), { recursive: true, force: true });
+    try {
+      fs.rmSync(path.join(sessionsDir, entry), { recursive: true, force: true });
+      removed++;
+    } catch {
+      // Locked by an open handle — leave it; the reset is best-effort.
+    }
   }
   return removed;
 }

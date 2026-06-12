@@ -29,6 +29,7 @@ import {
   handleListApplications,
   handleRecordFunnelEvent,
   handleRecordProgress,
+  handleRecordRequestTelemetry,
   handleRecordTurnTelemetry,
   handleSetPreference,
   handleUpdateApplication,
@@ -920,9 +921,16 @@ describe('proactive trace-capture (§24.24)', () => {
   });
 });
 
-// ── record_turn_telemetry (§24.34) ─────────────────────────────────────────
+// ── record_turn_telemetry (§24.34; §24.68 dual-write + sandbox branch) ──────
 
 describe('handleRecordTurnTelemetry', () => {
+  // Since §24.68 the handler classes traffic from the session's agent group,
+  // so these tests seed the groups and speak as the owner unless exercising
+  // the sandbox branch.
+  beforeEach(() => {
+    seedAgentGroups();
+  });
+
   it('writes a category=turn row with the five telemetry columns + proactive from the wake', async () => {
     seedWake('task'); // proactive trigger
     const c = actionContent('career_pilot.record_turn_telemetry', {
@@ -940,7 +948,7 @@ describe('handleRecordTurnTelemetry', () => {
         model_usage: { 'claude-opus-4-8': { input: 100, output: 50, cache_read: 900, cache_creation: 200 } },
       },
     });
-    await handleRecordTurnTelemetry(c, FAKE_SESSION, inDb);
+    await handleRecordTurnTelemetry(c, OWNER_SESSION, inDb);
     expect(readResponse(c.requestId).frame.ok).toBe(true);
 
     const row = getDb()
@@ -984,7 +992,7 @@ describe('handleRecordTurnTelemetry', () => {
       record_calls: 0,
       details: { num_turns: 1, duration_api_ms: 10, total_cost_usd: 0.001, model_usage: {} },
     });
-    await handleRecordTurnTelemetry(c, FAKE_SESSION, inDb);
+    await handleRecordTurnTelemetry(c, OWNER_SESSION, inDb);
     expect(readResponse(c.requestId).frame.ok).toBe(true);
 
     const row = getDb().prepare(`SELECT cache_read_pct FROM public_audit_trail WHERE category = 'turn'`).get() as {
@@ -1007,7 +1015,7 @@ describe('handleRecordTurnTelemetry', () => {
       latency_ms: 50,
       record_calls: 1,
     });
-    await handleRecordTurnTelemetry(c, FAKE_SESSION, inDb);
+    await handleRecordTurnTelemetry(c, OWNER_SESSION, inDb);
 
     const resp = readResponse(c.requestId);
     expect(resp.frame.ok).toBe(true);
@@ -1020,7 +1028,7 @@ describe('handleRecordTurnTelemetry', () => {
 
   it('is defensive — missing/garbage fields land as NULL columns, cache_hit defaults 0', async () => {
     const c = actionContent('career_pilot.record_turn_telemetry', { record_calls: 1 });
-    await handleRecordTurnTelemetry(c, FAKE_SESSION, inDb);
+    await handleRecordTurnTelemetry(c, OWNER_SESSION, inDb);
     expect(readResponse(c.requestId).frame.ok).toBe(true);
 
     const row = getDb()
@@ -1039,6 +1047,225 @@ describe('handleRecordTurnTelemetry', () => {
     expect(row.cost_cents).toBeNull();
     expect(row.cache_hit).toBe(0);
     expect(row.latency_ms).toBeNull();
+  });
+
+  // ── §24.68 dual-write + traffic classes ──────────────────────────────────
+
+  interface RtRow {
+    provider: string;
+    surface: string;
+    traffic_class: string;
+    session_id: string | null;
+    model: string | null;
+    input_tokens: number | null;
+    output_tokens: number | null;
+    cache_read_tokens: number | null;
+    cache_creation_tokens: number | null;
+    cost_microusd: number | null;
+    ok: number;
+    status_code: number | null;
+  }
+
+  function rtRows(): RtRow[] {
+    return getDb().prepare('SELECT * FROM request_telemetry').all() as RtRow[];
+  }
+
+  it('dual-writes a request_telemetry row classed chat for an owner chat turn (cost cents → microUSD)', async () => {
+    const c = actionContent('career_pilot.record_turn_telemetry', {
+      model_used: 'claude-opus-4-8',
+      tokens: 17000,
+      cost_cents: 4,
+      cache_hit: 1,
+      latency_ms: 1234,
+      record_calls: 2,
+      details: {
+        num_turns: 3,
+        model_usage: { 'claude-opus-4-8': { input: 100, output: 50, cache_read: 900, cache_creation: 200 } },
+      },
+    });
+    await handleRecordTurnTelemetry(c, OWNER_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+
+    const rows = rtRows();
+    expect(rows).toHaveLength(1);
+    const r = rows[0];
+    expect(r.provider).toBe('portkey');
+    expect(r.surface).toBe('agent-turn');
+    expect(r.traffic_class).toBe('chat');
+    expect(r.session_id).toBe(OWNER_SESSION.id);
+    expect(r.model).toBe('claude-opus-4-8');
+    expect(r.input_tokens).toBe(100); // summed from model_usage
+    expect(r.output_tokens).toBe(50);
+    expect(r.cache_read_tokens).toBe(900);
+    expect(r.cache_creation_tokens).toBe(200);
+    expect(r.cost_microusd).toBe(40_000); // 4 cents × 10,000
+    expect(r.ok).toBe(1);
+  });
+
+  it('classes the owner ops session as ops', async () => {
+    const opsSession: Session = { ...OWNER_SESSION, id: 'sess-ops', thread_id: 'internal:career-pilot-ops' };
+    const c = actionContent('career_pilot.record_turn_telemetry', {
+      model_used: 'claude-opus-4-8',
+      tokens: 100,
+      cost_cents: 1,
+      cache_hit: 0,
+      latency_ms: 50,
+      record_calls: 0,
+    });
+    await handleRecordTurnTelemetry(c, opsSession, inDb);
+    expect(rtRows()[0].traffic_class).toBe('ops');
+    // The ops turn still lands the public row — it's owner traffic.
+    const n = (
+      getDb().prepare(`SELECT COUNT(*) AS n FROM public_audit_trail WHERE category = 'turn'`).get() as { n: number }
+    ).n;
+    expect(n).toBe(1);
+  });
+
+  it('sandbox branch (§24.68 D-C): private telemetry row only, NEVER a public_audit_trail row', async () => {
+    const c = actionContent('career_pilot.record_turn_telemetry', {
+      model_used: 'claude-haiku-4-5',
+      tokens: 5000,
+      cost_cents: 2,
+      cache_hit: 0,
+      latency_ms: 900,
+      record_calls: 0,
+      details: { num_turns: 2, model_usage: { 'claude-haiku-4-5': { input: 4000, output: 1000 } } },
+    });
+    await handleRecordTurnTelemetry(c, SANDBOX_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+
+    const rows = rtRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].traffic_class).toBe('sandbox');
+    expect(rows[0].session_id).toBe(SANDBOX_SESSION.id);
+    // The load-bearing invariant: no public row for a sandbox emission.
+    const n = (
+      getDb().prepare(`SELECT COUNT(*) AS n FROM public_audit_trail WHERE category = 'turn'`).get() as { n: number }
+    ).n;
+    expect(n).toBe(0);
+  });
+
+  it('kill switch suppresses BOTH the public row and the request_telemetry row', async () => {
+    getDb()
+      .prepare(
+        `INSERT INTO preferences (key, value, updated_at) VALUES ('telemetry_capture', 'false', datetime('now'))`,
+      )
+      .run();
+    const c = actionContent('career_pilot.record_turn_telemetry', {
+      model_used: 'claude-opus-4-8',
+      tokens: 100,
+      cost_cents: 1,
+      cache_hit: 0,
+      latency_ms: 50,
+      record_calls: 0,
+    });
+    await handleRecordTurnTelemetry(c, OWNER_SESSION, inDb);
+    expect(rtRows()).toHaveLength(0);
+    const n = (
+      getDb().prepare(`SELECT COUNT(*) AS n FROM public_audit_trail WHERE category = 'turn'`).get() as { n: number }
+    ).n;
+    expect(n).toBe(0);
+  });
+});
+
+// ── record_request_telemetry (§24.68) ───────────────────────────────────────
+
+describe('handleRecordRequestTelemetry', () => {
+  beforeEach(() => {
+    seedAgentGroups();
+  });
+
+  interface RtRow {
+    provider: string;
+    surface: string;
+    traffic_class: string;
+    session_id: string | null;
+    model: string | null;
+    input_tokens: number | null;
+    cost_microusd: number | null;
+    ok: number;
+    status_code: number | null;
+    error: string | null;
+  }
+
+  function rtRows(): RtRow[] {
+    return getDb().prepare('SELECT * FROM request_telemetry').all() as RtRow[];
+  }
+
+  it('lands a container report with host-derived class, session and priced cost', async () => {
+    const c = actionContent('career_pilot.record_request_telemetry', {
+      provider: 'portkey',
+      surface: 'rank-leads',
+      ok: true,
+      latency_ms: 800,
+      status_code: 200,
+      model: 'claude-haiku-4-5',
+      input_tokens: 1500,
+      output_tokens: 100,
+    });
+    await handleRecordRequestTelemetry(c, OWNER_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+
+    const r = rtRows()[0];
+    expect(r.provider).toBe('portkey');
+    expect(r.surface).toBe('rank-leads');
+    expect(r.traffic_class).toBe('chat'); // derived host-side, not from payload
+    expect(r.session_id).toBe(OWNER_SESSION.id);
+    expect(r.input_tokens).toBe(1500);
+    // 1500 × $1/MTok + 100 × $5/MTok on Haiku = 2000 µUSD — priced HERE, never by the container.
+    expect(r.cost_microusd).toBe(2000);
+  });
+
+  it('lands a sandbox failure report classed sandbox (plain registration is safe by construction)', async () => {
+    const c = actionContent('career_pilot.record_request_telemetry', {
+      provider: 'serpapi',
+      surface: 'serpapi-search',
+      ok: false,
+      latency_ms: 120,
+      status_code: 429,
+      error: '429 Too Many Requests',
+    });
+    await handleRecordRequestTelemetry(c, SANDBOX_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+
+    const r = rtRows()[0];
+    expect(r.traffic_class).toBe('sandbox');
+    expect(r.ok).toBe(0);
+    expect(r.status_code).toBe(429);
+    expect(r.error).toContain('429');
+  });
+
+  it('rejects non-slug provider/surface with BAD_ARGS and writes nothing', async () => {
+    const c = actionContent('career_pilot.record_request_telemetry', {
+      provider: 'Bad Provider!',
+      surface: 'x',
+      ok: true,
+      latency_ms: 1,
+    });
+    await handleRecordRequestTelemetry(c, OWNER_SESSION, inDb);
+    const resp = readResponse(c.requestId);
+    expect(resp.frame.ok).toBe(false);
+    if (!resp.frame.ok) expect(resp.frame.error.code).toBe('BAD_ARGS');
+    expect(rtRows()).toHaveLength(0);
+  });
+
+  it('acks {skipped} under the kill switch without writing', async () => {
+    getDb()
+      .prepare(
+        `INSERT INTO preferences (key, value, updated_at) VALUES ('telemetry_capture', 'false', datetime('now'))`,
+      )
+      .run();
+    const c = actionContent('career_pilot.record_request_telemetry', {
+      provider: 'gmail',
+      surface: 'funnel-curator-gmail',
+      ok: true,
+      latency_ms: 10,
+    });
+    await handleRecordRequestTelemetry(c, OWNER_SESSION, inDb);
+    const resp = readResponse(c.requestId);
+    expect(resp.frame.ok).toBe(true);
+    if (resp.frame.ok) expect((resp.frame.data as { skipped?: boolean }).skipped).toBe(true);
+    expect(rtRows()).toHaveLength(0);
   });
 });
 

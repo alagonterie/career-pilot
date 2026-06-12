@@ -21,8 +21,25 @@ import path from 'path';
 import { promisify } from 'util';
 
 import { log } from '../../log.js';
+import { recordRequestTelemetry } from '../../request-telemetry.js';
 
 const execFileAsync = promisify(execFile);
+
+const DRIVE_TELEMETRY_SURFACE = 'interview-kit-drive';
+
+/** One request_telemetry row per gateway exchange (§24.68). */
+function recordDriveTelemetry(t0: number, status: number | null, error?: string): void {
+  const ok = status !== null && status >= 200 && status < 300;
+  recordRequestTelemetry({
+    provider: 'drive',
+    surface: DRIVE_TELEMETRY_SURFACE,
+    trafficClass: 'host',
+    ok,
+    latencyMs: Date.now() - t0,
+    statusCode: status,
+    error: ok ? null : (error ?? `HTTP ${status}`),
+  });
+}
 
 const DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files';
 const DRIVE_UPLOAD_BASE = 'https://www.googleapis.com/upload/drive/v3/files';
@@ -70,8 +87,17 @@ async function gatewayJson(method: string, url: string, jsonBody?: unknown): Pro
   if (jsonBody !== undefined) {
     args.push('-H', 'Content-Type: application/json', '--data-binary', JSON.stringify(jsonBody));
   }
-  const { stdout } = await execFileAsync(onecliBin(), args, { maxBuffer: 16 * 1024 * 1024, timeout: 60_000 });
-  return parseCurlStdout(stdout);
+  const t0 = Date.now();
+  let stdout: string;
+  try {
+    ({ stdout } = await execFileAsync(onecliBin(), args, { maxBuffer: 16 * 1024 * 1024, timeout: 60_000 }));
+  } catch (err) {
+    recordDriveTelemetry(t0, null, err instanceof Error ? err.message : String(err));
+    throw err;
+  }
+  const result = parseCurlStdout(stdout);
+  recordDriveTelemetry(t0, result.status || null, result.raw.slice(0, 200));
+  return result;
 }
 
 /**
@@ -99,8 +125,17 @@ async function gatewayMultipart(method: string, url: string, body: string, bound
       `@${tmp}`,
       url,
     ];
-    const { stdout } = await execFileAsync(onecliBin(), args, { maxBuffer: 16 * 1024 * 1024, timeout: 60_000 });
-    return parseCurlStdout(stdout);
+    const t0 = Date.now();
+    let stdout: string;
+    try {
+      ({ stdout } = await execFileAsync(onecliBin(), args, { maxBuffer: 16 * 1024 * 1024, timeout: 60_000 }));
+    } catch (err) {
+      recordDriveTelemetry(t0, null, err instanceof Error ? err.message : String(err));
+      throw err;
+    }
+    const result = parseCurlStdout(stdout);
+    recordDriveTelemetry(t0, result.status || null, result.raw.slice(0, 200));
+    return result;
   } finally {
     try {
       fs.unlinkSync(tmp);

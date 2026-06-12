@@ -22,6 +22,7 @@ import path from 'path';
 import { promisify } from 'util';
 
 import { log } from '../../../log.js';
+import { recordRequestTelemetry } from '../../../request-telemetry.js';
 import { assertSelfOnly } from './allow-list.js';
 import type { InjectEmailIntent, SimCalendarInvite } from './types.js';
 
@@ -123,17 +124,43 @@ interface CurlResult {
   raw: string;
 }
 
+/** Telemetry identity for one gateway request (provider + call-site slug). */
+interface GatewayTel {
+  provider: string;
+  surface: string;
+}
+
 /**
  * Run one `onecli run -- curl …` request through the gateway, which MITM-injects
  * the matching OneCLI credential for the target host (the Gmail OAuth bearer for
  * googleapis.com). LLM prose goes direct to Portkey (see prose.ts), not here.
+ *
+ * Every request records a request_telemetry row (§24.68): the HTTP status from
+ * curl's `%{http_code}` on a completed exchange (non-2xx ⇒ ok=0 — the Gmail-401
+ * detector), or a NULL status when the exec itself fails (gateway down / binary
+ * missing). Exec failures rethrow after recording, preserving caller behavior.
  */
-async function gatewayCurl(method: string, url: string, jsonBody?: unknown): Promise<CurlResult> {
+async function gatewayCurl(method: string, url: string, tel: GatewayTel, jsonBody?: unknown): Promise<CurlResult> {
   const args = ['run', '--', 'curl', '-s', '-S', '-w', '\n%{http_code}', '-X', method, url];
   if (jsonBody !== undefined) {
     args.push('-H', 'Content-Type: application/json', '--data-binary', JSON.stringify(jsonBody));
   }
-  const { stdout } = await execFileAsync(onecliBin(), args, { maxBuffer: 16 * 1024 * 1024, timeout: 30_000 });
+  const t0 = Date.now();
+  let stdout: string;
+  try {
+    ({ stdout } = await execFileAsync(onecliBin(), args, { maxBuffer: 16 * 1024 * 1024, timeout: 30_000 }));
+  } catch (err) {
+    recordRequestTelemetry({
+      provider: tel.provider,
+      surface: tel.surface,
+      trafficClass: 'host',
+      ok: false,
+      latencyMs: Date.now() - t0,
+      statusCode: null,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
   const lines = stdout.trimEnd().split('\n');
   const status = Number.parseInt(lines[lines.length - 1] ?? '', 10) || 0;
   let bodyText = lines.slice(0, -1).join('\n');
@@ -152,18 +179,65 @@ async function gatewayCurl(method: string, url: string, jsonBody?: unknown): Pro
       }
     }
   }
+  const ok = status >= 200 && status < 300;
+  recordRequestTelemetry({
+    provider: tel.provider,
+    surface: tel.surface,
+    trafficClass: 'host',
+    ok,
+    latencyMs: Date.now() - t0,
+    statusCode: status || null,
+    error: ok ? null : `HTTP ${status}: ${bodyText.slice(0, 200)}`,
+  });
   return { status, json, raw: bodyText };
 }
 
 /** The connected dev account address (the self-only allow-list target). null on failure. */
 export async function fetchDevAccount(): Promise<string | null> {
   try {
-    const res = await gatewayCurl('GET', GMAIL_PROFILE_URL);
+    const res = await gatewayCurl('GET', GMAIL_PROFILE_URL, { provider: 'gmail', surface: 'sim-profile-probe' });
     const addr = res.json?.emailAddress;
     return typeof addr === 'string' ? addr : null;
   } catch (err) {
     log.warn('recruiter-sim: fetchDevAccount failed', { err });
     return null;
+  }
+}
+
+export interface GmailProbeResult {
+  ok: boolean;
+  /** HTTP status from the gateway exchange; null when the exec itself failed. */
+  status: number | null;
+  /** False iff `onecli run` could not execute at all (gateway down / binary missing). */
+  gatewayReachable: boolean;
+  error?: string;
+}
+
+/**
+ * LIVE Gmail token probe for the health check (§24.68): exercises
+ * `users/me/profile` through the gateway, distinguishing "gateway unreachable"
+ * (exec failure) from "token dead" (401/403 while OneCLI may still report
+ * `connected` — the §24.66 lesson). Never throws.
+ */
+export async function probeGmailProfile(): Promise<GmailProbeResult> {
+  try {
+    const res = await gatewayCurl('GET', GMAIL_PROFILE_URL, { provider: 'gmail', surface: 'gmail-health-probe' });
+    const ok = res.status >= 200 && res.status < 300 && typeof res.json?.emailAddress === 'string';
+    return ok
+      ? { ok: true, status: res.status, gatewayReachable: true }
+      : {
+          ok: false,
+          status: res.status,
+          gatewayReachable: true,
+          error: `HTTP ${res.status}: ${res.raw.slice(0, 200)}`,
+        };
+  } catch (err) {
+    return {
+      ok: false,
+      status: null,
+      gatewayReachable: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
@@ -193,7 +267,7 @@ export async function insertEmail(
       body,
     });
     const reqBody = buildInsertBody(raw, intent.newThread ? null : intent.threadId);
-    const res = await gatewayCurl('POST', GMAIL_INSERT_URL, reqBody);
+    const res = await gatewayCurl('POST', GMAIL_INSERT_URL, { provider: 'gmail', surface: 'sim-inject' }, reqBody);
     if (res.status >= 200 && res.status < 300 && typeof res.json?.id === 'string') {
       return {
         ok: true,
@@ -212,7 +286,12 @@ export async function insertEmail(
 export async function insertCalendarEvent(invite: SimCalendarInvite, devAccount: string): Promise<InjectResult> {
   try {
     assertSelfOnly(devAccount, devAccount);
-    const res = await gatewayCurl('POST', CALENDAR_EVENTS_URL, buildCalendarBody(invite, devAccount));
+    const res = await gatewayCurl(
+      'POST',
+      CALENDAR_EVENTS_URL,
+      { provider: 'calendar', surface: 'sim-inject' },
+      buildCalendarBody(invite, devAccount),
+    );
     if (res.status >= 200 && res.status < 300 && typeof res.json?.id === 'string') {
       return { ok: true, gmailId: res.json.id as string };
     }

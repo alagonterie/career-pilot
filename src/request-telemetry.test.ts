@@ -117,7 +117,9 @@ describe('recordRequestTelemetry', () => {
 
   it('respects the telemetry_capture kill switch', () => {
     getDb()
-      .prepare("INSERT INTO preferences (key, value, updated_at) VALUES ('telemetry_capture', 'false', datetime('now'))")
+      .prepare(
+        "INSERT INTO preferences (key, value, updated_at) VALUES ('telemetry_capture', 'false', datetime('now'))",
+      )
       .run();
     recordRequestTelemetry({ provider: 'portkey', surface: 'x', trafficClass: 'host', ok: true, latencyMs: 1 });
     expect(allRows()).toHaveLength(0);
@@ -185,7 +187,11 @@ describe('pruneRequestTelemetry', () => {
 
     const deleted = pruneRequestTelemetry(getDb(), retentionDays);
     expect(deleted).toBe(1);
-    expect(allRows().map((r) => r.id).sort()).toEqual(['rt-boundary', 'rt-new']);
+    expect(
+      allRows()
+        .map((r) => r.id)
+        .sort(),
+    ).toEqual(['rt-boundary', 'rt-new']);
   });
 
   it('returns 0 when the table is absent', () => {

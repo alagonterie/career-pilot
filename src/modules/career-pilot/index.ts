@@ -16,6 +16,7 @@ import {
   handleListApplications,
   handleRecordFunnelEvent,
   handleRecordProgress,
+  handleRecordRequestTelemetry,
   handleRecordTurnTelemetry,
   handleSetPreference,
   handleUpdateApplication,
@@ -48,12 +49,14 @@ import {
 import { handlePersistInterviewKit } from './interview-kit-actions.js';
 
 /**
- * Every career_pilot action is owner-only — the sandbox group must never reach
- * private candidate data. Register each behind the §24.19 Layer-2 owner gate so
- * the chokepoint is a single auditable place and any action added here is
- * guarded by construction. For the owner group (`folder === 'career-pilot'`)
- * the gate is a no-op; for a sandbox session it writes FORBIDDEN and the
- * handler never runs.
+ * Every career_pilot action that touches private candidate data is owner-only —
+ * the sandbox group must never reach it. Register each behind the §24.19
+ * Layer-2 owner gate so the chokepoint is a single auditable place and any
+ * action added here is guarded by construction. For the owner group
+ * (`folder === 'career-pilot'`) the gate is a no-op; for a sandbox session it
+ * writes FORBIDDEN and the handler never runs. The two telemetry actions are
+ * the deliberate exception (§24.68 D-C) — registered plain below, sandbox-safe
+ * by construction inside their handlers.
  */
 function registerOwnerOnly(action: string, handler: DeliveryActionHandler): void {
   registerDeliveryAction(action, async (content, session, inDb) => {
@@ -69,7 +72,12 @@ registerOwnerOnly('career_pilot.record_funnel_event', handleRecordFunnelEvent);
 registerOwnerOnly('career_pilot.get_application', handleGetApplication);
 registerOwnerOnly('career_pilot.list_applications', handleListApplications);
 registerOwnerOnly('career_pilot.record_progress', handleRecordProgress);
-registerOwnerOnly('career_pilot.record_turn_telemetry', handleRecordTurnTelemetry);
+// The two telemetry actions register PLAIN, not owner-only (§24.68 D-C): a
+// sandbox emission writes a private numbers-only request_telemetry row classed
+// 'sandbox' host-side — and never a public_audit_trail row (the invariant
+// moved into handleRecordTurnTelemetry's branch, pinned by integration test).
+registerDeliveryAction('career_pilot.record_turn_telemetry', handleRecordTurnTelemetry);
+registerDeliveryAction('career_pilot.record_request_telemetry', handleRecordRequestTelemetry);
 registerOwnerOnly('career_pilot.create_gmail_draft', handleCreateGmailDraft);
 registerOwnerOnly('career_pilot.record_job_lead', handleRecordJobLead);
 registerOwnerOnly('career_pilot.query_job_leads', handleQueryJobLeads);
