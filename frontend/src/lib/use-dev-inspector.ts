@@ -10,7 +10,7 @@ import { usePolledJson, type PollStatus } from './use-polled-json'
  */
 
 export type KnobType = 'boolean' | 'number' | 'cron' | 'enum'
-export type KnobGroup = 'sim' | 'pacing' | 'budget' | 'polling' | 'models'
+export type KnobGroup = 'sim' | 'pacing' | 'budget' | 'polling' | 'models' | 'sessions'
 
 /** System pause state (§24.43e). `halted` = LLM spend frozen (no container spawns). */
 export type PauseState = 'active' | 'paused' | 'halted' | 'killswitch'

@@ -27,11 +27,11 @@ import { DATA_DIR } from '../../config.js';
 import { getAgentGroupByFolder } from '../../db/agent-groups.js';
 import { getDb } from '../../db/connection.js';
 import { nextEvenSeq } from '../../db/session-db.js';
-import { findSessionByAgentGroup } from '../../db/sessions.js';
 import { getConfig, getConfigDefault } from '../../get-config.js';
 import { log } from '../../log.js';
 import { openInboundDb } from '../../session-manager.js';
 import { applyFunnelFromEmailEvents } from '../career-pilot/funnel-apply.js';
+import { findOpsSession } from '../career-pilot/ops-session.js';
 import { scoreWinConfidence } from '../career-pilot/win-confidence.js';
 import { type CandidateProfile, readCandidateProfile, renderPersona } from '../career-pilot/render-persona.js';
 import { SIM_KNOB_KEYS } from '../career-pilot/recruiter-sim/knobs.js';
@@ -50,7 +50,7 @@ export function isDevEnv(): boolean {
 // ── the write allow-list + per-knob validation specs ─────────────────────────
 
 export type KnobType = 'boolean' | 'number' | 'cron' | 'enum';
-export type KnobGroup = 'sim' | 'pacing' | 'budget' | 'polling' | 'models';
+export type KnobGroup = 'sim' | 'pacing' | 'budget' | 'polling' | 'models' | 'sessions';
 
 export interface KnobSpec {
   type: KnobType;
@@ -71,6 +71,9 @@ const CRON_NOTE =
 
 const MODEL_TIER_NOTE =
   'Retargets the orchestrator + every subagent model for cost (dev only). Applies on the next container spawn (a fresh session / reset:dev), not mid-session. default = real Opus · sonnet = Opus→Sonnet (Haiku kept) · haiku = everything→Haiku.';
+
+const OPS_SPAWN_NOTE =
+  'Pushed as container env when the career-pilot ops session spawns — applies on its NEXT spawn, not mid-session. Other sessions keep the upstream rotation defaults.';
 
 /**
  * The curated knob set the dev inspector may write. The `recruiter_sim_*` keys
@@ -145,6 +148,30 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     label: 'Calendar poll interval (s)',
     min: 10,
     max: 86_400,
+  },
+  // ── ops-session topology (§24.67) ──
+  ops_transcript_rotate_bytes: {
+    type: 'number',
+    group: 'sessions',
+    label: 'Ops transcript rotation (bytes)',
+    min: 65_536,
+    max: 12_582_912,
+    integer: true,
+    note: OPS_SPAWN_NOTE,
+  },
+  ops_transcript_rotate_age_days: {
+    type: 'number',
+    group: 'sessions',
+    label: 'Ops transcript rotation (days)',
+    min: 0,
+    max: 14,
+    note: `${OPS_SPAWN_NOTE} 0 disables the age check; size alone governs.`,
+  },
+  ops_mirror_to_chat: {
+    type: 'boolean',
+    group: 'sessions',
+    label: 'Mirror ops output to chat',
+    note: 'Owner-visible ops-session output (daily briefing, killer-match pings) is copied into the chat session as silent context so replies have their referent. Applies to the next delivery.',
   },
   // ── dev model tier (§24.43) ──
   dev_model_tier: {
@@ -592,8 +619,11 @@ export function enqueueSweepTask(inDb: Database.Database): string {
  *      what makes already-consumed mail (the cursor has moved past it) show up.
  *   2. SWEEP (async, best-effort) — enqueue a fresh `[scheduled trigger:
  *      pipeline-scribe]` task so the orchestrator fetches any NEW mail; that run's
- *      persist auto-converts via the same path (funnel-actions hook). Skipped (no
- *      error) when there's no active owner session yet, or while halted/paused.
+ *      persist auto-converts via the same path (funnel-actions hook). Targets the
+ *      OPS session (§24.67 — where the pipeline-scribe series lives; the previous
+ *      findSessionByAgentGroup picked the *newest* active session, which post-split
+ *      is the wrong one). Skipped (no error) when the ops session doesn't exist
+ *      yet, or while halted/paused.
  */
 export async function applyDevSweep(): Promise<DevSweepOutcome> {
   const db = getDb();
@@ -604,7 +634,7 @@ export async function applyDevSweep(): Promise<DevSweepOutcome> {
 
   let sweepEnqueued = false;
   const group = getAgentGroupByFolder('career-pilot');
-  const session = group ? findSessionByAgentGroup(group.id) : undefined;
+  const session = group ? findOpsSession(group.id) : undefined;
   if (group && session) {
     const inDb = openInboundDb(group.id, session.id);
     try {

@@ -61,23 +61,28 @@ function getMaxMessagesPerPrompt(): number {
  * context (trigger=0) rides along with the wake-eligible rows so the agent
  * sees the prior context it missed. Host's countDueMessages gates waking on
  * trigger=1 separately (see src/db/session-db.ts).
+ *
+ * The ack filter MUST run before the newest-N cap (fork deviation, STRATEGY.md
+ * §24.67): with `LIMIT N` in the SQL, ≥N stale-but-pending rows sitting above
+ * an older due row hide it from every prompt forever — the §24.66 starvation
+ * outage. Pending rows are bounded in practice (the host's orphan sweep keeps
+ * the queue clear), so fetching them all before capping is cheap.
  */
 export function getPendingMessages(isFirstPoll = false): MessageInRow[] {
   const inbound = openInboundDb();
   const outbound = getOutboundDb();
 
   try {
-    const onWakeFilter = hasOnWakeColumn(inbound) ? 'AND (on_wake = 0 OR ?1 = 1)' : '';
-    const pending = inbound
-      .prepare(
-        `SELECT * FROM messages_in
-         WHERE status = 'pending'
-           AND (process_after IS NULL OR datetime(process_after) <= datetime('now'))
-           ${onWakeFilter}
-         ORDER BY seq DESC
-         LIMIT ?2`,
-      )
-      .all(isFirstPoll ? 1 : 0, getMaxMessagesPerPrompt()) as MessageInRow[];
+    const hasOnWake = hasOnWakeColumn(inbound);
+    const onWakeFilter = hasOnWake ? 'AND (on_wake = 0 OR ?1 = 1)' : '';
+    const stmt = inbound.prepare(
+      `SELECT * FROM messages_in
+       WHERE status = 'pending'
+         AND (process_after IS NULL OR datetime(process_after) <= datetime('now'))
+         ${onWakeFilter}
+       ORDER BY seq DESC`,
+    );
+    const pending = (hasOnWake ? stmt.all(isFirstPoll ? 1 : 0) : stmt.all()) as MessageInRow[];
 
     if (pending.length === 0) return [];
 
@@ -88,9 +93,13 @@ export function getPendingMessages(isFirstPoll = false): MessageInRow[] {
       ),
     );
 
-    // Reverse: we fetched DESC to take the most recent N, but the agent
-    // should see them in chronological order (oldest first).
-    return pending.filter((m) => !ackedIds.has(m.id)).reverse();
+    // Cap AFTER the ack filter, then reverse: we fetched DESC so the slice is
+    // the most recent N unconsumed rows, and the agent should see them in
+    // chronological order (oldest first).
+    return pending
+      .filter((m) => !ackedIds.has(m.id))
+      .slice(0, getMaxMessagesPerPrompt())
+      .reverse();
   } finally {
     inbound.close();
   }
