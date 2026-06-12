@@ -17,6 +17,8 @@ import { closeDb, getDb, initTestDb } from '../../db/connection.js';
 import { runMigrations } from '../../db/migrations/index.js';
 import { ensureSchema, openInboundDb } from '../../db/session-db.js';
 import { getConfig } from '../../get-config.js';
+import { inboundDbPath, sessionsBaseDir } from '../../session-manager.js';
+import { OPS_THREAD_ID } from '../career-pilot/ops-session.js';
 import type { CandidateProfile } from '../career-pilot/render-persona.js';
 import { SIM_KNOB_KEYS } from '../career-pilot/recruiter-sim/knobs.js';
 import type { SimApp, SimState } from '../career-pilot/recruiter-sim/types.js';
@@ -276,6 +278,26 @@ describe('buildDevKnobs', () => {
     const reset = buildDevKnobs(getDb()).knobs.find((k) => k.key === 'recruiter_sim_max_concurrent');
     expect(reset).toMatchObject({ value: 8, overridden: false });
   });
+
+  it('exposes the §24.67 sessions knobs with write validation', () => {
+    const db = getDb();
+    const sessionKeys = buildDevKnobs(db)
+      .knobs.filter((k) => k.group === 'sessions')
+      .map((k) => k.key)
+      .sort();
+    expect(sessionKeys).toEqual([
+      'ops_mirror_to_chat',
+      'ops_transcript_rotate_age_days',
+      'ops_transcript_rotate_bytes',
+    ]);
+
+    expect(applyKnobWrite(db, { key: 'ops_transcript_rotate_bytes', value: 1_048_576 }).status).toBe(200);
+    expect(getConfig<number>(db, 'ops_transcript_rotate_bytes')).toBe(1_048_576);
+    expect(applyKnobWrite(db, { key: 'ops_transcript_rotate_bytes', value: 1024 }).status).toBe(400); // below min
+    expect(applyKnobWrite(db, { key: 'ops_mirror_to_chat', value: false }).status).toBe(200);
+    expect(getConfig<boolean>(db, 'ops_mirror_to_chat')).toBe(false);
+    expect(applyKnobWrite(db, { key: 'ops_transcript_rotate_age_days', reset: true }).status).toBe(200);
+  });
 });
 
 // ── buildDevState ─────────────────────────────────────────────────────────────
@@ -469,6 +491,46 @@ describe('on-demand sweep (§24.43c)', () => {
       created_at: '2026-06-06T00:00:00Z',
     });
     expect(((await applyDevSweep()).body as { sweepEnqueued: boolean }).sweepEnqueued).toBe(false);
+  });
+
+  it('applyDevSweep targets the OPS session (§24.67), never the newest chat session', async () => {
+    createAgentGroup({
+      id: 'ag-owner',
+      name: 'Career Pilot',
+      folder: 'career-pilot',
+      agent_provider: null,
+      created_at: '2026-06-06T00:00:00Z',
+    });
+    const insertSession = getDb().prepare(
+      `INSERT INTO sessions (id, agent_group_id, messaging_group_id, thread_id, agent_provider, status, container_status, last_active, created_at)
+       VALUES (?, 'ag-owner', NULL, ?, NULL, 'active', 'stopped', NULL, ?)`,
+    );
+    insertSession.run('sess-ops', OPS_THREAD_ID, '2026-06-06T00:00:00Z');
+    // Chat session is NEWER — the old findSessionByAgentGroup lookup would pick it.
+    insertSession.run('sess-chat', null, '2026-06-07T00:00:00Z');
+
+    const groupDir = path.join(sessionsBaseDir(), 'ag-owner');
+    for (const sess of ['sess-ops', 'sess-chat']) {
+      fs.mkdirSync(path.join(groupDir, sess), { recursive: true });
+      ensureSchema(inboundDbPath('ag-owner', sess), 'inbound');
+    }
+    try {
+      const out = await applyDevSweep();
+      expect((out.body as { sweepEnqueued: boolean }).sweepEnqueued).toBe(true);
+
+      const taskCount = (sess: string): number => {
+        const db = openInboundDb(inboundDbPath('ag-owner', sess));
+        try {
+          return (db.prepare("SELECT count(*) AS n FROM messages_in WHERE kind = 'task'").get() as { n: number }).n;
+        } finally {
+          db.close();
+        }
+      };
+      expect(taskCount('sess-ops')).toBe(1);
+      expect(taskCount('sess-chat')).toBe(0);
+    } finally {
+      fs.rmSync(groupDir, { recursive: true, force: true });
+    }
   });
 });
 
