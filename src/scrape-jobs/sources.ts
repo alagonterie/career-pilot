@@ -14,6 +14,7 @@
  * Spec: STRATEGY.md §24.5 + .specs/research/PHASE_2_5_JOB_BOARDS.md §Q1.
  */
 import { log } from '../log.js';
+import { recordRequestTelemetry } from '../request-telemetry.js';
 import type { JobLeadPayload, SourceAdapter, Source, AtsSource } from './types.js';
 
 const GREENHOUSE_BASE = 'https://boards-api.greenhouse.io/v1/boards';
@@ -64,7 +65,20 @@ function cacheKey(source: Source, token: string): string {
   return `${source}:${token}`;
 }
 
-async function politeFetch(url: string, host: string, crawlDelayMs: number, etag?: string): Promise<Response> {
+/**
+ * `provider` tags the request_telemetry row (§24.68): one row per real board
+ * fetch — 2xx AND 304 count as ok, non-ok carries the status, a network throw
+ * records then rethrows (the adapters' catches keep their existing behavior).
+ * In-process cache hits never reach here, so they record nothing. Latency
+ * excludes the crawl-delay sleep (it measures the exchange, not our politeness).
+ */
+async function politeFetch(
+  url: string,
+  host: string,
+  crawlDelayMs: number,
+  provider: AtsSource,
+  etag?: string,
+): Promise<Response> {
   const lastFetch = lastFetchPerHost.get(host) ?? 0;
   const elapsed = Date.now() - lastFetch;
   if (elapsed < crawlDelayMs) {
@@ -80,8 +94,31 @@ async function politeFetch(url: string, host: string, crawlDelayMs: number, etag
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const t0 = Date.now();
   try {
-    return await fetch(url, { headers, signal: controller.signal });
+    const res = await fetch(url, { headers, signal: controller.signal });
+    const ok = res.ok || res.status === 304;
+    recordRequestTelemetry({
+      provider,
+      surface: 'scrape-board',
+      trafficClass: 'host',
+      ok,
+      latencyMs: Date.now() - t0,
+      statusCode: res.status,
+      error: ok ? null : `HTTP ${res.status} ${res.statusText}`,
+    });
+    return res;
+  } catch (err) {
+    recordRequestTelemetry({
+      provider,
+      surface: 'scrape-board',
+      trafficClass: 'host',
+      ok: false,
+      latencyMs: Date.now() - t0,
+      statusCode: null,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
   } finally {
     clearTimeout(timeout);
   }
@@ -119,7 +156,13 @@ export const greenhouseAdapter: SourceAdapter = {
 
     const url = `${GREENHOUSE_BASE}/${encodeURIComponent(token)}/jobs?content=true`;
     try {
-      const res = await politeFetch(url, 'boards-api.greenhouse.io', CRAWL_DELAY_MS_GREENHOUSE, cached?.etag);
+      const res = await politeFetch(
+        url,
+        'boards-api.greenhouse.io',
+        CRAWL_DELAY_MS_GREENHOUSE,
+        'greenhouse',
+        cached?.etag,
+      );
       if (res.status === 304 && cached) {
         cached.cachedAt = Date.now();
         return cached.postings;
@@ -216,7 +259,7 @@ export const leverAdapter: SourceAdapter = {
 
     const url = `${LEVER_BASE}/${encodeURIComponent(token)}?mode=json`;
     try {
-      const res = await politeFetch(url, 'api.lever.co', CRAWL_DELAY_MS_LEVER, cached?.etag);
+      const res = await politeFetch(url, 'api.lever.co', CRAWL_DELAY_MS_LEVER, 'lever', cached?.etag);
       if (res.status === 304 && cached) {
         cached.cachedAt = Date.now();
         return cached.postings;

@@ -17,6 +17,7 @@
  * Pure helpers (`buildRankingPrompt`, `parseRankingResponse`,
  * `computeBriefHash`) are exported for unit testing.
  */
+import { reportRequestTelemetry } from './telemetry.js';
 
 export interface JobLeadForRanking {
   id: string;
@@ -133,6 +134,13 @@ export function computeBriefHash(brief: string): string {
 
 interface HaikuResponse {
   content?: Array<{ type: string; text?: string }>;
+  // Anthropic /v1/messages usage — flows through Portkey intact (§24.49).
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  };
 }
 
 /**
@@ -174,26 +182,50 @@ async function callHaiku(systemPrompt: string, userPrompt: string): Promise<stri
   const baseUrl = process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com';
   const model = process.env.HAIKU_MODEL || 'claude-haiku-4-5-20251001';
 
-  const res = await fetch(`${baseUrl}/v1/messages`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': process.env.ANTHROPIC_API_KEY || 'placeholder',
-      'anthropic-version': '2023-06-01',
-      // Portkey routing (x-portkey-provider, x-portkey-config, trace/metadata) —
-      // the same headers the SDK sends; without them Portkey can't route.
-      ...parseAnthropicCustomHeaders(),
-    },
-    body: JSON.stringify({
+  const t0 = Date.now();
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl}/v1/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY || 'placeholder',
+        'anthropic-version': '2023-06-01',
+        // Portkey routing (x-portkey-provider, x-portkey-config, trace/metadata) —
+        // the same headers the SDK sends; without them Portkey can't route.
+        ...parseAnthropicCustomHeaders(),
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 2048,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+      }),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    void reportRequestTelemetry({
+      provider: 'portkey',
+      surface: 'rank-leads',
+      ok: false,
+      latencyMs: Date.now() - t0,
       model,
-      max_tokens: 2048,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }],
-    }),
-  });
+      error: message,
+    });
+    throw new RankLeadsError('HAIKU_HTTP_ERROR', `Haiku call failed: ${message}`);
+  }
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
+    void reportRequestTelemetry({
+      provider: 'portkey',
+      surface: 'rank-leads',
+      ok: false,
+      latencyMs: Date.now() - t0,
+      statusCode: res.status,
+      model,
+      error: `${res.status} ${res.statusText}${errText ? ' — ' + errText.slice(0, 200) : ''}`,
+    });
     throw new RankLeadsError(
       'HAIKU_HTTP_ERROR',
       `Haiku call failed: ${res.status} ${res.statusText}${errText ? ' — ' + errText.slice(0, 200) : ''}`,
@@ -201,6 +233,20 @@ async function callHaiku(systemPrompt: string, userPrompt: string): Promise<stri
   }
 
   const data = (await res.json()) as HaikuResponse;
+  void reportRequestTelemetry({
+    provider: 'portkey',
+    surface: 'rank-leads',
+    ok: true,
+    latencyMs: Date.now() - t0,
+    statusCode: res.status,
+    model,
+    usage: {
+      inputTokens: data.usage?.input_tokens ?? null,
+      outputTokens: data.usage?.output_tokens ?? null,
+      cacheReadTokens: data.usage?.cache_read_input_tokens ?? null,
+      cacheCreationTokens: data.usage?.cache_creation_input_tokens ?? null,
+    },
+  });
   const block = data.content?.find((c) => c.type === 'text');
   if (!block?.text) throw new RankLeadsError('HAIKU_EMPTY', 'Haiku returned empty content');
   return block.text;

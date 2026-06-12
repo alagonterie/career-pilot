@@ -19,6 +19,7 @@
  * (Phase 1) so the per-sub-milestone split stays readable.
  */
 import { sendAction } from '../career-pilot/action.js';
+import { reportRequestTelemetry } from '../career-pilot/telemetry.js';
 import { registerTools } from './server.js';
 import type { McpToolDefinition } from './types.js';
 
@@ -103,23 +104,44 @@ interface ParsedGmailMessage {
   body_text: string;
 }
 
-function gmailFetch<T>(path: string): Promise<T> {
-  return fetch(`https://gmail.googleapis.com${path}`, {
-    method: 'GET',
-    headers: {
-      Accept: 'application/json',
-      'x-onecli-placeholder': '1',
-    },
-  }).then(async (res) => {
-    if (res.status === 404) {
-      throw new GmailApiError(404, 'history_id expired (404)');
-    }
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      throw new GmailApiError(res.status, `${res.status} ${res.statusText}${body ? ' — ' + body.slice(0, 200) : ''}`);
-    }
-    return (await res.json()) as T;
-  });
+async function gmailFetch<T>(path: string): Promise<T> {
+  const t0 = Date.now();
+  const tel = (ok: boolean, statusCode: number | null, error?: string): void => {
+    void reportRequestTelemetry({
+      provider: 'gmail',
+      surface: 'funnel-curator-gmail',
+      ok,
+      latencyMs: Date.now() - t0,
+      statusCode,
+      error: error ?? null,
+    });
+  };
+  let res: Response;
+  try {
+    res = await fetch(`https://gmail.googleapis.com${path}`, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        'x-onecli-placeholder': '1',
+      },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    tel(false, null, message);
+    throw new GmailApiError(0, message);
+  }
+  if (res.status === 404) {
+    tel(false, 404, 'history_id expired (404)');
+    throw new GmailApiError(404, 'history_id expired (404)');
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    const message = `${res.status} ${res.statusText}${body ? ' — ' + body.slice(0, 200) : ''}`;
+    tel(false, res.status, message);
+    throw new GmailApiError(res.status, message);
+  }
+  tel(true, res.status);
+  return (await res.json()) as T;
 }
 
 class GmailApiError extends Error {
@@ -476,17 +498,39 @@ export const queryCalendarDelta: McpToolDefinition = {
       const priorToken = priorSyncTokens[calendarId];
 
       const doFetch = async (qs: string): Promise<CalendarEventsListResponse> => {
-        const res = await fetch(
-          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${qs}`,
-          { method: 'GET', headers: { Accept: 'application/json', 'x-onecli-placeholder': '1' } },
-        );
+        const t0 = Date.now();
+        const tel = (ok: boolean, statusCode: number | null, error?: string): void => {
+          void reportRequestTelemetry({
+            provider: 'calendar',
+            surface: 'funnel-curator-calendar',
+            ok,
+            latencyMs: Date.now() - t0,
+            statusCode,
+            error: error ?? null,
+          });
+        };
+        let res: Response;
+        try {
+          res = await fetch(
+            `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${qs}`,
+            { method: 'GET', headers: { Accept: 'application/json', 'x-onecli-placeholder': '1' } },
+          );
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          tel(false, null, message);
+          throw new CalendarApiError(0, message);
+        }
         if (res.status === 410) {
+          tel(false, 410, 'syncToken expired (410)');
           throw new CalendarApiError(410, 'syncToken expired (410)');
         }
         if (!res.ok) {
           const body = await res.text().catch(() => '');
-          throw new CalendarApiError(res.status, `${res.status} ${res.statusText}${body ? ' — ' + body.slice(0, 200) : ''}`);
+          const message = `${res.status} ${res.statusText}${body ? ' — ' + body.slice(0, 200) : ''}`;
+          tel(false, res.status, message);
+          throw new CalendarApiError(res.status, message);
         }
+        tel(true, res.status);
         return (await res.json()) as CalendarEventsListResponse;
       };
 

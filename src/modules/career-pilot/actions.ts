@@ -32,9 +32,11 @@ import { sanitize, sanitizeForPublic } from '../portal/sanitizer.js';
 import { pass3Active } from '../portal/sanitizer-pass3.js';
 import { isKnownApplicationStatus, upsertPublicFunnelView } from '../portal/public-funnel-view.js';
 import { upsertPublicKitView } from '../portal/public-kit-view.js';
+import { priceTokensMicrousd, recordRequestTelemetry, type TrafficClass } from '../../request-telemetry.js';
 import type { Session } from '../../types.js';
 
 import { reactToStatusTransitions } from './interview-kit-trigger.js';
+import { isOpsSession } from './ops-session.js';
 import { validateProactivePref } from './quiet-hours.js';
 
 // ── Response writer (shared by all handlers) ──
@@ -531,7 +533,54 @@ function deriveCacheReadPct(details: Record<string, unknown>): number | null {
 }
 
 /**
- * Write a per-turn LLM-telemetry row (category='turn') to public_audit_trail.
+ * Traffic class for a container-issued request (§24.68 D4), derived HOST-side
+ * from the session in hand — never from the container payload (trust
+ * boundary): sandbox group → 'sandbox'; the owner ops session → 'ops';
+ * otherwise the owner chat session → 'chat'.
+ */
+function deriveTrafficClass(session: Session): TrafficClass {
+  const group = getAgentGroup(session.agent_group_id);
+  if (!group || group.folder !== 'career-pilot') return 'sandbox';
+  return isOpsSession(session) ? 'ops' : 'chat';
+}
+
+/**
+ * Sum the per-model usage map the container forwards in `details.model_usage`
+ * into the four token lanes for the request_telemetry row. Missing/garbage
+ * lanes stay null (unknown ≠ 0).
+ */
+function sumModelUsage(details: Record<string, unknown>): {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheCreationTokens: number | null;
+} {
+  const usage = details.model_usage;
+  if (!usage || typeof usage !== 'object') {
+    return { inputTokens: null, outputTokens: null, cacheReadTokens: null, cacheCreationTokens: null };
+  }
+  let input = 0;
+  let output = 0;
+  let cacheRead = 0;
+  let cacheCreation = 0;
+  let any = false;
+  for (const u of Object.values(usage as Record<string, unknown>)) {
+    if (!u || typeof u !== 'object') continue;
+    const m = u as { input?: unknown; output?: unknown; cache_read?: unknown; cache_creation?: unknown };
+    const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+    input += n(m.input);
+    output += n(m.output);
+    cacheRead += n(m.cache_read);
+    cacheCreation += n(m.cache_creation);
+    any = true;
+  }
+  if (!any) return { inputTokens: null, outputTokens: null, cacheReadTokens: null, cacheCreationTokens: null };
+  return { inputTokens: input, outputTokens: output, cacheReadTokens: cacheRead, cacheCreationTokens: cacheCreation };
+}
+
+/**
+ * Write a per-turn LLM-telemetry row (category='turn') to public_audit_trail,
+ * plus a private request_telemetry row (§24.68 dual-write).
  *
  * The honest unit is one query() call: the SDK resolves cost only per-turn
  * (no per-subagent/per-tool breakdown — subagent usage rolls up into the
@@ -539,13 +588,17 @@ function deriveCacheReadPct(details: Record<string, unknown>): number | null {
  * latency on a turn-level row, while the funnel/progress writers stay
  * untouched. The container's poll-loop fires it fire-and-forget on EVERY turn
  * (§24.55 lifted the original record_*-only gate so /live's spend is a total,
- * not a sample); registered owner-only, so a sandbox emission never lands a
- * row. Gated by the `telemetry_capture` preference (default true) — a kill
- * switch. `cache_read_pct` is derived here from the per-model usage; the
- * legacy boolean `cache_hit` keeps being written for back-compat.
+ * not a sample). Gated by the `telemetry_capture` preference (default true) —
+ * a kill switch. `cache_read_pct` is derived here from the per-model usage;
+ * the legacy boolean `cache_hit` keeps being written for back-compat.
  *
- * The row carries no free text (numbers + a fixed summary), so it needs no
- * sanitization and is exempt from the funnel-only resanitization hooks.
+ * Registration is PLAIN (not owner-only) since §24.68 D-C: a sandbox emission
+ * writes a private request_telemetry row (traffic_class 'sandbox') and NEVER
+ * the public_audit_trail row — the "sandbox never lands a public row"
+ * invariant now lives in the branch below, pinned by an integration test.
+ *
+ * The public row carries no free text (numbers + a fixed summary), so it
+ * needs no sanitization and is exempt from the funnel-only resanitization hooks.
  */
 export async function handleRecordTurnTelemetry(
   content: Record<string, unknown>,
@@ -563,31 +616,126 @@ export async function handleRecordTurnTelemetry(
       return;
     }
 
-    const id = generateId('turn');
+    const trafficClass = deriveTrafficClass(session);
     const now = new Date().toISOString();
     const details = typeof p.details === 'object' && p.details ? (p.details as Record<string, unknown>) : {};
-    db.prepare(
-      `INSERT INTO public_audit_trail
-         (id, seq, ts, category, agent_name, proactive, model_used, tokens, cost_cents, cache_hit, cache_read_pct, latency_ms, summary, details_json)
-       VALUES (@id, (SELECT COALESCE(MAX(seq), 0) + 1 FROM public_audit_trail),
-               @ts, 'turn', NULL, @proactive, @model_used, @tokens, @cost_cents, @cache_hit, @cache_read_pct, @latency_ms, @summary, @details_json)`,
-    ).run({
-      id,
-      ts: now,
-      proactive: deriveProactive(inDb) ? 1 : 0,
-      model_used: typeof p.model_used === 'string' ? p.model_used : null,
-      tokens: numOrNull(p.tokens),
-      cost_cents: numOrNull(p.cost_cents),
-      cache_hit: p.cache_hit === 1 || p.cache_hit === true ? 1 : 0,
-      cache_read_pct: deriveCacheReadPct(details),
-      latency_ms: numOrNull(p.latency_ms),
-      summary: TURN_TELEMETRY_SUMMARY,
-      details_json: JSON.stringify({ ...details, record_calls: numOrNull(p.record_calls) }),
+
+    let id: string | null = null;
+    if (trafficClass !== 'sandbox') {
+      id = generateId('turn');
+      db.prepare(
+        `INSERT INTO public_audit_trail
+           (id, seq, ts, category, agent_name, proactive, model_used, tokens, cost_cents, cache_hit, cache_read_pct, latency_ms, summary, details_json)
+         VALUES (@id, (SELECT COALESCE(MAX(seq), 0) + 1 FROM public_audit_trail),
+                 @ts, 'turn', NULL, @proactive, @model_used, @tokens, @cost_cents, @cache_hit, @cache_read_pct, @latency_ms, @summary, @details_json)`,
+      ).run({
+        id,
+        ts: now,
+        proactive: deriveProactive(inDb) ? 1 : 0,
+        model_used: typeof p.model_used === 'string' ? p.model_used : null,
+        tokens: numOrNull(p.tokens),
+        cost_cents: numOrNull(p.cost_cents),
+        cache_hit: p.cache_hit === 1 || p.cache_hit === true ? 1 : 0,
+        cache_read_pct: deriveCacheReadPct(details),
+        latency_ms: numOrNull(p.latency_ms),
+        summary: TURN_TELEMETRY_SUMMARY,
+        details_json: JSON.stringify({ ...details, record_calls: numOrNull(p.record_calls) }),
+      });
+    }
+
+    // §24.68 dual-write: the ops-grade per-request row. SDK cost arrives as
+    // cents — convert to microUSD (×10,000). Best-effort by construction
+    // (recordRequestTelemetry never throws).
+    const usage = sumModelUsage(details);
+    const costCents = numOrNull(p.cost_cents);
+    recordRequestTelemetry({
+      provider: 'portkey',
+      surface: 'agent-turn',
+      trafficClass,
+      ok: true,
+      latencyMs: numOrNull(p.latency_ms) ?? 0,
+      sessionId: session.id,
+      model: typeof p.model_used === 'string' ? p.model_used : null,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      cacheReadTokens: usage.cacheReadTokens,
+      cacheCreationTokens: usage.cacheCreationTokens,
+      costMicrousd: costCents != null ? costCents * 10_000 : null,
+      details: { num_turns: numOrNull((details as { num_turns?: unknown }).num_turns) },
     });
 
-    writeResponse(inDb, requestId, { ok: true, data: { id } });
+    writeResponse(inDb, requestId, { ok: true, data: id ? { id } : { recorded: true } });
   } catch (err) {
     log.error('handleRecordTurnTelemetry failed', { err });
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
+// ── record_request_telemetry ────────────────────────────────────────────────
+
+const TELEMETRY_SLUG_RE = /^[a-z0-9_-]{1,64}$/;
+
+/**
+ * Land a container-side request-telemetry report (§24.68): rank-leads Haiku,
+ * SerpApi search, funnel-curator Gmail/Calendar fetches. Registered PLAIN —
+ * the row is private, numbers-only, and classed host-side (deriveTrafficClass),
+ * so a sandbox emission is safe by construction. provider/surface are
+ * validated as slugs; cost is priced here from tokens+model — the container
+ * never prices itself.
+ */
+export async function handleRecordRequestTelemetry(
+  content: Record<string, unknown>,
+  session: Session,
+  inDb: Database.Database,
+): Promise<void> {
+  const requestId = reqId(content);
+  const p = payload(content);
+  try {
+    const db = getDb();
+
+    if (!getConfig<boolean>(db, 'telemetry_capture', true)) {
+      writeResponse(inDb, requestId, { ok: true, data: { skipped: true } });
+      return;
+    }
+
+    const provider = typeof p.provider === 'string' ? p.provider : '';
+    const surface = typeof p.surface === 'string' ? p.surface : '';
+    if (!TELEMETRY_SLUG_RE.test(provider) || !TELEMETRY_SLUG_RE.test(surface)) {
+      writeResponse(inDb, requestId, {
+        ok: false,
+        error: { code: 'BAD_ARGS', message: 'provider and surface must be [a-z0-9_-]{1,64} slugs' },
+      });
+      return;
+    }
+
+    const model = typeof p.model === 'string' ? p.model : null;
+    const tokens = {
+      inputTokens: numOrNull(p.input_tokens),
+      outputTokens: numOrNull(p.output_tokens),
+      cacheReadTokens: numOrNull(p.cache_read_tokens),
+      cacheCreationTokens: numOrNull(p.cache_creation_tokens),
+    };
+    recordRequestTelemetry({
+      provider,
+      surface,
+      trafficClass: deriveTrafficClass(session),
+      ok: p.ok === true || p.ok === 1,
+      latencyMs: numOrNull(p.latency_ms) ?? 0,
+      statusCode: numOrNull(p.status_code),
+      sessionId: session.id,
+      model,
+      ...tokens,
+      costMicrousd: priceTokensMicrousd(db, model, tokens),
+      error: typeof p.error === 'string' && p.error ? p.error : null,
+      details: typeof p.details === 'object' && p.details ? (p.details as Record<string, unknown>) : null,
+    });
+
+    writeResponse(inDb, requestId, { ok: true, data: { recorded: true } });
+  } catch (err) {
+    log.error('handleRecordRequestTelemetry failed', { err });
     writeResponse(inDb, requestId, {
       ok: false,
       error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },

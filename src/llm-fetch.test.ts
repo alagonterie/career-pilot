@@ -121,7 +121,10 @@ describe('callPortkeyChat', () => {
   });
 
   it('succeeds with null tokens when usage is absent', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => okResponse(COMPLETION)));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okResponse(COMPLETION)),
+    );
     const result = await callPortkeyChat({
       surface: 'win-confidence',
       messages: [{ role: 'user', content: 'hi' }],
@@ -135,7 +138,10 @@ describe('callPortkeyChat', () => {
   });
 
   it('records a failure row and throws on an HTTP error', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('denied', { status: 401 })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('denied', { status: 401 })),
+    );
     await expect(
       callPortkeyChat({ surface: 'win-confidence', messages: [{ role: 'user', content: 'hi' }], maxTokens: 100 }),
     ).rejects.toThrow('portkey HTTP 401');
@@ -161,7 +167,10 @@ describe('callPortkeyChat', () => {
   });
 
   it('records a failure row on an empty completion', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => okResponse({ choices: [] })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okResponse({ choices: [] })),
+    );
     await expect(
       callPortkeyChat({ surface: 'win-confidence', messages: [{ role: 'user', content: 'hi' }], maxTokens: 100 }),
     ).rejects.toThrow('no content');

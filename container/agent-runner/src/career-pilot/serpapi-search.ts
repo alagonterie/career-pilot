@@ -23,6 +23,8 @@
  * `parseSalaryString`, `normalizeGoogleJob`) are exported for unit tests.
  */
 
+import { reportRequestTelemetry } from './telemetry.js';
+
 const SERPAPI_BASE = 'https://serpapi.com/search';
 const RESULTS_PER_PAGE = 10; // google_jobs returns up to 10/page
 const MAX_PAGES = 3; // quota guard — each page is one SerpApi search against the 250/mo free tier
@@ -290,11 +292,24 @@ function buildSearchUrl(args: { query: string; location?: string | null; remote?
 async function fetchPage(url: string): Promise<SerpApiResponse> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const t0 = Date.now();
+  const tel = (ok: boolean, statusCode: number | null, error?: string): void => {
+    void reportRequestTelemetry({
+      provider: 'serpapi',
+      surface: 'serpapi-search',
+      ok,
+      latencyMs: Date.now() - t0,
+      statusCode,
+      error: error ?? null,
+    });
+  };
   let res: Response;
   try {
     res = await fetch(url, { headers: { Accept: 'application/json' }, signal: controller.signal });
   } catch (err) {
-    throw new SearchJobsError('NETWORK', err instanceof Error ? err.message : String(err));
+    const message = err instanceof Error ? err.message : String(err);
+    tel(false, null, message);
+    throw new SearchJobsError('NETWORK', message);
   } finally {
     clearTimeout(timeout);
   }
@@ -304,6 +319,7 @@ async function fetchPage(url: string): Promise<SerpApiResponse> {
   //   429 = rate-limited / quota exhausted, 5xx = SerpApi down.
   if (!res.ok) {
     const body = await res.text().catch(() => '');
+    tel(false, res.status, `${res.status} ${res.statusText}${body ? ' — ' + body.slice(0, 200) : ''}`);
     throw new SearchJobsError('HTTP', `${res.status} ${res.statusText}${body ? ' — ' + body.slice(0, 200) : ''}`);
   }
 
@@ -311,8 +327,11 @@ async function fetchPage(url: string): Promise<SerpApiResponse> {
   try {
     data = (await res.json()) as SerpApiResponse;
   } catch (err) {
-    throw new SearchJobsError('PARSE', err instanceof Error ? err.message : String(err));
+    const message = err instanceof Error ? err.message : String(err);
+    tel(false, res.status, message);
+    throw new SearchJobsError('PARSE', message);
   }
+  tel(true, res.status);
   return data;
 }
 
