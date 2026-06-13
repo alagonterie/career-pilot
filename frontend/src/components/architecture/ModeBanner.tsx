@@ -1,29 +1,38 @@
+import type { ReactNode } from 'react'
+
+import { InfoTip } from '~/components/InfoTip'
 import type { SystemMode } from '~/lib/use-architecture'
 
 import { STATUS_META, type NodeStatus } from './nodes'
 
-function Chip({ label, value, tone, title }: { label: string; value: string; tone: string; title?: string }) {
+function Chip({ label, value, tone, info }: { label: string; value: string; tone: string; info?: ReactNode }) {
   return (
-    <div title={title} className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5">
+    <div className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5">
       <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{label}</span>
       <span className={`font-mono text-sm font-semibold ${tone}`}>{value}</span>
+      {info ? <InfoTip label={label}>{info}</InfoTip> : null}
     </div>
   )
 }
 
+/** pause_state → an agent-runtime word that says what it MEANS. The raw ladder
+ * value "active" under a "Pause" label read as a contradiction ("pause: active");
+ * "Agents: RUNNING" is what it actually means. */
+const AGENT_STATE: Record<SystemMode['pause_state'], string> = {
+  active: 'RUNNING',
+  paused: 'PAUSED',
+  halted: 'HALTED',
+  killswitch: 'KILLED',
+}
+
 /**
  * The system-mode banner (§24.28): `live_mode` as a labeled mode (SHADOW/LIVE —
- * a mode, not a health color) and `pause_state` surfaced prominently (a
- * paused/halted system is the most important thing to show). Degrades to a
- * neutral "connecting" chip while `mode` is still null.
- *
- * `compact` (the /live `SystemStatusPanel`, §24.36): the variable-height
- * explainers (the shadow note + a pause `reason:` line) move to the chips'
- * tooltips instead of wrapping inline, so the banner's height is
- * mode-independent and the panel doesn't outgrow its equalized grid row when the
- * system is in SHADOW. The roomy `/architecture` header keeps them inline.
+ * a mode, not a health color) and `pause_state` as the agent-runtime state.
+ * Each chip carries an InfoTip explaining what the value means (§24.57 — the
+ * tap/mobile-capable replacement for the old desktop-only `title` tooltip).
+ * Degrades to a neutral "connecting" chip while `mode` is still null.
  */
-export function ModeBanner({ mode, compact = false }: { mode: SystemMode | null; compact?: boolean }) {
+export function ModeBanner({ mode }: { mode: SystemMode | null }) {
   if (!mode) {
     return (
       <div data-testid="arch-mode-banner" className="flex flex-wrap items-center gap-3">
@@ -35,8 +44,6 @@ export function ModeBanner({ mode, compact = false }: { mode: SystemMode | null;
   const liveTone = mode.live_mode ? 'text-primary' : 'text-muted-foreground'
   const pauseTone =
     mode.pause_state === 'active' ? 'text-primary' : mode.pause_state === 'paused' ? 'text-warn' : 'text-destructive'
-  const shadowNote = mode.live_mode ? undefined : 'Shadow mode — agents observe and draft, but take no live action.'
-  const reasonNote = mode.pause_reason ? `reason: ${mode.pause_reason}` : undefined
 
   return (
     <div data-testid="arch-mode-banner" className="flex flex-wrap items-center gap-3">
@@ -44,16 +51,24 @@ export function ModeBanner({ mode, compact = false }: { mode: SystemMode | null;
         label="Mode"
         value={mode.live_mode ? 'LIVE' : 'SHADOW'}
         tone={liveTone}
-        title={compact ? shadowNote : undefined}
+        info={
+          mode.live_mode
+            ? 'LIVE — the agents take real, reversible action: drafting outreach in Gmail, writing to the calendar, updating the pipeline. SHADOW would have them observe and draft only.'
+            : 'SHADOW — the agents observe and draft, but take no live action (no Gmail drafts, no calendar writes). Flip to LIVE to let them act for real.'
+        }
       />
       <Chip
-        label="Pause"
-        value={mode.pause_state.toUpperCase()}
+        label="Agents"
+        value={AGENT_STATE[mode.pause_state]}
         tone={pauseTone}
-        title={compact ? reasonNote : undefined}
+        info={
+          <>
+            The spend kill-switch ladder: <b>RUNNING</b> (agents act normally) → <b>PAUSED</b> (temporarily held) →{' '}
+            <b>HALTED</b> (all LLM spend frozen) → <b>KILLED</b>.
+            {mode.pause_reason ? <> Reason: {mode.pause_reason}.</> : null}
+          </>
+        }
       />
-      {!compact && reasonNote ? <span className="font-mono text-xs text-muted-foreground">{reasonNote}</span> : null}
-      {!compact && shadowNote ? <span className="text-xs text-muted-foreground">{shadowNote}</span> : null}
     </div>
   )
 }

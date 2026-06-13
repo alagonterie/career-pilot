@@ -175,25 +175,29 @@ describe('ArchDiagram', () => {
 })
 
 describe('ModeBanner', () => {
-  it('shows LIVE + the pause state when live', () => {
+  it('shows LIVE + the agent state as what it MEANS (active → RUNNING)', () => {
     render(<ModeBanner mode={MODE} />)
     expect(screen.getByText('LIVE')).toBeInTheDocument()
-    expect(screen.getByText('ACTIVE')).toBeInTheDocument()
+    // pause_state 'active' renders as "RUNNING" under an "Agents" label, not the
+    // contradictory "Pause: ACTIVE".
+    expect(screen.getByText('RUNNING')).toBeInTheDocument()
+    expect(screen.queryByText('ACTIVE')).not.toBeInTheDocument()
   })
 
-  it('labels shadow mode honestly', () => {
+  it('relabels the rest of the kill-switch ladder', () => {
+    const { rerender } = render(<ModeBanner mode={{ ...MODE, pause_state: 'paused' }} />)
+    expect(screen.getByText('PAUSED')).toBeInTheDocument()
+    rerender(<ModeBanner mode={{ ...MODE, pause_state: 'halted' }} />)
+    expect(screen.getByText('HALTED')).toBeInTheDocument()
+  })
+
+  it('explains the mode via a tap InfoTip (not a hover-only title)', () => {
     render(<ModeBanner mode={{ ...MODE, live_mode: false }} />)
     expect(screen.getByText('SHADOW')).toBeInTheDocument()
-    expect(screen.getByText(/agents observe and draft/i)).toBeInTheDocument()
-  })
-
-  it('moves the shadow note to a chip tooltip when compact (§24.36 — keeps the panel height mode-independent)', () => {
-    render(<ModeBanner mode={{ ...MODE, live_mode: false }} compact />)
-    expect(screen.getByText('SHADOW')).toBeInTheDocument()
-    // the explainer is no longer inline text (which would balloon the cramped
-    // /live cell) — it rides the chip's title tooltip instead
-    expect(screen.queryByText(/agents observe and draft/i)).not.toBeInTheDocument()
-    expect(screen.getByTitle(/agents observe and draft/i)).toBeInTheDocument()
+    // The explainer is in an InfoTip — present only after tapping its trigger.
+    expect(screen.queryByText(/observe and draft/i)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'About: Mode' }))
+    expect(screen.getByTestId('info-tip-panel')).toHaveTextContent(/observe and draft/i)
   })
 
   it('degrades to connecting when mode is null', () => {

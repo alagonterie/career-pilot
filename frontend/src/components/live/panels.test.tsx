@@ -27,7 +27,6 @@ vi.mock('@tanstack/react-router', () => ({
 import { FunnelCompact } from './FunnelCompact'
 import {
   ContainerPoolPanel,
-  CostCachePanel,
   Panel,
   RecentOutcomesPanel,
   SessionsPanel,
@@ -86,11 +85,11 @@ const APPS: FunnelApplication[] = [
 ]
 
 describe('SystemStatusStrip', () => {
-  it('shows the mode + backend health (unboxed header strip)', () => {
-    render(<SystemStatusStrip mode={MODE} arch={ARCH} />)
+  it('shows the mode + agent state (unboxed header strip; no redundant backend dot)', () => {
+    render(<SystemStatusStrip mode={MODE} />)
     expect(screen.getByText('LIVE')).toBeInTheDocument()
-    expect(screen.getByText('ACTIVE')).toBeInTheDocument()
-    expect(screen.getByText(/backend online/)).toBeInTheDocument()
+    expect(screen.getByText('RUNNING')).toBeInTheDocument() // pause_state 'active' → RUNNING
+    expect(screen.queryByText(/backend online/)).not.toBeInTheDocument() // dropped — was tautological
   })
 })
 
@@ -123,7 +122,7 @@ describe('TelemetryPanel', () => {
     expect(screen.getByText('31s')).toBeInTheDocument() // p95
     expect(screen.getByText(/claude-haiku-4-5/)).toBeInTheDocument()
     expect(screen.getByText('3 total')).toBeInTheDocument() // local activity line still renders
-    expect(screen.queryByText('66%')).not.toBeInTheDocument() // cache lives in the Cost panel only
+    expect(screen.getByText('66%')).toBeInTheDocument() // cache rate now lives HERE (Cost & cache retired)
   })
 
   it('shows the honest "awaiting first turn" state when no turns are captured', () => {
@@ -131,45 +130,6 @@ describe('TelemetryPanel', () => {
     render(<TelemetryPanel view={view} />)
     expect(screen.getByTestId('telemetry-pending')).toBeInTheDocument()
     expect(screen.getByText('3 total')).toBeInTheDocument() // local aggregates still render
-  })
-})
-
-describe('CostCachePanel', () => {
-  it('shows the COMBINED estimated spend (agent turns + simulator) + cache line (§24.55)', () => {
-    const view: TelemetryView = { local: LOCAL, hasTurns: true }
-    render(<CostCachePanel view={view} />)
-    expect(screen.getByTestId('local-spend')).toHaveTextContent('$0.60') // 10c turns + 50c sim
-    expect(screen.getByText(/66% of prompt tokens/)).toBeInTheDocument()
-    // the windowed line breaks today down by lane
-    expect(screen.getByText('$0.28 today')).toBeInTheDocument() // 4c + 24c
-    expect(screen.getByText('agent $0.04')).toBeInTheDocument()
-    expect(screen.getByText('sim $0.24')).toBeInTheDocument()
-  })
-
-  it('renders the headline from simulator spend alone when no turns are captured (§24.55)', () => {
-    const view: TelemetryView = {
-      local: { ...LOCAL, turns_total: 0, turn_cost_cents_total: 0, turn_cost_cents_24h: 0 },
-      hasTurns: false,
-    }
-    render(<CostCachePanel view={view} />)
-    expect(screen.getByTestId('local-spend')).toHaveTextContent('$0.50')
-    expect(screen.queryByTestId('cost-pending')).not.toBeInTheDocument()
-  })
-
-  it('shows the honest pending state when no spend at all is captured', () => {
-    const view: TelemetryView = {
-      local: {
-        ...LOCAL,
-        turns_total: 0,
-        turn_cost_cents_total: 0,
-        turn_cost_cents_24h: 0,
-        sim_cost_cents_total: 0,
-        sim_cost_cents_24h: 0,
-      },
-      hasTurns: false,
-    }
-    render(<CostCachePanel view={view} />)
-    expect(screen.getByTestId('cost-pending')).toBeInTheDocument()
   })
 })
 
@@ -219,12 +179,9 @@ describe('FunnelCompact + RecentOutcomes', () => {
 })
 
 describe('InfoTip explainers on the metric jargon (§24.57)', () => {
-  it('CostCachePanel carries info triggers for spend · est and the cache rate', () => {
+  it('TelemetryPanel carries an info trigger on the cache rate (moved from Cost & cache)', () => {
     const view: TelemetryView = { local: LOCAL, hasTurns: true }
-    render(<CostCachePanel view={view} />)
-    const triggers = screen.getAllByTestId('info-tip-trigger')
-    expect(triggers.length).toBeGreaterThanOrEqual(2)
-    expect(screen.getByLabelText('About: spend · est')).toBeInTheDocument()
+    render(<TelemetryPanel view={view} />)
     expect(screen.getByLabelText('About: cache rate')).toBeInTheDocument()
   })
 
