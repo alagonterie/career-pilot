@@ -184,6 +184,21 @@ export async function handleLoadGmailFixture(
   }
 }
 
+/**
+ * A usable Gmail historyId, or null. Guards the null→"null" stringification
+ * that broke the morning curator on the box (2026-06-13): a null historyId that
+ * got serialized to the *string* `"null"` is truthy, so it passed the old
+ * `if (history_id)` checks and was sent to Gmail as `startHistoryId=null` → 400
+ * Bad Request, leaving the delta-sync permanently broken. Reject the literal
+ * "null"/"undefined"/"" on both the write (don't store it) and the read
+ * (neutralize any already-stored bad value → the next run full-syncs and heals).
+ * Real Gmail historyIds are numeric strings; the test fixtures use `h-…`, so we
+ * exclude the bad sentinels rather than requiring `^\d+$`.
+ */
+export function usableHistoryId(v: unknown): string | null {
+  return typeof v === 'string' && v !== '' && v !== 'null' && v !== 'undefined' ? v : null;
+}
+
 // ── 2c. handleGetGmailSyncState ────────────────────────────────────────────
 //
 // Returns the stored Gmail historyId so the container-side query tool
@@ -205,7 +220,9 @@ export async function handleGetGmailSyncState(
     writeResponse(inDb, requestId, {
       ok: true,
       data: {
-        history_id: row?.history_id ?? null,
+        // Sanitize on read so an already-stored "null" (the §2026-06-13 box bug)
+        // heals on the next run instead of needing a manual DB edit.
+        history_id: usableHistoryId(row?.history_id),
         last_full_sync_at: row?.last_full_sync_at ?? null,
       },
     });
@@ -430,7 +447,8 @@ export async function handlePersistFunnelState(
         cost_usd: p.cost_usd ?? null,
       });
 
-      if (p.gmail_history_id) {
+      const histId = usableHistoryId(p.gmail_history_id);
+      if (histId) {
         db.prepare(
           `
           INSERT INTO gmail_sync_state (account_id, history_id, last_full_sync_at)
@@ -439,7 +457,7 @@ export async function handlePersistFunnelState(
             history_id = excluded.history_id,
             last_full_sync_at = excluded.last_full_sync_at
         `,
-        ).run({ history_id: p.gmail_history_id, now: nowIso });
+        ).run({ history_id: histId, now: nowIso });
       }
 
       if (p.calendar_sync_tokens) {
