@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import { Sparkline } from '~/components/Sparkline'
+import { MultiSparkline, Sparkline } from '~/components/Sparkline'
 import type { Observability } from '~/lib/use-observability'
 
 import { SpendByClassPanel } from './panels'
@@ -41,19 +41,36 @@ describe('SpendByClassPanel', () => {
     expect(screen.queryByTestId('spend-by-class')).toBeNull()
   })
 
-  it('renders a row + sparkline per class with formatted dollars', () => {
+  it('renders the combined chart + a legend $ per class', () => {
     // chat: 5,000,000 µ = $5.00; host: 1,500 µ = $0.0015 (sub-cent → 4dp).
     render(<SpendByClassPanel data={obs({ chat: 5_000_000, host: 1_500 })} status="ok" />)
     expect(screen.getByTestId('spend-by-class')).toBeTruthy()
     expect(screen.getByTestId('spend-chat').textContent).toBe('$5.00')
     expect(screen.getByTestId('spend-host').textContent).toBe('$0.0015')
     expect(screen.getByTestId('spend-ops').textContent).toBe('$0.00')
-    // One sparkline per class.
-    for (const cls of ['chat', 'ops', 'sandbox', 'host']) {
-      expect(screen.getByTestId(`spark-${cls}`).querySelector('polyline')).toBeTruthy()
-    }
+    // ONE overlaid chart with a line per class (4 polylines, shared scale).
+    expect(screen.getByTestId('spend-chart').querySelectorAll('polyline')).toHaveLength(4)
     // Total line: $5.00 + $0.0015 → rounds to $5.00 at 2dp.
     expect(screen.getByText(/across all classes/i)).toBeTruthy()
+  })
+})
+
+describe('MultiSparkline', () => {
+  it('overlays one polyline per series on a shared y-scale', () => {
+    const { container } = render(
+      <MultiSparkline
+        series={[
+          { values: [0, 10, 0], className: 'text-primary' },
+          { values: [0, 5, 0], className: 'text-warn' },
+        ]}
+      />,
+    )
+    const lines = container.querySelectorAll('polyline')
+    expect(lines).toHaveLength(2)
+    // Shared max (10): the 2nd series' peak (5) sits at the vertical midpoint,
+    // not at the top — proof the scale is shared, not per-series.
+    const peakY = (poly: Element) => Number(poly.getAttribute('points')!.trim().split(/\s+/)[1].split(',')[1])
+    expect(peakY(lines[1])).toBeGreaterThan(peakY(lines[0]))
   })
 })
 
