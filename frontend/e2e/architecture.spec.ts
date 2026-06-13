@@ -44,7 +44,7 @@ test.describe('/architecture — live system map, frontend <-> backend', () => {
     // Mode banner: seeded live_mode=true, pause_state=active.
     const banner = page.getByTestId('arch-mode-banner')
     await expect(banner.getByText('LIVE')).toBeVisible()
-    await expect(banner.getByText('ACTIVE')).toBeVisible()
+    await expect(banner.getByText('RUNNING')).toBeVisible() // §24.69 — pause_state 'active' → RUNNING
 
     // The honesty legend distinguishes probed from structural.
     await expect(page.getByTestId('arch-legend')).toContainText('Structural — no live probe')

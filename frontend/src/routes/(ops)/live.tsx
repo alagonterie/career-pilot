@@ -4,11 +4,10 @@ import { FunnelCompact } from '~/components/live/FunnelCompact'
 import { LogStream } from '~/components/live/LogStream'
 import {
   ContainerPoolPanel,
-  CostCachePanel,
+  LlmSpendPanel,
   Panel,
   RecentOutcomesPanel,
   SessionsPanel,
-  SpendByClassPanel,
   SystemStatusStrip,
   TelemetryPanel,
 } from '~/components/live/panels'
@@ -75,7 +74,7 @@ function LivePage() {
           </div>
           {/* System status rides the header unboxed (§24.69 follow-up) — it's
               page-level state, not a stat tile. */}
-          <SystemStatusStrip mode={mode} arch={arch} status={archStatus} />
+          <SystemStatusStrip mode={mode} status={archStatus} />
         </header>
 
         {/* centerpiece (trace) + right rail. Trace-first on a phone (§13): the
@@ -84,7 +83,7 @@ function LivePage() {
             and `lg:order` floats the stat row back on top at desktop. The
             reordered stat panels are non-interactive display widgets, so the
             desktop focus order is unaffected and the primary content leads. */}
-        <div className="order-2 grid grid-cols-1 gap-4 lg:order-4 lg:grid-cols-3">
+        <div className="order-2 grid grid-cols-1 gap-4 lg:order-3 lg:grid-cols-3">
           <div className="lg:col-span-2">
             <LogStream
               events={events}
@@ -116,35 +115,22 @@ function LivePage() {
                 <FunnelCompact apps={apps} />
               )}
             </Panel>
-            <CostCachePanel view={view} status={telemetryStatus} />
             <RecentOutcomesPanel apps={apps} status={funnelStatus} />
           </div>
         </div>
 
         {/* top stat row — `grid-auto-rows` floors every panel to the MAX loaded
-            row height so loading→ok never shifts (§24.36 Tier-2), regardless of
-            whether LLM-telemetry has captured turns (taller metric lanes) or is
-            awaiting the first (shorter pending copy). 196px = the populated
-            height re-measured for §24.62 at the narrowest desktop rail (1024px,
-            where the panel footers wrap to two lines: 175px base + one wrapped
-            line); wider rails sit under the floor. The §24.62 Metric nowrap fix
-            is what keeps the loaded row UNDER this floor — the old "TURN P50"
-            two-line wrap pushed past it and the row resized on load. */}
-        <div className="order-3 grid grid-cols-1 gap-4 [grid-auto-rows:minmax(196px,auto)] sm:grid-cols-2 lg:order-2 lg:grid-cols-3">
+            row height so loading→ok never shifts (§24.36 Tier-2). The 4th tile is
+            now LLM SPEND (the consolidated cost box, §24.69 follow-up) — an equal-
+            size sibling of LLM telemetry; system status moved to the header strip. */}
+        <div className="order-3 grid grid-cols-1 gap-4 [grid-auto-rows:minmax(196px,auto)] sm:grid-cols-2 lg:order-2 lg:grid-cols-4">
           <SessionsPanel arch={arch} status={archStatus} />
           <ContainerPoolPanel arch={arch} status={archStatus} />
           <TelemetryPanel view={view} status={telemetryStatus} />
+          <LlmSpendPanel data={observability} status={observabilityStatus} />
         </div>
 
-        {/* SPEND BY CLASS (§24.69) — a full-width strip below the stat row, not a
-            rail panel: a 4th rail panel over-lengthened the rail and stretched the
-            trace beside it (§24.36 Tier-2). On desktop it sits stats → spend →
-            trace; on a phone it trails the stat tiles. */}
-        <div className="order-4 lg:order-3">
-          <SpendByClassPanel data={observability} status={observabilityStatus} />
-        </div>
-
-        <footer className="order-5 border-t border-border pt-6 text-[11px] leading-relaxed text-muted-foreground">
+        <footer className="order-4 border-t border-border pt-6 text-[11px] leading-relaxed text-muted-foreground">
           Every line is sanitized public data — companies obfuscated by default, no PII. Per-line LLM telemetry (model,
           tokens, cost, cache) renders as it&apos;s captured; absent fields are simply not shown, never faked.
         </footer>

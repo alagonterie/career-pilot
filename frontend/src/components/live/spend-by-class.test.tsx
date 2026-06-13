@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { MultiSparkline, Sparkline } from '~/components/Sparkline'
 import type { Observability } from '~/lib/use-observability'
 
-import { SpendByClassPanel } from './panels'
+import { LlmSpendPanel } from './panels'
 
 function zeros(): number[] {
   return new Array(24).fill(0)
@@ -27,31 +27,31 @@ function obs(over: Partial<Record<keyof Observability['spend_by_class'], number>
   }
 }
 
-describe('SpendByClassPanel', () => {
+describe('LlmSpendPanel', () => {
   it('shows a skeleton while loading and offline on error', () => {
-    const { rerender } = render(<SpendByClassPanel data={null} status="loading" />)
+    const { rerender } = render(<LlmSpendPanel data={null} status="loading" />)
     expect(screen.getByTestId('panel-skeleton')).toBeTruthy()
-    rerender(<SpendByClassPanel data={null} status="error" />)
+    rerender(<LlmSpendPanel data={null} status="error" />)
     expect(screen.getByText(/offline/i)).toBeTruthy()
   })
 
   it('shows the pending copy when no spend was captured', () => {
-    render(<SpendByClassPanel data={obs()} status="ok" />)
+    render(<LlmSpendPanel data={obs()} status="ok" />)
     expect(screen.getByTestId('spend-pending')).toBeTruthy()
     expect(screen.queryByTestId('spend-by-class')).toBeNull()
   })
 
-  it('renders the combined chart + a legend $ per class', () => {
+  it('renders the total headline + combined chart + a legend $ per class', () => {
     // chat: 5,000,000 µ = $5.00; host: 1,500 µ = $0.0015 (sub-cent → 4dp).
-    render(<SpendByClassPanel data={obs({ chat: 5_000_000, host: 1_500 })} status="ok" />)
+    render(<LlmSpendPanel data={obs({ chat: 5_000_000, host: 1_500 })} status="ok" />)
     expect(screen.getByTestId('spend-by-class')).toBeTruthy()
+    // Total headline: $5.00 + $0.0015 → rounds to $5.00 at 2dp.
+    expect(screen.getByTestId('llm-spend-total').textContent).toBe('$5.00')
     expect(screen.getByTestId('spend-chat').textContent).toBe('$5.00')
     expect(screen.getByTestId('spend-host').textContent).toBe('$0.0015')
     expect(screen.getByTestId('spend-ops').textContent).toBe('$0.00')
     // ONE overlaid chart with a line per class (4 polylines, shared scale).
     expect(screen.getByTestId('spend-chart').querySelectorAll('polyline')).toHaveLength(4)
-    // Total line: $5.00 + $0.0015 → rounds to $5.00 at 2dp.
-    expect(screen.getByText(/across all classes/i)).toBeTruthy()
   })
 })
 

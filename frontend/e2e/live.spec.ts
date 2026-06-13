@@ -34,19 +34,21 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
 
     await expect(page.getByRole('heading', { level: 1, name: 'Live' })).toBeVisible()
 
-    // System status: seeded live_mode=true, pause_state=active (scoped to the
-    // mode banner — "Live"/"Active" also appear in the nav, headings, and panels).
+    // System status (unboxed header strip): seeded live_mode=true,
+    // pause_state=active → "LIVE" + "RUNNING" (§24.69 — "active" reads as RUNNING,
+    // not the contradictory "Pause: ACTIVE").
     const banner = page.getByTestId('arch-mode-banner')
     await expect(banner.getByText('LIVE', { exact: true })).toBeVisible()
-    await expect(banner.getByText('ACTIVE', { exact: true })).toBeVisible()
+    await expect(banner.getByText('RUNNING', { exact: true })).toBeVisible()
 
     // Container pool: fixed PORTAL_MOCK_CONTAINERS=2 of capacity 4.
     await expect(page.getByText('2 / 4')).toBeVisible()
 
     // Telemetry is local-sourced from the seeded turn row (§24.47): the LLM
-    // telemetry panel shows the top model; cache lives in the Cost & cache panel.
+    // telemetry panel shows the top model + the cache rate (moved here from the
+    // retired Cost & cache box — §24.69; its InfoTip trigger is unique to the panel).
     await expect(page.getByText('top model:')).toBeVisible()
-    await expect(page.getByText(/of prompt tokens served from cache/)).toBeVisible()
+    await expect(page.getByRole('button', { name: 'About: cache rate' })).toBeVisible()
 
     // The trace stream replays the seeded backlog over SSE.
     const trace = page.getByTestId('trace-stream')
@@ -67,17 +69,14 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
     // §24.55: the seal's cache lane is quantitative (share of prompt tokens
     // served from cache), never a boolean badge.
     await expect(trace.getByTestId('trace-turn')).toContainText('cache 90%')
-    // COST & CACHE shows the COMBINED est spend (§24.55): the seeded turn row
-    // ($0.06) + the seeded deterministic simulator run ($0.04).
-    await expect(page.getByTestId('local-spend')).toHaveText('$0.10')
-
-    // SPEND BY CLASS (§24.69) — per-class 24h cost from the seeded
-    // request_telemetry rows; exact clean totals (3×$0.07 chat, 2×$0.025 sandbox).
+    // LLM SPEND (§24.69) — the consolidated cost tile, per-class 24h from the
+    // seeded request_telemetry rows; exact clean totals (3×$0.07 chat, 2×$0.025
+    // sandbox) + a total headline.
     const spend = page.getByTestId('spend-by-class')
     await expect(spend).toBeVisible()
+    await expect(page.getByTestId('llm-spend-total')).toBeVisible()
     await expect(page.getByTestId('spend-chat')).toHaveText('$0.21')
     await expect(page.getByTestId('spend-sandbox')).toHaveText('$0.05')
-    await expect(page.getByText(/across all classes/)).toBeVisible()
 
     // §24.57: the fixture window is in the past, so the stream opens with a
     // leading day divider; the seal explains itself via an InfoTip on tap.

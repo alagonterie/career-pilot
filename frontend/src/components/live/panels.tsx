@@ -13,12 +13,11 @@ import type { PollStatus } from '~/lib/use-polled-json'
 import type { TelemetryView } from '~/lib/use-telemetry'
 
 /** Loading twin for a panel body (§24.36 36.1) — a couple of metric-sized
- * skeletons so the panel keeps its shape while its endpoint is polled. The
- * panels that the rail composes (`Cost & cache`, `Recent outcomes`) carry a
- * `min-h` sized to their MAX loaded footprint (Portkey connected / 6 recent rows
- * — the taller of the data variants), so loading→ok reserves the same height
- * regardless of which data loads and the trace stream (which is `h-full`, sized
- * by the rail) doesn't collapse — the §24.36 Tier-2 stability standard. */
+ * skeletons so the panel keeps its shape while its endpoint is polled. Rail
+ * panels (`Job Pipeline`, `Recent outcomes`) carry a `min-h` sized to their MAX
+ * loaded footprint, so loading→ok reserves the same height and the trace stream
+ * beside them (which is `h-full`, sized by the rail) doesn't collapse — the
+ * §24.36 Tier-2 stability standard. */
 function PanelSkeleton({ lines = 1 }: { lines?: number }) {
   return (
     <div data-testid="panel-skeleton" className="flex flex-col gap-2">
@@ -86,23 +85,16 @@ function fmtLatency(ms: number): string {
   return ms >= 1000 ? `${Math.round(ms / 1000)}s` : `${ms}ms`
 }
 
-/** SYSTEM STATUS — the mode banner (live/shadow + pause ladder) + a backend-health
- * dot, rendered UNBOXED as a header strip (it's page-level status, not a stat
- * tile — §24.69 follow-up). UPTIME / LAST-DEPLOY need a host field no endpoint
- * exposes yet, so they're omitted rather than faked (§24.29). */
-export function SystemStatusStrip({
-  mode,
-  arch,
-  status,
-}: {
-  mode: SystemMode | null
-  arch: ArchitectureData | null
-  status?: PollStatus
-}) {
+/** SYSTEM STATUS — the mode banner (live/shadow + agent-state, each with an
+ * explain-on-tap InfoTip), rendered UNBOXED as a header strip (it's page-level
+ * status, not a stat tile — §24.69 follow-up). The old "backend online" dot was
+ * dropped: it was hardcoded `online` and could never read otherwise (a down
+ * backend renders the `error` branch below instead), so it was tautological. */
+export function SystemStatusStrip({ mode, status }: { mode: SystemMode | null; status?: PollStatus }) {
   if (status === 'loading') {
     return (
-      <div data-testid="system-status" className="flex h-6 items-center">
-        <Skeleton className="h-4 w-40" />
+      <div data-testid="system-status" className="flex h-9 items-center">
+        <Skeleton className="h-7 w-44" />
       </div>
     )
   }
@@ -115,18 +107,9 @@ export function SystemStatusStrip({
       </div>
     )
   }
-  const online = arch?.backend === 'online'
   return (
-    <div data-testid="system-status" className="flex flex-wrap items-center gap-x-3 gap-y-2">
-      {/* compact: shadow/pause-reason explainers ride the chips' tooltips. */}
-      <ModeBanner mode={mode} compact />
-      <span className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
-        <span
-          aria-hidden="true"
-          className={`inline-block h-2 w-2 rounded-full ${online ? 'bg-primary' : 'bg-muted-foreground'}`}
-        />
-        backend {arch?.backend ?? '—'}
-      </span>
+    <div data-testid="system-status">
+      <ModeBanner mode={mode} />
     </div>
   )
 }
@@ -210,11 +193,11 @@ export function ContainerPoolPanel({ arch, status }: { arch: ArchitectureData | 
   )
 }
 
-/** LLM TELEMETRY — derived from the local per-turn capture (§24.34/§24.47): turn
- * count + latency p50/p95 + top model, aggregated over captured turns; the
- * always-real local activity aggregates render unconditionally. (Cache lives in
- * the Cost & cache panel — no duplication.) Honest labels — "turns" (not raw
- * gateway requests), "turn p50/p95" (whole turn, not per-request). */
+/** LLM TELEMETRY — the performance + efficiency box (§24.34/§24.47): turn count
+ * + latency p50/p95 + top model + cache rate, from the local per-turn capture;
+ * the always-real local activity aggregates render unconditionally. (Cache moved
+ * here from the retired Cost & cache box — §24.69 follow-up.) Honest labels —
+ * "turns" (not raw gateway requests), "turn p50/p95" (whole turn, not per-request). */
 export function TelemetryPanel({ view, status }: { view: TelemetryView; status?: PollStatus }) {
   const local = view.local
   if (status === 'loading') {
@@ -255,6 +238,15 @@ export function TelemetryPanel({ view, status }: { view: TelemetryView; status?:
               top model: <span className="text-foreground">{local.top_model}</span>
             </p>
           ) : null}
+          {local.cache_hit_rate != null ? (
+            <p className="inline-flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
+              cache <span className="text-foreground">{Math.round(local.cache_hit_rate * 100)}%</span>
+              <InfoTip label="cache rate">
+                Prompt caching re-serves unchanged context (the agent&apos;s instructions, tools, history) instead of
+                reprocessing it — cached tokens cost about a tenth of fresh ones. Higher is cheaper.
+              </InfoTip>
+            </p>
+          ) : null}
         </>
       ) : (
         <p data-testid="telemetry-pending" className="font-mono text-xs text-muted-foreground">
@@ -278,71 +270,6 @@ export function TelemetryPanel({ view, status }: { view: TelemetryView; status?:
   )
 }
 
-/** COST & CACHE — the COMBINED estimated spend (§24.55): owner agent turns
- * (per-turn capture, §24.34/§24.47) + public simulator runs (per-run capture),
- * plus the cache-read rate. cost is an SDK *estimate* (labeled "est"), not a
- * billed number; the headline is lifetime, the bottom line carries the windowed
- * "today" detail broken down by lane (masked in the visual baseline —
- * wall-clock). */
-export function CostCachePanel({ view, status }: { view: TelemetryView; status?: PollStatus }) {
-  const local = view.local
-  const hasSpend = view.hasTurns || (local?.sim_cost_cents_total ?? 0) > 0
-  if (status === 'loading') {
-    return (
-      <Panel title="Cost & cache" className="min-h-[175px]">
-        <PanelSkeleton lines={1} />
-      </Panel>
-    )
-  }
-  if (status === 'error') {
-    return (
-      <Panel title="Cost & cache" className="min-h-[175px]">
-        <PanelOffline />
-      </Panel>
-    )
-  }
-  return (
-    <Panel title="Cost & cache" className="min-h-[175px]">
-      {hasSpend && local ? (
-        <>
-          <Metric
-            testId="local-spend"
-            value={`$${((local.turn_cost_cents_total + local.sim_cost_cents_total) / 100).toFixed(2)}`}
-            label="spend · est"
-            info="Lifetime estimated LLM spend: the owner agent's per-turn usage plus public simulator runs, priced by the SDK — an estimate, not a bill (server-side fees like web search aren't included)."
-          />
-          {local.cache_hit_rate != null ? (
-            <p className="inline-flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
-              {Math.round(local.cache_hit_rate * 100)}% of prompt tokens served from cache.
-              <InfoTip label="cache rate">
-                Prompt caching re-serves unchanged context (the agent&apos;s instructions, tools, history) instead of
-                reprocessing it — cached tokens cost about a tenth of fresh ones. Higher is cheaper.
-              </InfoTip>
-            </p>
-          ) : null}
-        </>
-      ) : (
-        <p data-testid="cost-pending" className="font-mono text-xs text-muted-foreground">
-          No agent spend captured yet — the estimate sums per-turn SDK usage as turns land.
-        </p>
-      )}
-      {local ? (
-        // The windowed "today" detail is wall-clock-windowed (and would shift if a
-        // parallel test pushed a turn row); `live-volatile` lets the visual
-        // baseline mask the line — the values are covered by the unit + E2E tests.
-        <div
-          data-testid="live-volatile"
-          className="flex flex-wrap gap-x-4 gap-y-1 border-t border-border pt-2 font-mono text-[11px] text-muted-foreground"
-        >
-          <span>${((local.turn_cost_cents_24h + local.sim_cost_cents_24h) / 100).toFixed(2)} today</span>
-          <span>agent ${(local.turn_cost_cents_24h / 100).toFixed(2)}</span>
-          <span>sim ${(local.sim_cost_cents_24h / 100).toFixed(2)}</span>
-        </div>
-      ) : null}
-    </Panel>
-  )
-}
-
 /** Friendly labels + a distinct line color per traffic class (§24.69). The
  * `text-*` class drives the overlaid line via currentColor; `bg-*` (derived) is
  * the legend swatch. None of the four is `destructive` — spend isn't an alarm. */
@@ -360,24 +287,24 @@ function fmtUsd(microusd: number): string {
   return usd >= 0.01 || usd === 0 ? `$${usd.toFixed(2)}` : `$${usd.toFixed(4)}`
 }
 
-/** SPEND BY CLASS — the last-24h LLM/API spend split by traffic class as ONE
- * overlaid multi-line chart (a colored line per class on a shared scale) plus a
- * color legend carrying each class's 24h total (PORTAL §5.2; §24.69). A
- * full-width strip — not a rail panel, which would over-lengthen the rail and
- * stretch the trace beside it. Sourced from request_telemetry via
- * /api/observability — the only place HOST-side spend (sim prose, sanitizer) is
- * visible. Aggregate-only; no per-request data. */
-export function SpendByClassPanel({ data, status }: { data: Observability | null; status?: PollStatus }) {
+/** LLM SPEND — the cost box (§24.69; replaces the old Cost & cache + the
+ * full-width Spend-by-class strip). A stat tile equal to LLM telemetry beside
+ * it: a 24h total headline, then ONE overlaid multi-line chart (a colored line
+ * per class on a shared scale — a taller line spent more) and a color legend
+ * carrying each class's total. Single source (request_telemetry via
+ * /api/observability) — the comprehensive one, the only place host-side spend
+ * (sim prose, sanitizer) shows. Aggregate-only; no per-request data. */
+export function LlmSpendPanel({ data, status }: { data: Observability | null; status?: PollStatus }) {
   if (status === 'loading') {
     return (
-      <Panel title="Spend by class" className="min-h-[140px]">
+      <Panel title="LLM spend">
         <PanelSkeleton lines={2} />
       </Panel>
     )
   }
   if (status === 'error') {
     return (
-      <Panel title="Spend by class" className="min-h-[140px]">
+      <Panel title="LLM spend">
         <PanelOffline />
       </Panel>
     )
@@ -385,47 +312,44 @@ export function SpendByClassPanel({ data, status }: { data: Observability | null
   const spend = data?.spend_by_class ?? null
   const total = spend ? SPEND_CLASSES.reduce((sum, c) => sum + spend[c.key].microusd_24h, 0) : 0
   return (
-    <Panel
-      title="Spend by class"
-      className="min-h-[140px]"
-      action={
-        spend != null && total > 0 ? (
-          <span className="inline-flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
-            {fmtUsd(total)} across all classes · 24h
-            <InfoTip label="spend by class">
-              Per-request cost from our own telemetry, summed over the last 24 hours and split by who triggered it —
-              your chat, the autonomous schedules, public simulator visitors, and host-side processing. The lines share
-              one scale, so a taller line spent more. An estimate from list prices, not a bill.
-            </InfoTip>
-          </span>
-        ) : null
-      }
-    >
+    <Panel title="LLM spend">
       {spend == null ? (
         <PanelSkeleton lines={2} />
       ) : total === 0 ? (
         <p data-testid="spend-pending" className="font-mono text-xs text-muted-foreground">
-          No API spend captured in the last 24h. Owner chat, autonomous ops, the public sandbox, and host-side
-          processing each get a line as requests land.
+          No LLM spend captured in the last 24h. Owner chat, autonomous ops, the public sandbox, and host processing
+          each get a line as requests land.
         </p>
       ) : (
-        <div data-testid="spend-by-class" className="flex flex-col gap-3">
+        <div data-testid="spend-by-class" className="flex flex-col gap-2.5">
+          <Metric
+            testId="llm-spend-total"
+            value={fmtUsd(total)}
+            label="24h · est"
+            info={
+              <>
+                Every model call&apos;s cost from our own telemetry, summed over the last 24 h and split by who
+                triggered it. This page costs the candidate roughly {fmtUsd(total)}/day to run — an estimate from list
+                prices, not a bill.
+              </>
+            }
+          />
           <div data-testid="spend-chart">
             <MultiSparkline
-              height={56}
+              height={28}
               series={SPEND_CLASSES.map((c) => ({ values: spend[c.key].buckets, className: c.color }))}
             />
           </div>
           {/* Legend doubles as the per-class readout (color → class → 24h total). */}
-          <ul className="flex flex-wrap gap-x-5 gap-y-1.5">
+          <ul className="flex flex-col gap-1">
             {SPEND_CLASSES.map((c) => (
-              <li key={c.key} className="inline-flex items-center gap-1.5 font-mono text-[11px]">
+              <li key={c.key} className="inline-flex items-center gap-1.5 font-mono text-[10px]">
                 <span
                   aria-hidden="true"
-                  className={`inline-block h-2 w-2 rounded-full ${c.color.replace('text-', 'bg-')}`}
+                  className={`inline-block h-2 w-2 shrink-0 rounded-full ${c.color.replace('text-', 'bg-')}`}
                 />
-                <span className="uppercase tracking-widest text-muted-foreground">{c.label}</span>
-                <span data-testid={`spend-${c.key}`} className="tabular-nums text-foreground">
+                <span className="truncate uppercase tracking-widest text-muted-foreground">{c.label}</span>
+                <span data-testid={`spend-${c.key}`} className="ml-auto tabular-nums text-foreground">
                   {fmtUsd(spend[c.key].microusd_24h)}
                 </span>
               </li>
