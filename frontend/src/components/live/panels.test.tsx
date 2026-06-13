@@ -122,7 +122,7 @@ describe('TelemetryPanel', () => {
     expect(screen.getByText('31s')).toBeInTheDocument() // p95
     expect(screen.getByText(/claude-haiku-4-5/)).toBeInTheDocument()
     expect(screen.getByText('3 total')).toBeInTheDocument() // local activity line still renders
-    expect(screen.getByText('66%')).toBeInTheDocument() // cache rate now lives HERE (Cost & cache retired)
+    expect(screen.queryByText('66%')).not.toBeInTheDocument() // cache rate lives in LLM spend, not here
   })
 
   it('shows the honest "awaiting first turn" state when no turns are captured', () => {
@@ -179,12 +179,6 @@ describe('FunnelCompact + RecentOutcomes', () => {
 })
 
 describe('InfoTip explainers on the metric jargon (§24.57)', () => {
-  it('TelemetryPanel carries an info trigger on the cache rate (moved from Cost & cache)', () => {
-    const view: TelemetryView = { local: LOCAL, hasTurns: true }
-    render(<TelemetryPanel view={view} />)
-    expect(screen.getByLabelText('About: cache rate')).toBeInTheDocument()
-  })
-
   it('TelemetryPanel carries an info trigger on turn p50', () => {
     const view: TelemetryView = { local: LOCAL, hasTurns: true }
     render(<TelemetryPanel view={view} />)

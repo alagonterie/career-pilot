@@ -127,7 +127,11 @@ function LivePage() {
           <SessionsPanel arch={arch} status={archStatus} />
           <ContainerPoolPanel arch={arch} status={archStatus} />
           <TelemetryPanel view={view} status={telemetryStatus} />
-          <LlmSpendPanel data={observability} status={observabilityStatus} />
+          <LlmSpendPanel
+            data={observability}
+            cacheHitRate={view.local?.cache_hit_rate ?? null}
+            status={observabilityStatus}
+          />
         </div>
 
         <footer className="order-4 border-t border-border pt-6 text-[11px] leading-relaxed text-muted-foreground">

@@ -92,9 +92,12 @@ function fmtLatency(ms: number): string {
  * backend renders the `error` branch below instead), so it was tautological. */
 export function SystemStatusStrip({ mode, status }: { mode: SystemMode | null; status?: PollStatus }) {
   if (status === 'loading') {
+    // Mirror the two loaded chips (same flex/gap + chip height/width) so the
+    // header doesn't shift size or position on load.
     return (
-      <div data-testid="system-status" className="flex h-9 items-center">
-        <Skeleton className="h-7 w-44" />
+      <div data-testid="system-status" className="flex flex-wrap items-center gap-3">
+        <Skeleton className="h-[34px] w-[104px] rounded-md" />
+        <Skeleton className="h-[34px] w-[148px] rounded-md" />
       </div>
     )
   }
@@ -193,11 +196,11 @@ export function ContainerPoolPanel({ arch, status }: { arch: ArchitectureData | 
   )
 }
 
-/** LLM TELEMETRY — the performance + efficiency box (§24.34/§24.47): turn count
- * + latency p50/p95 + top model + cache rate, from the local per-turn capture;
- * the always-real local activity aggregates render unconditionally. (Cache moved
- * here from the retired Cost & cache box — §24.69 follow-up.) Honest labels —
- * "turns" (not raw gateway requests), "turn p50/p95" (whole turn, not per-request). */
+/** LLM TELEMETRY — the performance box (§24.34/§24.47): turn count + latency
+ * p50/p95 + top model, from the local per-turn capture; the always-real local
+ * activity aggregates render unconditionally. (Cache rate lives with cost in the
+ * LLM spend box — it's a cost lever, not a perf metric — §24.69 follow-up.)
+ * Honest labels — "turns" (not raw gateway requests), "turn p50/p95" (whole turn). */
 export function TelemetryPanel({ view, status }: { view: TelemetryView; status?: PollStatus }) {
   const local = view.local
   if (status === 'loading') {
@@ -238,15 +241,6 @@ export function TelemetryPanel({ view, status }: { view: TelemetryView; status?:
               top model: <span className="text-foreground">{local.top_model}</span>
             </p>
           ) : null}
-          {local.cache_hit_rate != null ? (
-            <p className="inline-flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
-              cache <span className="text-foreground">{Math.round(local.cache_hit_rate * 100)}%</span>
-              <InfoTip label="cache rate">
-                Prompt caching re-serves unchanged context (the agent&apos;s instructions, tools, history) instead of
-                reprocessing it — cached tokens cost about a tenth of fresh ones. Higher is cheaper.
-              </InfoTip>
-            </p>
-          ) : null}
         </>
       ) : (
         <p data-testid="telemetry-pending" className="font-mono text-xs text-muted-foreground">
@@ -270,14 +264,17 @@ export function TelemetryPanel({ view, status }: { view: TelemetryView; status?:
   )
 }
 
-/** Friendly labels + a distinct line color per traffic class (§24.69). The
- * `text-*` class drives the overlaid line via currentColor; `bg-*` (derived) is
- * the legend swatch. None of the four is `destructive` — spend isn't an alarm. */
-const SPEND_CLASSES: { key: TrafficClass; label: string; color: string }[] = [
-  { key: 'chat', label: 'owner chat', color: 'text-primary' },
-  { key: 'ops', label: 'autonomous ops', color: 'text-accent-cool' },
-  { key: 'sandbox', label: 'public sandbox', color: 'text-warn' },
-  { key: 'host', label: 'host processing', color: 'text-muted-foreground' },
+/** Friendly labels + a distinct color per traffic class (§24.69). `line` (a
+ * `text-*` class) drives the overlaid chart line via currentColor; `dot` (a
+ * `bg-*` class) is the legend swatch. Both are spelled out as LITERALS — Tailwind
+ * only emits utilities it sees verbatim in source, so a derived `'text-'→'bg-'`
+ * replace silently dropped the accent-cool dot. None is `destructive` (spend
+ * isn't an alarm). */
+const SPEND_CLASSES: { key: TrafficClass; label: string; line: string; dot: string }[] = [
+  { key: 'chat', label: 'owner chat', line: 'text-primary', dot: 'bg-primary' },
+  { key: 'ops', label: 'autonomous ops', line: 'text-accent-cool', dot: 'bg-accent-cool' },
+  { key: 'sandbox', label: 'public sandbox', line: 'text-warn', dot: 'bg-warn' },
+  { key: 'host', label: 'host processing', line: 'text-muted-foreground', dot: 'bg-muted-foreground' },
 ]
 
 /** Format microUSD as dollars — sub-cent figures (most rows) keep 4 decimals so
@@ -289,12 +286,22 @@ function fmtUsd(microusd: number): string {
 
 /** LLM SPEND — the cost box (§24.69; replaces the old Cost & cache + the
  * full-width Spend-by-class strip). A stat tile equal to LLM telemetry beside
- * it: a 24h total headline, then ONE overlaid multi-line chart (a colored line
- * per class on a shared scale — a taller line spent more) and a color legend
- * carrying each class's total. Single source (request_telemetry via
+ * it: a 24h total headline + the cache rate (which is a cost lever, so it lives
+ * with cost), then ONE overlaid multi-line chart (a colored line per class on a
+ * shared scale — a taller line spent more) and a color legend carrying each
+ * class's total. Spend is a single source (request_telemetry via
  * /api/observability) — the comprehensive one, the only place host-side spend
- * (sim prose, sanitizer) shows. Aggregate-only; no per-request data. */
-export function LlmSpendPanel({ data, status }: { data: Observability | null; status?: PollStatus }) {
+ * (sim prose, sanitizer) shows; `cacheHitRate` rides in from the per-turn
+ * telemetry (`view.local`). Aggregate-only; no per-request data. */
+export function LlmSpendPanel({
+  data,
+  cacheHitRate,
+  status,
+}: {
+  data: Observability | null
+  cacheHitRate?: number | null
+  status?: PollStatus
+}) {
   if (status === 'loading') {
     return (
       <Panel title="LLM spend">
@@ -334,20 +341,27 @@ export function LlmSpendPanel({ data, status }: { data: Observability | null; st
               </>
             }
           />
+          {cacheHitRate != null ? (
+            <p className="-mt-1 inline-flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
+              cache <span className="text-foreground">{Math.round(cacheHitRate * 100)}%</span>
+              <InfoTip label="cache rate">
+                Prompt caching re-serves unchanged context (the agent&apos;s instructions, tools, history) instead of
+                reprocessing it — cached tokens cost about a tenth of fresh ones. It&apos;s why the spend above is as
+                low as it is; higher is cheaper.
+              </InfoTip>
+            </p>
+          ) : null}
           <div data-testid="spend-chart">
             <MultiSparkline
               height={28}
-              series={SPEND_CLASSES.map((c) => ({ values: spend[c.key].buckets, className: c.color }))}
+              series={SPEND_CLASSES.map((c) => ({ values: spend[c.key].buckets, className: c.line }))}
             />
           </div>
           {/* Legend doubles as the per-class readout (color → class → 24h total). */}
           <ul className="flex flex-col gap-1">
             {SPEND_CLASSES.map((c) => (
               <li key={c.key} className="inline-flex items-center gap-1.5 font-mono text-[10px]">
-                <span
-                  aria-hidden="true"
-                  className={`inline-block h-2 w-2 shrink-0 rounded-full ${c.color.replace('text-', 'bg-')}`}
-                />
+                <span aria-hidden="true" className={`inline-block h-2 w-2 shrink-0 rounded-full ${c.dot}`} />
                 <span className="truncate uppercase tracking-widest text-muted-foreground">{c.label}</span>
                 <span data-testid={`spend-${c.key}`} className="ml-auto tabular-nums text-foreground">
                   {fmtUsd(spend[c.key].microusd_24h)}
