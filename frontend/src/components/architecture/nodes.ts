@@ -1,5 +1,6 @@
 import { REPO_URL } from '~/lib/site'
 import type { ArchitectureData, SystemMode } from '~/lib/use-architecture'
+import type { Observability } from '~/lib/use-observability'
 
 // The system map as data (PORTAL §5.5). A curated, faithful subset of the spec's
 // ASCII diagram — not a pixel-replica — laid out as vertical region bands plus a
@@ -9,8 +10,9 @@ import type { ArchitectureData, SystemMode } from '~/lib/use-architecture'
 export type Region = 'owner' | 'triggers' | 'host' | 'container' | 'public'
 
 /** What real signal (if any) backs a node's status badge. `structural` nodes get
- * no health claim — we never paint a color we don't actually probe (§24.24). */
-export type ProbeKind = 'structural' | 'pause' | 'backend' | 'container' | 'sessions'
+ * no health claim — we never paint a color we don't actually probe (§24.24).
+ * `provider` reads per-provider health from request_telemetry (§24.69). */
+export type ProbeKind = 'structural' | 'pause' | 'backend' | 'container' | 'sessions' | 'provider'
 
 export type NodeStatus = 'healthy' | 'degraded' | 'down' | 'idle' | 'structural'
 
@@ -19,6 +21,12 @@ export interface ArchNode {
   label: string
   region: Region
   probe: ProbeKind
+  /** For probe: 'provider' — the request_telemetry provider slugs this node maps to (§24.69). */
+  providers?: string[]
+  /** How to fold multiple providers into one status: 'worst' (default — any down
+   * ⇒ down) or 'gateway' (down only when EVERY present provider is down — the
+   * OneCLI shape: one service failing is that service's problem, not the gateway's). */
+  providerAggregate?: 'worst' | 'gateway'
   description: string
   /** Repo-relative source path for the line-anchored code link (omitted when none applies). */
   source?: string
@@ -110,7 +118,8 @@ export const NODES: ArchNode[] = [
     id: 'trig-google',
     label: 'Google Workspace',
     region: 'triggers',
-    probe: 'structural',
+    probe: 'provider',
+    providers: ['gmail', 'calendar', 'drive'],
     description:
       'Recruiter replies (Gmail) and interview events (Calendar) wake the system — a polling close-detection loop, not webhooks. The agent writes back too: reversible Gmail drafts, and interview-prep kit Docs in the candidate’s own Drive.',
     source: 'src/modules/career-pilot/close-detection-bootstrap.ts',
@@ -165,7 +174,11 @@ export const NODES: ArchNode[] = [
     id: 'host-onecli',
     label: 'OneCLI gateway',
     region: 'host',
-    probe: 'structural',
+    probe: 'provider',
+    // Every credential-injected provider rides this proxy; it's only "down" when
+    // EVERYthing through it is failing (one dead service is that service's node).
+    providers: ['gmail', 'calendar', 'drive', 'serpapi', 'greenhouse', 'lever', 'portkey'],
+    providerAggregate: 'gateway',
     description:
       'The credential perimeter — inherited with the NanoClaw fork and kept. Every outbound HTTPS call a container makes rides this proxy, and the real secrets (the Portkey key, the job-search API key, Google OAuth tokens) are injected on the wire. A container never holds a real credential.',
     link: 'https://github.com/onecli/onecli',
@@ -221,7 +234,8 @@ export const NODES: ArchNode[] = [
     id: 'cont-portkey',
     label: 'Portkey gateway',
     region: 'container',
-    probe: 'structural',
+    probe: 'provider',
+    providers: ['portkey'],
     description:
       "LLM gateway. Every model call routes through Portkey's Model Catalog → Anthropic: the orchestrator and subagents in the container, and the host's own calls (the sanitizer's semantic pass, win-confidence scoring). Unified keys, fallback, cost/latency traces. A service we configure, not own; a bypass env falls back to calling Anthropic directly.",
     link: 'https://portkey.ai/docs/product/model-catalog',
@@ -249,7 +263,8 @@ export const NODES: ArchNode[] = [
     id: 'cont-jobs',
     label: 'Job search API',
     region: 'container',
-    probe: 'structural',
+    probe: 'provider',
+    providers: ['serpapi', 'greenhouse', 'lever'],
     description:
       'A commercial Google-Jobs search index. The scrape-jobs subagent queries it for live postings, which land in the job-leads pool the orchestrator continuously re-reads while scouting. Not an LLM call — a plain HTTPS fetch, with the API key injected in flight by the OneCLI gateway.',
     source: 'container/agent-runner/src/mcp-tools/scrape-jobs.ts',
@@ -347,13 +362,40 @@ export const EDGES: ArchEdge[] = [
 ]
 
 /**
+ * Fold a provider-node's mapped providers into one status (§24.69). Providers
+ * absent from the window contribute nothing; a node with NO present provider
+ * reads `idle` (honest — no recent call, no claim). `worst` (default) takes the
+ * worst present status; `gateway` only reports `down` when EVERY present
+ * provider is down (the OneCLI-perimeter shape).
+ */
+function deriveProviderStatus(node: ArchNode, obs: Observability | null): NodeStatus {
+  if (obs == null) return 'idle'
+  const present = (node.providers ?? [])
+    .map((p) => obs.providers.find((x) => x.provider === p))
+    .filter((p): p is NonNullable<typeof p> => p != null)
+  if (present.length === 0) return 'idle'
+  if (node.providerAggregate === 'gateway') {
+    if (present.every((p) => p.status === 'down')) return 'down'
+    return present.some((p) => p.status !== 'healthy') ? 'degraded' : 'healthy'
+  }
+  if (present.some((p) => p.status === 'down')) return 'down'
+  if (present.some((p) => p.status === 'degraded')) return 'degraded'
+  return 'healthy'
+}
+
+/**
  * The honesty core (§24.28). A node's badge lights up only from a real probe;
  * `structural` nodes always return `structural` (rendered with no health claim).
- * When `arch`/`mode` is still null (cold load), live probes read as `idle`
+ * When `arch`/`mode`/`obs` is still null (cold load), live probes read as `idle`
  * rather than asserting a red "down" — the diagram only renders once `arch` is
  * present, so this is the safe transient.
  */
-export function deriveNodeStatus(node: ArchNode, arch: ArchitectureData | null, mode: SystemMode | null): NodeStatus {
+export function deriveNodeStatus(
+  node: ArchNode,
+  arch: ArchitectureData | null,
+  mode: SystemMode | null,
+  obs: Observability | null,
+): NodeStatus {
   switch (node.probe) {
     case 'structural':
       return 'structural'
@@ -375,6 +417,8 @@ export function deriveNodeStatus(node: ArchNode, arch: ArchitectureData | null, 
     }
     case 'sessions':
       return (arch?.sessions.running ?? 0) > 0 ? 'healthy' : 'idle'
+    case 'provider':
+      return deriveProviderStatus(node, obs)
   }
 }
 

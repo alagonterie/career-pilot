@@ -4,6 +4,7 @@ import * as React from 'react'
 import { useDialog } from '~/lib/use-dialog'
 import { repoBlob } from '~/lib/site'
 import type { ArchitectureData, SystemMode } from '~/lib/use-architecture'
+import type { Observability } from '~/lib/use-observability'
 
 import { SanitizerDemo } from './SanitizerDemo'
 import { STATUS_META, type ArchNode, type NodeStatus } from './nodes'
@@ -25,11 +26,24 @@ function Fact({ label, value }: { label: string; value: string }) {
   )
 }
 
+/** Humanize an age in seconds to a compact "just now / 3m / 2h / 5d". */
+function fmtAge(sec: number): string {
+  if (sec < 60) return 'just now'
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`
+  if (sec < 86_400) return `${Math.floor(sec / 3600)}h ago`
+  return `${Math.floor(sec / 86_400)}d ago`
+}
+
+function fmtMs(ms: number): string {
+  return ms >= 1000 ? `${Math.round(ms / 1000)}s` : `${ms}ms`
+}
+
 /** The live facts we actually have for a probed node (none for structural). */
 function nodeFacts(
   node: ArchNode,
   arch: ArchitectureData | null,
   mode: SystemMode | null,
+  obs: Observability | null,
 ): { label: string; value: string }[] {
   switch (node.probe) {
     case 'pause':
@@ -49,13 +63,39 @@ function nodeFacts(
             { label: 'Memory each', value: `${arch.containers.memory_mb_each} MB` },
           ]
         : []
-    case 'sessions':
-      return arch
-        ? [
-            { label: 'Sessions active', value: String(arch.sessions.active) },
-            { label: 'Sessions running', value: String(arch.sessions.running) },
-          ]
-        : []
+    case 'sessions': {
+      if (!arch) return []
+      const facts = [
+        { label: 'Sessions active', value: String(arch.sessions.active) },
+        { label: 'Sessions running', value: String(arch.sessions.running) },
+      ]
+      // Session topology (§24.69 / §24.67) — the owner-chat vs autonomous-ops vs
+      // public-sandbox split. Non-PII counts; enriches the Orchestrator modal.
+      if (obs?.session_topology) {
+        const t = obs.session_topology
+        facts.push({ label: 'By class', value: `chat ${t.chat} · ops ${t.ops} · sandbox ${t.sandbox}` })
+      }
+      return facts
+    }
+    case 'provider': {
+      if (obs == null) return []
+      const present = (node.providers ?? [])
+        .map((p) => obs.providers.find((x) => x.provider === p))
+        .filter((p): p is NonNullable<typeof p> => p != null)
+      if (present.length === 0) return []
+      // Aggregate across this node's providers (§24.69 D-B — aggregate only).
+      const requests = present.reduce((s, p) => s + p.requests_24h, 0)
+      const errors = present.reduce((s, p) => s + p.errors_24h, 0)
+      const ages = present.map((p) => p.last_success_age_sec).filter((n): n is number => n != null)
+      const p50s = present.map((p) => p.p50_ms).filter((n): n is number => n != null)
+      const facts = [
+        { label: 'Requests 24h', value: String(requests) },
+        { label: 'Error rate', value: `${Math.round((requests > 0 ? errors / requests : 0) * 100)}%` },
+        { label: 'Last success', value: ages.length ? fmtAge(Math.min(...ages)) : '—' },
+      ]
+      if (p50s.length) facts.push({ label: 'p50 latency', value: fmtMs(Math.max(...p50s)) })
+      return facts
+    }
     default:
       return []
   }
@@ -75,12 +115,14 @@ export function NodePanel({
   status,
   arch,
   mode,
+  obs,
   onClose,
 }: {
   node: ArchNode | null
   status: NodeStatus
   arch: ArchitectureData | null
   mode: SystemMode | null
+  obs: Observability | null
   onClose: () => void
 }) {
   const overlayRef = React.useRef<HTMLDivElement>(null)
@@ -92,7 +134,7 @@ export function NodePanel({
 
   const meta = STATUS_META[status]
   const structural = status === 'structural'
-  const facts = nodeFacts(node, arch, mode)
+  const facts = nodeFacts(node, arch, mode, obs)
 
   return (
     <div ref={overlayRef} className="fixed inset-0 z-30 flex items-end justify-center p-0 sm:items-center sm:p-4">
@@ -178,8 +220,9 @@ export function NodePanel({
             </dl>
           ) : structural && !node.actor && !node.demo ? (
             <p className="text-[11px] leading-relaxed text-muted-foreground">
-              Drawn as structure — this node has no live health probe yet. Adding one (a Portkey health read,
-              per-subagent activity, edge reachability) is deferred until the telemetry-capture work.
+              Drawn as structure — this node has no live health probe. The integration nodes we can observe (Portkey,
+              the job API, Google Workspace, the gateway) now light up from request telemetry; the rest (the model API
+              behind the gateway, per-subagent activity, edge reachability) stay honest structure with no health claim.
             </p>
           ) : null}
 

@@ -10,6 +10,7 @@ function ignorable(url: string): boolean {
   return (
     url.includes('/api/architecture') ||
     url.includes('/api/system-status') ||
+    url.includes('/api/observability') ||
     url.includes('/api/activity/stream') ||
     url.includes('/api/sanitize-demo')
   )
@@ -51,11 +52,14 @@ test.describe('/architecture — live system map, frontend <-> backend', () => {
     // The owner actor (the human in the loop) is part of the map.
     await expect(page.getByTestId('arch-node-owner')).toBeVisible()
 
-    // Probed nodes light up (seeded sessions + fixed container count + active);
-    // structural nodes carry no health claim.
+    // Probed nodes light up (seeded sessions + fixed container count + active).
+    // §24.69: the integration nodes now light from request telemetry too — the
+    // E2E seed gives Portkey a recent success → healthy (was structural).
     await expect(page.getByTestId('arch-node-host-router')).toHaveAttribute('data-status', 'healthy')
     await expect(page.getByTestId('arch-node-cont-runtime')).toHaveAttribute('data-status', 'healthy')
-    await expect(page.getByTestId('arch-node-cont-portkey')).toHaveAttribute('data-status', 'structural')
+    await expect(page.getByTestId('arch-node-cont-portkey')).toHaveAttribute('data-status', 'healthy')
+    // cont-anthropic stays honestly structural (we probe the gateway, not Anthropic).
+    await expect(page.getByTestId('arch-node-cont-anthropic')).toHaveAttribute('data-status', 'structural')
 
     // Click a node → the side panel opens with live facts, then closes.
     await page.getByTestId('arch-node-cont-runtime').click()
@@ -64,6 +68,20 @@ test.describe('/architecture — live system map, frontend <-> backend', () => {
     await expect(panel.getByText('2 / 4')).toBeVisible()
     await page.getByRole('button', { name: 'Close panel' }).click()
     await expect(panel).toBeHidden()
+
+    // §24.69: the Portkey node modal carries aggregate provider facts (no raw
+    // error text — the §9 boundary), and the Orchestrator modal shows topology.
+    await page.getByTestId('arch-node-cont-portkey').click()
+    const portkey = page.getByRole('dialog', { name: 'Portkey gateway' })
+    await expect(portkey).toBeVisible()
+    await expect(portkey.getByText('Requests 24h')).toBeVisible()
+    await page.getByRole('button', { name: 'Close panel' }).click()
+
+    await page.getByTestId('arch-node-cont-orch').click()
+    const orch = page.getByRole('dialog', { name: 'Orchestrator' })
+    await expect(orch).toBeVisible()
+    await expect(orch.getByText('By class')).toBeVisible()
+    await page.getByRole('button', { name: 'Close panel' }).click()
 
     // The "what you're looking at" panel links into the repo.
     await expect(page.getByRole('link', { name: /README/ })).toBeVisible()
