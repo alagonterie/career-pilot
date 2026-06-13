@@ -125,6 +125,29 @@ export function useDevPersona(baseUrl: string, pollMs = 10000) {
   return usePolledJson<DevPersonaResponse>(`${baseUrl}/api/dev/persona`, pollMs)
 }
 
+export type HealthSeverity = 'ok' | 'warn' | 'critical'
+
+/** A single health-check finding (src/modules/career-pilot/health.ts). */
+export interface HealthFinding {
+  id: string
+  severity: HealthSeverity
+  title: string
+  detail: string
+  /** Concrete follow-up command/query for non-ok findings — the in-browser runbook. */
+  next_step?: string
+}
+
+export interface HealthReport {
+  ranAt: string
+  findings: HealthFinding[]
+}
+
+/** Poll the §24.68 health report (skipLiveProbes server-side). Changes slowly →
+ * 10s. Cold 404 (non-dev stack) → `status: 'error'` like the other dev hooks. */
+export function useDevHealth(baseUrl: string, pollMs = 10000) {
+  return usePolledJson<HealthReport>(`${baseUrl}/api/dev/health`, pollMs)
+}
+
 export interface KnobWriteResult {
   ok: boolean
   status: number

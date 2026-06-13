@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 
+import { HealthPanel } from '~/components/dev/HealthPanel'
 import { KnobControls } from '~/components/dev/KnobControls'
 import { PauseSpendControl } from '~/components/dev/PauseSpendControl'
 import { PersonaPanel } from '~/components/dev/PersonaPanel'
@@ -15,6 +16,7 @@ import {
   postKnob,
   resetAllKnobs,
   resetKnob,
+  useDevHealth,
   useDevKnobs,
   useDevPersona,
   useDevState,
@@ -45,6 +47,7 @@ function DevInspectorPage() {
   const knobs = useDevKnobs(API_BASE)
   const state = useDevState(API_BASE)
   const persona = useDevPersona(API_BASE)
+  const health = useDevHealth(API_BASE)
 
   const onWrite = (key: string, value: boolean | number | string) => postKnob(API_BASE, key, value)
   const onReset = (key: string) => resetKnob(API_BASE, key)
@@ -93,6 +96,11 @@ function DevInspectorPage() {
             {knobs.data ? (
               <KnobControls knobs={knobs.data.knobs} onWrite={onWrite} onReset={onReset} onResetAll={onResetAll} />
             ) : null}
+          </section>
+
+          <section className="flex flex-col gap-3">
+            <h2 className="font-mono text-xs uppercase tracking-widest text-foreground">Health</h2>
+            <HealthPanel report={health.data} />
           </section>
 
           <section className="flex flex-col gap-3">
