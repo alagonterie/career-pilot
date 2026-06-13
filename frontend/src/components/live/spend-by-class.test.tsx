@@ -43,7 +43,7 @@ describe('LlmSpendPanel', () => {
 
   it('renders the total headline + combined chart + a legend $ per class', () => {
     // chat: 5,000,000 µ = $5.00; host: 1,500 µ = $0.0015 (sub-cent → 4dp).
-    render(<LlmSpendPanel data={obs({ chat: 5_000_000, host: 1_500 })} status="ok" />)
+    const { container } = render(<LlmSpendPanel data={obs({ chat: 5_000_000, host: 1_500 })} status="ok" />)
     expect(screen.getByTestId('spend-by-class')).toBeTruthy()
     // Total headline: $5.00 + $0.0015 → rounds to $5.00 at 2dp.
     expect(screen.getByTestId('llm-spend-total').textContent).toBe('$5.00')
@@ -52,6 +52,20 @@ describe('LlmSpendPanel', () => {
     expect(screen.getByTestId('spend-ops').textContent).toBe('$0.00')
     // ONE overlaid chart with a line per class (4 polylines, shared scale).
     expect(screen.getByTestId('spend-chart').querySelectorAll('polyline')).toHaveLength(4)
+    // Every class has its LITERAL dot color — incl. bg-accent-cool, which a
+    // derived 'text-'→'bg-' replace dropped (Tailwind only emits literal classes).
+    for (const dot of ['bg-primary', 'bg-accent-cool', 'bg-warn', 'bg-muted-foreground']) {
+      expect(container.querySelector(`.${dot}`)).toBeTruthy()
+    }
+  })
+
+  it('shows the cache rate (a cost lever) only when passed, with its InfoTip', () => {
+    const { rerender } = render(<LlmSpendPanel data={obs({ chat: 1_000_000 })} status="ok" />)
+    expect(screen.queryByText('cache')).toBeNull() // no rate → no line
+    rerender(<LlmSpendPanel data={obs({ chat: 1_000_000 })} cacheHitRate={0.9} status="ok" />)
+    expect(screen.getByText('cache')).toBeTruthy()
+    expect(screen.getByText('90%')).toBeTruthy()
+    expect(screen.getByLabelText('About: cache rate')).toBeTruthy()
   })
 })
 
