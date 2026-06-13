@@ -25,7 +25,6 @@ import { OWNER_GROUP_FOLDER, isOpsSession } from '../career-pilot/ops-session.js
 
 const DEFAULT_OBSERVABILITY_CACHE_MS = 30_000;
 const DEFAULT_ERROR_RATE_DEGRADED = 0.25;
-const DEFAULT_STALE_SUCCESS_SEC = 3600;
 const WINDOW_MS = 86_400_000; // 24 h
 const BUCKETS = 24; // one per hour of the window
 const SECONDS_PER_BUCKET = 3600;
@@ -84,18 +83,20 @@ function percentile(sorted: number[], p: number): number | null {
 }
 
 /**
- * Map a provider's window stats → status using the §24.69 D7 thresholds:
- * every attempt failed ⇒ `down`; elevated error rate OR a stale/absent last
- * success ⇒ `degraded`; else `healthy`. (Listed providers always have ≥1 row.)
+ * Map a provider's window stats → status (§24.69 D7): every recent attempt
+ * failed ⇒ `down`; elevated error rate ⇒ `degraded`; else `healthy`. Staleness
+ * is deliberately NOT a factor — a clean provider that's merely quiet (its last
+ * success is old only because it's called infrequently) is healthy, not
+ * "degraded". Staleness is the owner-facing `stale-surface` health finding
+ * (`health_surface_stale_hours`, 48 h), not a public node-color claim.
+ * (Listed providers always have ≥1 row, so the healthy branch implies ≥1 success.)
  */
 function providerStatus(
-  s: { requests_24h: number; errors_24h: number; error_rate: number; last_success_age_sec: number | null },
+  s: { requests_24h: number; errors_24h: number; error_rate: number },
   errRateDegraded: number,
-  staleSuccessSec: number,
 ): ProviderStatus {
   if (s.errors_24h >= s.requests_24h) return 'down';
   if (s.error_rate >= errRateDegraded) return 'degraded';
-  if (s.last_success_age_sec == null || s.last_success_age_sec > staleSuccessSec) return 'degraded';
   return 'healthy';
 }
 
@@ -151,7 +152,6 @@ export function computeObservability(now: number = Date.now()): Observability {
   const cutoffIso = new Date(cutoffMs).toISOString();
   const nowEpoch = Math.floor(now / 1000);
   const errRateDegraded = getConfig<number>(db, 'arch_provider_error_rate_degraded', DEFAULT_ERROR_RATE_DEGRADED);
-  const staleSuccessSec = getConfig<number>(db, 'arch_provider_stale_success_sec', DEFAULT_STALE_SUCCESS_SEC);
 
   // ── spend_by_class: SUM(cost) GROUP BY (class, hourly bucket) ──────────────
   // Bucket counts back from NOW: a row at `now` lands in the newest lane
@@ -228,7 +228,7 @@ export function computeObservability(now: number = Date.now()): Observability {
         : null,
       p50_ms: percentile(latByProvider.get(r.provider) ?? [], 50),
     };
-    return { ...base, status: providerStatus(base, errRateDegraded, staleSuccessSec) };
+    return { ...base, status: providerStatus(base, errRateDegraded) };
   });
 
   return { spend_by_class, providers, session_topology };
