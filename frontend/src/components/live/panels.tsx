@@ -91,16 +91,6 @@ function fmtLatency(ms: number): string {
  * dropped: it was hardcoded `online` and could never read otherwise (a down
  * backend renders the `error` branch below instead), so it was tautological. */
 export function SystemStatusStrip({ mode, status }: { mode: SystemMode | null; status?: PollStatus }) {
-  if (status === 'loading') {
-    // Mirror the two loaded chips (same flex/gap + chip height/width) so the
-    // header doesn't shift size or position on load.
-    return (
-      <div data-testid="system-status" className="flex flex-wrap items-center gap-3">
-        <Skeleton className="h-[34px] w-[104px] rounded-md" />
-        <Skeleton className="h-[34px] w-[148px] rounded-md" />
-      </div>
-    )
-  }
   if (status === 'error') {
     return (
       <div data-testid="system-status">
@@ -110,9 +100,11 @@ export function SystemStatusStrip({ mode, status }: { mode: SystemMode | null; s
       </div>
     )
   }
+  // ModeBanner owns the loading skeleton too (same fixed chip geometry), so
+  // loading→loaded is shift-free.
   return (
     <div data-testid="system-status">
-      <ModeBanner mode={mode} />
+      <ModeBanner mode={mode} loading={status === 'loading'} />
     </div>
   )
 }
@@ -270,11 +262,11 @@ export function TelemetryPanel({ view, status }: { view: TelemetryView; status?:
  * only emits utilities it sees verbatim in source, so a derived `'text-'→'bg-'`
  * replace silently dropped the accent-cool dot. None is `destructive` (spend
  * isn't an alarm). */
-const SPEND_CLASSES: { key: TrafficClass; label: string; line: string; dot: string }[] = [
-  { key: 'chat', label: 'owner chat', line: 'text-primary', dot: 'bg-primary' },
-  { key: 'ops', label: 'autonomous ops', line: 'text-accent-cool', dot: 'bg-accent-cool' },
-  { key: 'sandbox', label: 'public sandbox', line: 'text-warn', dot: 'bg-warn' },
-  { key: 'host', label: 'host processing', line: 'text-muted-foreground', dot: 'bg-muted-foreground' },
+const SPEND_CLASSES: { key: TrafficClass; short: string; line: string; dot: string }[] = [
+  { key: 'chat', short: 'chat', line: 'text-primary', dot: 'bg-primary' },
+  { key: 'ops', short: 'ops', line: 'text-accent-cool', dot: 'bg-accent-cool' },
+  { key: 'sandbox', short: 'sandbox', line: 'text-warn', dot: 'bg-warn' },
+  { key: 'host', short: 'host', line: 'text-muted-foreground', dot: 'bg-muted-foreground' },
 ]
 
 /** Format microUSD as dollars — sub-cent figures (most rows) keep 4 decimals so
@@ -328,41 +320,47 @@ export function LlmSpendPanel({
           each get a line as requests land.
         </p>
       ) : (
-        <div data-testid="spend-by-class" className="flex flex-col gap-2.5">
-          <Metric
-            testId="llm-spend-total"
-            value={fmtUsd(total)}
-            label="24h · est"
-            info={
-              <>
-                Every model call&apos;s cost from our own telemetry, summed over the last 24 h and split by who
-                triggered it. This page costs the candidate roughly {fmtUsd(total)}/day to run — an estimate from list
-                prices, not a bill.
-              </>
-            }
-          />
-          {cacheHitRate != null ? (
-            <p className="-mt-1 inline-flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
-              cache <span className="text-foreground">{Math.round(cacheHitRate * 100)}%</span>
-              <InfoTip label="cache rate">
-                Prompt caching re-serves unchanged context (the agent&apos;s instructions, tools, history) instead of
-                reprocessing it — cached tokens cost about a tenth of fresh ones. It&apos;s why the spend above is as
-                low as it is; higher is cheaper.
-              </InfoTip>
-            </p>
-          ) : null}
+        <div data-testid="spend-by-class" className="flex flex-col gap-2">
+          {/* Total + cache on one baseline row (cache is a cost lever) — keeps the
+              tile within the stat-row 196px floor so all four boxes stay uniform. */}
+          <div className="flex items-baseline justify-between gap-2">
+            <Metric
+              testId="llm-spend-total"
+              value={fmtUsd(total)}
+              label="24h · est"
+              info={
+                <>
+                  Every model call&apos;s cost from our own telemetry, summed over the last 24 h and split by who
+                  triggered it — owner chat, the autonomous schedules, public simulator visitors, host processing. This
+                  page costs the candidate roughly {fmtUsd(total)}/day to run — an estimate from list prices, not a
+                  bill.
+                </>
+              }
+            />
+            {cacheHitRate != null ? (
+              <span className="inline-flex shrink-0 items-center gap-1 font-mono text-[11px] text-muted-foreground">
+                cache <span className="text-foreground">{Math.round(cacheHitRate * 100)}%</span>
+                <InfoTip label="cache rate">
+                  Prompt caching re-serves unchanged context (the agent&apos;s instructions, tools, history) instead of
+                  reprocessing it — cached tokens cost about a tenth of fresh ones. It&apos;s why the spend is as low as
+                  it is; higher is cheaper.
+                </InfoTip>
+              </span>
+            ) : null}
+          </div>
           <div data-testid="spend-chart">
             <MultiSparkline
-              height={28}
+              height={24}
               series={SPEND_CLASSES.map((c) => ({ values: spend[c.key].buckets, className: c.line }))}
             />
           </div>
-          {/* Legend doubles as the per-class readout (color → class → 24h total). */}
-          <ul className="flex flex-col gap-1">
+          {/* Compact 2-column legend (color → short class → 24h total) so the tile
+              fits the stat-row floor; the total's InfoTip spells out the classes. */}
+          <ul className="grid grid-cols-2 gap-x-4 gap-y-1">
             {SPEND_CLASSES.map((c) => (
               <li key={c.key} className="inline-flex items-center gap-1.5 font-mono text-[10px]">
                 <span aria-hidden="true" className={`inline-block h-2 w-2 shrink-0 rounded-full ${c.dot}`} />
-                <span className="truncate uppercase tracking-widest text-muted-foreground">{c.label}</span>
+                <span className="uppercase tracking-widest text-muted-foreground">{c.short}</span>
                 <span data-testid={`spend-${c.key}`} className="ml-auto tabular-nums text-foreground">
                   {fmtUsd(spend[c.key].microusd_24h)}
                 </span>
