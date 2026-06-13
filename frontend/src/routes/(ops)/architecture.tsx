@@ -47,7 +47,7 @@ function ArchitecturePage() {
               <span className="hidden sm:inline">Click</span> any node for detail.
             </p>
           </div>
-          <ModeBanner mode={mode} />
+          <ModeBanner mode={mode} loading={status === 'loading'} />
           <Legend />
         </header>
 
