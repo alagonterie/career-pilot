@@ -31,7 +31,7 @@ import {
   Panel,
   RecentOutcomesPanel,
   SessionsPanel,
-  SystemStatusPanel,
+  SystemStatusStrip,
   TelemetryPanel,
 } from './panels'
 
@@ -85,9 +85,9 @@ const APPS: FunnelApplication[] = [
   }),
 ]
 
-describe('SystemStatusPanel', () => {
-  it('shows the mode + backend health', () => {
-    render(<SystemStatusPanel mode={MODE} arch={ARCH} />)
+describe('SystemStatusStrip', () => {
+  it('shows the mode + backend health (unboxed header strip)', () => {
+    render(<SystemStatusStrip mode={MODE} arch={ARCH} />)
     expect(screen.getByText('LIVE')).toBeInTheDocument()
     expect(screen.getByText('ACTIVE')).toBeInTheDocument()
     expect(screen.getByText(/backend online/)).toBeInTheDocument()

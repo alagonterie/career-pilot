@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 
 import { InfoTip } from '~/components/InfoTip'
-import { Sparkline } from '~/components/Sparkline'
+import { MultiSparkline } from '~/components/Sparkline'
 import { ModeBanner } from '~/components/architecture/ModeBanner'
 import { StateNote } from '~/components/states'
 import { Skeleton } from '~/components/ui/skeleton'
@@ -86,10 +86,11 @@ function fmtLatency(ms: number): string {
   return ms >= 1000 ? `${Math.round(ms / 1000)}s` : `${ms}ms`
 }
 
-/** SYSTEM STATUS — reuses the architecture ModeBanner (mode + pause ladder) plus
- * a backend-health dot. UPTIME / LAST-DEPLOY need a host field no endpoint
+/** SYSTEM STATUS — the mode banner (live/shadow + pause ladder) + a backend-health
+ * dot, rendered UNBOXED as a header strip (it's page-level status, not a stat
+ * tile — §24.69 follow-up). UPTIME / LAST-DEPLOY need a host field no endpoint
  * exposes yet, so they're omitted rather than faked (§24.29). */
-export function SystemStatusPanel({
+export function SystemStatusStrip({
   mode,
   arch,
   status,
@@ -98,29 +99,35 @@ export function SystemStatusPanel({
   arch: ArchitectureData | null
   status?: PollStatus
 }) {
+  if (status === 'loading') {
+    return (
+      <div data-testid="system-status" className="flex h-6 items-center">
+        <Skeleton className="h-4 w-40" />
+      </div>
+    )
+  }
+  if (status === 'error') {
+    return (
+      <div data-testid="system-status">
+        <StateNote tone="error" className="text-xs">
+          Offline — retrying…
+        </StateNote>
+      </div>
+    )
+  }
   const online = arch?.backend === 'online'
   return (
-    <Panel title="System status">
-      {status === 'loading' ? (
-        <PanelSkeleton lines={1} />
-      ) : status === 'error' ? (
-        <PanelOffline />
-      ) : (
-        <>
-          {/* compact: shadow/pause-reason explainers ride the chips' tooltips so
-              this panel's height is mode-independent and doesn't outgrow the
-              equalized stat row in SHADOW mode (§24.36). */}
-          <ModeBanner mode={mode} compact />
-          <div className="flex items-center gap-2">
-            <span
-              aria-hidden="true"
-              className={`inline-block h-2 w-2 rounded-full ${online ? 'bg-primary' : 'bg-muted-foreground'}`}
-            />
-            <span className="font-mono text-xs text-muted-foreground">backend {arch?.backend ?? '—'}</span>
-          </div>
-        </>
-      )}
-    </Panel>
+    <div data-testid="system-status" className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      {/* compact: shadow/pause-reason explainers ride the chips' tooltips. */}
+      <ModeBanner mode={mode} compact />
+      <span className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+        <span
+          aria-hidden="true"
+          className={`inline-block h-2 w-2 rounded-full ${online ? 'bg-primary' : 'bg-muted-foreground'}`}
+        />
+        backend {arch?.backend ?? '—'}
+      </span>
+    </div>
   )
 }
 
@@ -336,12 +343,14 @@ export function CostCachePanel({ view, status }: { view: TelemetryView; status?:
   )
 }
 
-/** Friendly labels + render order for the four traffic classes (§24.69). */
-const SPEND_CLASSES: { key: TrafficClass; label: string }[] = [
-  { key: 'chat', label: 'owner chat' },
-  { key: 'ops', label: 'autonomous ops' },
-  { key: 'sandbox', label: 'public sandbox' },
-  { key: 'host', label: 'host processing' },
+/** Friendly labels + a distinct line color per traffic class (§24.69). The
+ * `text-*` class drives the overlaid line via currentColor; `bg-*` (derived) is
+ * the legend swatch. None of the four is `destructive` — spend isn't an alarm. */
+const SPEND_CLASSES: { key: TrafficClass; label: string; color: string }[] = [
+  { key: 'chat', label: 'owner chat', color: 'text-primary' },
+  { key: 'ops', label: 'autonomous ops', color: 'text-accent-cool' },
+  { key: 'sandbox', label: 'public sandbox', color: 'text-warn' },
+  { key: 'host', label: 'host processing', color: 'text-muted-foreground' },
 ]
 
 /** Format microUSD as dollars — sub-cent figures (most rows) keep 4 decimals so
@@ -351,21 +360,24 @@ function fmtUsd(microusd: number): string {
   return usd >= 0.01 || usd === 0 ? `$${usd.toFixed(2)}` : `$${usd.toFixed(4)}`
 }
 
-/** SPEND BY CLASS — the last-24h LLM/API spend split by traffic class, each with
- * a 24-bucket hourly sparkline (PORTAL §5.2; §24.69). Sourced from
- * request_telemetry via /api/observability — the only place HOST-side spend
- * (sim prose, sanitizer) is visible. Aggregate-only; no per-request data. */
+/** SPEND BY CLASS — the last-24h LLM/API spend split by traffic class as ONE
+ * overlaid multi-line chart (a colored line per class on a shared scale) plus a
+ * color legend carrying each class's 24h total (PORTAL §5.2; §24.69). A
+ * full-width strip — not a rail panel, which would over-lengthen the rail and
+ * stretch the trace beside it. Sourced from request_telemetry via
+ * /api/observability — the only place HOST-side spend (sim prose, sanitizer) is
+ * visible. Aggregate-only; no per-request data. */
 export function SpendByClassPanel({ data, status }: { data: Observability | null; status?: PollStatus }) {
   if (status === 'loading') {
     return (
-      <Panel title="Spend by class" className="min-h-[188px]">
-        <PanelSkeleton lines={3} />
+      <Panel title="Spend by class" className="min-h-[140px]">
+        <PanelSkeleton lines={2} />
       </Panel>
     )
   }
   if (status === 'error') {
     return (
-      <Panel title="Spend by class" className="min-h-[188px]">
+      <Panel title="Spend by class" className="min-h-[140px]">
         <PanelOffline />
       </Panel>
     )
@@ -373,44 +385,54 @@ export function SpendByClassPanel({ data, status }: { data: Observability | null
   const spend = data?.spend_by_class ?? null
   const total = spend ? SPEND_CLASSES.reduce((sum, c) => sum + spend[c.key].microusd_24h, 0) : 0
   return (
-    <Panel title="Spend by class" className="min-h-[188px]">
+    <Panel
+      title="Spend by class"
+      className="min-h-[140px]"
+      action={
+        spend != null && total > 0 ? (
+          <span className="inline-flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
+            {fmtUsd(total)} across all classes · 24h
+            <InfoTip label="spend by class">
+              Per-request cost from our own telemetry, summed over the last 24 hours and split by who triggered it —
+              your chat, the autonomous schedules, public simulator visitors, and host-side processing. The lines share
+              one scale, so a taller line spent more. An estimate from list prices, not a bill.
+            </InfoTip>
+          </span>
+        ) : null
+      }
+    >
       {spend == null ? (
-        <PanelSkeleton lines={3} />
+        <PanelSkeleton lines={2} />
       ) : total === 0 ? (
         <p data-testid="spend-pending" className="font-mono text-xs text-muted-foreground">
           No API spend captured in the last 24h. Owner chat, autonomous ops, the public sandbox, and host-side
-          processing each get a lane as requests land.
+          processing each get a line as requests land.
         </p>
       ) : (
-        <ul data-testid="spend-by-class" className="flex flex-col gap-2">
-          {SPEND_CLASSES.map((c) => {
-            const lane = spend[c.key]
-            return (
-              <li key={c.key} className="flex items-center justify-between gap-3 font-mono text-[11px]">
-                <span className="w-28 shrink-0 truncate uppercase tracking-widest text-muted-foreground">
-                  {c.label}
-                </span>
+        <div data-testid="spend-by-class" className="flex flex-col gap-3">
+          <div data-testid="spend-chart">
+            <MultiSparkline
+              height={56}
+              series={SPEND_CLASSES.map((c) => ({ values: spend[c.key].buckets, className: c.color }))}
+            />
+          </div>
+          {/* Legend doubles as the per-class readout (color → class → 24h total). */}
+          <ul className="flex flex-wrap gap-x-5 gap-y-1.5">
+            {SPEND_CLASSES.map((c) => (
+              <li key={c.key} className="inline-flex items-center gap-1.5 font-mono text-[11px]">
+                <span
+                  aria-hidden="true"
+                  className={`inline-block h-2 w-2 rounded-full ${c.color.replace('text-', 'bg-')}`}
+                />
+                <span className="uppercase tracking-widest text-muted-foreground">{c.label}</span>
                 <span data-testid={`spend-${c.key}`} className="tabular-nums text-foreground">
-                  {fmtUsd(lane.microusd_24h)}
-                </span>
-                <span className="ml-auto text-accent-cool" data-testid={`spark-${c.key}`}>
-                  <Sparkline values={lane.buckets} />
+                  {fmtUsd(spend[c.key].microusd_24h)}
                 </span>
               </li>
-            )
-          })}
-        </ul>
+            ))}
+          </ul>
+        </div>
       )}
-      {spend != null && total > 0 ? (
-        <p className="border-t border-border pt-2 font-mono text-[11px] text-muted-foreground">
-          {fmtUsd(total)} across all classes · 24h
-          <InfoTip label="spend by class">
-            Per-request cost from our own telemetry, summed over the last 24 hours and split by who triggered it — your
-            chat, the autonomous schedules, public simulator visitors, and host-side processing. An estimate from list
-            prices, not a bill.
-          </InfoTip>
-        </p>
-      ) : null}
     </Panel>
   )
 }

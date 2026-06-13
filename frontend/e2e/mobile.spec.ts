@@ -112,7 +112,9 @@ test('/live leads with the trace stream on mobile (not the stat tiles)', async (
   await page.goto('/live')
   await expect(page.getByTestId('trace-stream')).toBeVisible()
   const trace = await page.getByTestId('trace-stream').boundingBox()
-  const stats = await page.getByText('System status', { exact: true }).first().boundingBox()
+  // Anchor on the first stat tile (system status is now an unboxed header strip
+  // above the trace — §24.69 follow-up — so the stat ROW is the Active-sessions tile).
+  const stats = await page.getByText('Active sessions', { exact: true }).first().boundingBox()
   // Trace-first (§13): the centerpiece sits above the stat row when stacked.
   expect(trace!.y).toBeLessThan(stats!.y)
 })
