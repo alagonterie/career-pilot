@@ -35,6 +35,7 @@ import {
   seedDeterministicFunnel,
   seedDeterministicKits,
   seedDeterministicSimulatorRun,
+  seedRequestTelemetry,
   seedSessions,
   type AuditSeed,
 } from '../src/modules/portal/dev/fixtures.js';
@@ -103,6 +104,7 @@ async function main(): Promise<void> {
   await seedDeterministicKits(db);
   seedDeterministicSimulatorRun(db);
   seedSessions(db);
+  seedRequestTelemetry(db);
 
   const { port } = await startPortalApi({ host: '127.0.0.1', port: PORT });
   const control = startControlServer();

@@ -788,6 +788,100 @@ function seedSimulatorRuns(db: Database.Database): void {
   }
 }
 
+/**
+ * Seed `request_telemetry` (§24.69) so /api/observability renders populated:
+ * a full 24-bucket host-spend sparkline (sim prose + sanitizer), fewer/larger
+ * ops + chat + sandbox turns, and a recent success per external provider so the
+ * /architecture integration nodes light up healthy. Relative ages (not absolute
+ * timestamps) keep the bucket shape + dollar totals deterministic for the
+ * visual baseline. Exported for the E2E server.
+ */
+export function seedRequestTelemetry(db: Database.Database): void {
+  const insert = db.prepare(
+    `INSERT INTO request_telemetry
+       (id, ts, provider, surface, traffic_class, session_id, model,
+        input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+        cost_microusd, latency_ms, status_code, ok, error, trace_id, details_json)
+     VALUES (@id, @ts, @provider, @surface, @traffic_class, NULL, @model,
+             NULL, NULL, NULL, NULL, @cost, @latency, @status, @ok, NULL, NULL, NULL)`,
+  );
+  let n = 0;
+  const at = (
+    hoursAgo: number,
+    o: { provider: string; surface: string; cls: string; cost?: number | null; latency?: number; model?: string },
+  ): void => {
+    insert.run({
+      id: `dev-rt-${n++}`,
+      ts: new Date(Date.now() - hoursAgo * 3_600_000).toISOString(),
+      provider: o.provider,
+      surface: o.surface,
+      traffic_class: o.cls,
+      model: o.model ?? null,
+      cost: o.cost ?? null,
+      latency: o.latency ?? 120,
+      status: 200,
+      ok: 1,
+    });
+  };
+  // host LLM spend across the whole day (recruiter-sim prose) → a full sparkline.
+  for (let h = 0; h < 24; h++) {
+    at(h + 0.5, {
+      provider: 'portkey',
+      surface: 'recruiter-sim-prose',
+      cls: 'host',
+      model: 'claude-haiku-4-5',
+      cost: 600 + ((h * 37) % 500),
+      latency: 300,
+    });
+  }
+  // autonomous ops turns — fewer, larger.
+  for (const h of [1, 5, 9, 13, 17, 21]) {
+    at(h, {
+      provider: 'portkey',
+      surface: 'agent-turn',
+      cls: 'ops',
+      model: 'claude-haiku-4-5',
+      cost: 40_000 + h * 1_000,
+      latency: 9_000,
+    });
+  }
+  // owner chat turns.
+  for (const h of [2, 8, 20]) {
+    at(h, {
+      provider: 'portkey',
+      surface: 'agent-turn',
+      cls: 'chat',
+      model: 'claude-haiku-4-5',
+      cost: 70_000,
+      latency: 12_000,
+    });
+  }
+  // public sandbox runs.
+  for (const h of [3, 11]) {
+    at(h, {
+      provider: 'portkey',
+      surface: 'agent-turn',
+      cls: 'sandbox',
+      model: 'claude-haiku-4-5',
+      cost: 25_000,
+      latency: 8_000,
+    });
+  }
+  // A recent success per external provider so the architecture nodes read healthy.
+  const providerSurfaces: [string, string][] = [
+    ['gmail', 'funnel-curator-gmail'],
+    ['calendar', 'funnel-curator-calendar'],
+    ['drive', 'interview-kit-drive'],
+    ['serpapi', 'serpapi-search'],
+    ['greenhouse', 'scrape-board'],
+    ['lever', 'scrape-board'],
+  ];
+  for (const [provider, surface] of providerSurfaces) {
+    at(0.2, { provider, surface, cls: 'host', latency: 200 });
+    at(6, { provider, surface, cls: 'host', latency: 250 });
+  }
+}
+
 export function seedSessions(db: Database.Database): void {
   // /api/architecture reads sessions: active = status 'active'; running =
   // container_status IN ('running','idle'). Seed a parent agent group (FK), then
@@ -826,6 +920,7 @@ export function seedRichFixture(db: Database.Database): void {
   seedAuditBacklog(db);
   seedSimulatorRuns(db);
   seedSessions(db);
+  seedRequestTelemetry(db);
 }
 
 // ── synthetic activity generator ────────────────────────────────────────────

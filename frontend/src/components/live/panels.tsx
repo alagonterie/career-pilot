@@ -2,11 +2,13 @@ import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 
 import { InfoTip } from '~/components/InfoTip'
+import { Sparkline } from '~/components/Sparkline'
 import { ModeBanner } from '~/components/architecture/ModeBanner'
 import { StateNote } from '~/components/states'
 import { Skeleton } from '~/components/ui/skeleton'
 import type { ArchitectureData, SystemMode } from '~/lib/use-architecture'
 import type { FunnelApplication } from '~/lib/use-funnel'
+import type { Observability, TrafficClass } from '~/lib/use-observability'
 import type { PollStatus } from '~/lib/use-polled-json'
 import type { TelemetryView } from '~/lib/use-telemetry'
 
@@ -329,6 +331,85 @@ export function CostCachePanel({ view, status }: { view: TelemetryView; status?:
           <span>agent ${(local.turn_cost_cents_24h / 100).toFixed(2)}</span>
           <span>sim ${(local.sim_cost_cents_24h / 100).toFixed(2)}</span>
         </div>
+      ) : null}
+    </Panel>
+  )
+}
+
+/** Friendly labels + render order for the four traffic classes (§24.69). */
+const SPEND_CLASSES: { key: TrafficClass; label: string }[] = [
+  { key: 'chat', label: 'owner chat' },
+  { key: 'ops', label: 'autonomous ops' },
+  { key: 'sandbox', label: 'public sandbox' },
+  { key: 'host', label: 'host processing' },
+]
+
+/** Format microUSD as dollars — sub-cent figures (most rows) keep 4 decimals so
+ * they don't all collapse to "$0.00"; anything ≥ 1¢ shows the familiar 2. */
+function fmtUsd(microusd: number): string {
+  const usd = microusd / 1_000_000
+  return usd >= 0.01 || usd === 0 ? `$${usd.toFixed(2)}` : `$${usd.toFixed(4)}`
+}
+
+/** SPEND BY CLASS — the last-24h LLM/API spend split by traffic class, each with
+ * a 24-bucket hourly sparkline (PORTAL §5.2; §24.69). Sourced from
+ * request_telemetry via /api/observability — the only place HOST-side spend
+ * (sim prose, sanitizer) is visible. Aggregate-only; no per-request data. */
+export function SpendByClassPanel({ data, status }: { data: Observability | null; status?: PollStatus }) {
+  if (status === 'loading') {
+    return (
+      <Panel title="Spend by class" className="min-h-[188px]">
+        <PanelSkeleton lines={3} />
+      </Panel>
+    )
+  }
+  if (status === 'error') {
+    return (
+      <Panel title="Spend by class" className="min-h-[188px]">
+        <PanelOffline />
+      </Panel>
+    )
+  }
+  const spend = data?.spend_by_class ?? null
+  const total = spend ? SPEND_CLASSES.reduce((sum, c) => sum + spend[c.key].microusd_24h, 0) : 0
+  return (
+    <Panel title="Spend by class" className="min-h-[188px]">
+      {spend == null ? (
+        <PanelSkeleton lines={3} />
+      ) : total === 0 ? (
+        <p data-testid="spend-pending" className="font-mono text-xs text-muted-foreground">
+          No API spend captured in the last 24h. Owner chat, autonomous ops, the public sandbox, and host-side
+          processing each get a lane as requests land.
+        </p>
+      ) : (
+        <ul data-testid="spend-by-class" className="flex flex-col gap-2">
+          {SPEND_CLASSES.map((c) => {
+            const lane = spend[c.key]
+            return (
+              <li key={c.key} className="flex items-center justify-between gap-3 font-mono text-[11px]">
+                <span className="w-28 shrink-0 truncate uppercase tracking-widest text-muted-foreground">
+                  {c.label}
+                </span>
+                <span data-testid={`spend-${c.key}`} className="tabular-nums text-foreground">
+                  {fmtUsd(lane.microusd_24h)}
+                </span>
+                <span className="ml-auto text-accent-cool" data-testid={`spark-${c.key}`}>
+                  <Sparkline values={lane.buckets} />
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      {spend != null && total > 0 ? (
+        <p className="border-t border-border pt-2 font-mono text-[11px] text-muted-foreground">
+          {fmtUsd(total)} across all classes · 24h
+          <InfoTip label="spend by class">
+            Per-request cost from our own telemetry, summed over the last 24 hours and split by who triggered it — your
+            chat, the autonomous schedules, public simulator visitors, and host-side processing. An estimate from list
+            prices, not a bill.
+          </InfoTip>
+        </p>
       ) : null}
     </Panel>
   )
