@@ -1,4 +1,3 @@
-import { Badge } from '~/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import type { HealthFinding, HealthReport, HealthSeverity } from '~/lib/use-dev-inspector'
 
@@ -8,13 +7,22 @@ import type { HealthFinding, HealthReport, HealthSeverity } from '~/lib/use-dev-
  * verbatim (the report IS the runbook), rendered as a copy-pasteable mono block.
  * Owner-only, dev-gated by the `/api/dev/*` prefix; the polled endpoint runs
  * `skipLiveProbes`, so the Gmail/gateway live probe stays CLI-only (`pnpm health`).
+ *
+ * Severity reads from a colored dot (non-text → no contrast trap) + accessible
+ * foreground/muted text — never small light-on-saturated text, which fails WCAG
+ * AA at badge sizes (the reason this isn't a filled `destructive` Badge).
  */
 const SEVERITY_RANK: Record<HealthSeverity, number> = { critical: 0, warn: 1, ok: 2 }
 
-const SEVERITY_BADGE: Record<HealthSeverity, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  critical: 'destructive',
-  warn: 'secondary',
-  ok: 'outline',
+/** Tailwind bg utility for the severity dot (aria-hidden — non-text, no contrast req). */
+const SEVERITY_DOT: Record<HealthSeverity, string> = {
+  critical: 'bg-destructive',
+  warn: 'bg-warn',
+  ok: 'bg-primary',
+}
+
+function Dot({ severity }: { severity: HealthSeverity }) {
+  return <span aria-hidden="true" className={`inline-block h-2 w-2 shrink-0 rounded-full ${SEVERITY_DOT[severity]}`} />
 }
 
 export function HealthPanel({ report }: { report: HealthReport | null }) {
@@ -40,12 +48,13 @@ export function HealthPanel({ report }: { report: HealthReport | null }) {
     <Card data-testid="health-panel">
       <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
         <CardTitle className="text-base">Health</CardTitle>
-        <Badge
-          variant={criticals > 0 ? 'destructive' : warns > 0 ? 'secondary' : 'default'}
+        <span
           data-testid="health-summary-badge"
+          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-0.5 font-mono text-[11px] uppercase tracking-wider text-foreground"
         >
+          <Dot severity={criticals > 0 ? 'critical' : warns > 0 ? 'warn' : 'ok'} />
           {criticals > 0 ? `${criticals} critical` : warns > 0 ? `${warns} warn` : 'all clear'}
-        </Badge>
+        </span>
       </CardHeader>
       <CardContent className="flex flex-col gap-3 pt-0">
         {nonOk.length === 0 ? (
@@ -72,9 +81,8 @@ function Finding({ finding }: { finding: HealthFinding }) {
       className="flex flex-col gap-1.5 border-t border-border pt-3 first:border-t-0 first:pt-0"
     >
       <div className="flex items-center gap-2">
-        <Badge variant={SEVERITY_BADGE[finding.severity]} className="uppercase">
-          {finding.severity}
-        </Badge>
+        <Dot severity={finding.severity} />
+        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{finding.severity}</span>
         <span className="font-mono text-sm text-foreground">{finding.title}</span>
         <span className="ml-auto font-mono text-[10px] text-muted-foreground">{finding.id}</span>
       </div>
