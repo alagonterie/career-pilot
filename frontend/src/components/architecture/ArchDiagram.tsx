@@ -10,6 +10,7 @@ import {
   type ZoomTransform,
 } from '~/lib/pinch-zoom'
 import type { ArchitectureData, SystemMode } from '~/lib/use-architecture'
+import type { Observability } from '~/lib/use-observability'
 
 import { EDGES, NODES, REGION_BANDS, STATUS_META, deriveNodeStatus, type ArchNode } from './nodes'
 
@@ -75,11 +76,13 @@ function edgePath(a: ArchNode, b: ArchNode, entryFrac = 0.5): string {
 export function ArchDiagram({
   arch,
   mode,
+  obs,
   selectedId,
   onSelect,
 }: {
   arch: ArchitectureData | null
   mode: SystemMode | null
+  obs: Observability | null
   selectedId: string | null
   onSelect: (node: ArchNode) => void
 }) {
@@ -244,7 +247,7 @@ export function ArchDiagram({
           </g>
 
           {NODES.map((n) => {
-            const status = deriveNodeStatus(n, arch, mode)
+            const status = deriveNodeStatus(n, arch, mode, obs)
             const meta = STATUS_META[status]
             const actor = n.actor === true
             const structural = status === 'structural'
@@ -310,7 +313,7 @@ export function ArchDiagram({
         </svg>
 
         {NODES.map((n) => {
-          const status = deriveNodeStatus(n, arch, mode)
+          const status = deriveNodeStatus(n, arch, mode, obs)
           return (
             <motion.button
               key={n.id}

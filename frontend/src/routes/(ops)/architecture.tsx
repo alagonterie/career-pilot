@@ -11,6 +11,7 @@ import { Skeleton } from '~/components/ui/skeleton'
 import { seo } from '~/lib/seo'
 import { REPO_URL, repoBlob } from '~/lib/site'
 import { useArchitecture } from '~/lib/use-architecture'
+import { useObservability } from '~/lib/use-observability'
 
 // Second page of the ops register (PORTAL §5.5). `(ops)` is pathless → the URL
 // is still `/architecture`. The shared ops layout/header stays deferred until
@@ -29,6 +30,9 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
 
 function ArchitecturePage() {
   const { arch, mode, status } = useArchitecture(API_BASE)
+  // Provider health + session topology for the integration nodes (§24.69). A
+  // separate poll — the diagram already renders from `arch`; obs enriches it.
+  const { data: observability } = useObservability(API_BASE)
   const [selected, setSelected] = React.useState<ArchNode | null>(null)
 
   return (
@@ -62,7 +66,13 @@ function ArchitecturePage() {
             </StateNote>
           </div>
         ) : arch ? (
-          <ArchDiagram arch={arch} mode={mode} selectedId={selected?.id ?? null} onSelect={setSelected} />
+          <ArchDiagram
+            arch={arch}
+            mode={mode}
+            obs={observability}
+            selectedId={selected?.id ?? null}
+            onSelect={setSelected}
+          />
         ) : (
           <div className="flex min-h-[16rem] items-center justify-center">
             <StateNote data-testid="arch-empty">Reading system status…</StateNote>
@@ -116,9 +126,10 @@ function ArchitecturePage() {
           <NodePanel
             key={selected.id}
             node={selected}
-            status={deriveNodeStatus(selected, arch, mode)}
+            status={deriveNodeStatus(selected, arch, mode, observability)}
             arch={arch}
             mode={mode}
+            obs={observability}
             onClose={() => setSelected(null)}
           />
         ) : null}
