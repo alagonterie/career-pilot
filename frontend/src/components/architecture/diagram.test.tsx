@@ -204,6 +204,25 @@ describe('ModeBanner', () => {
     render(<ModeBanner mode={null} />)
     expect(screen.getByText(/connecting/i)).toBeInTheDocument()
   })
+
+  it('renders the loading branch as two fixed-geometry skeleton chips (no width shift to loaded)', () => {
+    // The §24.36 contract: loading must mirror the loaded TWO-chip geometry, not
+    // the single "connecting…" chip — else loading→loaded jumps from 1 chip to 2.
+    // Regressed when /architecture rendered <ModeBanner> without threading `loading`.
+    const { rerender } = render(<ModeBanner mode={null} loading />)
+    const banner = screen.getByTestId('arch-mode-banner')
+    expect(banner.children).toHaveLength(2) // two chip shells, matching loaded
+    expect(banner.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(2)
+    expect(screen.queryByText(/connecting/i)).not.toBeInTheDocument()
+    // The two shells carry the same fixed widths the loaded chips use.
+    expect(banner.querySelector('.w-\\[132px\\]')).toBeTruthy()
+    expect(banner.querySelector('.w-\\[160px\\]')).toBeTruthy()
+    // Loaded keeps the exact same two-chip width geometry → pure content swap.
+    rerender(<ModeBanner mode={MODE} />)
+    const loaded = screen.getByTestId('arch-mode-banner')
+    expect(loaded.querySelector('.w-\\[132px\\]')).toBeTruthy()
+    expect(loaded.querySelector('.w-\\[160px\\]')).toBeTruthy()
+  })
 })
 
 describe('Legend', () => {
