@@ -35,6 +35,7 @@ import { countRunningContainers } from '../../container-runtime.js';
 import { getActiveSessions, getRunningSessions } from '../../db/sessions.js';
 import { getConfig } from '../../get-config.js';
 import { log } from '../../log.js';
+import { runHealthChecks } from '../career-pilot/health.js';
 import { loadState, simStatePath } from '../career-pilot/recruiter-sim/runner.js';
 
 import { relayContactSubmission, type ContactInput } from './contact-relay.js';
@@ -48,6 +49,7 @@ import {
   buildDevState,
   isDevEnv,
 } from './dev-inspector.js';
+import { emptyObservability, getObservability } from './observability.js';
 import { getTelemetry } from './portkey-analytics.js';
 import { buildSanitizeDemo } from './sanitize-demo.js';
 import { getRecentSimulatorRuns, getSimulatorResult, startSimulatorRun, type SimulatorInput } from './simulator.js';
@@ -303,6 +305,16 @@ async function handleTelemetry(res: http.ServerResponse, cors: Record<string, st
   json(res, 200, await getTelemetry(), cors);
 }
 
+/**
+ * /api/observability (§24.69) — per-class 24h spend, per-provider health, and
+ * session topology, aggregated from the private `request_telemetry` table. The
+ * served payload is aggregate-only (no per-request rows, no error/session/trace
+ * fields) — the §9 boundary is held by the projection in observability.ts.
+ */
+async function handleObservability(res: http.ServerResponse, cors: Record<string, string>): Promise<void> {
+  json(res, 200, await getObservability(), cors);
+}
+
 // Short cache around the (blocking) `docker ps` call so repeated /api/architecture
 // hits don't stall the event loop. Sessions are a cheap DB read — computed fresh.
 let dockerCache: { at: number; value: number | null } | null = null;
@@ -524,6 +536,8 @@ function emptyPayloadFor(path: string): unknown {
       };
     case '/api/system-status':
       return { live_mode: false, pause_state: 'active', pause_reason: null, backend: 'online' };
+    case '/api/observability':
+      return emptyObservability();
     case '/api/telemetry':
       return {
         local: {
@@ -622,6 +636,17 @@ function handleDevPersona(res: http.ServerResponse, cors: Record<string, string>
   json(res, 200, buildDevPersonaFromDb(), cors);
 }
 
+/**
+ * /api/dev/health (§24.69 D8) — the §24.68 health-check report in the browser,
+ * owner-only (dev-gated by the `/api/dev/*` prefix). `skipLiveProbes` because
+ * the polled path must not exec/spend on the Gmail/gateway probe — those stay
+ * CLI-only (`pnpm health`). Findings carry their `next_step` runbook command.
+ */
+async function handleDevHealth(res: http.ServerResponse, cors: Record<string, string>): Promise<void> {
+  const report = await runHealthChecks({ skipLiveProbes: true });
+  json(res, 200, report, cors);
+}
+
 async function handleDevControl(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -687,6 +712,7 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
     if (method === 'GET' && path === '/api/activity/stream') return handleActivityStream(req, res, url, cors);
     if (method === 'GET' && path === '/api/activity') return handleActivity(url, res, cors);
     if (method === 'GET' && path === '/api/telemetry') return await handleTelemetry(res, cors);
+    if (method === 'GET' && path === '/api/observability') return await handleObservability(res, cors);
     if (method === 'GET' && path === '/api/architecture') return handleArchitecture(res, cors);
     if (method === 'GET' && path === '/api/system-status') return handleSystemStatus(res, cors);
     if (method === 'POST' && path === '/api/contact') return await handleContact(req, res, cors);
@@ -710,6 +736,7 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
       if (method === 'GET' && path === '/api/dev/knobs') return handleDevKnobs(res, cors);
       if (method === 'POST' && path === '/api/dev/knobs') return await handleDevKnobsWrite(req, res, cors);
       if (method === 'GET' && path === '/api/dev/persona') return handleDevPersona(res, cors);
+      if (method === 'GET' && path === '/api/dev/health') return await handleDevHealth(res, cors);
       if (method === 'POST' && path === '/api/dev/control') return await handleDevControl(req, res, cors);
       if (method === 'POST' && path === '/api/dev/sweep') return await handleDevSweep(res, cors);
       if (method === 'POST' && path === '/api/dev/reset') return await handleDevReset(req, res, cors);
