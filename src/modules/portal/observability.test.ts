@@ -37,8 +37,11 @@ function insert(opts: {
   status?: number | null;
   error?: string | null;
   sessionId?: string | null;
+  /** Anchor the timestamp here instead of the fixed NOW — used by the cache test,
+   * which calls the uncached getObservability() (it windows around real Date.now()). */
+  base?: number;
 }): void {
-  const ts = new Date(NOW - opts.ageSec * 1000).toISOString();
+  const ts = new Date((opts.base ?? NOW) - opts.ageSec * 1000).toISOString();
   getDb()
     .prepare(
       `INSERT INTO request_telemetry
@@ -133,11 +136,13 @@ describe('providers', () => {
     expect(p.error_rate).toBe(0);
   });
 
-  it('marks degraded when the last success is stale even with no errors', () => {
-    // ok, but 2h ago — older than the 3600s default stale threshold.
+  it('keeps a quiet-but-clean provider healthy (staleness is not a node-color factor)', () => {
+    // ok, but 2h ago — a low-frequency provider. Quiet ≠ degraded; the public
+    // node reads healthy, and staleness is the owner-facing stale-surface finding.
     insert({ provider: 'serpapi', ok: true, latency: 80, ageSec: 7200 });
     const p = computeObservability(NOW).providers.find((x) => x.provider === 'serpapi')!;
-    expect(p.status).toBe('degraded');
+    expect(p.status).toBe('healthy');
+    expect(p.last_success_age_sec).toBe(7200); // still reported (drives the modal fact)
   });
 });
 
@@ -194,9 +199,12 @@ describe('graceful floor + cache', () => {
   });
 
   it('caches the computed value for the configured window', async () => {
-    insert({ provider: 'portkey', cls: 'host', cost: 1000, ageSec: 60 });
+    // getObservability() is the uncached public fn — it windows around real
+    // Date.now(), so anchor these rows to real now (not the fixed NOW).
+    const realNow = Date.now();
+    insert({ provider: 'portkey', cls: 'host', cost: 1000, ageSec: 60, base: realNow });
     const first = await getObservability();
-    insert({ provider: 'portkey', cls: 'host', cost: 5000, ageSec: 30 });
+    insert({ provider: 'portkey', cls: 'host', cost: 5000, ageSec: 30, base: realNow });
     const cached = await getObservability();
     expect(cached).toBe(first); // same object — served from cache
     _resetObservabilityCache();

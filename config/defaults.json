@@ -106,7 +106,6 @@
     "portal_architecture_cache_ms": 5000,
     "portal_observability_cache_ms": 30000,
     "arch_provider_error_rate_degraded": 0.25,
-    "arch_provider_stale_success_sec": 3600,
     "action_response_orphan_ttl_sec": 300,
     "ops_transcript_rotate_bytes": 524288,
     "ops_transcript_rotate_age_days": 2,
