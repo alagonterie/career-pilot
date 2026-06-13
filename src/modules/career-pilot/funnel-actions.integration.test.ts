@@ -250,6 +250,31 @@ describe('handleGetGmailSyncState', () => {
     expect(data.history_id).toBe('h-12345');
   });
 
+  it('never stores the stringified-null historyId (the 2026-06-13 box bug)', async () => {
+    // The agent passing the *string* "null" must NOT be written — storing it
+    // sends startHistoryId=null to Gmail → 400 and a permanently broken delta.
+    await handlePersistFunnelState(
+      actionContent('career_pilot.persist_funnel_state', makeValidPayload({ gmail_history_id: 'null' })),
+      OWNER_SESSION,
+      inDb,
+    );
+    const row = getDb().prepare("SELECT history_id FROM gmail_sync_state WHERE account_id = 'primary'").get();
+    expect(row).toBeUndefined(); // nothing written
+  });
+
+  it('heals an already-stored "null" by sanitizing on read', async () => {
+    // Simulate the box's broken state: a literal "null" already in the table.
+    getDb()
+      .prepare("INSERT INTO gmail_sync_state (account_id, history_id, last_full_sync_at) VALUES ('primary', 'null', ?)")
+      .run('2026-06-13T00:00:00Z');
+    const c = actionContent('career_pilot.get_gmail_sync_state', {});
+    await handleGetGmailSyncState(c, OWNER_SESSION, inDb);
+    const res = readResponse(c.requestId);
+    if (!res.frame.ok) throw new Error('unreachable');
+    // get_gmail_sync_state returns null → the container falls to full-sync + reseeds.
+    expect((res.frame.data as { history_id: string | null }).history_id).toBeNull();
+  });
+
   it('refuses with FORBIDDEN for sandbox sessions', async () => {
     const c = actionContent('career_pilot.get_gmail_sync_state', {});
     await handleGetGmailSyncState(c, SANDBOX_SESSION, inDb);

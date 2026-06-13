@@ -145,7 +145,10 @@ async function gmailFetch<T>(path: string): Promise<T> {
 }
 
 class GmailApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
     super(message);
   }
 }
@@ -178,7 +181,10 @@ function findTextPart(payload: GmailMessagePayload | undefined): string {
   }
   // Last resort: text/html with naive tag strip.
   if (payload.mimeType === 'text/html' && payload.body?.data) {
-    return base64UrlDecode(payload.body.data).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    return base64UrlDecode(payload.body.data)
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
   return '';
 }
@@ -264,7 +270,10 @@ interface ParsedCalendarEvent {
 }
 
 class CalendarApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
     super(message);
   }
 }
@@ -315,7 +324,7 @@ export const queryGmailDelta: McpToolDefinition = {
   tool: {
     name: 'query_gmail_delta',
     description:
-      "Fetch new Gmail messages since the last sync. Returns `{ messages, history_id, full_sync_performed, fixture_mode }` where messages is an array of `{ id, thread_id, labels, from_addr, to_addr, subject, received_at, body_text }`. In real mode: container-side direct HTTPS to gmail.googleapis.com through the OneCLI gateway (which injects the OAuth bearer transparently). In fixture mode (GMAIL_FIXTURE env set): the host serves the named fixture from tests/fixtures/gmail/. Read-only — does NOT write any state. Intended for the funnel-curator subagent only; do NOT call from orchestrator turns.",
+      'Fetch new Gmail messages since the last sync. Returns `{ messages, history_id, full_sync_performed, fixture_mode }` where messages is an array of `{ id, thread_id, labels, from_addr, to_addr, subject, received_at, body_text }`. In real mode: container-side direct HTTPS to gmail.googleapis.com through the OneCLI gateway (which injects the OAuth bearer transparently). In fixture mode (GMAIL_FIXTURE env set): the host serves the named fixture from tests/fixtures/gmail/. Read-only — does NOT write any state. Intended for the funnel-curator subagent only; do NOT call from orchestrator turns.',
     inputSchema: {
       type: 'object' as const,
       properties: {},
@@ -325,10 +334,9 @@ export const queryGmailDelta: McpToolDefinition = {
   async handler() {
     const fixtureName = process.env.GMAIL_FIXTURE;
     if (fixtureName) {
-      const res = await sendAction<{ messages: unknown[]; fixture: string }>(
-        'career_pilot.load_gmail_fixture',
-        { name: fixtureName },
-      );
+      const res = await sendAction<{ messages: unknown[]; fixture: string }>('career_pilot.load_gmail_fixture', {
+        name: fixtureName,
+      });
       if (!res.ok) return actionErr('query_gmail_delta (fixture)', res.error);
       const { messages } = res.data;
       return ok(
@@ -344,12 +352,16 @@ export const queryGmailDelta: McpToolDefinition = {
 
     // ── Real mode ───────────────────────────────────────────────────────
     try {
-      const stateRes = await sendAction<{ history_id: string | null }>(
-        'career_pilot.get_gmail_sync_state',
-        {},
-      );
+      const stateRes = await sendAction<{ history_id: string | null }>('career_pilot.get_gmail_sync_state', {});
       if (!stateRes.ok) return actionErr('query_gmail_delta (sync state)', stateRes.error);
-      const priorHistoryId = stateRes.data.history_id;
+      // Guard the null→"null" stringification: a stored historyId of the literal
+      // string "null"/"undefined"/"" is truthy but invalid — sending it as
+      // startHistoryId 400s Gmail ("Invalid value at 'start_history_id', null").
+      // Treat it as "no prior" → fall through to the full-sync path, which
+      // re-seeds a real historyId (heals the box's broken morning curator).
+      const rawHistoryId = stateRes.data.history_id;
+      const priorHistoryId =
+        rawHistoryId && rawHistoryId !== 'null' && rawHistoryId !== 'undefined' ? rawHistoryId : null;
 
       const lookbackDays = Number(process.env.FUNNEL_CURATOR_GMAIL_LOOKBACK_DAYS) || DEFAULT_LOOKBACK_DAYS;
 
@@ -452,7 +464,7 @@ export const queryCalendarDelta: McpToolDefinition = {
   tool: {
     name: 'query_calendar_delta',
     description:
-      "Fetch new Calendar events since the last sync. Returns `{ events, sync_tokens, full_sync_performed, fixture_mode }` where events is an array of `{ id, calendar_id, summary, start_at, end_at, organizer, attendees, meet_link }`. In real mode: container-side direct HTTPS to www.googleapis.com/calendar/... through the OneCLI gateway. In fixture mode (CALENDAR_FIXTURE env set): the host serves the named fixture from tests/fixtures/calendar/. Read-only — does NOT write any state. Intended for the funnel-curator subagent only.",
+      'Fetch new Calendar events since the last sync. Returns `{ events, sync_tokens, full_sync_performed, fixture_mode }` where events is an array of `{ id, calendar_id, summary, start_at, end_at, organizer, attendees, meet_link }`. In real mode: container-side direct HTTPS to www.googleapis.com/calendar/... through the OneCLI gateway. In fixture mode (CALENDAR_FIXTURE env set): the host serves the named fixture from tests/fixtures/calendar/. Read-only — does NOT write any state. Intended for the funnel-curator subagent only.',
     inputSchema: {
       type: 'object' as const,
       properties: {},
@@ -462,10 +474,9 @@ export const queryCalendarDelta: McpToolDefinition = {
   async handler() {
     const fixtureName = process.env.CALENDAR_FIXTURE;
     if (fixtureName) {
-      const res = await sendAction<{ events: unknown[]; fixture: string }>(
-        'career_pilot.load_calendar_fixture',
-        { name: fixtureName },
-      );
+      const res = await sendAction<{ events: unknown[]; fixture: string }>('career_pilot.load_calendar_fixture', {
+        name: fixtureName,
+      });
       if (!res.ok) return actionErr('query_calendar_delta (fixture)', res.error);
       const { events } = res.data;
       return ok(
@@ -537,13 +548,14 @@ export const queryCalendarDelta: McpToolDefinition = {
       let pageToken: string | undefined;
       let useTokenMode = !!priorToken;
       while (true) {
-        const qs = useTokenMode && priorToken && !pageToken
-          ? `syncToken=${encodeURIComponent(priorToken)}&singleEvents=true&maxResults=100`
-          : useTokenMode && pageToken
-            ? `syncToken=${encodeURIComponent(priorToken!)}&singleEvents=true&maxResults=100&pageToken=${encodeURIComponent(pageToken)}`
-            : pageToken
-              ? `timeMin=${encodeURIComponent(new Date(Date.now() - lookbackDays * 86_400_000).toISOString())}&singleEvents=true&maxResults=100&pageToken=${encodeURIComponent(pageToken)}`
-              : `timeMin=${encodeURIComponent(new Date(Date.now() - lookbackDays * 86_400_000).toISOString())}&singleEvents=true&maxResults=100`;
+        const qs =
+          useTokenMode && priorToken && !pageToken
+            ? `syncToken=${encodeURIComponent(priorToken)}&singleEvents=true&maxResults=100`
+            : useTokenMode && pageToken
+              ? `syncToken=${encodeURIComponent(priorToken!)}&singleEvents=true&maxResults=100&pageToken=${encodeURIComponent(pageToken)}`
+              : pageToken
+                ? `timeMin=${encodeURIComponent(new Date(Date.now() - lookbackDays * 86_400_000).toISOString())}&singleEvents=true&maxResults=100&pageToken=${encodeURIComponent(pageToken)}`
+                : `timeMin=${encodeURIComponent(new Date(Date.now() - lookbackDays * 86_400_000).toISOString())}&singleEvents=true&maxResults=100`;
 
         try {
           const data = await doFetch(qs);
@@ -600,13 +612,13 @@ export const persistFunnelState: McpToolDefinition = {
         new_email_events: {
           type: 'array',
           description:
-            "Per-message classifications written this run. Each item: { gmail_msg_id, thread_id, classification (one of application_confirmation/screen_invite/screen_rejection/take_home_delivery/onsite_invite/next_round_update/offer/rejection/cold_recruiter_outreach/reference_check/noise/unclassified), confidence (0..1), linked_job_lead_id?, linked_application_id?, from_addr?, subject?, received_at?, evidence_excerpt? (≤500 chars) }. Empty array OK when cheap_out=true.",
+            'Per-message classifications written this run. Each item: { gmail_msg_id, thread_id, classification (one of application_confirmation/screen_invite/screen_rejection/take_home_delivery/onsite_invite/next_round_update/offer/rejection/cold_recruiter_outreach/reference_check/noise/unclassified), confidence (0..1), linked_job_lead_id?, linked_application_id?, from_addr?, subject?, received_at?, evidence_excerpt? (≤500 chars) }. Empty array OK when cheap_out=true.',
           items: { type: 'object' },
         },
         narratives: {
           type: 'array',
           description:
-            "One per active application/company. Each: { company, application_id?, lead_id?, current_state, last_event_at?, timeline_excerpt[] }. Capped at the funnel_curator_max_narratives preference.",
+            'One per active application/company. Each: { company, application_id?, lead_id?, current_state, last_event_at?, timeline_excerpt[] }. Capped at the funnel_curator_max_narratives preference.',
           items: { type: 'object' },
         },
         attention: {
@@ -618,20 +630,23 @@ export const persistFunnelState: McpToolDefinition = {
         suggestions: {
           type: 'array',
           description:
-            "Read-only state-change suggestions for the orchestrator to act on (or surface for confirm). Each: { action (mark_applied|mark_interviewing|mark_rejected|mark_offer|create_lead|confirm_match|draft_followup), target_id?, evidence_msg_id?, rationale }. The curator does NOT directly mutate application status — it proposes; the orchestrator applies (gated by approval_scope).",
+            'Read-only state-change suggestions for the orchestrator to act on (or surface for confirm). Each: { action (mark_applied|mark_interviewing|mark_rejected|mark_offer|create_lead|confirm_match|draft_followup), target_id?, evidence_msg_id?, rationale }. The curator does NOT directly mutate application status — it proposes; the orchestrator applies (gated by approval_scope).',
           items: { type: 'object' },
         },
         gmail_history_id: {
           type: 'string',
-          description: 'Snapshot of the Gmail historyId at the end of this run. Updates gmail_sync_state.primary so the next delta-fetch starts from here.',
+          description:
+            'Snapshot of the Gmail historyId at the end of this run. Updates gmail_sync_state.primary so the next delta-fetch starts from here.',
         },
         calendar_sync_tokens: {
           type: 'object',
-          description: 'Map of { calendar_id → sync_token } captured at the end of this run. Each pair UPSERTs calendar_sync_state.',
+          description:
+            'Map of { calendar_id → sync_token } captured at the end of this run. Each pair UPSERTs calendar_sync_state.',
         },
         cheap_out: {
           type: 'boolean',
-          description: 'True when both deltas were empty AND no ghosting transitions due — exit early without classification pass.',
+          description:
+            'True when both deltas were empty AND no ghosting transitions due — exit early without classification pass.',
         },
         cost_usd: {
           type: 'number',
@@ -643,13 +658,13 @@ export const persistFunnelState: McpToolDefinition = {
     annotations: { readOnlyHint: false },
   },
   async handler(args) {
-    const res = await sendAction<{ run_id: string; events_written: number }>(
-      'career_pilot.persist_funnel_state',
-      args,
-    );
+    const res = await sendAction<{ run_id: string; events_written: number }>('career_pilot.persist_funnel_state', args);
     if (!res.ok) return actionErr('persist_funnel_state', res.error);
     const { run_id, events_written } = res.data;
-    return ok(`persist_funnel_state: run ${run_id} written (${events_written} event row${events_written === 1 ? '' : 's'}).`, res.data);
+    return ok(
+      `persist_funnel_state: run ${run_id} written (${events_written} event row${events_written === 1 ? '' : 's'}).`,
+      res.data,
+    );
   },
 };
 
@@ -717,13 +732,13 @@ export const readEmailEvents: McpToolDefinition = {
     annotations: { readOnlyHint: true },
   },
   async handler(args) {
-    const res = await sendAction<{ events: unknown[]; total: number }>(
-      'career_pilot.read_email_events',
-      args,
-    );
+    const res = await sendAction<{ events: unknown[]; total: number }>('career_pilot.read_email_events', args);
     if (!res.ok) return actionErr('read_email_events', res.error);
     const { total } = res.data;
-    return ok(`read_email_events: ${total} event${total === 1 ? '' : 's'}.`, res.data as unknown as Record<string, unknown>);
+    return ok(
+      `read_email_events: ${total} event${total === 1 ? '' : 's'}.`,
+      res.data as unknown as Record<string, unknown>,
+    );
   },
 };
 
