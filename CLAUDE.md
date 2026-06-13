@@ -129,6 +129,8 @@ It checks every known failure shape (queue starvation, dead recurrence chains, o
 
 **For "is X failing / since when / how often" questions, query `request_telemetry`** (central DB): one row per outbound API request at every choke point our code owns — successes AND failures with HTTP status, tokens/cost for LLM calls, `traffic_class` (ops/chat/sandbox/host) for context-cost analysis. Canonical copy-paste queries + the full finding catalog live in **`.specs/RECOVERY.md` §0 (Triage)**. Portkey's dashboard remains the human view of LLM traffic; `request_telemetry` is the queryable one and the only place failures are durable.
 
+**To talk to the live orchestrator from a terminal** (end-to-end smoke tests without the owner's phone): the CLI channel is wired on the dev box — `pnpm run chat "<message>"` (as the service user, env loaded; `NCL_CHAT_TIMEOUT_MS=240000` for cold spawns). Real agent turn through the normal router — real container, real MCP tools, real spend (~one chat turn), telemetry classed `chat`. It uses its OWN session (separate transcript from the owner's Telegram thread; group workspace memory is shared).
+
 ---
 
 ## Memory system
