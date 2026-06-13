@@ -105,11 +105,25 @@ const PERSONA = {
   },
 }
 
+const HEALTH = {
+  ranAt: '2026-06-12T18:00:00Z',
+  findings: [
+    { id: 'queue', severity: 'ok', title: 'Queue healthy', detail: 'no stale due rows' },
+    {
+      id: 'auth-failure:gmail',
+      severity: 'critical',
+      title: 'Gmail auth failing',
+      detail: '401 in the last 24h',
+      next_step: 'reconnect Gmail via OneCLI; check consent-screen publish status',
+    },
+  ],
+}
+
 function jsonRoute(body: unknown, status = 200) {
   return { status, contentType: 'application/json', body: JSON.stringify(body) }
 }
 
-/** Stub the three reads (+ the knob POST). `available:false` → every read 404s. */
+/** Stub the four reads (+ the knob POST). `available:false` → every read 404s. */
 async function stubDev(page: Page, available = true): Promise<void> {
   await page.route('**/api/dev/knobs', async (route) => {
     if (route.request().method() === 'POST') {
@@ -122,6 +136,9 @@ async function stubDev(page: Page, available = true): Promise<void> {
   )
   await page.route('**/api/dev/persona', (route) =>
     route.fulfill(available ? jsonRoute(PERSONA) : jsonRoute({ error: 'not_found' }, 404)),
+  )
+  await page.route('**/api/dev/health', (route) =>
+    route.fulfill(available ? jsonRoute(HEALTH) : jsonRoute({ error: 'not_found' }, 404)),
   )
 }
 
@@ -152,6 +169,12 @@ test.describe('/dev — dev inspector + sim controls (§24.42c)', () => {
     await expect(page.getByTestId('onboarding-badge')).toContainText('0/7')
     await expect(page.getByTestId('onboarding-full_name')).toContainText('next')
     await expect(page.getByTestId('candidate-md')).toContainText('Onboarding mode')
+
+    // Health panel (§24.69): the §24.68 runbook in-browser — the critical
+    // finding + its next_step command rendered verbatim for copy-paste.
+    await expect(page.getByTestId('health-summary-badge')).toContainText('1 critical')
+    await expect(page.getByTestId('health-finding-auth-failure:gmail')).toBeVisible()
+    await expect(page.getByTestId('health-next-step-auth-failure:gmail')).toContainText('reconnect Gmail via OneCLI')
 
     const a11y = await new AxeBuilder({ page }).analyze()
     expect(a11y.violations).toEqual([])
