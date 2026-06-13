@@ -263,11 +263,13 @@ export function LogStream({
         ) : null}
       </div>
 
-      {/* Reserve the body height on MOBILE (matching the events' max-h-[28rem]
-          scroll area) so the connecting→loaded transition doesn't grow the
-          panel — there's no rail to size it there (§24.36 Tier-2). On desktop
-          `lg:min-h-0` hands sizing back to the rail-driven `h-full` flex column. */}
-      <div className="relative min-h-[28rem] flex-1 lg:min-h-0">
+      {/* Reserve the body height (matching the events' max-h-[22rem] scroll area)
+          on EVERY breakpoint so the connecting→loaded transition never grows the
+          panel (§24.36 Tier-2). The trace is the height-driver of the desktop row
+          (it's taller than the rail), so reserving it here — not handing desktop
+          back to the shorter rail — is what keeps loading→loaded shift-free there
+          too. 22rem (~18 lines) balances the feed against the now-taller rail. */}
+      <div className="relative min-h-[22rem] flex-1">
         {visible.length === 0 ? (
           filtered.length === 0 && events.length > 0 ? (
             // A chip genuinely excluded everything (vs. a window of bare turns,
@@ -304,7 +306,7 @@ export function LogStream({
             ref={scrollRef}
             onScroll={onScroll}
             data-testid="trace-lines"
-            className="max-h-[28rem] overflow-y-auto px-4 py-3 font-mono text-xs leading-relaxed"
+            className="max-h-[22rem] overflow-y-auto px-4 py-3 font-mono text-xs leading-relaxed"
           >
             {rows.map((row) =>
               row.kind === 'date' ? (

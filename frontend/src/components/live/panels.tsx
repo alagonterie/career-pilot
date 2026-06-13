@@ -376,29 +376,31 @@ export function LlmSpendPanel({
 /** RECENT OUTCOMES — the most-recently-active applications with current stage +
  * the ◆ public marker, from the already-polled funnel rows. An honest
  * current-state snapshot; true transition arrows need the deferred
- * funnel_events history (§24.29). */
+ * funnel_events history (§24.29). `flex-1` lets it grow to fill the rail down to
+ * the trace-stream height beside it (§24.69 follow-up) — the list earns the room
+ * by showing more of the real recent activity, rather than leaving a dead gap. */
 export function RecentOutcomesPanel({ apps, status }: { apps: FunnelApplication[]; status?: PollStatus }) {
   const recent = apps
     .filter((a) => a.last_activity_at != null)
     .slice()
     .sort((a, b) => (b.last_activity_at as string).localeCompare(a.last_activity_at as string))
-    .slice(0, 6)
+    .slice(0, 8)
   if (status === 'loading') {
     return (
-      <Panel title="Recent outcomes" className="min-h-[188px]">
+      <Panel title="Recent outcomes" className="flex-1 min-h-[188px]">
         <PanelSkeleton lines={3} />
       </Panel>
     )
   }
   if (status === 'error') {
     return (
-      <Panel title="Recent outcomes" className="min-h-[188px]">
+      <Panel title="Recent outcomes" className="flex-1 min-h-[188px]">
         <PanelOffline />
       </Panel>
     )
   }
   return (
-    <Panel title="Recent outcomes" className="min-h-[188px]">
+    <Panel title="Recent outcomes" className="flex-1 min-h-[188px]">
       {recent.length === 0 ? (
         <p className="font-mono text-xs text-muted-foreground">No activity yet.</p>
       ) : (
