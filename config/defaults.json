@@ -75,8 +75,20 @@
     "recruiter_sim_job_source": "real",
     "recruiter_sim_pace": "fast",
     "recruiter_sim_pace_presets": {
-      "fast": { "tick_interval_sec": 20, "min_step_sec": 30, "max_step_sec": 150, "seed_interval_sec": 90, "backdate": true },
-      "realistic": { "tick_interval_sec": 3600, "min_step_sec": 86400, "max_step_sec": 604800, "seed_interval_sec": 172800, "backdate": false }
+      "fast": {
+        "tick_interval_sec": 20,
+        "min_step_sec": 30,
+        "max_step_sec": 150,
+        "seed_interval_sec": 90,
+        "backdate": true
+      },
+      "realistic": {
+        "tick_interval_sec": 3600,
+        "min_step_sec": 86400,
+        "max_step_sec": 604800,
+        "seed_interval_sec": 172800,
+        "backdate": false
+      }
     },
     "recruiter_sim_max_concurrent": 8,
     "recruiter_sim_screen_pass_rate": 0.4,
@@ -92,6 +104,9 @@
     "portal_sse_keepalive_ms": 15000,
     "portal_telemetry_cache_ms": 30000,
     "portal_architecture_cache_ms": 5000,
+    "portal_observability_cache_ms": 30000,
+    "arch_provider_error_rate_degraded": 0.25,
+    "arch_provider_stale_success_sec": 3600,
     "action_response_orphan_ttl_sec": 300,
     "ops_transcript_rotate_bytes": 524288,
     "ops_transcript_rotate_age_days": 2,
