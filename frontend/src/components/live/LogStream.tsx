@@ -263,7 +263,11 @@ export function LogStream({
         ) : null}
       </div>
 
-      <div className="relative min-h-0 flex-1">
+      {/* Reserve the body height on MOBILE (matching the events' max-h-[28rem]
+          scroll area) so the connecting→loaded transition doesn't grow the
+          panel — there's no rail to size it there (§24.36 Tier-2). On desktop
+          `lg:min-h-0` hands sizing back to the rail-driven `h-full` flex column. */}
+      <div className="relative min-h-[28rem] flex-1 lg:min-h-0">
         {visible.length === 0 ? (
           filtered.length === 0 && events.length > 0 ? (
             // A chip genuinely excluded everything (vs. a window of bare turns,
