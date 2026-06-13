@@ -8,6 +8,7 @@ import {
   Panel,
   RecentOutcomesPanel,
   SessionsPanel,
+  SpendByClassPanel,
   SystemStatusPanel,
   TelemetryPanel,
 } from '~/components/live/panels'
@@ -17,6 +18,7 @@ import { seo } from '~/lib/seo'
 import { useActivityStream } from '~/lib/use-activity-stream'
 import { useArchitecture } from '~/lib/use-architecture'
 import { useFunnel } from '~/lib/use-funnel'
+import { useObservability } from '~/lib/use-observability'
 import { deriveTelemetryView, useTelemetry } from '~/lib/use-telemetry'
 
 // Third page of the ops register (PORTAL §5.2). `(ops)` is pathless → the URL is
@@ -48,6 +50,7 @@ function LivePage() {
   const { data: funnel, status: funnelStatus } = useFunnel(API_BASE)
   const { events, status, count } = useActivityStream(API_BASE, { limit: 60 })
   const { data: telemetry, status: telemetryStatus } = useTelemetry(API_BASE)
+  const { data: observability, status: observabilityStatus } = useObservability(API_BASE)
   const { app: appFilter } = Route.useSearch()
   const navigate = Route.useNavigate()
   // Dismissing the app-filter chip clears the param via replace — arriving from
@@ -109,6 +112,7 @@ function LivePage() {
               )}
             </Panel>
             <CostCachePanel view={view} status={telemetryStatus} />
+            <SpendByClassPanel data={observability} status={observabilityStatus} />
             <RecentOutcomesPanel apps={apps} status={funnelStatus} />
           </div>
         </div>

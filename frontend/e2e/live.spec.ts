@@ -13,6 +13,7 @@ function ignorable(url: string): boolean {
     url.includes('/api/system-status') ||
     url.includes('/api/funnel') ||
     url.includes('/api/telemetry') ||
+    url.includes('/api/observability') ||
     url.includes('/api/activity/stream')
   )
 }
@@ -69,6 +70,14 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
     // COST & CACHE shows the COMBINED est spend (§24.55): the seeded turn row
     // ($0.06) + the seeded deterministic simulator run ($0.04).
     await expect(page.getByTestId('local-spend')).toHaveText('$0.10')
+
+    // SPEND BY CLASS (§24.69) — per-class 24h cost from the seeded
+    // request_telemetry rows; exact clean totals (3×$0.07 chat, 2×$0.025 sandbox).
+    const spend = page.getByTestId('spend-by-class')
+    await expect(spend).toBeVisible()
+    await expect(page.getByTestId('spend-chat')).toHaveText('$0.21')
+    await expect(page.getByTestId('spend-sandbox')).toHaveText('$0.05')
+    await expect(page.getByText(/across all classes/)).toBeVisible()
 
     // §24.57: the fixture window is in the past, so the stream opens with a
     // leading day divider; the seal explains itself via an InfoTip on tap.
