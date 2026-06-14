@@ -27,6 +27,7 @@ import { getDb } from '../../db/connection.js';
 import { getConfig } from '../../get-config.js';
 import { insertMessage } from '../../db/session-db.js';
 import { log } from '../../log.js';
+import { projectWorkProfile } from '../portal/profile.js';
 import { mirrorFunnelEvent, publicApplicationRef, resanitizeApplicationAuditTrail } from '../portal/public-audit.js';
 import { sanitize, sanitizeForPublic } from '../portal/sanitizer.js';
 import { pass3Active } from '../portal/sanitizer-pass3.js';
@@ -252,6 +253,64 @@ export async function handleUpdateProfileField(
     writeResponse(inDb, requestId, { ok: true, data: { field } });
   } catch (err) {
     log.error('handleUpdateProfileField failed', { field, err });
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
+// ── set_work_profile (the composed /work page, §24.71 9.4b-2) ──────────────
+//
+// The agent's write path for the auto-composed /work page (+ landing hero). The
+// composer maps the candidate's master_resume + basics into the WorkProfile
+// shape (D2) and publishes it here; `GET /api/profile` projects it at read-time.
+// Validated through the SAME `projectWorkProfile` the API reads with — so a
+// stored blob always renders, and a malformed/nameless compose is rejected
+// before it lands (the D5 minimum bar). Stamped `source='agent'` for the on-page
+// provenance marker (D4). Owner-only; reversible (a re-compose overwrites).
+export async function handleSetWorkProfile(
+  content: Record<string, unknown>,
+  _session: Session,
+  inDb: Database.Database,
+): Promise<void> {
+  const requestId = reqId(content);
+  const p = payload(content);
+  // Accept either a structured object or a JSON string; project to the canonical
+  // shape (drops unknown fields, coerces, requires a non-empty name).
+  const raw = typeof p.profile === 'string' ? p.profile : JSON.stringify(p.profile ?? null);
+  const projected = projectWorkProfile(raw);
+  if (!projected) {
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: {
+        code: 'BAD_ARGS',
+        message:
+          'profile must be a WorkProfile object with a non-empty name. Compose it from the real master resume; omit (do not pad) sections you lack source for.',
+      },
+    });
+    return;
+  }
+
+  const now = new Date().toISOString();
+  try {
+    const db = getDb();
+    db.prepare(`INSERT INTO candidate_profile (id, updated_at) VALUES (1, @updated_at) ON CONFLICT(id) DO NOTHING`).run(
+      {
+        updated_at: now,
+      },
+    );
+    db.prepare(
+      `UPDATE candidate_profile
+          SET work_profile_json = @json, work_profile_source = 'agent',
+              work_profile_generated_at = @now, updated_at = @now
+        WHERE id = 1`,
+    ).run({ json: JSON.stringify(projected), now });
+
+    log.info('candidate_profile work page composed', { name: projected.name });
+    writeResponse(inDb, requestId, { ok: true, data: { name: projected.name } });
+  } catch (err) {
+    log.error('handleSetWorkProfile failed', { err });
     writeResponse(inDb, requestId, {
       ok: false,
       error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },
