@@ -57,7 +57,8 @@ function Home() {
         <p className="mt-2 text-lg text-muted-foreground">{p.title}</p>
 
         <p className="mt-6 text-balance text-base leading-relaxed text-foreground/90">
-          I built an AI agent system that runs my job search — and this entire page is it, working live.
+          I built an <strong className="font-semibold text-foreground">AI agent system</strong> that runs my job search
+          — and this entire page is it, working live.
         </p>
 
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">

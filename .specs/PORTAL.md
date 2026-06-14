@@ -210,7 +210,7 @@ Public routes are TanStack Start pages running on Cloudflare Workers. Route load
                  ────────────────────────────────────────────
 
                  Jane Doe
-                 Senior Software Engineer · AI Agent Systems
+                 Senior Software Engineer · Team Lead
 
                  I built an AI agent system that runs my
                  job search — and this entire page is it,
@@ -237,7 +237,7 @@ Below the CTAs, **a single line of real, live numbers** (continuously updated, n
 
 Sources: the funnel (`/api/funnel`, active = in-flight), telemetry (`/api/telemetry` → `activity_events_24h`), and the activity stream (latest event) — the same live hooks already on the home. Each segment must be honest and is **omitted when its number is empty** (never faked or zero-padded); "0 active applications" gets a different message (see §10).
 
-> **Build note (§24.71 hero audit).** Two changes land here. (1) The spec's third stat was "cache hit rate 91%" — dropped: it's LLM prompt-cache jargon that reads as cryptic on a first impression. `activity_events_24h` ("agent actions in 24h") replaces it — same "working right now" signal, plain language. The honest line is built by the pure, tested `heroStats()` helper (omit-when-empty) and reserves a line of height so populating it doesn't shove the hero (§24.36). (2) The hook is reordered to **orient before it proves** — it leads with *what this is* ("I built an AI agent system that runs my job search") before the live indicator, stat line, and funnel corroborate it — killing the "what am I looking at?" landing. Hero positioning is "Senior Software Engineer · AI Agent Systems": one specialty the page overwhelmingly demonstrates, not a stacked skills list.
+> **Build note (§24.71 hero audit).** Two changes land here. (1) The spec's third stat was "cache hit rate 91%" — dropped: it's LLM prompt-cache jargon that reads as cryptic on a first impression. `activity_events_24h` ("agent actions in 24h") replaces it — same "working right now" signal, plain language. The honest line is built by the pure, tested `heroStats()` helper (omit-when-empty) and reserves a line of height so populating it doesn't shove the hero (§24.36). (2) The hook is reordered to **orient before it proves** — it leads with *what this is* ("I built an AI agent system that runs my job search") before the live indicator, stat line, and funnel corroborate it — killing the "what am I looking at?" landing. The hook bolds **AI agent system** (the one emphasized phrase) as the single differentiator. Hero positioning is "Senior Software Engineer · Team Lead" — deliberately generalist (no pinned specialty: the candidate reads as someone who ships across the stack), and it avoids repeating "AI agent system", which the hook already carries.
 
 **Viewport 2: Funnel strip**
 
