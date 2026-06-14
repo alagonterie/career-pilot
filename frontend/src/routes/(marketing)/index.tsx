@@ -5,9 +5,11 @@ import { LiveIndicator } from '~/components/LiveIndicator'
 import { LiveTicker } from '~/components/LiveTicker'
 import { Button } from '~/components/ui/button'
 import { getWorkProfile } from '~/lib/profile-loader'
+import { heroStats } from '~/lib/hero-stats'
 import { seo } from '~/lib/seo'
 import { useActivityStream } from '~/lib/use-activity-stream'
 import { useFunnel } from '~/lib/use-funnel'
+import { useTelemetry } from '~/lib/use-telemetry'
 import { workProfile } from '~/lib/work-profile'
 
 export const Route = createFileRoute('/(marketing)/')({
@@ -26,7 +28,12 @@ function Home() {
   // (those are the /live story) — so a stretch of turns can't blank the ticker.
   const { events, status, count } = useActivityStream(API_BASE, { exclude: ['turn'] })
   const { data: funnel, status: funnelStatus } = useFunnel(API_BASE)
+  const { data: telemetry } = useTelemetry(API_BASE)
   const apps = funnel?.applications ?? []
+  // Honest hero stat line (PORTAL §5.1 Viewport 1): real numbers from the live
+  // hooks, each omitted when empty. Replaces the spec's cryptic "cache hit rate"
+  // with "agent actions in 24h" (§24.71 hero audit).
+  const stats = heroStats({ apps, events, actionsIn24h: telemetry?.local.activity_events_24h ?? null })
   // SSR-resolved candidate profile (placeholder fallback). De-`Jane Doe`s the hero.
   const { profile, identity } = Route.useLoaderData()
   const p = profile ?? workProfile
@@ -34,10 +41,11 @@ function Home() {
   return (
     <main className="mx-auto flex max-w-3xl flex-col items-center px-6 py-20">
       {/*
-        Viewport 1 — hero (SSR-static; PORTAL §5.1). Generic placeholder persona
-        (Jane Doe); real content arrives via candidate_profile later. The two
-        CTAs: "See it work" crosses into the ops register (/live, the hub);
-        "Talk to me" goes to the conversion sink (/contact).
+        Viewport 1 — hero (PORTAL §5.1). Name/title SSR'd from candidate_profile
+        (placeholder fallback). The hook orients first (what this is) before the
+        live indicator + stat line prove it — kills the "what am I looking at?"
+        landing (§24.71 hero audit). The two CTAs: "See it work" crosses into the
+        ops register (/live, the hub); "Talk to me" → the conversion sink (/contact).
       */}
       <section className="flex w-full max-w-xl flex-col items-center text-center">
         <div className="mb-6 flex items-center gap-4 text-sm">
@@ -49,8 +57,7 @@ function Home() {
         <p className="mt-2 text-lg text-muted-foreground">{p.title}</p>
 
         <p className="mt-6 text-balance text-base leading-relaxed text-foreground/90">
-          I built this site. Everything moving on this page is the agent system I designed running my actual job search,
-          right now.
+          I built an AI agent system that runs my job search — and this entire page is it, working live.
         </p>
 
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
@@ -64,6 +71,13 @@ function Home() {
             </Link>
           </Button>
         </div>
+
+        {/* Honest live stat line (PORTAL §5.1 Viewport 1) — the first-paint "this
+            is real, right now" proof under the CTAs. Reserves a line of height so
+            populating it (client-only hooks) doesn't shove the hero (§24.36). */}
+        <p className="mt-6 min-h-5 font-mono text-xs text-muted-foreground" aria-live="polite">
+          {stats.length > 0 ? stats.join('  ·  ') : null}
+        </p>
       </section>
 
       {/* Viewport 2 — funnel strip (PORTAL §5.1): the search as a live pipeline,
