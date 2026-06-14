@@ -825,6 +825,8 @@ A `Download PDF` button at top + bottom — generated server-side from the struc
 
 > **Build note (as of STRATEGY §24.25 / Sub-milestone 6.2):** the page first ships as a **shell rendered against a typed `WorkProfile` placeholder** — its content lives in the private `candidate_profile` (§5.8), which is not yet populated, so the live `GET /api/profile` projection is deferred to a later increment (the placeholder shape is its contract). Optional sections (writing/talks) render only when present — no invented data. The **server-side PDF** is its own backend increment; until it lands the Download-PDF button is omitted rather than rendered dead.
 
+> **Build note (STRATEGY §24.71 / Phase 9.4b — the agent-composed model):** the live `/work` is **auto-composed by the agent**, not hand-filled. The owner provides the **basics + a natural master resume** via Telegram onboarding; the agent composes the structured page *at write-time* (it never runs an LLM in the SSR hot path — a public-route cost/abuse vector per §24.70) into the `WorkProfile` shape, which is the **agent's output contract**. The composed page persists as `candidate_profile.work_profile_json`; `GET /api/profile` projects it deterministically (placeholder fallback). It **composes, never invents** (facts trace to the source resume) and shows a **provenance marker** ("composed by the agent from the master resume") — the page itself becomes a second AI showcase. Staged: **9.4b-1** the deterministic projection (instant de-`Jane Doe`, works on a hand-seeded artifact too); **9.4b-2** the write-time composer + provenance + owner preview/recompose.
+
 ---
 
 ### 5.7 `/contact` — Recruiter contact
@@ -1426,6 +1428,8 @@ the candidate can fill these in natural-language via Telegram at any time. Examp
 - *"Here's my master resume:"* (paste or attach file) → agent updates `candidate_profile.master_resume`
 
 The agent uses the `update_profile_field` MCP tool, validates the input, writes to the DB, and the portal picks up the change on next request (no rebuild needed for content variables).
+
+> **Build note (STRATEGY §24.71 / Phase 9.4b — basics-in, agent-composes-page):** the owner doesn't hand-fill every variable above. The elevated flow collects the **basics** (name, contact/links, target roles, comp) + a **natural master resume**, then the agent **composes the `/work` page** from them — choosing which sections present well, wording the prose, applying a minimum bar, and omitting under-sourced sections (§10/§12 placeholder UX covers the gaps). It composes from real material only (never invents history) and the page carries a provenance marker. The composed page persists as `candidate_profile.work_profile_json` via the `set_work_profile` MCP tool; the owner approves a preview and refines in natural language ("tighten the bio," "drop that project") → recompose. So the "fill these 11 variables" checklist becomes "give the agent the basics and approve the page it builds."
 
 **What's the minimum to flip `LIVE_MODE = true`?**
 
