@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
 import { Button } from '~/components/ui/button'
+import { useTurnstile } from '~/lib/use-turnstile'
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
 
@@ -40,6 +41,7 @@ const inputClass =
 export function ContactForm({ company, role, from }: { company?: string; role?: string; from?: string }) {
   const [sent, setSent] = React.useState(false)
   const [submitError, setSubmitError] = React.useState<string | null>(null)
+  const { token, enforce, widget } = useTurnstile('contact_submit')
 
   const {
     register,
@@ -53,9 +55,11 @@ export function ContactForm({ company, role, from }: { company?: string; role?: 
   const onSubmit = async (data: ContactFields): Promise<void> => {
     setSubmitError(null)
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (token) headers['x-turnstile-token'] = token
       const res = await fetch(`${API_BASE}/api/contact`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ ...data, source: from }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -103,8 +107,10 @@ export function ContactForm({ company, role, from }: { company?: string; role?: 
         </p>
       ) : null}
 
+      {widget}
+
       <div className="flex justify-end">
-        <Button type="submit" disabled={isSubmitting}>
+        <Button type="submit" disabled={isSubmitting || (enforce && !token)}>
           {isSubmitting ? 'Sending…' : 'Send →'}
         </Button>
       </div>

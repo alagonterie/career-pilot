@@ -1,6 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { env } from 'cloudflare:workers'
 
+import { guardPublicMutation, type GuardEnv } from '~/lib/edge-guard'
+
 /**
  * BFF proxy — `/api/*` (STRATEGY §24.39 D12).
  *
@@ -82,7 +84,10 @@ export const Route = createFileRoute('/api/$')({
   server: {
     handlers: {
       GET: ({ request }) => proxy(request),
-      POST: ({ request }) => proxy(request),
+      // Public mutations (`/api/contact`, `/api/simulator`) run the edge guard —
+      // Workers-RL burst + Turnstile (§24.70) — before the forward; a non-null
+      // result short-circuits with 429/403. Every other POST blind-forwards.
+      POST: async ({ request }) => (await guardPublicMutation(request, env as unknown as GuardEnv)) ?? proxy(request),
       PUT: ({ request }) => proxy(request),
       PATCH: ({ request }) => proxy(request),
       DELETE: ({ request }) => proxy(request),

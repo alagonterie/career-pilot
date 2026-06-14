@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
 import { Button } from '~/components/ui/button'
+import { useTurnstile } from '~/lib/use-turnstile'
 import type { SimRunInput } from '~/lib/use-simulator-run'
 
 const schema = z.object({
@@ -35,6 +36,7 @@ const inputClass =
  * lands (§24.31).
  */
 export function SimInput({ onRun, disabled }: { onRun: (input: SimRunInput) => void; disabled?: boolean }) {
+  const { token, enforce, widget } = useTurnstile('simulator_run')
   const {
     register,
     handleSubmit,
@@ -50,6 +52,7 @@ export function SimInput({ onRun, disabled }: { onRun: (input: SimRunInput) => v
       role: data.role,
       public_url: data.public_url?.trim() ? data.public_url.trim() : undefined,
       jd: data.jd?.trim() ? data.jd.trim() : undefined,
+      turnstileToken: token ?? undefined,
     })
   }
 
@@ -71,7 +74,8 @@ export function SimInput({ onRun, disabled }: { onRun: (input: SimRunInput) => v
       </Field>
 
       <div className="flex flex-col items-center gap-3">
-        <Button type="submit" disabled={disabled}>
+        {widget}
+        <Button type="submit" disabled={disabled || (enforce && !token)}>
           {disabled ? 'Starting…' : 'Run simulation →'}
         </Button>
       </div>
