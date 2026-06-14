@@ -5435,6 +5435,35 @@ The agent writes the artifact via a new MCP tool (`set_work_profile`, sibling to
 
 ---
 
+#### 24.72 Server-rendered résumé PDF — master download + tailored-via-simulator (Phase 9.4b, 2026-06-14)
+
+`/work` has always promised a server-rendered Download-PDF (§5.6) — "generated from the structured content, NOT a static PDF" (the "I version-control my résumé" signal). With the real `WorkProfile` now composed (§24.71), it's unblocked. This drill-in specs the PDF *infrastructure* and extends it into the strongest conversion artifact on the site: a résumé **tailored live to the recruiter's own role** via the simulator.
+
+**Two tiers (the second reuses the first's engine).**
+- **Tier 1 — master résumé PDF on `/work`.** Server-rendered from the composed `WorkProfile`. Table-stakes (a recruiter wants *a* PDF to forward) and the rendering foundation Tier 2 reuses.
+- **Tier 2 — tailored résumé via the simulator.** The simulator already runs `tailor-resume`; its output extends to a full résumé the visitor downloads, aimed at the company/role they typed — plus a cross-sell on `/work` ("Want one aimed at your role? Run the 2-minute simulator →"). Turns "neat demo" into "I walked away with something useful for *my* pipeline" — the forward-up conversion path (§1).
+
+**Decisions.**
+- **D1 — `@react-pdf/renderer`, not headless Chromium.** We have *structured data* (`WorkProfile`), not markdown. The two real options are (a) headless Chromium rendering an HTML/CSS template (what `md-to-pdf`/Puppeteer do; available via Cloudflare Browser Rendering or backend Playwright) and (b) react-pdf building the PDF from React components, no browser. We pick **(b)**: deterministic layout from known sections means the document fits *by construction* — the human "render → eyeball → adjust" loop collapses to a one-time template design. No Chromium binary to operate; faster than spinning a browser per download; and the **same renderer serves Tier 2** (a tailored résumé is just a different `WorkProfile` cut). Trade-off accepted: react-pdf is its own flex-like layout engine (not full CSS), which doesn't bite for a conventional 1–2-page résumé; determinism is worth far more than exotic layout. (Verify react-pdf's font-registration + pagination API against its docs at build — no bluffing specifics.)
+- **D2 — Renders on the backend, served via the BFF.** The host owns the `WorkProfile` (`candidate_profile`) and runs Node (react-pdf's home). `GET /api/resume.pdf` reads the profile, renders `<ResumeDocument profile={…} />`, and streams `application/pdf` with `Content-Disposition: attachment; filename="<Name>.pdf"`. The Worker BFF (§24.39 D12) already proxies `/api/*`; confirm binary pass-through is byte-clean. Single source of truth with `/work` (same `WorkProfile` → page and PDF can't drift).
+- **D3 — "Fit to 1–2 pages" is a template property, not a per-render check.** Density rules live in the template; react-pdf's page-flow handles the rare long résumé. The owner approves the look *once* (at template design), not per download. A length-guard heuristic is a later refinement if content volume varies wildly.
+- **D4 — AI-provenance footer = transparency *and* a traveling conversion vector.** Every generated PDF carries a footer, consistent with the `/work` provenance marker. On the **tailored** PDF it *is* the payload: when the recruiter forwards the file to their hiring manager, the footer says the candidate's *own* agent system auto-tailored it for that exact role — the strongest endorsement, carrying the site URL back. It states the honesty guardrail in-line so "tailored" can't read as "fabricated":
+  - *Master:* `◇ Composed by my AI agent system · hire.example.com`
+  - *Tailored:* `◇ Auto-tailored for the <Role> role at <Company> by my own AI agent system — the same one running my live job search at hire.example.com. Generated <date>; all content reflects real experience.`
+  (`<Company>`/`<Role>` are the visitor's own simulator input — their data, not obfuscated — so naming them is fine.)
+- **D5 — Tier-2 honesty guardrail: tailoring = re-emphasis, never fabrication.** The tailored résumé may reorder, select, and re-weight *real* `WorkProfile` content toward the role; it may not invent roles, dates, employers, or claims. Carries `tailor-resume`'s existing constraint up to the full-document level (higher stakes than a few bullets) — enforced in the subagent prompt + a projection that can only draw from the master `WorkProfile`.
+- **D6 — Tier-2 cost/abuse envelope re-sized (§24.70).** A full tailored résumé per visitor is more LLM spend than the current bullets. The sandbox per-run pre-charge estimate + daily budget caps (§24.70 D3) are re-sized so the heavier run can't drain budget; values via `getConfig`/wrangler vars (no magic numbers). Tier 2 does not ship until this envelope is set.
+
+**Staging.**
+- **9.4b-r1 (Tier 1, this kick-off):** the `ResumeDocument` react-pdf engine + `GET /api/resume.pdf` + the `/work` Download-PDF button (top + bottom) + the master footer (D4). Binary BFF pass-through verified.
+- **9.4b-r2 (Tier 2, spec'd when built):** extend `tailor-resume` to a full structured résumé under D5; the simulator-results "Download tailored résumé" + the `/work` cross-sell; the tailored footer (D4); the §24.70 envelope (D6). A short spec precedes the build.
+
+**Definition of done (Tier 1 / 9.4b-r1).** `GET /api/resume.pdf` streams a valid, well-laid-out 1–2-page PDF from the composed `WorkProfile`, fonts embedded, master footer present; the `/work` Download-PDF button (top + bottom) downloads it through the Worker BFF byte-clean; a placeholder profile yields a sensible PDF (no committed personal identifiers — the §24.71 identity split holds); host suite + tsc + prettier (`--no-semi` frontend) green; the renderer is a pure `WorkProfile → Document` component (testable without a network).
+
+**Spec deltas (this drill-in).** This §24.72 (the two-tier model + D1–D6 + staging + DoD); PORTAL §5.6 (the `/work` Download-PDF build note → the react-pdf infra + the Tier-2 cross-sell); §5.3's tailored-download note lands with 9.4b-r2. Memory: [[status_current]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
