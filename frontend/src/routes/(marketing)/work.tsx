@@ -1,9 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router'
 
+import { Button } from '~/components/ui/button'
 import { WorkSections } from '~/components/work/sections'
 import { getWorkProfile } from '~/lib/profile-loader'
 import { seo } from '~/lib/seo'
 import { workProfile } from '~/lib/work-profile'
+
+const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
 
 export const Route = createFileRoute('/(marketing)/work')({
   component: Work,
@@ -30,6 +33,17 @@ function Work() {
   // to the typed `workProfile` placeholder when no profile is composed yet.
   const { profile, source, generatedAt } = Route.useLoaderData()
   const p = profile ?? workProfile
+  // Download-PDF (§24.72 / 9.4b-r1): server-rendered from the same WorkProfile.
+  // Gated on a real composed profile — the backend 404s for a placeholder, so we
+  // never offer a download that wouldn't resolve.
+  const canDownload = profile != null
+  const downloadBtn = (
+    <Button asChild variant="outline" size="sm">
+      <a href={`${API_BASE}/api/resume.pdf`} download>
+        Download résumé (PDF) ↓
+      </a>
+    </Button>
+  )
   return (
     <>
       <main className="mx-auto flex max-w-3xl flex-col items-start px-6 py-16">
@@ -42,9 +56,11 @@ function Work() {
             ✦ Composed by my agent from my master resume · {composedOn(generatedAt)}
           </p>
         ) : null}
-        <div className="mt-12 w-full">
+        {canDownload ? <div className="mt-6">{downloadBtn}</div> : null}
+        <div className="mt-10 w-full">
           <WorkSections profile={p} />
         </div>
+        {canDownload ? <div className="mt-12">{downloadBtn}</div> : null}
       </main>
     </>
   )

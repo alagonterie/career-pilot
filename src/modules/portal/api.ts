@@ -53,6 +53,7 @@ import {
 import { emptyObservability, getObservability } from './observability.js';
 import { getTelemetry } from './portkey-analytics.js';
 import { getPublicProfile } from './profile.js';
+import { masterFooter, renderResumePdf } from './resume-pdf.js';
 import { buildSanitizeDemo } from './sanitize-demo.js';
 import { getRecentSimulatorRuns, getSimulatorResult, startSimulatorRun, type SimulatorInput } from './simulator.js';
 import {
@@ -211,6 +212,29 @@ function handleFunnel(res: http.ServerResponse, cors: Record<string, string>): v
  */
 function handleProfile(res: http.ServerResponse, cors: Record<string, string>): void {
   json(res, 200, getPublicProfile(), cors);
+}
+
+/**
+ * `GET /api/resume.pdf` — server-rendered résumé from the composed `WorkProfile`
+ * (STRATEGY §24.72 / 9.4b-r1). 404 when no profile is composed (the `/work`
+ * download button is hidden in that case) — we never emit a placeholder résumé.
+ * Streamed binary; the Worker BFF passes it through byte-clean.
+ */
+async function handleResumePdf(res: http.ServerResponse, cors: Record<string, string>): Promise<void> {
+  const { profile, identity } = getPublicProfile();
+  if (!profile) {
+    json(res, 404, { error: 'no_profile' }, cors);
+    return;
+  }
+  const buf = await renderResumePdf(profile, identity, masterFooter());
+  const base = profile.name.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'resume';
+  res.writeHead(200, {
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': `attachment; filename="${base}.pdf"`,
+    'Content-Length': String(buf.length),
+    ...cors,
+  });
+  res.end(buf);
 }
 
 /**
@@ -735,6 +759,7 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
 
     if (method === 'GET' && path === '/api/funnel') return handleFunnel(res, cors);
     if (method === 'GET' && path === '/api/profile') return handleProfile(res, cors);
+    if (method === 'GET' && path === '/api/resume.pdf') return await handleResumePdf(res, cors);
     if (method === 'GET' && path === '/api/kit') return handleKit(url, res, cors);
     if (method === 'GET' && path === '/api/activity/stream') return handleActivityStream(req, res, url, cors);
     if (method === 'GET' && path === '/api/activity') return handleActivity(url, res, cors);
