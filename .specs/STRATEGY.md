@@ -918,7 +918,7 @@ To restore: remove `PORTKEY_BYPASS`, restart `career-pilot.service`. See [RECOVE
 | DNS for both | Cloudflare DNS (managed via Terraform `cloudflare.tf`) | CNAMEs |
 | Analytics | Cloudflare Web Analytics (free, no cookies) | JS beacon in TanStack Start root layout |
 | Spam protection | Cloudflare Turnstile (free, 20 widgets) | `/contact` and `/api/sandbox/start` with server-side `siteverify` + `idempotency_key` |
-| Rate limiting | Workers Rate Limiting binding (free) + Durable Objects | 60s burst (Workers RL) + 10/IP/day + $5/day global cap (DOs with midnight `alarm()`) |
+| Rate limiting | Workers Rate Limiting binding (free) + backend SQLite caps (§24.70) | 60s burst (Workers RL) + 5/IP/day + $5/day global cap (backend `checkSimulatorAllowed`, real-cost) |
 | WAF | Cloudflare Free Managed Ruleset (on by default) + 1 custom rule + 1 rate-limit rule | Custom rule on `/api/sandbox/*` missing Turnstile cookie |
 | Bot Fight Mode | ON at `hire.*` (apex), OFF at `api.hire.*` (would break Worker→backend signed headers) | |
 
@@ -1226,7 +1226,7 @@ The viral worst case is bounded by:
 | Unauthorized Telegram message → drain LLM credits | Chat ID whitelist; reject silently |
 | Compromised Portkey API key | OneCLI vault holds it; rotation via `onecli secrets update`; container restart picks it up |
 | Compromised Anthropic key | Lives only in Portkey vault, never in our infra; rotate in Anthropic console + Portkey integration |
-| Public sandbox abused for cost | Cloudflare Bot Fight Mode → Turnstile → Workers RL (60s burst) → DO per-IP daily cap (10/day) → DO global $5/day cap → output cap. See [CLOUDFLARE_PATTERNS.md §9](CLOUDFLARE_PATTERNS.md). |
+| Public sandbox abused for cost | Host-scoped WAF rules → Turnstile → Workers RL (60s burst) → backend per-IP daily cap (5/day) → backend global $5/day cap (real-cost) → in-SDK output cap (STRATEGY §24.70). See [CLOUDFLARE_PATTERNS.md §9](CLOUDFLARE_PATTERNS.md). |
 | Public sandbox used to extract the candidate's private data | Sandbox agent group has NO access to private DB or Gmail/Calendar — enforced via `disallowedTools` bare-name removal (the tools are stripped from the agent's context entirely so it doesn't even know they exist), reinforced by a per-tool `PreToolUse` hook that blocks calls to any disallowed name, plus the container's mount geometry which does not expose `data/v2.db` to the container at all |
 | PII leak via sanitization bug | Three-pass sanitizer; Pass 3 LLM review; failed sanitization drops the event entirely; manual spot-checks via the `ANONYMIZATION DEMO` panel on `/live` + the `/admin` raw-vs-sanitized inspector |
 | Contact form spam / abuse | Turnstile invisible captcha with `idempotency_key`; 5 submits/IP/hour via Workers RL |
@@ -5365,7 +5365,7 @@ The third and last §24.66-registered deep dive. **Problem:** §24.68's `request
 | 1 | Workers Rate Limiting burst | `$.ts` (`SANDBOX_BURST` 5/60 s, `CONTACT_BURST` 3/60 s) | 60 s scripted floods |
 | 2 | Turnstile siteverify | `$.ts` (human gate, D1/D5) | non-human callers — rejected before any budget is touched |
 | 3 | Global $-budget (real spend) | Express `checkSimulatorAllowed` / SQLite (D3) | total daily spend ($5 ceiling) |
-| 4 | Per-IP daily cap | Express `checkSimulatorAllowed` / SQLite (D3) | single-IP grinding (10/day) |
+| 4 | Per-IP daily cap | Express `checkSimulatorAllowed` / SQLite (D3) | single-IP grinding (`sandbox_per_ip_daily_run_cap`, 5/day) |
 | 5 | Backend output cap | container (`simulator_max_budget_usd` 0.10) | per-run blast radius even on a passed run |
 | 6 | Origin Access-JWT | Express (D2) | a request that somehow reached the loopback port |
 

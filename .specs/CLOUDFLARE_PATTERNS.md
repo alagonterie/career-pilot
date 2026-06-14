@@ -407,7 +407,7 @@ In execution order, cheapest first:
 1. **Cloudflare Bot Fight Mode** at apex (free, auto)
 2. **Turnstile invisible token required** to start a sandbox run (free, auto-verify on backend)
 3. **Workers Rate Limit** (60s burst, ~5 runs/min/IP) — Workers RL binding
-4. **Durable Object: per-IP daily cap** (10 runs/IP/day, midnight UTC reset)
+4. **Backend per-IP daily cap** (§24.70: `sandbox_per_ip_daily_run_cap`, 5 runs/IP/day, UTC-day window — backend SQLite, not a DO; see §4 note)
 5. **Durable Object: global $ budget** ($5/day cap, midnight UTC reset)
 6. **Suspicious-signal escalation:** ASN-on-Hetzner/OVH/DigitalOcean, missing `Sec-Ch-Ua`, headless UA, no Referer → re-prompt managed Turnstile challenge
 7. **Geographic throttling:** lower per-IP daily cap for ASNs in the top-abuse list (Cloudflare gives `request.cf.asn` and `request.cf.country` free in the Worker)

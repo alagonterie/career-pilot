@@ -44,7 +44,7 @@ export interface SimulatorStartResult {
   error?: { code: 'BAD_ARGS' | 'UNAVAILABLE' | 'RATE_LIMITED'; message: string };
 }
 
-const DEFAULT_PER_IP_DAILY_CAP = 10;
+const DEFAULT_PER_IP_DAILY_CAP = 5;
 const DEFAULT_DAILY_BUDGET_USD = 5;
 
 const MAX_COMPANY = 200;
