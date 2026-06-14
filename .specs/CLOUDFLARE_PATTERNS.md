@@ -326,6 +326,8 @@ Source: [Authenticated Origin Pulls](https://developers.cloudflare.com/ssl/origi
 
 ## 6. WAF / Bot Fight Mode posture
 
+> **§24.70 reconciliation (what a free zone with our shared-zone topology can actually do).** The free Managed Ruleset is **auto-on, not Terraform-deployable** (deployable rulesets need Pro+). Free **Bot Fight Mode is zone-wide** — it cannot be ON for `hire.` and OFF for `api.` (the "ON apex / OFF api" row below isn't achievable on free when both hosts share the zone), and enabling it risks challenging the automated Worker→tunnel fetch. So we **don't** enable Bot Fight Mode: `api.` is already deny-by-default behind Access, and the public host gets two **host-scoped** `cloudflare_ruleset` rules instead (`infra/waf.tf`: a rate-limit rule + a `cf.threat_score` managed-challenge, pinned to the public host + the mutation paths). The table below is the original aspiration; the host-scoped rules are what shipped.
+
 **Free tier configuration:**
 
 | Setting | `hire.example.com` | `api.hire.example.com` |

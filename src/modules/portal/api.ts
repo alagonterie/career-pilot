@@ -38,6 +38,7 @@ import { log } from '../../log.js';
 import { runHealthChecks } from '../career-pilot/health.js';
 import { loadState, simStatePath } from '../career-pilot/recruiter-sim/runner.js';
 
+import { validateAccessJwt } from './access-jwt.js';
 import { relayContactSubmission, type ContactInput } from './contact-relay.js';
 import {
   applyDevControl,
@@ -698,6 +699,15 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
     if (method === 'OPTIONS') {
       res.writeHead(204, cors);
       res.end();
+      return;
+    }
+
+    // Origin-side Cloudflare Access JWT (§24.70 D2) — the Layer-3 defense-in-depth
+    // for the tunnel topology (AOP/mTLS doesn't apply). Inert unless
+    // origin_jwt_validation_enabled + CF_ACCESS_TEAM/AUD are set (deployed stacks);
+    // local/test pass straight through.
+    if (!(await validateAccessJwt(req.headers['cf-access-jwt-assertion'] as string | undefined))) {
+      json(res, 403, { error: 'forbidden' }, cors);
       return;
     }
 
