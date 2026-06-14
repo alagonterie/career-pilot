@@ -30,6 +30,9 @@ export interface SimRunInput {
   role: string
   public_url?: string
   jd?: string
+  /** Turnstile token (§24.70) — sent as the `x-turnstile-token` header, not in
+   * the body; the Worker edge-guard verifies it before forwarding the run. */
+  turnstileToken?: string
 }
 
 export interface SimRunState {
@@ -113,10 +116,13 @@ export function useSimulatorRun(): SimRunState {
     void (async () => {
       let id: string
       try {
+        const { turnstileToken, ...payload } = runInput
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        if (turnstileToken) headers['x-turnstile-token'] = turnstileToken
         const res = await fetch(`${API_BASE}/api/simulator`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(runInput),
+          headers,
+          body: JSON.stringify(payload),
           signal: ac.signal,
         })
         if (res.status === 503) {

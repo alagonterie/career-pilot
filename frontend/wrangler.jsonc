@@ -7,6 +7,16 @@
   "observability": {
     "enabled": true
   },
+  // Workers Rate Limiting bindings (STRATEGY §24.70 / 9.4a) — the burst layer the
+  // edge-guard (`src/lib/edge-guard.ts`) consults for the two public mutations.
+  // 60 s windows (Workers RL only does 10 s/60 s). Bindings are NON-inheritable
+  // across named environments, so env.dev repeats them below.
+  "unsafe": {
+    "bindings": [
+      { "name": "SANDBOX_BURST", "type": "ratelimit", "namespace_id": "1001", "simple": { "limit": 5, "period": 60 } },
+      { "name": "CONTACT_BURST", "type": "ratelimit", "namespace_id": "1002", "simple": { "limit": 3, "period": 60 } }
+    ]
+  },
   // Named Cloudflare environments — selected at BUILD time by the vite plugin
   // (`CLOUDFLARE_ENV=dev vite build` -> flattened config -> `wrangler deploy`;
   // no CLOUDFLARE_ENV = the top-level prod config). The custom-domain binding
@@ -17,7 +27,22 @@
       "name": "career-pilot-portal-dev",
       // Reachable ONLY via the Terraform-bound, Access-gated custom domain —
       // no open *.workers.dev URL for dev.
-      "workers_dev": false
+      "workers_dev": false,
+      // Dev uses Cloudflare's documented always-pass Turnstile TEST secret (D5):
+      // a PUBLIC constant, safe to commit. siteverify returns success:true with no
+      // real hostname, so the edge-guard leaves TURNSTILE_HOSTNAME unset on dev →
+      // success-only enforcement (it never challenges the owner behind Access).
+      // Prod's real TURNSTILE_SECRET + TURNSTILE_HOSTNAME are injected post-deploy
+      // as Worker secrets/vars (deploy-frontend.yml), never committed.
+      "vars": {
+        "TURNSTILE_SECRET": "1x0000000000000000000000000000000AA"
+      },
+      "unsafe": {
+        "bindings": [
+          { "name": "SANDBOX_BURST", "type": "ratelimit", "namespace_id": "1001", "simple": { "limit": 5, "period": 60 } },
+          { "name": "CONTACT_BURST", "type": "ratelimit", "namespace_id": "1002", "simple": { "limit": 3, "period": 60 } }
+        ]
+      }
     }
   }
 }

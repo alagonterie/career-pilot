@@ -47,8 +47,21 @@ jobs:
           BACKEND_API_BASE: ${{ vars.BACKEND_API_BASE }}
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+          # Abuse-hardening (STRATEGY §24.70 / 9.4a). VITE_TURNSTILE_SITE_KEY is a
+          # build-time client var (the site key is public). Dev defaults to the
+          # always-pass TEST key below; prod sets a real GH env var. The prod
+          # Worker secret/hostname are injected post-deploy (dev uses the committed
+          # env.dev.vars test secret, so these stay empty on dev).
+          VITE_TURNSTILE_SITE_KEY: ${{ vars.VITE_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET: ${{ secrets.TURNSTILE_SECRET }}
+          TURNSTILE_HOSTNAME: ${{ vars.TURNSTILE_HOSTNAME }}
         run: |
           if [ "${{ github.ref_name }}" = "dev" ]; then export CLOUDFLARE_ENV=dev; fi
+          # Dev's client widget uses the always-pass Turnstile TEST site key (D5)
+          # unless the GH dev env overrides it; prod must set a real GH env var.
+          if [ "${{ github.ref_name }}" = "dev" ] && [ -z "$VITE_TURNSTILE_SITE_KEY" ]; then
+            export VITE_TURNSTILE_SITE_KEY=1x00000000000000000000AA
+          fi
           pnpm exec vite build
           pnpm exec wrangler deploy
           # Push the BFF bindings onto the deployed Worker (idempotent; persists
@@ -63,4 +76,13 @@ jobs:
             echo "BFF Worker bindings injected for $WORKER_NAME"
           else
             echo "BFF Worker bindings not configured yet — skipping (proxy returns 503 until set)"
+          fi
+          # Turnstile prod secret/hostname (§24.70). Dev relies on the committed
+          # env.dev.vars test secret, so TURNSTILE_SECRET is empty there and this
+          # is a no-op; prod injects the real values when the GH env provides them.
+          if [ -n "$TURNSTILE_SECRET" ]; then
+            printf '{"TURNSTILE_SECRET":"%s","TURNSTILE_HOSTNAME":"%s"}' \
+              "$TURNSTILE_SECRET" "$TURNSTILE_HOSTNAME" \
+              | pnpm exec wrangler secret bulk --name "$WORKER_NAME"
+            echo "Turnstile Worker secrets injected for $WORKER_NAME"
           fi
