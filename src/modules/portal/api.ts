@@ -381,12 +381,16 @@ async function handleSimulatorStart(
     return;
   }
   const input: SimulatorInput = body && typeof body === 'object' ? (body as SimulatorInput) : {};
-  const result = startSimulatorRun(input);
+  // The CF-verified visitor IP the Worker BFF forwards (§24.70). Always set by the
+  // Worker (overwriting any client value); used for the per-IP daily run cap.
+  const ipHeader = req.headers['x-cp-client-ip'];
+  const ip = typeof ipHeader === 'string' && ipHeader.trim() ? ipHeader.trim() : null;
+  const result = startSimulatorRun(input, ip);
   if (result.ok) {
     json(res, 200, { simulation_id: result.simulation_id }, cors);
     return;
   }
-  const status = result.error?.code === 'BAD_ARGS' ? 400 : 503;
+  const status = result.error?.code === 'BAD_ARGS' ? 400 : result.error?.code === 'RATE_LIMITED' ? 429 : 503;
   json(res, status, { error: result.error?.code ?? 'error', message: result.error?.message }, cors);
 }
 

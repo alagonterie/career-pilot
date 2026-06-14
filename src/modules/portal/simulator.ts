@@ -41,8 +41,11 @@ export interface SimulatorInput {
 export interface SimulatorStartResult {
   ok: boolean;
   simulation_id?: string;
-  error?: { code: 'BAD_ARGS' | 'UNAVAILABLE'; message: string };
+  error?: { code: 'BAD_ARGS' | 'UNAVAILABLE' | 'RATE_LIMITED'; message: string };
 }
+
+const DEFAULT_PER_IP_DAILY_CAP = 10;
+const DEFAULT_DAILY_BUDGET_USD = 5;
 
 const MAX_COMPANY = 200;
 const MAX_ROLE = 200;
@@ -56,20 +59,93 @@ function asTrimmed(v: unknown, max: number): string | null {
 }
 
 /**
- * Deploy-phase abuse chokepoint. At deploy this is where Cloudflare Turnstile
- * siteverify + the Durable-Object per-IP/global $-cap drop in (NOT_WIRED
- * today, like the §24.18 externals). The only local gate is `simulator_enabled`;
- * runaway spend is otherwise bounded by the §24.18 control plane and the
- * subagent-level maxTurns until the orchestrator-session cap lands in 5.5b.
+ * Abuse chokepoint (STRATEGY §24.70 / 9.4a). Layered behind the Worker edge
+ * (Turnstile + Workers-RL burst, which shed bots/floods in real time), this is
+ * the sustained-daily backstop: the `simulator_enabled` kill switch, the global
+ * daily $-budget (real persisted `total_cost_cents` + an estimate for in-flight
+ * runs), and the per-IP daily run cap. Caps come from `getConfig` (no magic
+ * numbers); the budget uses REAL spend, not a Worker estimate, so it can't drift
+ * from the actual cost. `ip` is the CF-verified visitor IP the Worker forwards
+ * as `x-cp-client-ip` — absent (no-arg) only the enabled + global checks run.
+ * Fail-open on a config/db error (the in-SDK `simulator_max_budget_usd` per-run
+ * cap still bounds each run); never throws.
  */
-export function checkSimulatorAllowed(): { ok: boolean; reason?: string } {
+export function checkSimulatorAllowed(ip?: string | null): { ok: boolean; reason?: string } {
   let enabled = true;
   try {
     enabled = getConfig<boolean>(getDb(), 'simulator_enabled', true);
   } catch {
     enabled = true;
   }
-  return enabled ? { ok: true } : { ok: false, reason: 'simulator_disabled' };
+  if (!enabled) return { ok: false, reason: 'simulator_disabled' };
+
+  // Global daily $-budget: today's persisted cost + an estimate for in-flight
+  // (not-yet-persisted) runs, so concurrent starts can't overshoot before their
+  // costs land. Reuses the in-SDK per-run cap as the in-flight estimate.
+  try {
+    const budgetCents = Math.round(
+      getConfig<number>(getDb(), 'sandbox_daily_global_budget_usd', DEFAULT_DAILY_BUDGET_USD) * 100,
+    );
+    const estimateCents = Math.max(1, Math.round(getConfig<number>(getDb(), 'simulator_max_budget_usd', 0.1) * 100));
+    if (costCentsToday() + inFlightCount() * estimateCents >= budgetCents) {
+      return { ok: false, reason: 'budget_exceeded' };
+    }
+  } catch {
+    /* don't block on a config/db error — the in-SDK per-run cap bounds spend */
+  }
+
+  // Per-IP daily run cap: today's persisted runs from this IP + its in-flight
+  // runs (so a burst of concurrent same-IP starts can't beat the count).
+  if (ip) {
+    try {
+      const cap = getConfig<number>(getDb(), 'sandbox_per_ip_daily_run_cap', DEFAULT_PER_IP_DAILY_CAP);
+      if (runsToday(ip) + inFlightCount(ip) >= cap) return { ok: false, reason: 'rate_limited_ip' };
+    } catch {
+      /* don't block on a config/db error */
+    }
+  }
+
+  return { ok: true };
+}
+
+/** Count today's (UTC) persisted simulator runs, optionally scoped to one IP. */
+function runsToday(ip?: string | null): number {
+  const db = getDb();
+  if (ip) {
+    return (
+      db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM simulator_runs WHERE client_ip = ? AND datetime(ts) >= datetime('now', 'start of day')`,
+        )
+        .get(ip) as { n: number }
+    ).n;
+  }
+  return (
+    db
+      .prepare(`SELECT COUNT(*) AS n FROM simulator_runs WHERE datetime(ts) >= datetime('now', 'start of day')`)
+      .get() as {
+      n: number;
+    }
+  ).n;
+}
+
+/** Sum today's (UTC) persisted run cost in cents. */
+function costCentsToday(): number {
+  return (
+    getDb()
+      .prepare(
+        `SELECT COALESCE(SUM(total_cost_cents), 0) AS c FROM simulator_runs WHERE datetime(ts) >= datetime('now', 'start of day')`,
+      )
+      .get() as { c: number }
+  ).c;
+}
+
+/** In-flight (not-yet-persisted) runs, optionally scoped to one client IP. */
+function inFlightCount(ip?: string | null): number {
+  if (!ip) return runs.size;
+  let n = 0;
+  for (const acc of runs.values()) if (acc.ip === ip) n++;
+  return n;
 }
 
 /**
@@ -104,9 +180,27 @@ export function buildSimulatorPrompt(input: {
  * Returns the simulation id; the frontend then opens the SSE stream (5.5b).
  * Never throws — adapter/backend problems become an UNAVAILABLE result.
  */
-export function startSimulatorRun(input: SimulatorInput): SimulatorStartResult {
-  const gate = checkSimulatorAllowed();
+export function startSimulatorRun(input: SimulatorInput, ip?: string | null): SimulatorStartResult {
+  const gate = checkSimulatorAllowed(ip);
   if (!gate.ok) {
+    if (gate.reason === 'rate_limited_ip') {
+      return {
+        ok: false,
+        error: {
+          code: 'RATE_LIMITED',
+          message: "You've reached today's simulator limit — try again tomorrow, or reach me via the contact form.",
+        },
+      };
+    }
+    if (gate.reason === 'budget_exceeded') {
+      return {
+        ok: false,
+        error: {
+          code: 'RATE_LIMITED',
+          message: "The simulator has reached today's budget — try again tomorrow, or reach me via the contact form.",
+        },
+      };
+    }
     return { ok: false, error: { code: 'UNAVAILABLE', message: 'The simulator is currently disabled.' } };
   }
 
@@ -127,6 +221,7 @@ export function startSimulatorRun(input: SimulatorInput): SimulatorStartResult {
     company,
     role,
     jd,
+    ip: ip ?? null,
     startedAt: Date.now(),
     costCents: 0,
     cacheHits: 0,
@@ -171,6 +266,8 @@ interface RunAccumulator {
   company: string;
   role: string;
   jd: string | null;
+  /** CF-verified visitor IP (§24.70) — persisted as client_ip for the per-IP cap. */
+  ip: string | null;
   startedAt: number;
   costCents: number;
   cacheHits: number;
@@ -202,6 +299,12 @@ export interface SimulatorRunRow {
 }
 
 const runs = new Map<string, RunAccumulator>();
+
+/** Test seam — clear the in-flight run registry (and its hard-wall timers). */
+export function _resetSimulatorRuns(): void {
+  for (const acc of runs.values()) if (acc.hardWall) clearTimeout(acc.hardWall);
+  runs.clear();
+}
 
 function hardWallMs(): number {
   try {
@@ -303,11 +406,11 @@ function persistRun(runId: string, acc: RunAccumulator): void {
       `INSERT OR REPLACE INTO simulator_runs (
          id, ts, visitor_company, visitor_role, jd_excerpt, tailored_resume,
          outreach_draft, total_cost_cents, total_latency_ms, cache_hit_count,
-         shareable, expires_at, trace_json
+         shareable, expires_at, trace_json, client_ip
        ) VALUES (
          @id, @ts, @company, @role, @jd, @resume,
          @outreach, @cost, @latency, @cache,
-         1, @expires, @trace
+         1, @expires, @trace, @clientIp
        )`,
     )
     .run({
@@ -323,6 +426,7 @@ function persistRun(runId: string, acc: RunAccumulator): void {
       cache: acc.cacheHits,
       expires: new Date(now.getTime() + ttlDays * 86_400_000).toISOString(),
       trace: acc.trace.length > 0 ? JSON.stringify(acc.trace) : null,
+      clientIp: acc.ip,
     });
 }
 

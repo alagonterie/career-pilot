@@ -129,6 +129,18 @@ export function useSimulatorRun(): SimRunState {
           setStatus('unavailable')
           return
         }
+        if (res.status === 429) {
+          // Daily per-IP / budget cap (§24.70) — surface the backend's honest message.
+          const msg = await res
+            .json()
+            .then((d) => (d as { message?: string }).message)
+            .catch(() => null)
+          setStatus('error')
+          setErrorMessage(
+            msg ?? "You've reached today's simulator limit — try again tomorrow, or use the contact form.",
+          )
+          return
+        }
         if (!res.ok) {
           setStatus('error')
           setErrorMessage('Could not start the run — please try again.')
