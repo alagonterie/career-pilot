@@ -132,13 +132,15 @@
     "simulator_hard_wall_ms": 300000,
     "simulator_results_ttl_days": 30,
     "simulator_recent_limit": 10,
-    "contact_message_max_chars": 4000
+    "contact_message_max_chars": 4000,
+    "origin_jwt_validation_enabled": false
   },
   "system_modes": {
     "live_mode": false,
     "pause_state": "active",
     "pause_reason": null
   },
+  "_comment_edge_config": "Abuse-hardening (STRATEGY §24.70 / 9.4a) has edge-tier tunables the Worker enforces and cannot read this file for: Turnstile (TURNSTILE_SECRET/TURNSTILE_HOSTNAME) + the Workers-RL burst limits live in frontend/wrangler.jsonc per-environment. The simulator daily caps, by contrast, are enforced HOST-side (checkSimulatorAllowed) and use the existing keys above: sandbox_daily_global_budget_usd, sandbox_per_ip_daily_run_cap, simulator_max_budget_usd. origin_jwt_validation_enabled (above) gates the Cloudflare Access JWT check in Express — true on deployed stacks via the env tier when CF_ACCESS_TEAM/CF_ACCESS_AUD are set.",
   "_required_before_live_mode": [
     "candidate_profile.full_name",
     "candidate_profile.master_resume",

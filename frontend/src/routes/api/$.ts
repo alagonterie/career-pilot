@@ -31,8 +31,19 @@ type ProxyEnv = {
   CF_ACCESS_CLIENT_SECRET?: string
 }
 
-// Hop-by-hop / origin-specific headers we must not forward upstream.
-const STRIP_REQUEST_HEADERS = ['host', 'cookie', 'cf-connecting-ip', 'cf-ray', 'x-forwarded-host', 'content-length']
+// Hop-by-hop / origin-specific headers we must not forward upstream. We also
+// strip the inbound `cf-access-jwt-assertion` (the FRONTEND app's assertion CF
+// injected for this Worker) so the origin validates only CF's freshly-injected
+// API-app assertion (§24.70 D2), never a forwarded wrong-audience one.
+const STRIP_REQUEST_HEADERS = [
+  'host',
+  'cookie',
+  'cf-connecting-ip',
+  'cf-ray',
+  'x-forwarded-host',
+  'content-length',
+  'cf-access-jwt-assertion',
+]
 
 async function proxy(request: Request): Promise<Response> {
   const e = env as ProxyEnv
