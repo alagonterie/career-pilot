@@ -4,6 +4,7 @@ import { FunnelCompact } from '~/components/live/FunnelCompact'
 import { LiveIndicator } from '~/components/LiveIndicator'
 import { LiveTicker } from '~/components/LiveTicker'
 import { Button } from '~/components/ui/button'
+import { getWorkProfile } from '~/lib/profile-loader'
 import { seo } from '~/lib/seo'
 import { useActivityStream } from '~/lib/use-activity-stream'
 import { useFunnel } from '~/lib/use-funnel'
@@ -11,7 +12,11 @@ import { workProfile } from '~/lib/work-profile'
 
 export const Route = createFileRoute('/(marketing)/')({
   component: Home,
-  head: () => seo({ title: 'Jane Doe — an AI agent runs my job search, live' }),
+  // SSR loader (§24.71 / 9.4b-1): the hero name/title + teasers render from the
+  // live candidate_profile, falling back to the typed placeholder.
+  loader: () => getWorkProfile(),
+  head: ({ loaderData }) =>
+    seo({ title: `${(loaderData?.profile ?? workProfile).name} — an AI agent runs my job search, live` }),
 })
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
@@ -22,6 +27,9 @@ function Home() {
   const { events, status, count } = useActivityStream(API_BASE, { exclude: ['turn'] })
   const { data: funnel, status: funnelStatus } = useFunnel(API_BASE)
   const apps = funnel?.applications ?? []
+  // SSR-resolved candidate profile (placeholder fallback). De-`Jane Doe`s the hero.
+  const { profile } = Route.useLoaderData()
+  const p = profile ?? workProfile
 
   return (
     <main className="mx-auto flex max-w-3xl flex-col items-center px-6 py-20">
@@ -37,8 +45,8 @@ function Home() {
           <LiveIndicator status={status} count={count} />
         </div>
 
-        <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">Jane Doe</h1>
-        <p className="mt-2 text-lg text-muted-foreground">Senior Software Engineer · AI Systems, DevX</p>
+        <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">{p.name}</h1>
+        <p className="mt-2 text-lg text-muted-foreground">{p.title}</p>
 
         <p className="mt-6 text-balance text-base leading-relaxed text-foreground/90">
           I built this site. Everything moving on this page is the agent system I designed running my actual job search,
@@ -117,7 +125,7 @@ function Home() {
         <div className="flex flex-col gap-2">
           <h3 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Skills</h3>
           <ul className="flex flex-col gap-1 text-sm text-foreground/90">
-            {workProfile.skills.slice(0, 5).map((s) => (
+            {p.skills.slice(0, 5).map((s) => (
               <li key={s}>{s}</li>
             ))}
           </ul>
@@ -125,9 +133,9 @@ function Home() {
         <div className="flex flex-col gap-2">
           <h3 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Recent work</h3>
           <ul className="flex flex-col gap-1 text-sm text-foreground/90">
-            {workProfile.projects.slice(0, 2).map((p) => (
-              <li key={p.name} className="truncate">
-                {p.name}
+            {p.projects.slice(0, 2).map((proj) => (
+              <li key={proj.name} className="truncate">
+                {proj.name}
               </li>
             ))}
           </ul>
