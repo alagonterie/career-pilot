@@ -210,11 +210,11 @@ Public routes are TanStack Start pages running on Cloudflare Workers. Route load
                  ────────────────────────────────────────────
 
                  Jane Doe
-                 Senior Software Engineer · AI Systems
+                 Senior Software Engineer · AI Agent Systems
 
-                 I built this site. Everything moving on
-                 this page is the agent system I designed
-                 running my actual job search, right now.
+                 I built an AI agent system that runs my
+                 job search — and this entire page is it,
+                 working live.
 
                   🟢 Open to offers                  ● live
 
@@ -232,10 +232,12 @@ The "● live" indicator is a real-time signal:
 
 > **Build note (per STRATEGY §24.57).** The indicator's hover `title` shows the event count; **uptime is not captured anywhere** and is dropped from the promise (an invented number would violate the honesty rule). Ticker time legibility: a line from a previous local day renders `«Mon D» HH:MM` in the clock slot (today's lines keep `HH:MM:SS`) — same width class, mobile-safe.
 
-Below the CTAs, **a single line** that updates every page load with a real number:
-> *3 active applications · last activity 4 minutes ago · cache hit rate 91%*
+Below the CTAs, **a single line of real, live numbers** (continuously updated, not just per page load):
+> *3 active applications · 47 agent actions in 24h · last activity 4 minutes ago*
 
-Source: `/api/telemetry`. The number must be honest — fewer applications is fine, "0 active applications" gets handled by showing a different message (see §10).
+Sources: the funnel (`/api/funnel`, active = in-flight), telemetry (`/api/telemetry` → `activity_events_24h`), and the activity stream (latest event) — the same live hooks already on the home. Each segment must be honest and is **omitted when its number is empty** (never faked or zero-padded); "0 active applications" gets a different message (see §10).
+
+> **Build note (§24.71 hero audit).** Two changes land here. (1) The spec's third stat was "cache hit rate 91%" — dropped: it's LLM prompt-cache jargon that reads as cryptic on a first impression. `activity_events_24h` ("agent actions in 24h") replaces it — same "working right now" signal, plain language. The honest line is built by the pure, tested `heroStats()` helper (omit-when-empty) and reserves a line of height so populating it doesn't shove the hero (§24.36). (2) The hook is reordered to **orient before it proves** — it leads with *what this is* ("I built an AI agent system that runs my job search") before the live indicator, stat line, and funnel corroborate it — killing the "what am I looking at?" landing. Hero positioning is "Senior Software Engineer · AI Agent Systems": one specialty the page overwhelmingly demonstrates, not a stacked skills list.
 
 **Viewport 2: Funnel strip**
 
