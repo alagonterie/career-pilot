@@ -163,6 +163,8 @@ Source: [Workers Rate Limiting binding](https://developers.cloudflare.com/worker
 
 ## 4. Durable Objects for daily caps
 
+> **§24.70: we use BACKEND SQLite for the daily caps, not DOs.** The TanStack Start server-entry can't cleanly export a DO class (undocumented — workers-sdk #11100 / TanStack #6487), and the backend already holds the real per-run cost ledger (`simulator_runs.total_cost_cents`) + the caps in `defaults.json`. So the per-IP daily cap + global $-budget enforce in `checkSimulatorAllowed()` (strong consistency, real spend, in-flight-aware), keyed on the CF-verified IP the Worker forwards as `x-cp-client-ip`. The DO pattern below is kept as reference for an edge-side variant.
+
 Workers RL can't do 24-hour windows. Durable Objects give us strongly-consistent counters that reset on cron. Two DOs:
 
 ### `IpDailyCounter` — per-IP daily cap on sandbox runs

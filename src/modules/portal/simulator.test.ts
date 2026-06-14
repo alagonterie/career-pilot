@@ -18,14 +18,24 @@ vi.mock('../../channels/portal/adapter.js', () => ({
 
 import { submitSimulatorRun } from '../../channels/portal/adapter.js';
 
-import { buildSimulatorPrompt, checkSimulatorAllowed, startSimulatorRun } from './simulator.js';
+import { getDb } from '../../db/connection.js';
+
+import { _resetSimulatorRuns, buildSimulatorPrompt, checkSimulatorAllowed, startSimulatorRun } from './simulator.js';
 
 const submitMock = vi.mocked(submitSimulatorRun);
+
+/** Seed a persisted simulator_runs row (id + ts required; rest nullable). */
+function seedRun(ip: string | null, costCents: number, ts: string = new Date().toISOString()): void {
+  getDb()
+    .prepare(`INSERT INTO simulator_runs (id, ts, total_cost_cents, client_ip) VALUES (?, ?, ?, ?)`)
+    .run(`sb-seed-${Math.random().toString(36).slice(2, 10)}`, ts, costCents, ip);
+}
 
 beforeEach(() => {
   closeDb();
   const db = initTestDb();
   runMigrations(db);
+  _resetSimulatorRuns();
   vi.clearAllMocks();
 });
 
@@ -63,6 +73,23 @@ describe('checkSimulatorAllowed', () => {
   it('is allowed by default (simulator_enabled defaults true)', () => {
     expect(checkSimulatorAllowed()).toEqual({ ok: true });
   });
+
+  it('rejects a client IP at the per-IP daily cap (default 10), scoped to that IP', () => {
+    for (let i = 0; i < 10; i++) seedRun('9.9.9.9', 0);
+    expect(checkSimulatorAllowed('9.9.9.9')).toEqual({ ok: false, reason: 'rate_limited_ip' });
+    expect(checkSimulatorAllowed('1.1.1.1')).toEqual({ ok: true }); // a different IP is unaffected
+  });
+
+  it('rejects when today’s spend reaches the global $-budget (default $5)', () => {
+    for (let i = 0; i < 5; i++) seedRun(null, 100); // 5 × $1.00 = the $5 cap
+    expect(checkSimulatorAllowed()).toEqual({ ok: false, reason: 'budget_exceeded' });
+  });
+
+  it('counts only today’s runs (UTC day window) — yesterday’s don’t trip the cap', () => {
+    const yesterday = new Date(Date.now() - 36 * 3_600_000).toISOString();
+    for (let i = 0; i < 12; i++) seedRun('8.8.8.8', 200, yesterday);
+    expect(checkSimulatorAllowed('8.8.8.8')).toEqual({ ok: true });
+  });
 });
 
 describe('startSimulatorRun', () => {
@@ -99,5 +126,22 @@ describe('startSimulatorRun', () => {
     const result = startSimulatorRun({ company: 'Acme', role: 'SWE' });
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe('UNAVAILABLE');
+  });
+
+  it('returns RATE_LIMITED (→ HTTP 429) and does not submit when the per-IP cap is hit', () => {
+    for (let i = 0; i < 10; i++) seedRun('7.7.7.7', 0);
+    const result = startSimulatorRun({ company: 'Acme', role: 'SWE' }, '7.7.7.7');
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe('RATE_LIMITED');
+    expect(submitMock).not.toHaveBeenCalled();
+  });
+
+  it('counts in-flight runs toward the per-IP cap (concurrent starts can’t beat it)', () => {
+    // 10 in-flight starts from one IP (submit is mocked → none persist/finalize).
+    for (let i = 0; i < 10; i++) {
+      expect(startSimulatorRun({ company: 'Acme', role: 'SWE' }, '5.5.5.5').ok).toBe(true);
+    }
+    // The 11th is blocked purely by the in-flight count — nothing is persisted yet.
+    expect(startSimulatorRun({ company: 'Acme', role: 'SWE' }, '5.5.5.5').error?.code).toBe('RATE_LIMITED');
   });
 });

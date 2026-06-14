@@ -52,6 +52,13 @@ async function proxy(request: Request): Promise<Response> {
   // Machine-auth to the Access-gated tunnel host (the path D9 reserved).
   if (e.CF_ACCESS_CLIENT_ID) headers.set('CF-Access-Client-Id', e.CF_ACCESS_CLIENT_ID)
   if (e.CF_ACCESS_CLIENT_SECRET) headers.set('CF-Access-Client-Secret', e.CF_ACCESS_CLIENT_SECRET)
+  // Forward the CF-verified client IP for the backend's per-IP simulator cap
+  // (§24.70). ALWAYS derive from cf-connecting-ip — never trust a client-supplied
+  // x-cp-client-ip (overwrite when CF set one, strip it otherwise) so the cap
+  // can't be evaded by rotating a spoofed header.
+  const clientIp = request.headers.get('cf-connecting-ip')
+  if (clientIp) headers.set('x-cp-client-ip', clientIp)
+  else headers.delete('x-cp-client-ip')
 
   const hasBody = request.method !== 'GET' && request.method !== 'HEAD'
   const res = await fetch(target, {
