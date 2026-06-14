@@ -2,6 +2,9 @@ import { Link } from '@tanstack/react-router'
 import { Menu, X } from 'lucide-react'
 import * as React from 'react'
 
+/** Brand wordmark — the candidate's name, baked at build time (placeholder default). */
+const BRAND_NAME = (import.meta.env.VITE_PERSON_NAME as string | undefined) ?? 'Jane Doe'
+
 const LINKS: { to: string; label: string }[] = [
   { to: '/live', label: 'Live' },
   { to: '/pipeline', label: 'Job Pipeline' },
@@ -18,7 +21,9 @@ const LINKS: { to: string; label: string }[] = [
  * personal/conversion tail (`Simulator`, `Work`, `Contact`). "Job Pipeline" is the
  * visitor label for the funnel page (`/pipeline`, §24.59); the internal naming
  * stays "funnel". `/about` is a footer link (§8.2), not a header item. Brand
- * wordmark = the persona name (not a domain — the deployed site is `hire.<DOMAIN>`).
+ * wordmark = the candidate's name (not a domain — on a personal hiring portal the
+ * candidate IS the brand). Per-deployment build-time env (STRATEGY §24.71 9.4b-3,
+ * the planned `VITE_PERSON_NAME`); the committed default is the generic placeholder.
  *
  * Responsive (§13): the horizontal row overflows a phone, so below `sm` it
  * collapses to a hamburger disclosure menu (the full row fits ≥640px, so tablets
@@ -56,7 +61,7 @@ export function SiteHeader() {
     <header data-site-header className="sticky top-0 z-20 w-full border-b border-border bg-background/80 backdrop-blur">
       <nav aria-label="Primary" className="mx-auto flex h-14 max-w-3xl items-center justify-between px-6">
         <Link to="/" className="font-mono text-sm font-semibold tracking-tight text-foreground">
-          Jane Doe
+          {BRAND_NAME}
         </Link>
 
         {/* Tablet + desktop: the full horizontal row (≥640px, where it fits). */}

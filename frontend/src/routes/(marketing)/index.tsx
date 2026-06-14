@@ -28,7 +28,7 @@ function Home() {
   const { data: funnel, status: funnelStatus } = useFunnel(API_BASE)
   const apps = funnel?.applications ?? []
   // SSR-resolved candidate profile (placeholder fallback). De-`Jane Doe`s the hero.
-  const { profile } = Route.useLoaderData()
+  const { profile, identity } = Route.useLoaderData()
   const p = profile ?? workProfile
 
   return (
@@ -148,9 +148,11 @@ function Home() {
           <Link to="/contact" search={{ from: 'home' }} className="text-sm text-accent-cool hover:underline">
             Contact form →
           </Link>
-          <a href="mailto:hello@example.com" className="text-sm text-accent-cool hover:underline">
-            hello@example.com
-          </a>
+          {identity.email ? (
+            <a href={`mailto:${identity.email}`} className="text-sm text-accent-cool hover:underline">
+              {identity.email}
+            </a>
+          ) : null}
         </div>
       </section>
     </main>

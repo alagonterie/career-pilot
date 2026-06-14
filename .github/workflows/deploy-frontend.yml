@@ -39,8 +39,16 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           VITE_API_BASE: ${{ vars.VITE_API_BASE }}
-          # Build-time site identity (VITE_PERSON_NAME etc.) is wired in Phase 9.4
-          # (persona de-genericization); the generic build deploys fine until then.
+          # Per-deployment site identity (STRATEGY §24.71 9.4b-3): the fork's repo
+          # URL ("view source" links) + the public origin (absolute og: URLs).
+          # Real hostnames live in the GH Environment vars (never the repo); unset
+          # falls back to the committed generic janedoe/example.com placeholders.
+          # (Per-CANDIDATE identity — email, socials — is DB-sourced via /api/profile.)
+          VITE_REPO_URL: ${{ vars.VITE_REPO_URL }}
+          VITE_SITE_URL: ${{ vars.VITE_SITE_URL }}
+          # The header brand wordmark (the candidate's name). GH env var; unset →
+          # the committed generic `Jane Doe` placeholder.
+          VITE_PERSON_NAME: ${{ vars.VITE_PERSON_NAME }}
           # BFF Worker bindings (STRATEGY §24.39 D12): with VITE_API_BASE empty the
           # browser calls /api/* SAME-ORIGIN; the Worker proxies to the tunnel host
           # using an Access service token. Injected post-deploy as Worker secrets.

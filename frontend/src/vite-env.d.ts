@@ -8,6 +8,15 @@ interface ImportMetaEnv {
    * unset, so the seams are inert. The client-side counterpart to the server's
    * PORTAL_MOCK_STATE_SEAM. */
   readonly VITE_MOCK_SEAM?: string
+  /** The fork's public repo URL (the "view source" link base). Per-deployment;
+   * defaults to the generic `janedoe` placeholder when unset (§24.71 9.4b-3). */
+  readonly VITE_REPO_URL?: string
+  /** The public origin (absolute og:url / og:image base). Per-deployment;
+   * defaults to the generic `hire.example.com` placeholder (§24.71 9.4b-3). */
+  readonly VITE_SITE_URL?: string
+  /** The candidate's name — the header brand wordmark. Per-deployment; defaults
+   * to the generic `Jane Doe` placeholder when unset (§24.71 9.4b-3). */
+  readonly VITE_PERSON_NAME?: string
 }
 
 interface ImportMeta {

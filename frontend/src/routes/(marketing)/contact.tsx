@@ -1,7 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
 
 import { ContactForm } from '~/components/ContactForm'
+import { getWorkProfile } from '~/lib/profile-loader'
 import { seo } from '~/lib/seo'
+import { workProfile } from '~/lib/work-profile'
 
 // The conversion sink (PORTAL §5.7 / §2). Marketing register; the shared layout
 // supplies the header (and renders no connective rail here — this IS the rail's
@@ -9,14 +11,17 @@ import { seo } from '~/lib/seo'
 // convinced visitor (or a simulator [Talk to me]) converts in one step.
 export const Route = createFileRoute('/(marketing)/contact')({
   component: ContactPage,
+  // SSR loader (§24.71 9.4b-3): the candidate's canonical identity drives the
+  // "reach me directly" paths — no hardcoded placeholder links.
+  loader: () => getWorkProfile(),
   validateSearch: (search: Record<string, unknown>): { company?: string; role?: string; from?: string } => ({
     company: typeof search.company === 'string' ? search.company : undefined,
     role: typeof search.role === 'string' ? search.role : undefined,
     from: typeof search.from === 'string' ? search.from : undefined,
   }),
-  head: () =>
+  head: ({ loaderData }) =>
     seo({
-      title: 'Contact — Jane Doe',
+      title: `Contact — ${loaderData?.profile?.name ?? workProfile.name}`,
       description: 'Reach out — a recruiter contact form that relays straight to me, plus direct paths.',
       path: '/contact',
     }),
@@ -24,6 +29,8 @@ export const Route = createFileRoute('/(marketing)/contact')({
 
 function ContactPage() {
   const { company, role, from } = Route.useSearch()
+  const { identity } = Route.useLoaderData()
+  const hasDirect = Boolean(identity.email || identity.linkedin || identity.github)
   return (
     <main className="mx-auto flex w-full max-w-xl flex-col px-6 py-16">
       <header>
@@ -37,27 +44,30 @@ function ContactPage() {
 
       <ContactForm company={company} role={role} from={from} />
 
-      <section aria-labelledby="direct-heading" className="mt-12 border-t border-border pt-6">
-        <h2 id="direct-heading" className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          Or reach me directly
-        </h2>
-        <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm">
-          <a href="mailto:hello@example.com" className="text-accent-cool hover:underline">
-            hello@example.com
-          </a>
-          <a href="https://t.me/janedoe" target="_blank" rel="noreferrer" className="text-accent-cool hover:underline">
-            Telegram ↗
-          </a>
-          <a
-            href="https://www.linkedin.com/in/janedoe"
-            target="_blank"
-            rel="noreferrer"
-            className="text-accent-cool hover:underline"
-          >
-            LinkedIn ↗
-          </a>
-        </div>
-      </section>
+      {hasDirect ? (
+        <section aria-labelledby="direct-heading" className="mt-12 border-t border-border pt-6">
+          <h2 id="direct-heading" className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
+            Or reach me directly
+          </h2>
+          <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+            {identity.email ? (
+              <a href={`mailto:${identity.email}`} className="text-accent-cool hover:underline">
+                {identity.email}
+              </a>
+            ) : null}
+            {identity.linkedin ? (
+              <a href={identity.linkedin} target="_blank" rel="noreferrer" className="text-accent-cool hover:underline">
+                LinkedIn ↗
+              </a>
+            ) : null}
+            {identity.github ? (
+              <a href={identity.github} target="_blank" rel="noreferrer" className="text-accent-cool hover:underline">
+                GitHub ↗
+              </a>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
     </main>
   )
 }

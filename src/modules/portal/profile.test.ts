@@ -88,14 +88,28 @@ describe('projectWorkProfile', () => {
   });
 });
 
+const EMPTY_IDENTITY = { email: null, github: null, linkedin: null, x: null, website: null };
+
+/** Set the canonical identity columns on the single candidate_profile row. */
+function seedIdentity(
+  cols: Partial<Record<'public_email' | 'github_url' | 'linkedin_url' | 'x_url' | 'website_url', string>>,
+): void {
+  getDb()
+    .prepare(`INSERT INTO candidate_profile (id, updated_at) VALUES (1, ?) ON CONFLICT(id) DO NOTHING`)
+    .run(new Date().toISOString());
+  for (const [k, v] of Object.entries(cols)) {
+    getDb().prepare(`UPDATE candidate_profile SET ${k} = ? WHERE id = 1`).run(v);
+  }
+}
+
 describe('getPublicProfile', () => {
-  it('returns null profile + null provenance when no row exists', () => {
-    expect(getPublicProfile()).toEqual({ profile: null, generated_at: null, source: null });
+  it('returns null profile + empty identity when no row exists', () => {
+    expect(getPublicProfile()).toEqual({ profile: null, identity: EMPTY_IDENTITY, generated_at: null, source: null });
   });
 
   it('returns null profile when the row exists but the blob is unset', () => {
     seedWorkProfile(null);
-    expect(getPublicProfile()).toEqual({ profile: null, generated_at: null, source: null });
+    expect(getPublicProfile()).toEqual({ profile: null, identity: EMPTY_IDENTITY, generated_at: null, source: null });
   });
 
   it('projects the blob and surfaces provenance when populated', () => {
@@ -112,5 +126,31 @@ describe('getPublicProfile', () => {
     expect(res.profile).toBeNull();
     expect(res.source).toBeNull();
     expect(res.generated_at).toBeNull();
+    expect(res.identity).toEqual(EMPTY_IDENTITY);
+  });
+
+  it('projects the canonical identity from columns (trims, nulls empties)', () => {
+    seedIdentity({
+      public_email: ' me@x.dev ',
+      github_url: 'https://github.com/me',
+      linkedin_url: '',
+      x_url: 'https://x.com/me',
+    });
+    const res = getPublicProfile();
+    expect(res.identity).toEqual({
+      email: 'me@x.dev',
+      github: 'https://github.com/me',
+      linkedin: null, // empty string → null (omitted, not a broken link)
+      x: 'https://x.com/me',
+      website: null,
+    });
+  });
+
+  it('overrides the composed profile.links with the canonical identity (single source)', () => {
+    // FULL.links has github/linkedin; the identity columns are the source of truth.
+    seedWorkProfile(JSON.stringify(FULL), 'agent', '2026-06-14T12:00:00.000Z');
+    seedIdentity({ github_url: 'https://github.com/canonical', website_url: 'https://me.dev' });
+    const res = getPublicProfile();
+    expect(res.profile?.links).toEqual({ github: 'https://github.com/canonical', blog: 'https://me.dev' });
   });
 });
