@@ -1,6 +1,11 @@
 ﻿# Cloudflare Protection — Canonical Patterns for Career Pilot
 
-Cribsheet. Sourced from May 2026 Cloudflare docs and the research pass. Referenced by STRATEGY.md §13 (infrastructure) and §10 (public API).
+Cribsheet. Sourced from May 2026 Cloudflare docs and the research pass. Referenced by STRATEGY.md §13 (infrastructure), §10 (public API), and **§24.70 (the abuse-hardening build, Phase 9.4a)**.
+
+> **⚠️ Reconciliation (STRATEGY §24.70 / §24.39 D12, 2026-06-14).** This cribsheet predates two architecture shifts. The *patterns* below are still the canonical primitives, but read these corrections first:
+> - **The browser talks ONLY to the Worker (§24.39 D12).** All `/api/*` — JSON *and* SSE — proxies through the Worker BFF (`frontend/src/routes/api/$.ts`) to the tunnel; there is no browser-direct `api.hire.*`. The "SSE direct on api.hire" framing in §1/§8/§9 is historical — the Worker proxy is the live path, and the place edge protection attaches.
+> - **Turnstile siteverify + Workers RL + the DO caps live in the WORKER, not Express (corrects §2).** The Worker is the only thing that sees a raw visitor request before the tunnel; `guardPublicMutation` in `$.ts` verifies `POST /api/{contact,simulator}` and blind-forwards the rest. Express's `checkSimulatorAllowed()` stays a defense-in-depth `simulator_enabled` kill switch.
+> - **Authenticated Origin Pulls / mTLS (§5 Layer 3) is INAPPLICABLE to our cloudflared tunnel** — the VM has no inbound origin to pull from (loopback-bind + outbound tunnel *is* the "only Cloudflare reaches the origin" guarantee). The real Layer-3 is **origin Access-JWT validation in Express** (`Cf-Access-Jwt-Assertion` vs the team JWKS, `aud` = the api app). §5 Layers 1–2 stand.
 
 ---
 
@@ -39,6 +44,8 @@ Local dev origin (`http://localhost:5173`) added via env var when `ENVIRONMENT=d
 ## 2. Turnstile (CAPTCHA)
 
 Used on `/api/contact` (form submit) and `/api/simulator` (sandbox run start).
+
+> **§24.70 placement:** siteverify runs in the **Worker proxy** (`$.ts` `guardPublicMutation`), not Express — see the reconciliation banner. The Express snippet below shows the verification *logic*; under D12 the call site is the Worker (the token rides the `x-turnstile-token` header the widget sets).
 
 ### Frontend (TanStack Start client island)
 
@@ -304,6 +311,8 @@ app.use(async (req, res, next) => {
 Keys rotate every 6 weeks with 7-day overlap — never hard-code; always fetch from the JWKS endpoint.
 
 ### Layer 3: Authenticated Origin Pulls (mTLS)
+
+> **§24.70: N/A for our cloudflared-tunnel topology.** There is no public origin for Cloudflare to pull from — the VM binds `127.0.0.1` only and the tunnel dials outbound, so the tunnel + loopback-bind already *are* the "only Cloudflare reaches the origin" guarantee. The real Layer-3 defense-in-depth is **origin Access-JWT validation in Express** (Layer 2 above). AOP applies only to a directly-reachable origin (a model we don't use). Kept here for reference.
 
 In Cloudflare dashboard → SSL/TLS → Origin Server → Authenticated Origin Pulls (zone-level, free). Toggle on.
 
