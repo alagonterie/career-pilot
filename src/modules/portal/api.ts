@@ -52,6 +52,7 @@ import {
 } from './dev-inspector.js';
 import { emptyObservability, getObservability } from './observability.js';
 import { getTelemetry } from './portkey-analytics.js';
+import { getPublicProfile } from './profile.js';
 import { buildSanitizeDemo } from './sanitize-demo.js';
 import { getRecentSimulatorRuns, getSimulatorResult, startSimulatorRun, type SimulatorInput } from './simulator.js';
 import {
@@ -199,6 +200,17 @@ function handleFunnel(res: http.ServerResponse, cors: Record<string, string>): v
   }
 
   json(res, 200, { applications, stage_counts }, cors);
+}
+
+/**
+ * §24.71 / 9.4b-1: the `/work` profile projection. Serves the agent-composed
+ * (or hand-seeded) `WorkProfile` blob from `candidate_profile`, or
+ * `{ profile: null }` when unset → the frontend renders its typed placeholder.
+ * Read-only over an already-private table; no LLM at read-time (the agent
+ * composes at write-time, §24.71 D1).
+ */
+function handleProfile(res: http.ServerResponse, cors: Record<string, string>): void {
+  json(res, 200, getPublicProfile(), cors);
 }
 
 /**
@@ -722,6 +734,7 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
     if (forced) return applyForcedState(forced, path, req, res, cors);
 
     if (method === 'GET' && path === '/api/funnel') return handleFunnel(res, cors);
+    if (method === 'GET' && path === '/api/profile') return handleProfile(res, cors);
     if (method === 'GET' && path === '/api/kit') return handleKit(url, res, cors);
     if (method === 'GET' && path === '/api/activity/stream') return handleActivityStream(req, res, url, cors);
     if (method === 'GET' && path === '/api/activity') return handleActivity(url, res, cors);

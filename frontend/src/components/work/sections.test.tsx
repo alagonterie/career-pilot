@@ -25,7 +25,15 @@ function profile(overrides: Partial<WorkProfile> = {}): WorkProfile {
 describe('WorkSections', () => {
   it('renders the required section headings + content from the profile', () => {
     render(<WorkSections profile={profile()} />)
-    for (const heading of ['About', "What I'm looking for", 'Experience', 'Projects', 'Skills', 'Education', 'Elsewhere']) {
+    for (const heading of [
+      'About',
+      "What I'm looking for",
+      'Experience',
+      'Projects',
+      'Skills',
+      'Education',
+      'Elsewhere',
+    ]) {
       expect(screen.getByRole('heading', { level: 2, name: heading })).toBeInTheDocument()
     }
     expect(screen.getByText('Shipped a thing')).toBeInTheDocument()
@@ -46,5 +54,34 @@ describe('WorkSections', () => {
     render(<WorkSections profile={profile({ links: { github: 'https://github.com/example' } })} />)
     expect(screen.getByRole('link', { name: 'GitHub' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'LinkedIn' })).not.toBeInTheDocument()
+  })
+
+  it('degrades a partial profile — empty sections omit their heading (§24.71 / PORTAL §12)', () => {
+    // A name-only seed: every list is empty, links absent. No empty headings,
+    // and no thrown render.
+    render(
+      <WorkSections
+        profile={profile({
+          bio: [],
+          lookingFor: [],
+          experience: [],
+          projects: [],
+          skills: [],
+          education: [],
+          links: {},
+        })}
+      />,
+    )
+    for (const heading of [
+      'About',
+      "What I'm looking for",
+      'Experience',
+      'Projects',
+      'Skills',
+      'Education',
+      'Elsewhere',
+    ]) {
+      expect(screen.queryByRole('heading', { level: 2, name: heading })).not.toBeInTheDocument()
+    }
   })
 })
