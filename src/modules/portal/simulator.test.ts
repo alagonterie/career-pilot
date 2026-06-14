@@ -19,10 +19,14 @@ vi.mock('../../channels/portal/adapter.js', () => ({
 import { submitSimulatorRun } from '../../channels/portal/adapter.js';
 
 import { getDb } from '../../db/connection.js';
+import { getConfig } from '../../get-config.js';
 
 import { _resetSimulatorRuns, buildSimulatorPrompt, checkSimulatorAllowed, startSimulatorRun } from './simulator.js';
 
 const submitMock = vi.mocked(submitSimulatorRun);
+
+/** The configured per-IP daily cap — read it so the tests track defaults.json. */
+const perIpCap = (): number => getConfig<number>(getDb(), 'sandbox_per_ip_daily_run_cap', 5);
 
 /** Seed a persisted simulator_runs row (id + ts required; rest nullable). */
 function seedRun(ip: string | null, costCents: number, ts: string = new Date().toISOString()): void {
@@ -74,8 +78,8 @@ describe('checkSimulatorAllowed', () => {
     expect(checkSimulatorAllowed()).toEqual({ ok: true });
   });
 
-  it('rejects a client IP at the per-IP daily cap (default 10), scoped to that IP', () => {
-    for (let i = 0; i < 10; i++) seedRun('9.9.9.9', 0);
+  it('rejects a client IP at the per-IP daily cap, scoped to that IP', () => {
+    for (let i = 0; i < perIpCap(); i++) seedRun('9.9.9.9', 0);
     expect(checkSimulatorAllowed('9.9.9.9')).toEqual({ ok: false, reason: 'rate_limited_ip' });
     expect(checkSimulatorAllowed('1.1.1.1')).toEqual({ ok: true }); // a different IP is unaffected
   });
@@ -129,7 +133,7 @@ describe('startSimulatorRun', () => {
   });
 
   it('returns RATE_LIMITED (→ HTTP 429) and does not submit when the per-IP cap is hit', () => {
-    for (let i = 0; i < 10; i++) seedRun('7.7.7.7', 0);
+    for (let i = 0; i < perIpCap(); i++) seedRun('7.7.7.7', 0);
     const result = startSimulatorRun({ company: 'Acme', role: 'SWE' }, '7.7.7.7');
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe('RATE_LIMITED');
@@ -137,11 +141,11 @@ describe('startSimulatorRun', () => {
   });
 
   it('counts in-flight runs toward the per-IP cap (concurrent starts can’t beat it)', () => {
-    // 10 in-flight starts from one IP (submit is mocked → none persist/finalize).
-    for (let i = 0; i < 10; i++) {
+    // `cap` in-flight starts from one IP (submit is mocked → none persist/finalize).
+    for (let i = 0; i < perIpCap(); i++) {
       expect(startSimulatorRun({ company: 'Acme', role: 'SWE' }, '5.5.5.5').ok).toBe(true);
     }
-    // The 11th is blocked purely by the in-flight count — nothing is persisted yet.
+    // The next is blocked purely by the in-flight count — nothing is persisted yet.
     expect(startSimulatorRun({ company: 'Acme', role: 'SWE' }, '5.5.5.5').error?.code).toBe('RATE_LIMITED');
   });
 });

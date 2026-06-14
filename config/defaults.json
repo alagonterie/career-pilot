@@ -5,7 +5,7 @@
     "calendar_poll_interval_sec": 300,
     "owner_daily_llm_budget_usd": 5,
     "sandbox_daily_global_budget_usd": 5,
-    "sandbox_per_ip_daily_run_cap": 10,
+    "sandbox_per_ip_daily_run_cap": 5,
     "container_memory_mb": 512,
     "container_cpu": 1.0,
     "container_idle_timeout_sec": 1800,
