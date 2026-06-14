@@ -19,6 +19,7 @@ import {
   handleRecordRequestTelemetry,
   handleRecordTurnTelemetry,
   handleSetPreference,
+  handleSetWorkProfile,
   handleUpdateApplication,
   handleUpdateProfileField,
 } from './actions.js';
@@ -66,6 +67,7 @@ function registerOwnerOnly(action: string, handler: DeliveryActionHandler): void
 }
 
 registerOwnerOnly('career_pilot.update_profile_field', handleUpdateProfileField);
+registerOwnerOnly('career_pilot.set_work_profile', handleSetWorkProfile);
 registerOwnerOnly('career_pilot.set_preference', handleSetPreference);
 registerOwnerOnly('career_pilot.update_application', handleUpdateApplication);
 registerOwnerOnly('career_pilot.record_funnel_event', handleRecordFunnelEvent);

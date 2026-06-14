@@ -64,7 +64,7 @@ export const updateProfileField: McpToolDefinition = {
   tool: {
     name: 'update_profile_field',
     description:
-      'Update a single field on the candidate_profile (the candidate\'s persona content). Use during onboarding (one field per turn) and any time the candidate explicitly updates their profile. The change takes effect on the NEXT container spawn (the persona render hook re-runs and the agent sees the updated context). For JSON-valued fields (target_roles, location_pref, skills), pass the JSON-encoded string.',
+      "Update a single field on the candidate_profile (the candidate's persona content). Use during onboarding (one field per turn) and any time the candidate explicitly updates their profile. The change takes effect on the NEXT container spawn (the persona render hook re-runs and the agent sees the updated context). For JSON-valued fields (target_roles, location_pref, skills), pass the JSON-encoded string.",
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -100,7 +100,7 @@ export const updateApplication: McpToolDefinition = {
   tool: {
     name: 'update_application',
     description:
-      'UPSERT an application row. If `id` doesn\'t exist, INSERT (requires company_name + role_title + status in patch; host assigns obfuscated_label deterministically). If `id` exists, UPDATE only the fields present in patch. Use to bookmark a new role, update status after a signal, or correct mistaken fields. Always follow with record_funnel_event to log the transition.',
+      "UPSERT an application row. If `id` doesn't exist, INSERT (requires company_name + role_title + status in patch; host assigns obfuscated_label deterministically). If `id` exists, UPDATE only the fields present in patch. Use to bookmark a new role, update status after a signal, or correct mistaken fields. Always follow with record_funnel_event to log the transition.",
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -251,10 +251,9 @@ export const getApplication: McpToolDefinition = {
   async handler(args) {
     const id = args.id as string;
     if (!id) return err('id is required');
-    const res = await sendAction<{ application: Record<string, unknown> | null }>(
-      'career_pilot.get_application',
-      { id },
-    );
+    const res = await sendAction<{ application: Record<string, unknown> | null }>('career_pilot.get_application', {
+      id,
+    });
     if (!res.ok) return actionErr('get_application', res.error);
     if (!res.data.application) {
       return ok(`No application found with id "${id}".`);
@@ -299,13 +298,10 @@ export const listApplications: McpToolDefinition = {
     annotations: { readOnlyHint: true },
   },
   async handler(args) {
-    const res = await sendAction<{ applications: Array<Record<string, unknown>> }>(
-      'career_pilot.list_applications',
-      {
-        status: (args.status as string | undefined) ?? null,
-        limit: (args.limit as number | undefined) ?? 50,
-      },
-    );
+    const res = await sendAction<{ applications: Array<Record<string, unknown>> }>('career_pilot.list_applications', {
+      status: (args.status as string | undefined) ?? null,
+      limit: (args.limit as number | undefined) ?? 50,
+    });
     if (!res.ok) return actionErr('list_applications', res.error);
     const apps = res.data.applications;
     if (apps.length === 0) {
@@ -330,19 +326,23 @@ export const recordProgress: McpToolDefinition = {
       properties: {
         subagent_name: {
           type: 'string',
-          description: 'Your own subagent name from your frontmatter (e.g. "draft-outreach", "research-company"). Used to attribute the progress row.',
+          description:
+            'Your own subagent name from your frontmatter (e.g. "draft-outreach", "research-company"). Used to attribute the progress row.',
         },
         stage: {
           type: 'string',
-          description: 'Short stage identifier (kebab-case, ≤32 chars). Examples: "understanding-recipient", "drafting-subject", "drafting-body", "final-pass", "researching-funding", "extracting-jd-terms".',
+          description:
+            'Short stage identifier (kebab-case, ≤32 chars). Examples: "understanding-recipient", "drafting-subject", "drafting-body", "final-pass", "researching-funding", "extracting-jd-terms".',
         },
         detail: {
           type: 'string',
-          description: 'One-line prose describing what you\'re doing right now (≤80 chars target). Visible to portal visitors on the public trace stream — keep it candidate-friendly, no PII (it gets regex-sanitized anyway).',
+          description:
+            "One-line prose describing what you're doing right now (≤80 chars target). Visible to portal visitors on the public trace stream — keep it candidate-friendly, no PII (it gets regex-sanitized anyway).",
         },
         application_id: {
           type: 'string',
-          description: 'Optional. The internal application id (e.g. "app-acme") when this run\'s work is about one specific application — pass it on EVERY progress call so the public stream attributes the work to that application. The host derives the public-safe label from the id; never put a company name here or lean on this for the detail text. Omit when the work is not about a single application.',
+          description:
+            'Optional. The internal application id (e.g. "app-acme") when this run\'s work is about one specific application — pass it on EVERY progress call so the public stream attributes the work to that application. The host derives the public-safe label from the id; never put a company name here or lean on this for the detail text. Omit when the work is not about a single application.',
         },
       },
       required: ['subagent_name', 'stage', 'detail'],
@@ -386,11 +386,13 @@ export const createGmailDraft: McpToolDefinition = {
         },
         subject: {
           type: 'string',
-          description: 'Email subject line. The drafter subagent produces this under its `## Subject` section; the orchestrator extracts it.',
+          description:
+            'Email subject line. The drafter subagent produces this under its `## Subject` section; the orchestrator extracts it.',
         },
         body: {
           type: 'string',
-          description: 'Email body. The drafter subagent produces this under its `## Body` section. If preferences.outreach_show_ai_attribution=true, the orchestrator appends preferences.outreach_attribution_template here BEFORE calling — do not double-append.',
+          description:
+            'Email body. The drafter subagent produces this under its `## Body` section. If preferences.outreach_show_ai_attribution=true, the orchestrator appends preferences.outreach_attribution_template here BEFORE calling — do not double-append.',
         },
         in_reply_to: {
           type: 'string',
@@ -421,7 +423,10 @@ export const createGmailDraft: McpToolDefinition = {
     );
     if (!res.ok) return actionErr('create_gmail_draft', res.error);
     const stubNote = res.data.stub ? ' (stub mode)' : '';
-    return ok(`Draft saved${stubNote}: "${subject}" → ${to} (id ${res.data.draft_id}). Open Gmail to review and send.`, res.data);
+    return ok(
+      `Draft saved${stubNote}: "${subject}" → ${to} (id ${res.data.draft_id}). Open Gmail to review and send.`,
+      res.data,
+    );
   },
 };
 
@@ -465,8 +470,40 @@ export const setPreference: McpToolDefinition = {
   },
 };
 
+// ── set_work_profile (the composed /work page, §24.71 9.4b-2) ──────────────
+
+export const setWorkProfile: McpToolDefinition = {
+  tool: {
+    name: 'set_work_profile',
+    description:
+      "Compose and publish the candidate's public /work page (and the landing hero). Pass the FULL profile as a structured object that you BUILD from the candidate's master resume + basics — choosing which sections present well and wording the prose. The portal renders it on the next load, with a \"composed by the agent\" provenance marker. RULES: (1) Compose, never invent — every fact (company, date, title, project, metric) must come from the candidate's real material; do not fabricate. (2) Omit any section you lack source for — do NOT pad with filler (an absent section renders cleanly). (3) A non-empty `name` is required. Shape: { name: string, title: string, bio: string[] (1-2 short paragraphs, candidate voice), lookingFor: string[], experience: [{ role, company, period, bullets: string[] }], projects: [{ name, description, href?, tags?: string[] }], writing?: [{ title, venue?, href? }], skills: string[] (curated, not exhaustive), education: string[], links: { github?, linkedin?, x?, blog? } }. Show the candidate a preview and get their OK before publishing; re-call to recompose after their edits.",
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        profile: {
+          type: 'object',
+          description:
+            'The full WorkProfile object (see the tool description for the exact shape). Only `name` is strictly required; include every section the resume genuinely supports and omit the rest.',
+        },
+      },
+      required: ['profile'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  async handler(args) {
+    const profile = args.profile;
+    if (!profile || typeof profile !== 'object') {
+      return err('profile must be a WorkProfile object (see the tool description for the shape).');
+    }
+    const res = await sendAction<{ name: string }>('career_pilot.set_work_profile', { profile });
+    if (!res.ok) return actionErr('set_work_profile', res.error);
+    return ok(`Work page composed and published for ${res.data.name}. It renders on the next portal load.`, res.data);
+  },
+};
+
 registerTools([
   updateProfileField,
+  setWorkProfile,
   setPreference,
   updateApplication,
   recordFunnelEvent,

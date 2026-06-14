@@ -20,16 +20,28 @@ export const Route = createFileRoute('/(marketing)/work')({
   },
 })
 
+/** UTC-fixed date so SSR (Worker) and client render identically (no hydration shift). */
+function composedOn(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })
+}
+
 function Work() {
   // SSR-rendered from the live `candidate_profile` (via /api/profile); falls back
   // to the typed `workProfile` placeholder when no profile is composed yet.
-  const { profile } = Route.useLoaderData()
+  const { profile, source, generatedAt } = Route.useLoaderData()
   const p = profile ?? workProfile
   return (
     <>
       <main className="mx-auto flex max-w-3xl flex-col items-start px-6 py-16">
         <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{p.name}</h1>
         <p className="mt-2 text-lg text-muted-foreground">{p.title}</p>
+        {/* Provenance (§24.71 D4): honest only when the agent actually composed
+            this page — a hand-seed (source='seed') or the placeholder shows no marker. */}
+        {source === 'agent' && generatedAt ? (
+          <p className="mt-3 font-mono text-xs text-accent-cool">
+            ✦ Composed by my agent from my master resume · {composedOn(generatedAt)}
+          </p>
+        ) : null}
         <div className="mt-12 w-full">
           <WorkSections profile={p} />
         </div>

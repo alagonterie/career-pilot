@@ -32,6 +32,7 @@ import {
   handleRecordRequestTelemetry,
   handleRecordTurnTelemetry,
   handleSetPreference,
+  handleSetWorkProfile,
   handleUpdateApplication,
   handleUpdateProfileField,
 } from './actions.js';
@@ -166,6 +167,61 @@ describe('handleUpdateProfileField', () => {
     if (!resp.frame.ok) {
       expect(resp.frame.error.code).toBe('BAD_FIELD');
     }
+  });
+});
+
+// ── set_work_profile (§24.71 9.4b-2) ───────────────────────────────────────
+
+describe('handleSetWorkProfile', () => {
+  function readWorkPage(): { json: string | null; source: string | null; generated_at: string | null } {
+    return getDb()
+      .prepare(
+        'SELECT work_profile_json AS json, work_profile_source AS source, work_profile_generated_at AS generated_at FROM candidate_profile WHERE id = 1',
+      )
+      .get() as { json: string | null; source: string | null; generated_at: string | null };
+  }
+
+  it('publishes a composed profile (object), stamping source=agent + generated_at', async () => {
+    const profile = {
+      name: 'Ada Lovelace',
+      title: 'Staff Engineer',
+      bio: ['Builds engines.'],
+      experience: [{ role: 'Staff', company: 'AE', period: '2020 — Present', bullets: ['Shipped it.'] }],
+      skills: ['Rust'],
+      extraneous: 'dropped by projection',
+    };
+    const c = actionContent('career_pilot.set_work_profile', { profile });
+    await handleSetWorkProfile(c, FAKE_SESSION, inDb);
+
+    const resp = readResponse(c.requestId);
+    expect(resp.frame.ok).toBe(true);
+    if (resp.frame.ok) expect(resp.frame.data).toMatchObject({ name: 'Ada Lovelace' });
+
+    const row = readWorkPage();
+    expect(row.source).toBe('agent');
+    expect(row.generated_at).toBeTruthy();
+    const stored = JSON.parse(row.json!) as Record<string, unknown>;
+    expect(stored.name).toBe('Ada Lovelace');
+    expect(stored.skills).toEqual(['Rust']);
+    expect(stored).not.toHaveProperty('extraneous'); // normalized through projectWorkProfile
+  });
+
+  it('accepts a JSON-string profile and round-trips it', async () => {
+    const c = actionContent('career_pilot.set_work_profile', {
+      profile: JSON.stringify({ name: 'Grace Hopper', title: 'RADM' }),
+    });
+    await handleSetWorkProfile(c, FAKE_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+    expect((JSON.parse(readWorkPage().json!) as { name: string }).name).toBe('Grace Hopper');
+  });
+
+  it('rejects a nameless / malformed profile with BAD_ARGS and does not write', async () => {
+    const c = actionContent('career_pilot.set_work_profile', { profile: { title: 'no name' } });
+    await handleSetWorkProfile(c, FAKE_SESSION, inDb);
+    const resp = readResponse(c.requestId);
+    expect(resp.frame.ok).toBe(false);
+    if (!resp.frame.ok) expect(resp.frame.error.code).toBe('BAD_ARGS');
+    expect(readWorkPage()).toBeUndefined(); // no row created on rejection
   });
 });
 
