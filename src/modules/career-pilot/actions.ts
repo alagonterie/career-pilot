@@ -132,6 +132,7 @@ const PROFILE_FIELDS = new Set([
   'linkedin_url',
   'x_url',
   'website_url',
+  'public_email',
   'why_this_exists',
   'headshot_path',
   'brand_color_hsl',

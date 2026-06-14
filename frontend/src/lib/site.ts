@@ -1,13 +1,17 @@
 /**
- * Shared site constants. The repo is generic-by-design (career-pilot is meant
- * to be forkable) — the placeholder `janedoe` owner matches the work-profile
- * links and the persona used across the public repo.
+ * Shared site constants. These are per-DEPLOYMENT, not per-candidate: the fork's
+ * public repo + the public origin. Set at build time via env (STRATEGY §24.71
+ * 9.4b-3) so a fork/deploy points them at its own values; the generic `janedoe`
+ * / `example.com` placeholders are the forkable defaults committed to the repo.
+ * (Per-candidate identity — email, social profiles — is DB-sourced + SSR'd via
+ * `/api/profile`, not here.)
  */
-export const REPO_URL = 'https://github.com/janedoe/career-pilot'
+export const REPO_URL =
+  (import.meta.env.VITE_REPO_URL as string | undefined) ?? 'https://github.com/janedoe/career-pilot'
 
-/** The public origin (generic placeholder — the real domain is set at deploy).
- * Used to build absolute og:url / og:image URLs (social scrapers require them). */
-export const SITE_URL = 'https://hire.example.com'
+/** The public origin. Used to build absolute og:url / og:image URLs (social
+ * scrapers require them) — so it must resolve at build/SSR time, hence env. */
+export const SITE_URL = (import.meta.env.VITE_SITE_URL as string | undefined) ?? 'https://hire.example.com'
 
 /** A line-anchored link into the repo, e.g. `repoBlob('src/modules/portal/api.ts', 222)`. */
 export function repoBlob(path: string, line?: number): string {

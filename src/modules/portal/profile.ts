@@ -65,19 +65,44 @@ export interface WorkProfile {
   links: SocialLinks;
 }
 
+/**
+ * The candidate's canonical contact/social identity (§24.71 9.4b-3) — read
+ * straight from `candidate_profile` columns, NOT the composed page blob. This is
+ * the single source for every link the site renders (the `/contact` paths, the
+ * landing teaser, the `/work` "Elsewhere" section), so identity is always
+ * available even before the work page is composed. Every field optional —
+ * the frontend omits a link when it's null (no broken placeholder links).
+ */
+export interface Identity {
+  email: string | null;
+  github: string | null;
+  linkedin: string | null;
+  x: string | null;
+  website: string | null;
+}
+
 export interface ProfileResponse {
   /** The composed page, or null when not configured (→ frontend placeholder). */
   profile: WorkProfile | null;
+  /** Canonical contact/social identity (always present; fields nullable). */
+  identity: Identity;
   /** Provenance for the §24.71 D4 on-page marker (9.4b-2). Null when no blob. */
   generated_at: string | null;
   source: string | null;
 }
 
-interface WorkPageRow {
+interface ProfileRow {
   work_profile_json: string | null;
   work_profile_generated_at: string | null;
   work_profile_source: string | null;
+  public_email: string | null;
+  github_url: string | null;
+  linkedin_url: string | null;
+  x_url: string | null;
+  website_url: string | null;
 }
+
+const EMPTY_IDENTITY: Identity = { email: null, github: null, linkedin: null, x: null, website: null };
 
 /** A JSON object, narrowed. */
 type Json = Record<string, unknown>;
@@ -194,24 +219,55 @@ export function projectWorkProfile(raw: string | null): WorkProfile | null {
  * test fixture) — falls back to the empty/null response, never throws.
  */
 export function getPublicProfile(): ProfileResponse {
-  let row: WorkPageRow | undefined;
+  let row: ProfileRow | undefined;
   try {
     row = getDb()
       .prepare(
-        `SELECT work_profile_json, work_profile_generated_at, work_profile_source
+        `SELECT work_profile_json, work_profile_generated_at, work_profile_source,
+                public_email, github_url, linkedin_url, x_url, website_url
            FROM candidate_profile WHERE id = 1`,
       )
-      .get() as WorkPageRow | undefined;
+      .get() as ProfileRow | undefined;
   } catch (err) {
     log.warn('getPublicProfile: candidate_profile read failed, serving empty profile', { err });
-    return { profile: null, generated_at: null, source: null };
+    return { profile: null, identity: EMPTY_IDENTITY, generated_at: null, source: null };
   }
-  if (!row) return { profile: null, generated_at: null, source: null };
+  if (!row) return { profile: null, identity: EMPTY_IDENTITY, generated_at: null, source: null };
+
+  const identity: Identity = {
+    email: orNull(row.public_email),
+    github: orNull(row.github_url),
+    linkedin: orNull(row.linkedin_url),
+    x: orNull(row.x_url),
+    website: orNull(row.website_url),
+  };
 
   const profile = projectWorkProfile(row.work_profile_json);
+  // The canonical identity columns are the single source for links — override
+  // whatever the composer wrote so `/work` and `/contact` can never disagree.
+  if (profile) profile.links = identityToLinks(identity);
+
   return {
     profile,
+    identity,
     generated_at: profile ? row.work_profile_generated_at : null,
     source: profile ? row.work_profile_source : null,
   };
+}
+
+/** Trim + null an empty/whitespace string. */
+function orNull(v: string | null): string | null {
+  if (typeof v !== 'string') return null;
+  const t = v.trim();
+  return t.length > 0 ? t : null;
+}
+
+/** Project the canonical identity into the `/work` `SocialLinks` shape (website → blog slot). */
+function identityToLinks(identity: Identity): SocialLinks {
+  const links: SocialLinks = {};
+  if (identity.github) links.github = identity.github;
+  if (identity.linkedin) links.linkedin = identity.linkedin;
+  if (identity.x) links.x = identity.x;
+  if (identity.website) links.blog = identity.website;
+  return links;
 }

@@ -852,10 +852,12 @@ A `Download PDF` button at top + bottom — generated server-side from the struc
                        [  Send →  ]
 ```
 
-Below the form, three alternative paths:
-- **Telegram** (deep link to a public bot username — replies route to the candidate via NanoClaw)
+Below the form, the "reach me directly" paths:
 - **Email** (`mailto:` link)
 - **LinkedIn**
+- **GitHub**
+
+> **Build note (STRATEGY §24.71 / 9.4b-3).** These paths are **SSR-driven from the candidate's canonical `identity`** (`GET /api/profile`, read from `candidate_profile` columns — `public_email`, `linkedin_url`, `github_url`), each rendered only when set; the whole section is omitted when none are. No hardcoded placeholder links. **Telegram is dropped** (owner-only admin channel, locked strict — the form is the visitor path; owner call 2026-06-14), superseding the original "public bot deep link" path here and the §12 "Public Telegram bot username" row.
 
 When submitted, the message is relayed to the candidate via Telegram. Sender gets a confirmation: *"Sent. the candidate typically replies within 24 hours."*
 

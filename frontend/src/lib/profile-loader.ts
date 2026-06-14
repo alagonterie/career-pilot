@@ -18,13 +18,30 @@ import type { WorkProfile } from './work-profile'
  * LLM work. Any failure (unconfigured backend, non-200, malformed) resolves to a
  * null profile, and the route renders the typed placeholder (PORTAL §12).
  */
+/**
+ * Canonical contact/social identity (§24.71 9.4b-3) — read from candidate_profile
+ * columns, always present (fields nullable), the single source for every link the
+ * site renders (contact, hero, /work). Omit a link when its field is null.
+ */
+export interface Identity {
+  email: string | null
+  github: string | null
+  linkedin: string | null
+  x: string | null
+  website: string | null
+}
+
 export interface ProfilePayload {
   /** The composed page, or null → the route falls back to the placeholder. */
   profile: WorkProfile | null
+  /** The candidate's canonical contact/social identity (fields nullable). */
+  identity: Identity
   /** Provenance for the §24.71 D4 on-page marker (consumed in 9.4b-2). */
   source: string | null
   generatedAt: string | null
 }
+
+const EMPTY_IDENTITY: Identity = { email: null, github: null, linkedin: null, x: null, website: null }
 
 type ProfileEnv = {
   BACKEND_API_BASE?: string
@@ -32,7 +49,7 @@ type ProfileEnv = {
   CF_ACCESS_CLIENT_SECRET?: string
 }
 
-const EMPTY: ProfilePayload = { profile: null, source: null, generatedAt: null }
+const EMPTY: ProfilePayload = { profile: null, identity: EMPTY_IDENTITY, source: null, generatedAt: null }
 
 export const getWorkProfile = createServerFn({ method: 'GET' }).handler(async (): Promise<ProfilePayload> => {
   const e = env as ProfileEnv
@@ -49,10 +66,16 @@ export const getWorkProfile = createServerFn({ method: 'GET' }).handler(async ()
     if (!res.ok) return EMPTY
     const data = (await res.json()) as {
       profile?: WorkProfile | null
+      identity?: Identity | null
       source?: string | null
       generated_at?: string | null
     }
-    return { profile: data.profile ?? null, source: data.source ?? null, generatedAt: data.generated_at ?? null }
+    return {
+      profile: data.profile ?? null,
+      identity: data.identity ?? EMPTY_IDENTITY,
+      source: data.source ?? null,
+      generatedAt: data.generated_at ?? null,
+    }
   } catch {
     return EMPTY
   }
