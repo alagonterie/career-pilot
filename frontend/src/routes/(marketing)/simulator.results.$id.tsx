@@ -1,8 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import * as React from 'react'
 
-import { SimActivity } from '~/components/simulator/SimActivity'
-import { SimOutput } from '~/components/simulator/SimOutput'
+import { SimResult } from '~/components/simulator/SimResult'
 import { Button } from '~/components/ui/button'
 import { getWorkProfile } from '~/lib/profile-loader'
 import { seo } from '~/lib/seo'
@@ -31,35 +30,6 @@ export const Route = createFileRoute('/(marketing)/simulator/results/$id')({
     })
   },
 })
-
-/**
- * The run's persisted activity trace, collapsed by default (§24.31 Δ — "see
- * how this actually worked" depth for forwarded links). Renders nothing when
- * the run predates trace persistence.
- */
-function ShareActivity({ trace, cost_usd }: { trace: SimTraceEvent[]; cost_usd: number | null }) {
-  const [open, setOpen] = React.useState(false)
-  if (trace.length === 0) return null
-  return (
-    <div className="mt-4" data-testid="share-activity">
-      <button
-        type="button"
-        data-testid="share-activity-toggle"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-2 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <span aria-hidden="true">{open ? '▾' : '▸'}</span>
-        {open ? 'Hide the run activity' : `See how this run worked (${trace.length} steps)`}
-      </button>
-      {open ? (
-        <div className="mt-3">
-          <SimActivity trace={trace} status="done" cost_usd={cost_usd} />
-        </div>
-      ) : null}
-    </div>
-  )
-}
 
 interface SimRunRow {
   id: string
@@ -152,43 +122,18 @@ function ShareResults() {
             </p>
           </header>
 
-          {/* The gift, up top (§24.72): the tailored résumé is the thing to take. */}
-          {state.row.has_tailored_resume ? (
-            <div
-              data-testid="share-gift"
-              className="mt-8 rounded-xl border border-accent-cool/40 bg-accent-cool/5 px-6 py-5"
-            >
-              <p className="font-mono text-xs uppercase tracking-widest text-accent-cool">Your tailored résumé</p>
-              <h2 className="mt-1 text-lg font-semibold tracking-tight">
-                A full résumé, aimed at {state.row.visitor_role ?? 'your role'}
-                {state.row.visitor_company ? ` @ ${state.row.visitor_company}` : ''}
-              </h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Auto-tailored from my real experience for this exact role — yours to download and forward.
-              </p>
-              <div className="mt-4">
-                <Button asChild size="lg">
-                  <a
-                    href={`${API_BASE}/api/simulator/results/${encodeURIComponent(state.row.id)}/resume.pdf`}
-                    download
-                    data-testid="share-download-resume"
-                  >
-                    Download tailored résumé (PDF) ↓
-                  </a>
-                </Button>
-              </div>
-            </div>
-          ) : null}
-
-          {/* The pitch the run produced — bullets + outreach — as supporting detail. */}
+          {/* Gift-first results, shared with the live /simulator done-state (parity). */}
           <div className="mt-8">
-            <SimOutput text={state.row.tailored_resume ?? ''} />
+            <SimResult
+              runId={state.row.id}
+              company={state.row.visitor_company}
+              role={state.row.visitor_role}
+              outputText={state.row.tailored_resume ?? ''}
+              trace={parseTrace(state.row.trace_json)}
+              costUsd={state.row.total_cost_cents != null ? state.row.total_cost_cents / 100 : null}
+              hasTailoredResume={!!state.row.has_tailored_resume}
+            />
           </div>
-
-          <ShareActivity
-            trace={parseTrace(state.row.trace_json)}
-            cost_usd={state.row.total_cost_cents != null ? state.row.total_cost_cents / 100 : null}
-          />
 
           <div className="mt-8 flex flex-wrap gap-3 border-t border-border pt-6">
             <Button asChild>
