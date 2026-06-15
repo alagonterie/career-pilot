@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Identity, WorkProfile } from './profile.js';
-import { masterFooter, renderResumePdf } from './resume-pdf.js';
+import { masterFooter, renderResumePdf, tailoredFooter } from './resume-pdf.js';
 
 const PROFILE: WorkProfile = {
   name: 'Ada Lovelace',
@@ -90,5 +90,22 @@ describe('masterFooter', () => {
       if (a === undefined) delete process.env.PORTAL_PUBLIC_URL;
       else process.env.PORTAL_PUBLIC_URL = a;
     }
+  });
+});
+
+describe('tailoredFooter', () => {
+  it('names the company + role and states the honesty clause', () => {
+    const f = tailoredFooter('Acme', 'Staff Engineer', '2026-06-14T00:00:00.000Z');
+    expect(f).toContain('Staff Engineer');
+    expect(f).toContain('Acme');
+    expect(f).toContain('all content reflects real experience');
+    expect(f).toContain('Generated Jun 14, 2026');
+  });
+
+  it('degrades gracefully when company/role/date are missing', () => {
+    const f = tailoredFooter(null, null, 'not-a-date');
+    expect(f).toContain('your company');
+    expect(f).toContain('this role');
+    expect(f).not.toContain('Generated');
   });
 });

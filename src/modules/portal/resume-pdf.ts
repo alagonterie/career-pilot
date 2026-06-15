@@ -202,3 +202,25 @@ export function masterFooter(): string {
   const host = portalHost();
   return '◇ Composed by my AI agent system' + (host ? ` · ${host}` : '');
 }
+
+/** UTC-fixed so the footer reads identically wherever it's rendered. */
+function footerDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
+/**
+ * The §24.72 D4 TAILORED-résumé footer — the traveling conversion vector: when a
+ * recruiter forwards the PDF, it tells the hiring manager the candidate's own
+ * agent auto-tailored it for this exact role, and states the honesty guardrail.
+ */
+export function tailoredFooter(company: string | null, role: string | null, isoDate: string): string {
+  const host = portalHost();
+  const r = role && role.trim() ? role.trim() : 'this';
+  const c = company && company.trim() ? company.trim() : 'your company';
+  const where = host ? ` running my live job search at ${host}` : '';
+  const when = footerDate(isoDate);
+  const gen = when ? ` Generated ${when};` : '';
+  return `◇ Auto-tailored for the ${r} role at ${c} by my own AI agent system — the same one${where}.${gen} all content reflects real experience.`;
+}

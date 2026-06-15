@@ -52,8 +52,8 @@ import {
 } from './dev-inspector.js';
 import { emptyObservability, getObservability } from './observability.js';
 import { getTelemetry } from './portkey-analytics.js';
-import { getPublicProfile } from './profile.js';
-import { masterFooter, renderResumePdf } from './resume-pdf.js';
+import { getPublicProfile, type WorkProfile } from './profile.js';
+import { masterFooter, renderResumePdf, tailoredFooter } from './resume-pdf.js';
 import { buildSanitizeDemo } from './sanitize-demo.js';
 import { getRecentSimulatorRuns, getSimulatorResult, startSimulatorRun, type SimulatorInput } from './simulator.js';
 import {
@@ -482,7 +482,47 @@ function handleSimulatorResult(res: http.ServerResponse, runId: string, cors: Re
     json(res, 404, { error: 'not_found' }, cors);
     return;
   }
-  json(res, 200, row, cors);
+  // Don't ship the full tailored WorkProfile to the client (it renders to a PDF
+  // server-side, §24.72 9.4b-r2); expose only whether the download is available.
+  const { tailored_resume_json, ...rest } = row;
+  json(res, 200, { ...rest, has_tailored_resume: tailored_resume_json != null }, cors);
+}
+
+/**
+ * `GET /api/simulator/results/<id>/resume.pdf` — the Tier-2 tailored résumé
+ * (§24.72 9.4b-r2): render the run's guardrail-validated tailored `WorkProfile`
+ * with the company/role footer (D4). 404 when the run has no tailored résumé
+ * (pre-r2 rows, or the guardrail rejected the emission).
+ */
+async function handleSimulatorResumePdf(
+  res: http.ServerResponse,
+  runId: string,
+  cors: Record<string, string>,
+): Promise<void> {
+  const row = getSimulatorResult(runId);
+  if (!row || !row.tailored_resume_json) {
+    json(res, 404, { error: 'no_tailored_resume' }, cors);
+    return;
+  }
+  let tailored: WorkProfile;
+  try {
+    tailored = JSON.parse(row.tailored_resume_json) as WorkProfile;
+  } catch {
+    json(res, 404, { error: 'no_tailored_resume' }, cors);
+    return;
+  }
+  const { identity } = getPublicProfile();
+  const buf = await renderResumePdf(tailored, identity, tailoredFooter(row.visitor_company, row.visitor_role, row.ts));
+  const base =
+    `${tailored.name}-${row.visitor_company ?? 'tailored'}`.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '') ||
+    'resume';
+  res.writeHead(200, {
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': `attachment; filename="${base}.pdf"`,
+    'Content-Length': String(buf.length),
+    ...cors,
+  });
+  res.end(buf);
 }
 
 /** Recent shareable runs (metadata) for the disabled-simulator fallback (5.5c). */
@@ -772,8 +812,13 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
     if (method === 'POST' && path === '/api/simulator') return await handleSimulatorStart(req, res, cors);
     if (method === 'GET' && path === '/api/simulator/recent') return handleSimulatorRecent(res, cors);
     if (method === 'GET' && path.startsWith('/api/simulator/results/')) {
-      const id = path.slice('/api/simulator/results/'.length);
-      if (id.length > 0) return handleSimulatorResult(res, id, cors);
+      const rest = path.slice('/api/simulator/results/'.length);
+      if (rest.endsWith('/resume.pdf')) {
+        const id = rest.slice(0, -'/resume.pdf'.length);
+        if (id.length > 0) return await handleSimulatorResumePdf(res, id, cors);
+      } else if (rest.length > 0) {
+        return handleSimulatorResult(res, rest, cors);
+      }
     }
     if (method === 'GET' && path.startsWith('/api/simulator/') && path.endsWith('/stream')) {
       const runId = path.slice('/api/simulator/'.length, -'/stream'.length);
