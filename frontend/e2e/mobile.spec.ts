@@ -67,7 +67,7 @@ test('the mid-run simulator view does not scroll horizontally on mobile', async 
     if (await page.getByTestId('sim-activity').isVisible()) return
     await page.getByLabel('Company name').fill('Wayne Enterprises')
     await page.getByLabel('Role / title').fill('Principal Engineer')
-    await page.getByRole('button', { name: /run simulation/i }).click()
+    await page.getByRole('button', { name: /watch me apply/i }).click()
     await expect(page.getByTestId('sim-activity')).toBeVisible({ timeout: 2000 })
   }).toPass({ timeout: 15_000 })
   await expect(page.getByTestId('sim-trace-subagent').first()).toBeVisible()

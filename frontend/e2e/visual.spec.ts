@@ -188,7 +188,7 @@ test('contact page matches visual baseline', { tag: '@visual' }, async ({ page }
 
 test('simulator input view matches visual baseline', { tag: '@visual' }, async ({ page }) => {
   await page.goto('/simulator')
-  await expect(page.getByRole('heading', { name: /try it on your own role/i, level: 1 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /watch me apply to your role/i, level: 1 })).toBeVisible()
   // The pre-run Apple-register input view — fully static (the timing-dependent
   // mid-run streaming view is covered by the semantic E2E, not a snapshot).
   await expect(page.getByTestId('sim-input-form')).toBeVisible()
