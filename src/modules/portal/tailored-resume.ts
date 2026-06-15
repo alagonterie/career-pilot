@@ -94,14 +94,29 @@ export interface TailoredValidation {
  * when it invents an employer.
  */
 export function validateTailoredResume(emitted: unknown, master: WorkProfile): TailoredValidation {
-  const tailored = projectWorkProfile(JSON.stringify(emitted ?? null));
+  if (!emitted || typeof emitted !== 'object' || Array.isArray(emitted)) {
+    return { ok: false, errors: ['The tailored résumé must be a JSON WorkProfile object.'] };
+  }
+  // The emitted block intentionally OMITS identity (name/title/links) — those are
+  // forced from the master, so the sandbox is never asked to supply them. Inject
+  // the master's identity BEFORE projecting: `projectWorkProfile` requires a name,
+  // so without this a faithful no-name emit (exactly the instructed shape) is
+  // rejected, and the gift silently goes missing whenever the agent doesn't
+  // happen to also include a name. Anything emitted is re-anchored below anyway.
+  const withIdentity = {
+    ...(emitted as Record<string, unknown>),
+    name: master.name,
+    title: master.title,
+    links: master.links,
+  };
+  const tailored = projectWorkProfile(JSON.stringify(withIdentity));
   if (!tailored) {
-    return { ok: false, errors: ['The tailored résumé must be a WorkProfile object with at least a name.'] };
+    return { ok: false, errors: ['The tailored résumé could not be parsed as a WorkProfile.'] };
   }
 
   const errors: string[] = [];
 
-  // Identity is never tailored — take it from the master verbatim.
+  // Identity is never tailored — pinned to the master (already injected above).
   tailored.name = master.name;
   tailored.title = master.title;
   tailored.links = master.links;

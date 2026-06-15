@@ -160,9 +160,36 @@ describe('validateTailoredResume — fabrication is rejected', () => {
     expect(res.errors.join(' ')).toContain('Google');
   });
 
-  it('rejects a non-WorkProfile / nameless emission', () => {
+  it('rejects a non-object emission', () => {
     expect(validateTailoredResume(null, MASTER).ok).toBe(false);
-    expect(validateTailoredResume({ title: 'no name' }, MASTER).ok).toBe(false);
+    expect(validateTailoredResume('not an object', MASTER).ok).toBe(false);
+    expect(validateTailoredResume([1, 2], MASTER).ok).toBe(false);
+  });
+
+  // The live reliability bug: the sandbox is asked for a WorkProfile WITHOUT
+  // identity (name/title/links come from the master), but projection requires a
+  // name — so a faithful, spec-correct no-name emit was being rejected and the
+  // gift silently went missing. A no-name emit must validate, identity forced.
+  it('accepts the instructed no-name shape, forcing identity from the master', () => {
+    const res = validateTailoredResume(
+      {
+        bio: ['A summary written for this role.'],
+        experience: [
+          {
+            company: 'Vertafore',
+            role: 'Senior Software Engineer',
+            period: '2021 — Present',
+            bullets: ['Built a Rust authorization engine that answered security checks 850 times faster than SQL.'],
+          },
+        ],
+        skillGroups: [{ category: 'Languages', items: ['Rust', 'TypeScript'] }],
+      },
+      MASTER,
+    );
+    expect(res.ok).toBe(true);
+    expect(res.profile!.name).toBe('Alexander LaGonterie');
+    expect(res.profile!.title).toBe('Senior Software Engineer · Team Lead');
+    expect(res.profile!.experience[0].bullets[0]).toContain('Rust in-memory authorization engine');
   });
 });
 
