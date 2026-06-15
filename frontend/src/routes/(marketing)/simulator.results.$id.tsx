@@ -63,6 +63,8 @@ interface SimRunRow {
   tailored_resume: string | null
   total_cost_cents: number | null
   trace_json: string | null
+  /** §24.72 9.4b-r2 — a downloadable tailored résumé PDF is available for this run. */
+  has_tailored_resume?: boolean
 }
 
 /** Parse the persisted run trace (§24.31 Δ) — null-safe, shape-guarded. */
@@ -146,6 +148,23 @@ function ShareResults() {
           <div className="mt-8">
             <SimOutput text={state.row.tailored_resume ?? ''} />
           </div>
+
+          {state.row.has_tailored_resume ? (
+            <div className="mt-6">
+              <Button asChild>
+                <a
+                  href={`${API_BASE}/api/simulator/results/${encodeURIComponent(state.row.id)}/resume.pdf`}
+                  download
+                  data-testid="share-download-resume"
+                >
+                  Download tailored résumé (PDF) ↓
+                </a>
+              </Button>
+              <p className="mt-2 text-xs text-muted-foreground">
+                A full résumé aimed at this role — auto-tailored from my real experience.
+              </p>
+            </div>
+          ) : null}
 
           <ShareActivity
             trace={parseTrace(state.row.trace_json)}

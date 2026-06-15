@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 
 import { Button } from '~/components/ui/button'
 import { WorkSections } from '~/components/work/sections'
@@ -56,7 +56,15 @@ function Work() {
             ✦ Composed by my agent from my master resume · {composedOn(generatedAt)}
           </p>
         ) : null}
-        {canDownload ? <div className="mt-6">{downloadBtn}</div> : null}
+        {canDownload ? (
+          <div className="mt-6 flex flex-col gap-2">
+            {downloadBtn}
+            {/* Tier-2 cross-sell (§24.72): the simulator produces a role-tailored cut. */}
+            <Link to="/simulator" className="font-mono text-xs text-accent-cool hover:underline">
+              Want one aimed at your role? Run the 2-minute simulator →
+            </Link>
+          </div>
+        ) : null}
         <div className="mt-10 w-full">
           <WorkSections profile={p} />
         </div>
