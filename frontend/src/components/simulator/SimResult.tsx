@@ -44,16 +44,21 @@ function CollapsibleSection({
   const [open, setOpen] = React.useState(defaultOpen)
   return (
     <div data-testid={testid}>
-      <button
-        type="button"
-        data-testid={`${testid}-toggle`}
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <span aria-hidden="true">{open ? '▾' : '▸'}</span>
-        {title}
-      </button>
+      {/* The toggle is wrapped in an <h2> (the accessible disclosure pattern) so
+          the section is a real heading — keeps heading order valid above the
+          markdownish ## (h3) content, with the page h1 → h2 section → h3 body. */}
+      <h2>
+        <button
+          type="button"
+          data-testid={`${testid}-toggle`}
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          className="inline-flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <span aria-hidden="true">{open ? '▾' : '▸'}</span>
+          {title}
+        </button>
+      </h2>
       {open ? <div className="mt-3">{children}</div> : null}
     </div>
   )
