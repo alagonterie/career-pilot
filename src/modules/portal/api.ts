@@ -236,6 +236,9 @@ async function handleResumePdf(res: http.ServerResponse, cors: Record<string, st
     'Content-Type': 'application/pdf',
     'Content-Disposition': `attachment; filename="${base}.pdf"`,
     'Content-Length': String(buf.length),
+    // The URL ends in `.pdf` → Cloudflare edge-caches it by default; no-store
+    // stops a stale résumé being served after the profile/renderer changes.
+    'Cache-Control': 'no-store',
     ...cors,
   });
   res.end(buf);
@@ -528,6 +531,9 @@ async function handleSimulatorResumePdf(
     'Content-Type': 'application/pdf',
     'Content-Disposition': `attachment; filename="${base}.pdf"`,
     'Content-Length': String(buf.length),
+    // The URL ends in `.pdf` → Cloudflare edge-caches it by default; no-store
+    // stops a stale résumé being served after the profile/renderer changes.
+    'Cache-Control': 'no-store',
     ...cors,
   });
   res.end(buf);
