@@ -231,10 +231,11 @@ export function renderResumePdf(profile: WorkProfile, identity: Identity, footer
   return renderToBuffer(buildResumeDocument(profile, identity, footer));
 }
 
-/** The portal's public host for the footer — a deploy-level value, read from env;
- *  omitted (not faked) when unset, so the attribution never prints a wrong URL. */
-function portalHost(): string | null {
-  const raw = (process.env.PORTAL_PUBLIC_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? '').trim();
+/** Normalize a configured public URL to a bare host, or null when unset/blank —
+ *  the footer never prints a faked URL. The value comes from getConfig
+ *  (`portal_public_url`, a per-environment preference), so this stays pure. */
+function siteHost(publicUrl: string): string | null {
+  const raw = publicUrl.trim();
   if (!raw) return null;
   try {
     return new URL(raw).host;
@@ -244,8 +245,8 @@ function portalHost(): string | null {
 }
 
 /** The §24.72 D4 master-résumé provenance footer (transparency + traveling proof). */
-export function masterFooter(): string {
-  const host = portalHost();
+export function masterFooter(publicUrl: string): string {
+  const host = siteHost(publicUrl);
   return 'Composed by my AI agent system' + (host ? ` · ${host}` : '');
 }
 
@@ -262,8 +263,13 @@ function footerDate(iso: string): string {
  * agent auto-tailored it for this exact role, and states the honesty guardrail.
  * Reads cleanly with or without a configured host (no dangling clause).
  */
-export function tailoredFooter(company: string | null, role: string | null, isoDate: string): string {
-  const host = portalHost();
+export function tailoredFooter(
+  company: string | null,
+  role: string | null,
+  isoDate: string,
+  publicUrl: string,
+): string {
+  const host = siteHost(publicUrl);
   const r = role && role.trim() ? role.trim() : 'this';
   const c = company && company.trim() ? company.trim() : 'your company';
   const where = host ? ` — the same system running my live job search at ${host}` : '';

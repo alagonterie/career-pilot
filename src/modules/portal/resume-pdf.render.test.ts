@@ -139,25 +139,25 @@ async function inspectPdf(buf: Buffer): Promise<PdfInspection> {
 
 describe('rendered résumé — structural guarantees', () => {
   it('a realistic full master résumé fits on ONE page', async () => {
-    const pdf = await inspectPdf(await renderResumePdf(FULL_MASTER, FULL_IDENTITY, masterFooter()));
+    const pdf = await inspectPdf(await renderResumePdf(FULL_MASTER, FULL_IDENTITY, masterFooter('')));
     expect(pdf.pageCount).toBe(1);
   });
 
   it('contact details are real clickable Link annotations, not plain text', async () => {
-    const { links } = await inspectPdf(await renderResumePdf(FULL_MASTER, FULL_IDENTITY, masterFooter()));
+    const { links } = await inspectPdf(await renderResumePdf(FULL_MASTER, FULL_IDENTITY, masterFooter('')));
     expect(links).toContain('mailto:jordan.rivera@example.com');
     expect(links.some((u) => u.includes('github.com/example'))).toBe(true);
     expect(links.some((u) => u.includes('linkedin.com/in/example'))).toBe(true);
   });
 
   it('renders the footer glyph correctly (no Helvetica ◇→Ç mojibake)', async () => {
-    const { text } = await inspectPdf(await renderResumePdf(FULL_MASTER, FULL_IDENTITY, masterFooter()));
+    const { text } = await inspectPdf(await renderResumePdf(FULL_MASTER, FULL_IDENTITY, masterFooter('')));
     expect(text).toContain('Composed by my AI agent system');
     expect(text).not.toContain('Ç');
   });
 
   it('places the title clearly below the name (no overlap)', async () => {
-    const { items } = await inspectPdf(await renderResumePdf(FULL_MASTER, FULL_IDENTITY, masterFooter()));
+    const { items } = await inspectPdf(await renderResumePdf(FULL_MASTER, FULL_IDENTITY, masterFooter('')));
     const name = items.find((i) => i.str.includes('Jordan'));
     const title = items.find((i) => i.str.includes('Team Lead'));
     expect(name).toBeDefined();
@@ -168,7 +168,7 @@ describe('rendered résumé — structural guarantees', () => {
   });
 
   it('renders grouped skills with their category labels', async () => {
-    const { text } = await inspectPdf(await renderResumePdf(FULL_MASTER, FULL_IDENTITY, masterFooter()));
+    const { text } = await inspectPdf(await renderResumePdf(FULL_MASTER, FULL_IDENTITY, masterFooter('')));
     expect(text).toContain('Languages');
     expect(text).toContain('Backend & Data');
   });
