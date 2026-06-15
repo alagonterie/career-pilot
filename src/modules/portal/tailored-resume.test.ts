@@ -135,9 +135,26 @@ describe('validateTailoredResume — quality floor: never a worse subset of the 
 
   it('keeps a substantive role-written bio', () => {
     const roleBio = [
-      'A summary written specifically for this distributed-systems platform role, 80+ chars of real prose.',
+      'A summary written specifically for this distributed-systems platform role, reflecting real backend and performance engineering work.',
     ];
     expect(validateTailoredResume({ bio: roleBio }, MASTER).profile!.bio).toEqual(roleBio);
+  });
+
+  // Honesty backstop for the one free-prose field: a number in the summary that
+  // isn't anywhere in the master is an unverifiable (likely fabricated) metric —
+  // fall back to the master's honest summary rather than ship it.
+  it('falls back to the master bio when the summary cites a number not in the master (anti-fabrication)', () => {
+    const fabricated = [
+      'I cut security-check latency by 60% on a platform serving real production traffic, ideal for this role.',
+    ];
+    expect(validateTailoredResume({ bio: fabricated }, MASTER).profile!.bio).toEqual(MASTER.bio);
+  });
+
+  it('keeps a role bio whose only numbers are real master metrics', () => {
+    const honest = [
+      'A role-specific summary citing the real 850× authorization speedup and genuine distributed-systems work for this platform.',
+    ];
+    expect(validateTailoredResume({ bio: honest }, MASTER).profile!.bio).toEqual(honest);
   });
 
   it('falls back to the master’s projects when the agent drops them (keeps a valid selection otherwise)', () => {
