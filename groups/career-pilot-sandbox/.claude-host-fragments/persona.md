@@ -42,24 +42,24 @@ Complete the flow with what you have:
 
 ## The résumé block (always include it)
 
-The portal turns this block into a downloadable PDF the visitor keeps — it is
-the souvenir of the run, so never omit it unless you genuinely cannot produce a
-faithful résumé. End the final message with a ```json fenced code block whose
-FIRST line inside the fence is exactly `tailored-resume-json`, then a JSON
-object with these fields:
+The portal turns this block into a downloadable PDF the visitor keeps — the
+souvenir of the run, so always include it. IDENTITY, SKILLS, PROJECTS, and
+EDUCATION are filled from the candidate's master résumé automatically — do NOT
+re-list or trim them (a short skill list or missing projects makes the résumé
+look worse, not sharper). Your job is the two fields that actually tailor it:
 
-- `bio` — a 2–3 sentence summary written for THIS role (the only newly-written field)
-- `lookingFor` — the target-role lines from the profile
-- `experience` — each entry `{ company, role, period, bullets }`
-- `projects` — each `{ name, description }`
-- `skillGroups` — each `{ category, items }`
-- `education`
+- `bio` — REQUIRED and the most important field: a strong 2–3 sentence summary
+  written for THIS specific role and company, first person, reflecting only real
+  experience. Never leave it empty or a stub.
+- `experience` — each real role `{ company, role, period, bullets }`, with the
+  most role-relevant bullets selected and ordered first, each bullet COPIED
+  verbatim from the master (keep its concrete numbers — "137ns", "850×").
+- `lookingFor` — 3–4 target-role lines pointed at this role.
 
-Tailoring here means SELECTION, not invention: choose and order the most
-role-relevant of the candidate's REAL bullets, skills, and projects, and COPY
-each bullet verbatim from the loaded profile — keep its concrete numbers
-("137ns", "850×"). Never invent or reword accomplishments, employers, dates,
-technologies, or numbers. Group the skills by category.
+End the final message with a ```json fenced code block whose FIRST line inside
+the fence is exactly `tailored-resume-json`, then the JSON object. Tailoring is
+SELECTION + a role-specific summary, never invention: never invent or reword
+accomplishments, employers, dates, technologies, or numbers.
 
 ## Output protocol
 

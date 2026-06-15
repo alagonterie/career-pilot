@@ -12,11 +12,14 @@
  *    matched entry's role + period are forced from the master (rephrased titles
  *    or dates are corrected, not trusted);
  *  - education is taken from the master verbatim (never tailored);
- *  - skills + projects are FILTERED to the master's set (selection/ordering is
- *    legitimate tailoring; an invented skill/project is dropped).
+ *  - a QUALITY FLOOR keeps the gift from being a worse subset of the master:
+ *    skills + skill groups are always the master's full set (subsetting them
+ *    looks thin, not sharp); the bio falls back to the master's summary when the
+ *    agent leaves it empty/stub; projects fall back to the master's when dropped.
  *
- * The agent keeps full freedom over what to feature, the ordering, and the
- * bullet/summary PROSE — only the structural skeleton is locked. Pure + testable.
+ * Tailoring is thus ENHANCEMENT — a role-specific summary + experience-bullet
+ * selection/ordering — over a complete master, never a strip-down. The agent
+ * keeps freedom over the summary + which bullets to feature. Pure + testable.
  */
 import { projectWorkProfile, type WorkProfile } from './profile.js';
 
@@ -152,38 +155,42 @@ export function validateTailoredResume(emitted: unknown, master: WorkProfile): T
   // Education is not tailored — take the master's list verbatim.
   tailored.education = [...master.education];
 
-  // Skills: filter to the master's set (selecting/ordering relevant skills is
-  // legitimate; an invented skill is dropped). Preserve the agent's ordering.
-  const masterSkills = new Set(master.skills.map(norm));
-  tailored.skills = tailored.skills.filter((s) => masterSkills.has(norm(s)));
+  // QUALITY FLOOR (the "worse-than-master" fix): tailoring must ENHANCE (a
+  // role-specific summary + bullet selection/ordering), never STRIP. The agent
+  // routinely emits a skeleton — empty bio, no projects, a couple of skills —
+  // which the old "filter to master" logic faithfully rendered as a strict
+  // downgrade of the master. So for the sections that shouldn't be subset, floor
+  // them at the master:
 
-  // Grouped skills (if the agent emitted them): filter each group's items to the
-  // master set + drop empty groups; re-derive the flat `skills` from the kept
-  // groups so the two stay aligned. If nothing survives, drop the groups.
-  if (tailored.skillGroups && tailored.skillGroups.length > 0) {
-    const kept = tailored.skillGroups
-      .map((g) => ({ category: g.category, items: g.items.filter((s) => masterSkills.has(norm(s))) }))
-      .filter((g) => g.items.length > 0);
-    if (kept.length > 0) {
-      tailored.skillGroups = kept;
-      const seen = new Set<string>();
-      tailored.skills = kept
-        .flatMap((g) => g.items)
-        .filter((s) => (seen.has(norm(s)) ? false : (seen.add(norm(s)), true)));
-    } else {
-      delete tailored.skillGroups;
-    }
-  }
+  // Bio (the summary) is the heart of the tailoring, but the agent usually leaves
+  // it empty/stub. A résumé with no summary is strictly worse than the master —
+  // fall back to the master's bio so the gift always opens with a strong summary
+  // (a genuine, substantive role-written bio is kept).
+  if ((tailored.bio ?? []).join(' ').trim().length < 80) tailored.bio = [...master.bio];
 
-  // Projects: filter to the master's set by name; force name + link from the
-  // master, keep the agent's (tailored) description + tags.
+  // "What I'm looking for" — keep the agent's (often role-tailored) list; fall
+  // back to the master's when empty.
+  if (tailored.lookingFor.length === 0) tailored.lookingFor = [...master.lookingFor];
+
+  // Skills are NOT tailored by subsetting — hiding most of a real, curated skill
+  // set makes the résumé look thin, not sharp (the role emphasis lives in the bio
+  // + bullets). Always present the master's full skills + groups.
+  tailored.skills = [...master.skills];
+  tailored.skillGroups = master.skillGroups
+    ? master.skillGroups.map((g) => ({ ...g, items: [...g.items] }))
+    : undefined;
+
+  // Projects: keep the agent's selection (filtered to real projects; tailored
+  // descriptions allowed), but never silently drop them — the master's projects
+  // are few and relevant, so fall back to ALL of them when the agent emits none.
   const masterProjByName = new Map(master.projects.map((p) => [norm(p.name), p]));
-  tailored.projects = tailored.projects
+  const keptProjects = tailored.projects
     .filter((p) => masterProjByName.has(norm(p.name)))
     .map((p) => {
       const m = masterProjByName.get(norm(p.name))!;
       return { ...p, name: m.name, href: m.href };
     });
+  tailored.projects = keptProjects.length > 0 ? keptProjects : master.projects.map((p) => ({ ...p }));
 
   if (errors.length > 0) return { ok: false, errors };
   return { ok: true, profile: tailored, errors: [] };

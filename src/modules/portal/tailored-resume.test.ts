@@ -38,6 +38,11 @@ const MASTER: WorkProfile = {
     { name: 'CoreSvc', description: 'A system.', tags: ['Go'] },
   ],
   skills: ['TypeScript', 'Go', 'Cloudflare', 'AI Agents', 'Rust', 'CQRS', 'gRPC'],
+  skillGroups: [
+    { category: 'Languages', items: ['TypeScript', 'Go', 'Rust'] },
+    { category: 'Backend', items: ['CQRS', 'gRPC'] },
+    { category: 'Cloud & AI', items: ['Cloudflare', 'AI Agents'] },
+  ],
   education: ['BS Computer Science, State University'],
   links: { github: 'https://github.com/janedoe' },
 };
@@ -112,36 +117,64 @@ describe('validateTailoredResume — bullets selected/ordered, never reworded in
   });
 });
 
-describe('validateTailoredResume — skills/projects filtered to the master', () => {
-  it('drops invented flat skills and projects', () => {
+describe('validateTailoredResume — quality floor: never a worse subset of the master', () => {
+  it('always presents the master’s full skills + groups (agent skill subsetting/inventions ignored)', () => {
     const emitted = {
-      name: 'X',
-      skills: ['Go', 'Rust', 'Kubernetes', 'PostgreSQL'], // Kubernetes + PostgreSQL invented
-      projects: [
-        { name: 'CoreSvc', description: 'd' },
-        { name: 'Invented Startup', description: 'fake' },
-      ],
+      skillGroups: [{ category: 'Backend & Systems', items: ['Rust', 'Python', 'COBOL'] }], // sparse + invented
+      skills: ['Rust', 'Python'],
     };
     const res = validateTailoredResume(emitted, MASTER);
-    expect(res.profile!.skills).toEqual(['Go', 'Rust']);
-    expect(res.profile!.projects.map((p) => p.name)).toEqual(['CoreSvc']);
+    expect(res.profile!.skills).toEqual(MASTER.skills);
+    expect(res.profile!.skillGroups).toEqual(MASTER.skillGroups);
   });
 
-  it('filters grouped skills to the master set, drops empty groups, re-derives the flat union', () => {
-    const emitted = {
-      name: 'X',
-      skillGroups: [
-        { category: 'Languages', items: ['Rust', 'TypeScript', 'COBOL'] }, // COBOL invented → dropped
-        { category: 'Imaginary', items: ['Telepathy'] }, // all invented → group dropped
-        { category: 'Backend', items: ['CQRS', 'gRPC'] },
+  it('falls back to the master’s bio when the agent emits an empty/stub summary', () => {
+    expect(validateTailoredResume({ bio: [] }, MASTER).profile!.bio).toEqual(MASTER.bio);
+    expect(validateTailoredResume({ bio: ['too short'] }, MASTER).profile!.bio).toEqual(MASTER.bio);
+  });
+
+  it('keeps a substantive role-written bio', () => {
+    const roleBio = [
+      'A summary written specifically for this distributed-systems platform role, 80+ chars of real prose.',
+    ];
+    expect(validateTailoredResume({ bio: roleBio }, MASTER).profile!.bio).toEqual(roleBio);
+  });
+
+  it('falls back to the master’s projects when the agent drops them (keeps a valid selection otherwise)', () => {
+    expect(validateTailoredResume({ projects: [] }, MASTER).profile!.projects.map((p) => p.name)).toEqual(
+      MASTER.projects.map((p) => p.name),
+    );
+    const picked = validateTailoredResume({ projects: [{ name: 'CoreSvc', description: 'd' }] }, MASTER);
+    expect(picked.profile!.projects.map((p) => p.name)).toEqual(['CoreSvc']);
+  });
+
+  // The exact "trash again — a worse version of the master" failure: the agent
+  // emits a skeleton (no summary, no projects, two skills). The floor must turn
+  // that into a complete résumé — master summary, full skills, the real project —
+  // while keeping the agent's experience selection.
+  it('floors a skeleton emit to master-quality (the worse-than-master fix)', () => {
+    const skeleton = {
+      bio: [],
+      experience: [
+        {
+          company: 'Acme Corp',
+          role: 'Senior Software Engineer',
+          period: '2021 — Present',
+          bullets: ['Built a Rust authorization engine that answered security checks 850 times faster than SQL.'],
+        },
       ],
+      projects: [],
+      skills: ['Rust', 'Python'],
+      skillGroups: [{ category: 'Backend & Systems', items: ['Rust', 'Python'] }],
     };
-    const res = validateTailoredResume(emitted, MASTER);
-    expect(res.profile!.skillGroups).toEqual([
-      { category: 'Languages', items: ['Rust', 'TypeScript'] },
-      { category: 'Backend', items: ['CQRS', 'gRPC'] },
-    ]);
-    expect(res.profile!.skills).toEqual(['Rust', 'TypeScript', 'CQRS', 'gRPC']);
+    const res = validateTailoredResume(skeleton, MASTER);
+    expect(res.ok).toBe(true);
+    const p = res.profile!;
+    expect(p.bio).toEqual(MASTER.bio); // summary restored
+    expect(p.skills).toEqual(MASTER.skills); // full skill set restored
+    expect(p.skillGroups).toEqual(MASTER.skillGroups);
+    expect(p.projects.map((x) => x.name)).toEqual(MASTER.projects.map((x) => x.name)); // project restored
+    expect(p.experience[0].bullets[0]).toContain('Rust in-memory authorization engine'); // agent selection kept
   });
 });
 
