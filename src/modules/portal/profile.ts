@@ -49,6 +49,14 @@ export interface SocialLinks {
   blog?: string;
 }
 
+/** A labelled skill cluster (e.g. "Languages" → [...]) — owner liked the master
+ *  résumé's grouped skills over one flat dump. Optional + additive: when present,
+ *  the PDF + /work render groups; the flat `skills` stays the canonical set. */
+export interface SkillGroup {
+  category: string;
+  items: string[];
+}
+
 /** Mirrors the frontend `WorkProfile` (frontend/src/lib/work-profile.ts) — the
  *  agent's compose OUTPUT contract (§24.71 D2). Kept structurally identical so
  *  the projection is a verbatim hand-off. */
@@ -60,7 +68,12 @@ export interface WorkProfile {
   experience: ExperienceEntry[];
   projects: ProjectEntry[];
   writing?: WritingEntry[];
+  /** The canonical flat skill set (the guardrail's subset basis + the fallback
+   *  render). When `skillGroups` is present this is derived from it (the union),
+   *  so the two can never disagree. */
   skills: string[];
+  /** Optional grouped view of the skills, rendered in preference to `skills`. */
+  skillGroups?: SkillGroup[];
   education: string[];
   links: SocialLinks;
 }
@@ -163,6 +176,15 @@ function projectWriting(v: unknown): WritingEntry[] | undefined {
   return entries.length > 0 ? entries : undefined;
 }
 
+function projectSkillGroups(v: unknown): SkillGroup[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const groups = v
+    .filter(isObject)
+    .map((g) => ({ category: asString(g.category).trim(), items: asStringArray(g.items) }))
+    .filter((g) => g.category.length > 0 && g.items.length > 0);
+  return groups.length > 0 ? groups : undefined;
+}
+
 function projectLinks(v: unknown): SocialLinks {
   if (!isObject(v)) return {};
   const links: SocialLinks = {};
@@ -210,6 +232,16 @@ export function projectWorkProfile(raw: string | null): WorkProfile | null {
   };
   const writing = projectWriting(parsed.writing);
   if (writing) profile.writing = writing;
+
+  // Grouped skills (optional). When present they're authoritative: the flat
+  // `skills` becomes the de-duped union of the group items, so the canonical set
+  // the guardrail checks against always matches what's rendered.
+  const skillGroups = projectSkillGroups(parsed.skillGroups);
+  if (skillGroups) {
+    profile.skillGroups = skillGroups;
+    const seen = new Set<string>();
+    profile.skills = skillGroups.flatMap((g) => g.items).filter((s) => (seen.has(s) ? false : (seen.add(s), true)));
+  }
   return profile;
 }
 

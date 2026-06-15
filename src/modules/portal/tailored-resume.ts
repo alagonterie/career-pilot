@@ -24,6 +24,60 @@ function norm(s: string): string {
   return s.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+/** Content tokens (length-3+, alphanumeric) for fuzzy bullet matching. */
+function tokens(s: string): Set<string> {
+  return new Set(
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 2),
+  );
+}
+
+/** Share of `a`'s tokens that also appear in `b` (0..1) — directional overlap. */
+function overlapCoeff(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0) return 0;
+  let inter = 0;
+  for (const t of a) if (b.has(t)) inter++;
+  return inter / a.size;
+}
+
+const BULLET_MATCH_THRESHOLD = 0.5;
+
+/**
+ * Snap each tailored bullet to the master bullet it most resembles (≥ half its
+ * words shared), substituting the MASTER's verbatim text — so the agent picks +
+ * orders its real accomplishments but can't reword them into fiction (the
+ * "PostgreSQL / 60% latency" failure mode). Bullets that match nothing
+ * (genericized or invented) are dropped; if a role ends up empty, fall back to
+ * the master's bullets (show the truth, never nothing). Each master bullet is
+ * used at most once, so the agent's selection + ordering is preserved.
+ */
+function snapBullets(tailoredBullets: string[], masterBullets: string[]): string[] {
+  const master = masterBullets.map((b) => ({ text: b, tokens: tokens(b) }));
+  const used = new Set<number>();
+  const out: string[] = [];
+  for (const tb of tailoredBullets) {
+    const tset = tokens(tb);
+    let bestIdx = -1;
+    let bestScore = 0;
+    master.forEach((m, i) => {
+      if (used.has(i)) return;
+      const s = overlapCoeff(tset, m.tokens);
+      if (s > bestScore) {
+        bestScore = s;
+        bestIdx = i;
+      }
+    });
+    if (bestIdx >= 0 && bestScore >= BULLET_MATCH_THRESHOLD) {
+      out.push(master[bestIdx].text);
+      used.add(bestIdx);
+    }
+  }
+  return out.length > 0 ? out : [...masterBullets];
+}
+
 export interface TailoredValidation {
   ok: boolean;
   /** The master-anchored tailored profile (identity + employer/role/dates forced,
@@ -75,7 +129,9 @@ export function validateTailoredResume(emitted: unknown, master: WorkProfile): T
     }
     // Prefer a role match when a company has multiple stints; else the sole entry.
     const m = candidates.find((c) => norm(c.role) === norm(e.role)) ?? candidates[0];
-    return { ...e, company: m.company, role: m.role, period: m.period };
+    // Force employer/role/dates from the master; snap bullets to the master's
+    // verbatim wording (selection + ordering kept; rewording into fiction can't).
+    return { company: m.company, role: m.role, period: m.period, bullets: snapBullets(e.bullets, m.bullets) };
   });
 
   // Education is not tailored — take the master's list verbatim.
@@ -85,6 +141,24 @@ export function validateTailoredResume(emitted: unknown, master: WorkProfile): T
   // legitimate; an invented skill is dropped). Preserve the agent's ordering.
   const masterSkills = new Set(master.skills.map(norm));
   tailored.skills = tailored.skills.filter((s) => masterSkills.has(norm(s)));
+
+  // Grouped skills (if the agent emitted them): filter each group's items to the
+  // master set + drop empty groups; re-derive the flat `skills` from the kept
+  // groups so the two stay aligned. If nothing survives, drop the groups.
+  if (tailored.skillGroups && tailored.skillGroups.length > 0) {
+    const kept = tailored.skillGroups
+      .map((g) => ({ category: g.category, items: g.items.filter((s) => masterSkills.has(norm(s))) }))
+      .filter((g) => g.items.length > 0);
+    if (kept.length > 0) {
+      tailored.skillGroups = kept;
+      const seen = new Set<string>();
+      tailored.skills = kept
+        .flatMap((g) => g.items)
+        .filter((s) => (seen.has(norm(s)) ? false : (seen.add(norm(s)), true)));
+    } else {
+      delete tailored.skillGroups;
+    }
+  }
 
   // Projects: filter to the master's set by name; force name + link from the
   // master, keep the agent's (tailored) description + tags.

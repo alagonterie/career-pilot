@@ -134,7 +134,26 @@ export function WorkSections({ profile }: { profile: WorkProfile }) {
         </Section>
       ) : null}
 
-      {profile.skills.length > 0 ? (
+      {profile.skillGroups && profile.skillGroups.length > 0 ? (
+        <Section title="Skills">
+          <div className="flex flex-col gap-3">
+            {profile.skillGroups.map((g) => (
+              <div key={g.category} className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:gap-4">
+                <h3 className="font-mono text-xs uppercase tracking-wider text-muted-foreground sm:w-40 sm:shrink-0">
+                  {g.category}
+                </h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {g.items.map((s) => (
+                    <Badge key={s} variant="outline">
+                      {s}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Section>
+      ) : profile.skills.length > 0 ? (
         <Section title="Skills">
           <div className="flex flex-wrap gap-2">
             {profile.skills.map((s) => (

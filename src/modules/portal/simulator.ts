@@ -178,9 +178,9 @@ export function buildSimulatorPrompt(input: {
   // the real résumé regardless, but instructing faithfulness keeps retries rare.
   lines.push(
     '',
-    'Finally, output the full tailored résumé as a single fenced code block tagged `tailored-resume-json` — a JSON WorkProfile of this shape:',
-    '{ "name": "", "title": "", "bio": ["tailored summary"], "lookingFor": [], "experience": [{ "role": "", "company": "", "period": "", "bullets": ["tailored bullet"] }], "projects": [{ "name": "", "description": "", "tags": [] }], "skills": [], "education": [] }',
-    'Select and reorder what is most relevant to this role and rewrite the summary + bullets toward it — but use ONLY real employers, roles, dates, education, skills, and projects from my actual résumé. Invent nothing. Omit the block if you cannot produce a faithful résumé.',
+    'Finally, output the tailored résumé as a single fenced code block tagged `tailored-resume-json` — a JSON WorkProfile of this shape:',
+    '{ "bio": ["a 2-3 sentence summary written for THIS role"], "lookingFor": [""], "experience": [{ "company": "", "role": "", "period": "", "bullets": ["the most relevant of my real bullets, copied"] }], "projects": [{ "name": "", "description": "" }], "skillGroups": [{ "category": "", "items": [""] }], "education": [""] }',
+    'Tailoring here means SELECTION, not rewriting: choose and order the most role-relevant of my REAL experience bullets, skills, and projects, and COPY each bullet from my résumé keeping its concrete details and metrics (e.g. "137ns", "850×") — do not invent or reword accomplishments, employers, dates, technologies, or numbers. Group the skills by category. The summary (bio) is the only newly-written field, and it too must reflect only real experience. Omit the block entirely if you cannot produce a faithful résumé.',
   );
   return lines.join('\n');
 }
