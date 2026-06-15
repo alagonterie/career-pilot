@@ -5,22 +5,29 @@ import * as React from 'react'
 /** Brand wordmark — the candidate's name, baked at build time (placeholder default). */
 const BRAND_NAME = (import.meta.env.VITE_PERSON_NAME as string | undefined) ?? 'Jane Doe'
 
-const LINKS: { to: string; label: string }[] = [
+type NavLink = { to: string; label: string }
+
+// The nav splits into two groups: the SYSTEM SHOWCASE — pages that demonstrate
+// the agent system live — and a PERSONAL tail about the candidate. A subtle
+// divider between them makes the grouping legible without a hard section label.
+const SHOWCASE: NavLink[] = [
   { to: '/live', label: 'Live' },
   { to: '/pipeline', label: 'Job Pipeline' },
   { to: '/architecture', label: 'Architecture' },
-  { to: '/simulator', label: 'Watch it run' },
-  { to: '/work', label: 'Work' },
+  { to: '/simulator', label: 'Watch it work' },
+]
+const PERSONAL: NavLink[] = [
+  { to: '/work', label: 'Experience' },
   { to: '/contact', label: 'Contact' },
 ]
 
 /**
  * Slim site nav (PORTAL §8.1 / §13), shared by the marketing pages (`/`, `/work`)
- * and the ops pages (`/pipeline`, `/architecture`, `/live`). Order = lead with the
- * wow (`/live`), cluster its drill-ins (`Job Pipeline`, `Architecture`), then the
- * personal/conversion tail (`Watch it run` → the "watch me apply to your role"
- * spoke at `/simulator`, `Work`, `Contact`; "run" not "work" — the latter
- * collides with the `Work` item). "Job Pipeline" is the
+ * and the ops pages (`/pipeline`, `/architecture`, `/live`). Two groups with a
+ * subtle divider: the SYSTEM SHOWCASE (`Live`, `Job Pipeline`, `Architecture`,
+ * `Watch it work` → the "watch me apply to your role" spoke at `/simulator` — all
+ * live demos of the agent system) and the PERSONAL tail (`Experience` at `/work`,
+ * `Contact`). "Job Pipeline" is the
  * visitor label for the funnel page (`/pipeline`, §24.59); the internal naming
  * stays "funnel". `/about` is a footer link (§8.2), not a header item. Brand
  * wordmark = the candidate's name (not a domain — on a personal hiring portal the
@@ -66,9 +73,16 @@ export function SiteHeader() {
           {BRAND_NAME}
         </Link>
 
-        {/* Tablet + desktop: the full horizontal row (≥640px, where it fits). */}
+        {/* Tablet + desktop: the full horizontal row (≥640px, where it fits), the
+            showcase group and the personal group split by a subtle divider. */}
         <div className="hidden items-center gap-6 text-sm sm:flex">
-          {LINKS.map((l) => (
+          {SHOWCASE.map((l) => (
+            <Link key={l.to} to={l.to} className={linkClass}>
+              {l.label}
+            </Link>
+          ))}
+          <span aria-hidden="true" className="h-4 w-px bg-border" />
+          {PERSONAL.map((l) => (
             <Link key={l.to} to={l.to} className={linkClass}>
               {l.label}
             </Link>
@@ -98,7 +112,19 @@ export function SiteHeader() {
           className="absolute inset-x-0 top-full border-b border-border bg-background shadow-lg sm:hidden"
         >
           <ul className="mx-auto flex max-w-3xl flex-col px-4 py-1">
-            {LINKS.map((l) => (
+            {SHOWCASE.map((l) => (
+              <li key={l.to}>
+                <Link
+                  to={l.to}
+                  onClick={() => setOpen(false)}
+                  className={`block rounded-md px-2 py-3 text-base ${linkClass}`}
+                >
+                  {l.label}
+                </Link>
+              </li>
+            ))}
+            <li aria-hidden="true" className="my-1 border-t border-border" />
+            {PERSONAL.map((l) => (
               <li key={l.to}>
                 <Link
                   to={l.to}
