@@ -74,7 +74,7 @@ describe('masterFooter', () => {
     delete process.env.PORTAL_PUBLIC_URL;
     delete process.env.NEXT_PUBLIC_APP_URL;
     try {
-      expect(masterFooter()).toBe('◇ Composed by my AI agent system');
+      expect(masterFooter()).toBe('Composed by my AI agent system');
     } finally {
       if (a !== undefined) process.env.PORTAL_PUBLIC_URL = a;
       if (b !== undefined) process.env.NEXT_PUBLIC_APP_URL = b;
@@ -85,7 +85,7 @@ describe('masterFooter', () => {
     const a = process.env.PORTAL_PUBLIC_URL;
     process.env.PORTAL_PUBLIC_URL = 'https://hire.example.com/';
     try {
-      expect(masterFooter()).toBe('◇ Composed by my AI agent system · hire.example.com');
+      expect(masterFooter()).toBe('Composed by my AI agent system · hire.example.com');
     } finally {
       if (a === undefined) delete process.env.PORTAL_PUBLIC_URL;
       else process.env.PORTAL_PUBLIC_URL = a;
@@ -98,7 +98,7 @@ describe('tailoredFooter', () => {
     const f = tailoredFooter('Acme', 'Staff Engineer', '2026-06-14T00:00:00.000Z');
     expect(f).toContain('Staff Engineer');
     expect(f).toContain('Acme');
-    expect(f).toContain('all content reflects real experience');
+    expect(f).toContain('All content reflects real experience');
     expect(f).toContain('Generated Jun 14, 2026');
   });
 

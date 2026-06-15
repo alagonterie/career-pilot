@@ -1,7 +1,10 @@
 /**
  * Unit tests for the Tier-2 mechanical honesty guardrail (STRATEGY §24.72 D5 /
- * 9.4b-r2): the tailored résumé must trace to the master — invent an employer →
- * reject; rephrased titles/dates → corrected; invented skills/projects → dropped.
+ * 9.4b-r2 + the résumé-quality rework): the tailored résumé must trace to the
+ * master. Identity + employer/role/dates are forced; bullets are SNAPPED to the
+ * master's verbatim wording (reworded → corrected, fabricated → dropped, all-miss
+ * → master bullets); skills/projects (flat + grouped) are filtered to the master;
+ * an invented employer is rejected.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -14,72 +17,131 @@ const MASTER: WorkProfile = {
   bio: ['Master bio.'],
   lookingFor: ['Staff / Lead'],
   experience: [
-    { role: 'Senior Software Engineer', company: 'Acme Corp', period: '2021 — Present', bullets: ['Did A.', 'Did B.'] },
-    { role: 'Software Engineer', company: 'AuthService', period: '2019 — 2021', bullets: ['Did C.'] },
+    {
+      role: 'Senior Software Engineer',
+      company: 'Acme Corp',
+      period: '2021 — Present',
+      bullets: [
+        'Built a Rust in-memory authorization engine answering security checks 850 times faster than the SQL it replaced.',
+        'Architected the .NET backend using CQRS and hybrid event sourcing over a live legacy database.',
+      ],
+    },
+    {
+      role: 'Software Engineer',
+      company: 'AuthService',
+      period: '2019 — 2021',
+      bullets: ['Owned a TypeScript services layer from prototype to production.'],
+    },
   ],
   projects: [
     { name: 'career-pilot', description: 'This portal.', href: 'https://example.com/cp', tags: ['AI'] },
     { name: 'CoreSvc', description: 'A system.', tags: ['Go'] },
   ],
-  skills: ['TypeScript', 'Go', 'Cloudflare', 'AI Agents'],
+  skills: ['TypeScript', 'Go', 'Cloudflare', 'AI Agents', 'Rust', 'CQRS', 'gRPC'],
   education: ['BS Computer Science, State University'],
   links: { github: 'https://github.com/janedoe' },
 };
 
-describe('validateTailoredResume — honest tailoring', () => {
-  it('accepts a re-ordered, re-bulleted subset and forces identity from the master', () => {
+describe('validateTailoredResume — identity + structure forced from the master', () => {
+  it('forces name/title/links and employer/role/dates, and education verbatim', () => {
     const emitted = {
       name: 'TOTALLY WRONG NAME',
       title: 'Inflated Title',
       bio: ['Tailored summary aimed at the role.'],
       experience: [
-        // Only Acme Corp, re-bulleted toward the role; agent rephrased the title.
         {
-          role: 'Sr. Software Engineer',
+          role: 'Sr. Software Engineer', // rephrased title
           company: 'Acme Corp',
-          period: 'forever',
-          bullets: ['Tailored bullet for the role.'],
+          period: 'whenever', // wrong dates
+          bullets: ['Built a Rust authorization engine that answered security checks 850 times faster than SQL.'],
         },
       ],
-      skills: ['Go', 'Cloudflare'],
-      projects: [{ name: 'career-pilot', description: 'Tailored project blurb.' }],
       links: { github: 'https://github.com/IMPOSTER' },
     };
     const res = validateTailoredResume(emitted, MASTER);
     expect(res.ok).toBe(true);
     const p = res.profile!;
-    // Identity forced from master.
     expect(p.name).toBe('Jane Doe');
     expect(p.title).toBe('Senior Software Engineer · Team Lead');
     expect(p.links).toEqual({ github: 'https://github.com/janedoe' });
-    // Experience role + period corrected to the master's; tailored bullet kept.
     expect(p.experience[0].role).toBe('Senior Software Engineer');
     expect(p.experience[0].period).toBe('2021 — Present');
-    expect(p.experience[0].bullets).toEqual(['Tailored bullet for the role.']);
-    // Education taken from master verbatim even though omitted by the agent.
     expect(p.education).toEqual(['BS Computer Science, State University']);
-    // Project name/href forced, tailored description kept.
-    expect(p.projects[0]).toEqual({
-      name: 'career-pilot',
-      description: 'Tailored project blurb.',
-      href: 'https://example.com/cp',
-    });
   });
+});
 
-  it('drops invented skills and projects (not in the master)', () => {
+describe('validateTailoredResume — bullets selected/ordered, never reworded into fiction', () => {
+  it('snaps a reworded bullet to the master verbatim and drops a fabricated one', () => {
     const emitted = {
       name: 'X',
-      experience: [{ role: 'Software Engineer', company: 'AuthService', period: '2019 — 2021', bullets: ['b'] }],
-      skills: ['Go', 'Rust', 'Kubernetes'], // Rust + Kubernetes invented
+      experience: [
+        {
+          role: 'Senior Software Engineer',
+          company: 'Acme Corp',
+          period: '2021 — Present',
+          bullets: [
+            'Built a Rust authorization engine that answered security checks 850 times faster than SQL.', // reworded → snaps
+            'Optimized PostgreSQL data pipelines, reducing query latency by 60 percent.', // fabricated → dropped
+          ],
+        },
+      ],
+    };
+    const res = validateTailoredResume(emitted, MASTER);
+    expect(res.ok).toBe(true);
+    expect(res.profile!.experience[0].bullets).toEqual([
+      'Built a Rust in-memory authorization engine answering security checks 850 times faster than the SQL it replaced.',
+    ]);
+  });
+
+  it('falls back to the master bullets when every tailored bullet misses', () => {
+    const emitted = {
+      name: 'X',
+      experience: [
+        {
+          role: 'Software Engineer',
+          company: 'AuthService',
+          period: '2019 — 2021',
+          bullets: ['Led a cross-functional cloud migration to Kubernetes.'], // unrelated → dropped
+        },
+      ],
+    };
+    const res = validateTailoredResume(emitted, MASTER);
+    expect(res.profile!.experience[0].bullets).toEqual([
+      'Owned a TypeScript services layer from prototype to production.',
+    ]);
+  });
+});
+
+describe('validateTailoredResume — skills/projects filtered to the master', () => {
+  it('drops invented flat skills and projects', () => {
+    const emitted = {
+      name: 'X',
+      skills: ['Go', 'Rust', 'Kubernetes', 'PostgreSQL'], // Kubernetes + PostgreSQL invented
       projects: [
         { name: 'CoreSvc', description: 'd' },
         { name: 'Invented Startup', description: 'fake' },
       ],
     };
     const res = validateTailoredResume(emitted, MASTER);
-    expect(res.ok).toBe(true);
-    expect(res.profile!.skills).toEqual(['Go']); // Rust/Kubernetes dropped
-    expect(res.profile!.projects.map((p) => p.name)).toEqual(['CoreSvc']); // invented project dropped
+    expect(res.profile!.skills).toEqual(['Go', 'Rust']);
+    expect(res.profile!.projects.map((p) => p.name)).toEqual(['CoreSvc']);
+  });
+
+  it('filters grouped skills to the master set, drops empty groups, re-derives the flat union', () => {
+    const emitted = {
+      name: 'X',
+      skillGroups: [
+        { category: 'Languages', items: ['Rust', 'TypeScript', 'COBOL'] }, // COBOL invented → dropped
+        { category: 'Imaginary', items: ['Telepathy'] }, // all invented → group dropped
+        { category: 'Backend', items: ['CQRS', 'gRPC'] },
+      ],
+    };
+    const res = validateTailoredResume(emitted, MASTER);
+    expect(res.profile!.skillGroups).toEqual([
+      { category: 'Languages', items: ['Rust', 'TypeScript'] },
+      { category: 'Backend', items: ['CQRS', 'gRPC'] },
+    ]);
+    expect(res.profile!.skills).toEqual(['Rust', 'TypeScript', 'CQRS', 'gRPC']);
   });
 });
 

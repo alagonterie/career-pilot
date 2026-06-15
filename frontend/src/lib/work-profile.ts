@@ -39,6 +39,12 @@ export interface SocialLinks {
   blog?: string
 }
 
+/** A labelled skill cluster — grouped skills render in preference to the flat list. */
+export interface SkillGroup {
+  category: string
+  items: string[]
+}
+
 export interface WorkProfile {
   name: string
   title: string
@@ -52,8 +58,11 @@ export interface WorkProfile {
   projects: ProjectEntry[]
   /** Optional writing / talks (PORTAL §5.6 §5) — renders only when present. */
   writing?: WritingEntry[]
-  /** Curated skills tag-cloud (PORTAL §5.6 §6), not exhaustive. */
+  /** Curated skills tag-cloud (PORTAL §5.6 §6), not exhaustive. When `skillGroups`
+   *  is present this is its de-duped union (kept consistent by the projector). */
   skills: string[]
+  /** Optional grouped view of the skills, rendered in preference to `skills`. */
+  skillGroups?: SkillGroup[]
   /** Education / certs (PORTAL §5.6 §7), brief. */
   education: string[]
   /** Where else to find me (PORTAL §5.6 §8). */
@@ -105,7 +114,8 @@ export const workProfile: WorkProfile = {
     },
     {
       name: 'devx-toolkit',
-      description: 'A small collection of developer-experience utilities: typed config loaders, fast fixtures, and a local-first test harness.',
+      description:
+        'A small collection of developer-experience utilities: typed config loaders, fast fixtures, and a local-first test harness.',
       href: 'https://github.com/janedoe/devx-toolkit',
       tags: ['Developer Experience', 'TypeScript'],
     },
@@ -135,6 +145,12 @@ export const workProfile: WorkProfile = {
     'Developer tooling',
     'Observability',
     'CI/CD',
+  ],
+  skillGroups: [
+    { category: 'Languages & Runtime', items: ['TypeScript', 'Node.js', 'React'] },
+    { category: 'AI & Agents', items: ['LLM orchestration', 'Claude Agent SDK', 'Agentic workflows'] },
+    { category: 'Platform & Infra', items: ['Cloudflare Workers', 'SQLite', 'CI/CD', 'Observability'] },
+    { category: 'Tooling & Testing', items: ['Developer tooling', 'Playwright'] },
   ],
   education: ['B.S. Computer Science — Example University'],
   links: {
