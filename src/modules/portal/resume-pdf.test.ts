@@ -45,7 +45,7 @@ function isPdf(buf: Buffer): boolean {
 
 describe('renderResumePdf', () => {
   it('renders a non-empty, valid PDF from a full profile', async () => {
-    const buf = await renderResumePdf(PROFILE, IDENTITY, masterFooter());
+    const buf = await renderResumePdf(PROFILE, IDENTITY, masterFooter(''));
     expect(buf.length).toBeGreaterThan(1000);
     expect(isPdf(buf)).toBe(true);
   });
@@ -62,50 +62,36 @@ describe('renderResumePdf', () => {
       education: [],
       links: {},
     };
-    const buf = await renderResumePdf(min, EMPTY_IDENTITY, masterFooter());
+    const buf = await renderResumePdf(min, EMPTY_IDENTITY, masterFooter(''));
     expect(isPdf(buf)).toBe(true);
   });
 });
 
 describe('masterFooter', () => {
-  it('omits the host when no portal URL env is set (no faked URL)', () => {
-    const a = process.env.PORTAL_PUBLIC_URL;
-    const b = process.env.NEXT_PUBLIC_APP_URL;
-    delete process.env.PORTAL_PUBLIC_URL;
-    delete process.env.NEXT_PUBLIC_APP_URL;
-    try {
-      expect(masterFooter()).toBe('Composed by my AI agent system');
-    } finally {
-      if (a !== undefined) process.env.PORTAL_PUBLIC_URL = a;
-      if (b !== undefined) process.env.NEXT_PUBLIC_APP_URL = b;
-    }
+  it('omits the host when no URL is configured (no faked URL)', () => {
+    expect(masterFooter('')).toBe('Composed by my AI agent system');
   });
 
-  it('appends the host when the env is set', () => {
-    const a = process.env.PORTAL_PUBLIC_URL;
-    process.env.PORTAL_PUBLIC_URL = 'https://hire.example.com/';
-    try {
-      expect(masterFooter()).toBe('Composed by my AI agent system · hire.example.com');
-    } finally {
-      if (a === undefined) delete process.env.PORTAL_PUBLIC_URL;
-      else process.env.PORTAL_PUBLIC_URL = a;
-    }
+  it('appends the host when a URL is configured', () => {
+    expect(masterFooter('https://hire.example.com/')).toBe('Composed by my AI agent system · hire.example.com');
   });
 });
 
 describe('tailoredFooter', () => {
-  it('names the company + role and states the honesty clause', () => {
-    const f = tailoredFooter('Acme', 'Staff Engineer', '2026-06-14T00:00:00.000Z');
+  it('names the company + role, the host, and states the honesty clause', () => {
+    const f = tailoredFooter('Acme', 'Staff Engineer', '2026-06-14T00:00:00.000Z', 'https://hire.example.com');
     expect(f).toContain('Staff Engineer');
     expect(f).toContain('Acme');
+    expect(f).toContain('hire.example.com');
     expect(f).toContain('All content reflects real experience');
     expect(f).toContain('Generated Jun 14, 2026');
   });
 
-  it('degrades gracefully when company/role/date are missing', () => {
-    const f = tailoredFooter(null, null, 'not-a-date');
+  it('degrades gracefully when company/role/date/host are missing', () => {
+    const f = tailoredFooter(null, null, 'not-a-date', '');
     expect(f).toContain('your company');
     expect(f).toContain('this role');
     expect(f).not.toContain('Generated');
+    expect(f).not.toContain('the same system');
   });
 });
