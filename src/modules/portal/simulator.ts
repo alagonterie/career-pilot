@@ -181,7 +181,7 @@ export function buildSimulatorPrompt(input: {
   // include it, since it becomes the downloadable PDF the visitor keeps.
   lines.push(
     '',
-    'End your final delivered message with the tailored résumé block your instructions describe — a ```json fenced block whose first line is `tailored-resume-json`, then the JSON WorkProfile (selecting and copying my REAL bullets/skills/projects verbatim, never inventing). The portal renders it into the downloadable PDF the visitor keeps, so always include it.',
+    'End your final delivered message with the tailored résumé block your instructions describe — a ```json fenced block whose first line is `tailored-resume-json`. Focus it on a strong 2–3 sentence `bio` written for THIS role (required, never empty) and `experience` with the most relevant of my REAL bullets selected and copied verbatim; my skills, projects, and education fill in from my master résumé automatically. The portal renders it into the downloadable PDF the visitor keeps, so always include it.',
   );
   return lines.join('\n');
 }
