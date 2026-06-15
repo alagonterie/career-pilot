@@ -39,7 +39,7 @@ function Work() {
   const canDownload = profile != null
   const downloadBtn = (
     <Button asChild variant="outline" size="sm">
-      <a href={`${API_BASE}/api/resume.pdf`} download>
+      <a href={`${API_BASE}/api/resume.pdf${generatedAt ? `?v=${encodeURIComponent(generatedAt)}` : ''}`} download>
         Download résumé (PDF) ↓
       </a>
     </Button>
