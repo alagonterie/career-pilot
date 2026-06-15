@@ -4,6 +4,7 @@ import * as React from 'react'
 import { SimActivity } from '~/components/simulator/SimActivity'
 import { SimOutput } from '~/components/simulator/SimOutput'
 import { Button } from '~/components/ui/button'
+import { getWorkProfile } from '~/lib/profile-loader'
 import { seo } from '~/lib/seo'
 import type { SimTraceEvent } from '~/lib/use-simulator-run'
 
@@ -15,16 +16,20 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
 // handled honestly. No ConnectiveRail here — its own CTAs are the next step.
 export const Route = createFileRoute('/(marketing)/simulator/results/$id')({
   component: ShareResults,
-  // Static share meta. The dynamic per-run preview (the run's company/role in
-  // og:title + a per-run og:image) needs a route loader + a Worker dynamic-OG
-  // endpoint — deferred to the Phase 9/10 deploy (STRATEGY §24.36 36.5).
-  head: () =>
-    seo({
-      title: 'Simulator result — Jane Doe',
+  // SSR the real candidate name into the meta title (identity-SSR principle —
+  // never the `Jane Doe` placeholder). The per-run dynamic OG (company/role in
+  // og:title + a per-run og:image) still needs a Worker OG endpoint — deferred to
+  // the Phase 9/10 deploy (STRATEGY §24.36 36.5).
+  loader: () => getWorkProfile(),
+  head: ({ loaderData }) => {
+    const name = loaderData?.profile?.name
+    return seo({
+      title: name ? `Simulator result — ${name}` : 'Simulator result',
       description:
         'A recruiter-simulator run — the job-search agent tailoring a resume and drafting outreach for a role, live.',
       path: '/simulator',
-    }),
+    })
+  },
 })
 
 /**
