@@ -15,7 +15,9 @@
  *  - a QUALITY FLOOR keeps the gift from being a worse subset of the master:
  *    skills + skill groups are always the master's full set (subsetting them
  *    looks thin, not sharp); the bio falls back to the master's summary when the
- *    agent leaves it empty/stub; projects fall back to the master's when dropped.
+ *    agent leaves it empty/stub OR cites a number not in the master (an
+ *    unverifiable metric — honesty for the one free-prose field); projects fall
+ *    back to the master's when dropped.
  *
  * Tailoring is thus ENHANCEMENT — a role-specific summary + experience-bullet
  * selection/ordering — over a complete master, never a strip-down. The agent
@@ -25,6 +27,13 @@ import { projectWorkProfile, type WorkProfile } from './profile.js';
 
 function norm(s: string): string {
   return s.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+/** Digit-number tokens in a string (comma-normalized), for the bio honesty check
+ *  — e.g. "850×, 22,000×, 137ns, 60%" → ["850","22000","137","60"]. Units and
+ *  word-numbers are ignored; only the digit content is compared. */
+function numberTokens(text: string): string[] {
+  return (text.match(/\d[\d,]*(?:\.\d+)?/g) ?? []).map((m) => m.replace(/,/g, ''));
 }
 
 /** Content tokens (length-3+, alphanumeric) for fuzzy bullet matching. */
@@ -162,11 +171,29 @@ export function validateTailoredResume(emitted: unknown, master: WorkProfile): T
   // downgrade of the master. So for the sections that shouldn't be subset, floor
   // them at the master:
 
-  // Bio (the summary) is the heart of the tailoring, but the agent usually leaves
-  // it empty/stub. A résumé with no summary is strictly worse than the master —
-  // fall back to the master's bio so the gift always opens with a strong summary
-  // (a genuine, substantive role-written bio is kept).
-  if ((tailored.bio ?? []).join(' ').trim().length < 80) tailored.bio = [...master.bio];
+  // Bio (the summary) is the heart of the tailoring but also the one FREE-PROSE
+  // field the snapping can't anchor — the agent can slip an invented metric in
+  // (e.g. a fabricated "60%" latency cut). Two floors, both falling back to the
+  // master's (honest, strong) summary: (1) empty/stub; (2) it cites a number that
+  // appears NOWHERE in the master résumé. The candidate's real metrics live
+  // densely in the master, so an honest role-bio passes untouched; only an
+  // unverifiable number trips it. Honesty enforced in code, same as the bullets.
+  const masterNumbers = new Set(
+    numberTokens(
+      [
+        master.title,
+        ...master.bio,
+        ...master.lookingFor,
+        ...master.education,
+        ...master.skills,
+        ...master.experience.flatMap((e) => [e.role, e.company, e.period, ...e.bullets]),
+        ...master.projects.flatMap((p) => [p.name, p.description ?? '', ...(p.tags ?? [])]),
+      ].join(' '),
+    ),
+  );
+  const bioText = (tailored.bio ?? []).join(' ');
+  const bioHasUnverifiedNumber = numberTokens(bioText).some((n) => !masterNumbers.has(n));
+  if (bioText.trim().length < 80 || bioHasUnverifiedNumber) tailored.bio = [...master.bio];
 
   // "What I'm looking for" — keep the agent's (often role-tailored) list; fall
   // back to the master's when empty.
