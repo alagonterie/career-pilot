@@ -174,29 +174,106 @@ export function validateTailoredResume(emitted: unknown, master: WorkProfile): T
   return { ok: true, profile: tailored, errors: [] };
 }
 
+/** The fence tag the sandbox is asked to use for the tailored-résumé block. */
+const TAILORED_TAG = 'tailored-resume-json';
+
+interface FencedBlock {
+  /** The full ```…``` span (incl. fences) — what strip removes verbatim. */
+  full: string;
+  /** The opening fence's info string (e.g. `json`, `tailored-resume-json`, ``). */
+  lang: string;
+  /** Inner content, after any leading `tailored-resume-json` label line is dropped. */
+  inner: string;
+  /** Parsed inner JSON when it parses to an object, else null. */
+  parsed: Record<string, unknown> | null;
+  /** The agent explicitly named the block (fence info OR a leading label line). */
+  explicitlyTagged: boolean;
+  /** This block is (or may be) the tailored résumé — tagged, OR a json/WorkProfile fence. */
+  tailored: boolean;
+}
+
+/** First non-blank line of a block body, trimmed (`''` if none). */
+function firstNonBlankLine(body: string): string {
+  for (const line of body.split('\n')) if (line.trim() !== '') return line.trim();
+  return '';
+}
+
+/** Drop a leading `tailored-resume-json` label line — the agent sometimes puts
+ *  the tag INSIDE a ```json fence instead of on the fence info line. */
+function stripLeadingTagLine(body: string): string {
+  const lines = body.split('\n');
+  let i = 0;
+  while (i < lines.length && lines[i].trim() === '') i++;
+  if (i < lines.length && lines[i].trim() === TAILORED_TAG) return lines.slice(i + 1).join('\n');
+  return body;
+}
+
+function parseJsonObject(s: string): Record<string, unknown> | null {
+  try {
+    const v: unknown = JSON.parse(s.trim());
+    if (v && typeof v === 'object' && !Array.isArray(v)) return v as Record<string, unknown>;
+  } catch {
+    /* not JSON */
+  }
+  return null;
+}
+
+/** A tailored WorkProfile carries experience and/or the tailoring-only fields —
+ *  enough to recognize it even as a bare ```json fence with no tag. */
+function isWorkProfileShape(o: Record<string, unknown> | null): boolean {
+  return !!o && ('experience' in o || 'bio' in o || 'skillGroups' in o);
+}
+
+/**
+ * Parse every fenced code block, capturing the fence info string and inner body
+ * separately so the tailored-résumé block is recognized however the agent framed
+ * it: a tagged ```tailored-resume-json fence, the tag on the ```json info line,
+ * the tag on a label line INSIDE a ```json fence, or a bare ```json WorkProfile.
+ */
+function fencedBlocks(output: string): FencedBlock[] {
+  const out: FencedBlock[] = [];
+  const re = /```([^\n\r`]*)\r?\n([\s\S]*?)```/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(output)) !== null) {
+    const lang = m[1].trim();
+    const body = m[2];
+    const inner = stripLeadingTagLine(body);
+    const parsed = parseJsonObject(inner);
+    const explicitlyTagged = lang.includes(TAILORED_TAG) || firstNonBlankLine(body) === TAILORED_TAG;
+    const isJsonFence = lang === 'json' || lang.includes(TAILORED_TAG);
+    const tailored = explicitlyTagged || (isJsonFence && parsed != null) || isWorkProfileShape(parsed);
+    out.push({ full: m[0], lang, inner, parsed, explicitlyTagged, tailored });
+  }
+  return out;
+}
+
 /**
  * Extract the tailored `WorkProfile` the sandbox emits as a fenced block at the
  * end of a run (transport for §24.72 D5 — the guardrail validates it host-side).
- * Prefers an explicitly tagged ```tailored-resume-json fence; falls back to the
- * last ```json block. Returns the parsed (unvalidated) object, or null.
+ * Robust to the agent's fence-tag variations (the live failure mode was a ```json
+ * fence with `tailored-resume-json` on a label line inside). Prefers an explicitly
+ * tagged block; falls back to a WorkProfile-shaped json fence. Returns the parsed
+ * (unvalidated) object, or null.
  */
 export function extractTailoredResumeBlock(output: string): unknown | null {
   if (!output) return null;
-  const tagged = [...output.matchAll(/```tailored-resume-json\s*\n([\s\S]*?)```/g)];
-  const fences = tagged.length > 0 ? tagged : [...output.matchAll(/```json\s*\n([\s\S]*?)```/g)];
-  if (fences.length === 0) return null;
-  try {
-    return JSON.parse(fences[fences.length - 1][1].trim());
-  } catch {
-    return null;
-  }
+  const blocks = fencedBlocks(output);
+  const tagged = blocks.filter((b) => b.explicitlyTagged);
+  const pool = tagged.length > 0 ? tagged : blocks.filter((b) => b.tailored);
+  for (let i = pool.length - 1; i >= 0; i--) if (pool[i].parsed != null) return pool[i].parsed;
+  return null;
 }
 
 /** Remove the tailored-résumé fence from the run's chat output so the human-facing
- *  share text (the bullets + outreach) doesn't show a raw JSON blob. */
+ *  share text (the bullets + outreach) doesn't show a raw JSON blob. Mirrors
+ *  extract's selection: strips the explicitly-tagged block(s) when present, else
+ *  the WorkProfile-shaped json fence — so the leak is removed however it's framed. */
 export function stripTailoredResumeBlock(output: string): string {
-  return output
-    .replace(/```tailored-resume-json\s*\n[\s\S]*?```/g, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  if (!output) return output;
+  const blocks = fencedBlocks(output);
+  const tagged = blocks.filter((b) => b.explicitlyTagged);
+  const toRemove = tagged.length > 0 ? tagged : blocks.filter((b) => b.tailored);
+  let text = output;
+  for (const b of toRemove) text = text.split(b.full).join('');
+  return text.replace(/\n{3,}/g, '\n\n').trim();
 }

@@ -182,11 +182,46 @@ describe('extractTailoredResumeBlock', () => {
     expect(extractTailoredResumeBlock('no fence here')).toBeNull();
     expect(extractTailoredResumeBlock('```tailored-resume-json\n{ not json\n```')).toBeNull();
   });
+
+  // The live failure (§24.72 9.4b-r2): the agent put `tailored-resume-json` on a
+  // LABEL LINE inside a ```json fence (or on the ```json info line) instead of
+  // tagging the fence — extraction must read it either way, not silently drop it.
+  it('parses a ```json fence whose first inner line is the tailored-resume-json label', () => {
+    const out = [
+      'Here are your bullets and outreach.',
+      '```json',
+      'tailored-resume-json',
+      '{"name":"Real","experience":[],"skills":["Go"]}',
+      '```',
+    ].join('\n');
+    expect(extractTailoredResumeBlock(out)).toEqual({ name: 'Real', experience: [], skills: ['Go'] });
+  });
+
+  it('parses the tag on the ```json info line (```json tailored-resume-json)', () => {
+    const out = '```json tailored-resume-json\n{"name":"Real","bio":["x"]}\n```';
+    expect(extractTailoredResumeBlock(out)).toEqual({ name: 'Real', bio: ['x'] });
+  });
 });
 
 describe('stripTailoredResumeBlock', () => {
   it('removes the tagged fence and collapses the gap, keeping the prose', () => {
     const out = 'Bullets + outreach.\n\n```tailored-resume-json\n{"name":"X"}\n```\n\nThanks.';
+    expect(stripTailoredResumeBlock(out)).toBe('Bullets + outreach.\n\nThanks.');
+  });
+
+  // The live leak: the same label-line ```json variant that broke extraction also
+  // slipped past the strip → raw JSON showed under the outreach email. Strip it.
+  it('strips a ```json fence carrying the tailored-resume-json label line', () => {
+    const out = [
+      'Bullets + outreach.',
+      '',
+      '```json',
+      'tailored-resume-json',
+      '{"name":"X","experience":[]}',
+      '```',
+      '',
+      'Thanks.',
+    ].join('\n');
     expect(stripTailoredResumeBlock(out)).toBe('Bullets + outreach.\n\nThanks.');
   });
 });

@@ -5,6 +5,7 @@ import { SimFallback } from '~/components/simulator/SimFallback'
 import { SimInput } from '~/components/simulator/SimInput'
 import { SimOutput } from '~/components/simulator/SimOutput'
 import { Button } from '~/components/ui/button'
+import { getWorkProfile } from '~/lib/profile-loader'
 import { seo } from '~/lib/seo'
 import { useSimulatorRun } from '~/lib/use-simulator-run'
 
@@ -15,12 +16,17 @@ import { useSimulatorRun } from '~/lib/use-simulator-run'
 // nothing here). The backend shipped in Phase 5; this is the frontend over it.
 export const Route = createFileRoute('/(marketing)/simulator/')({
   component: SimulatorPage,
-  head: () =>
-    seo({
-      title: 'Recruiter Simulator — Jane Doe',
+  // SSR the real candidate name into the meta title (identity-SSR principle —
+  // never the `Jane Doe` placeholder); drop the name when no profile is composed.
+  loader: () => getWorkProfile(),
+  head: ({ loaderData }) => {
+    const name = loaderData?.profile?.name
+    return seo({
+      title: name ? `Recruiter Simulator — ${name}` : 'Recruiter Simulator',
       description: 'Run the real agent stack on your own role and watch it tailor a resume + draft outreach, live.',
       path: '/simulator',
-    }),
+    })
+  },
 })
 
 function downloadMarkdown(filename: string, text: string): void {
