@@ -111,7 +111,7 @@ test.describe('/simulator — the recruiter simulator, frontend <-> backend', ()
     await expect(page.getByRole('heading', { level: 1, name: /watch me apply to your role/i })).toBeVisible()
 
     // The top nav reaches it.
-    await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Watch it work' }).click()
+    await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Watch it run' }).click()
     await expect(page).toHaveURL('/simulator')
 
     // The home Viewport-4 pitch CTA reaches it.
