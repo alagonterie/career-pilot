@@ -528,7 +528,10 @@ async function handleSimulatorResumePdf(
     'resume';
   res.writeHead(200, {
     'Content-Type': 'application/pdf',
-    'Content-Disposition': `attachment; filename="${base}.pdf"`,
+    // `inline` (not `attachment`) so the gift can render in an in-browser <iframe>
+    // preview before download; the download buttons set the `download` attribute,
+    // which forces a save same-origin regardless of this disposition.
+    'Content-Disposition': `inline; filename="${base}.pdf"`,
     'Content-Length': String(buf.length),
     // The URL ends in `.pdf` → Cloudflare edge-caches it by default; no-store
     // stops a stale résumé being served after the profile/renderer changes.

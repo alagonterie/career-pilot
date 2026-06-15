@@ -53,10 +53,13 @@ test.describe('/simulator — the recruiter simulator, frontend <-> backend', ()
     }).toPass({ timeout: 15_000 })
     await expect(page.getByTestId('sim-trace-subagent').first()).toBeVisible()
 
-    // The run completes → the results view, with the output materialized.
+    // The run completes → the gift-first results. The pitch (bullets + outreach)
+    // shows by default when there's no tailored résumé (the mock run); the run
+    // activity is tucked into a collapsed section that expands on demand.
     await expect(page.getByTestId('sim-results')).toBeVisible()
     await expect(page.getByTestId('sim-output-body')).toContainText('Tailored resume')
     await expect(page.getByTestId('sim-output-body')).toContainText('Cold outreach')
+    await page.getByTestId('result-activity-toggle').click()
     await expect(page.getByTestId('sim-trace-complete')).toBeVisible()
 
     const a11y = await new AxeBuilder({ page }).analyze()
@@ -82,7 +85,7 @@ test.describe('/simulator — the recruiter simulator, frontend <-> backend', ()
     await expect(page.getByTestId('share-talk')).toBeVisible()
 
     // The persisted run activity, collapsed by default, expands on demand (§24.31 Δ).
-    const toggle = page.getByTestId('share-activity-toggle')
+    const toggle = page.getByTestId('result-activity-toggle')
     await expect(toggle).toContainText(/see how this run worked/i)
     await expect(page.getByTestId('sim-activity')).toHaveCount(0)
     await toggle.click()
