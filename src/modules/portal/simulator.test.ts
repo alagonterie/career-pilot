@@ -71,6 +71,12 @@ describe('buildSimulatorPrompt', () => {
       'Company URL:',
     );
   });
+
+  it('always reminds the agent to emit the tailored-résumé block (the downloadable PDF)', () => {
+    const p = buildSimulatorPrompt({ company: 'Acme', role: 'SWE', jd: null, public_url: null });
+    expect(p).toContain('tailored-resume-json');
+    expect(p).toContain('always include it');
+  });
 });
 
 describe('checkSimulatorAllowed', () => {

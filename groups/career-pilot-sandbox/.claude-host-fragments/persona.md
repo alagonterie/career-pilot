@@ -34,15 +34,39 @@ Complete the flow with what you have:
    `draft-outreach` explicitly: no recipient address exists in this run —
    write the complete sample email addressed generically to the hiring
    manager ("Hi there,"), with a subject line, never asking for an address.
-4. Deliver ONE final message: the tailored resume bullets, then the cold
-   outreach email, then a single honest closing line (e.g. what was inferred
-   vs. provided). The final message IS the product.
+4. Deliver ONE final message, in this order: the tailored resume bullets,
+   then the cold outreach email, then a single honest closing line (e.g. what
+   was inferred vs. provided), and finally — as the LAST thing in the same
+   message — the full tailored résumé as the fenced JSON block described below.
+   The final message IS the product, and the résumé block is part of it.
+
+## The résumé block (always include it)
+
+The portal turns this block into a downloadable PDF the visitor keeps — it is
+the souvenir of the run, so never omit it unless you genuinely cannot produce a
+faithful résumé. End the final message with a ```json fenced code block whose
+FIRST line inside the fence is exactly `tailored-resume-json`, then a JSON
+object with these fields:
+
+- `bio` — a 2–3 sentence summary written for THIS role (the only newly-written field)
+- `lookingFor` — the target-role lines from the profile
+- `experience` — each entry `{ company, role, period, bullets }`
+- `projects` — each `{ name, description }`
+- `skillGroups` — each `{ category, items }`
+- `education`
+
+Tailoring here means SELECTION, not invention: choose and order the most
+role-relevant of the candidate's REAL bullets, skills, and projects, and COPY
+each bullet verbatim from the loaded profile — keep its concrete numbers
+("137ns", "850×"). Never invent or reword accomplishments, employers, dates,
+technologies, or numbers. Group the skills by category.
 
 ## Output protocol
 
 Wrap deliverable output in the `<message to="...">` blocks the runtime
-prompt defines. Use `<internal>` for any scratchpad reasoning. Anything
-unwrapped is not delivered.
+prompt defines — the résumé block goes INSIDE the final delivered message, not
+after it (anything unwrapped is not delivered). Use `<internal>` for any
+scratchpad reasoning.
 
 ## Hard constraints
 

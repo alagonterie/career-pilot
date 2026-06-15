@@ -176,14 +176,12 @@ export function buildSimulatorPrompt(input: {
   // Tier 2 (§24.72): also emit the full tailored résumé as a structured block the
   // host renders to a downloadable PDF. The host-side guardrail re-anchors it to
   // the real résumé regardless, but instructing faithfulness keeps retries rare.
+  // Reinforce (don't re-specify) the tailored-résumé block: the persona holds the
+  // authoritative format + honesty rules; this is the per-run reminder to always
+  // include it, since it becomes the downloadable PDF the visitor keeps.
   lines.push(
     '',
-    'Finally, output the tailored résumé as the LAST thing in your reply — a single ```json fenced code block whose FIRST line inside the fence is exactly `tailored-resume-json`, then a JSON WorkProfile of this shape:',
-    '```json',
-    'tailored-resume-json',
-    '{ "bio": ["a 2-3 sentence summary written for THIS role"], "lookingFor": [""], "experience": [{ "company": "", "role": "", "period": "", "bullets": ["the most relevant of my real bullets, copied"] }], "projects": [{ "name": "", "description": "" }], "skillGroups": [{ "category": "", "items": [""] }], "education": [""] }',
-    '```',
-    'Put nothing after the closing fence. Tailoring here means SELECTION, not rewriting: choose and order the most role-relevant of my REAL experience bullets, skills, and projects, and COPY each bullet from my résumé keeping its concrete details and metrics (e.g. "137ns", "850×") — do not invent or reword accomplishments, employers, dates, technologies, or numbers. Group the skills by category. The summary (bio) is the only newly-written field, and it too must reflect only real experience. Omit the block entirely if you cannot produce a faithful résumé.',
+    'End your final delivered message with the tailored résumé block your instructions describe — a ```json fenced block whose first line is `tailored-resume-json`, then the JSON WorkProfile (selecting and copying my REAL bullets/skills/projects verbatim, never inventing). The portal renders it into the downloadable PDF the visitor keeps, so always include it.',
   );
   return lines.join('\n');
 }
