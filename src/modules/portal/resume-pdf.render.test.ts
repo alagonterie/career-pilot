@@ -167,6 +167,12 @@ describe('rendered résumé — structural guarantees', () => {
     expect(name!.y - title!.y).toBeGreaterThan(14);
   });
 
+  it('makes the footer host a clickable link when a public URL is configured', async () => {
+    const url = 'https://hire.example.com';
+    const { links } = await inspectPdf(await renderResumePdf(FULL_MASTER, FULL_IDENTITY, masterFooter(url), url));
+    expect(links.some((u) => u.includes('hire.example.com'))).toBe(true);
+  });
+
   it('renders grouped skills with their category labels', async () => {
     const { text } = await inspectPdf(await renderResumePdf(FULL_MASTER, FULL_IDENTITY, masterFooter('')));
     expect(text).toContain('Languages');

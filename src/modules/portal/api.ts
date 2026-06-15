@@ -226,11 +226,8 @@ async function handleResumePdf(res: http.ServerResponse, cors: Record<string, st
     json(res, 404, { error: 'no_profile' }, cors);
     return;
   }
-  const buf = await renderResumePdf(
-    profile,
-    identity,
-    masterFooter(getConfig<string>(getDb(), 'portal_public_url', '')),
-  );
+  const url = getConfig<string>(getDb(), 'portal_public_url', '');
+  const buf = await renderResumePdf(profile, identity, masterFooter(url), url);
   const base = profile.name.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'resume';
   res.writeHead(200, {
     'Content-Type': 'application/pdf',
@@ -519,10 +516,12 @@ async function handleSimulatorResumePdf(
     return;
   }
   const { identity } = getPublicProfile();
+  const url = getConfig<string>(getDb(), 'portal_public_url', '');
   const buf = await renderResumePdf(
     tailored,
     identity,
-    tailoredFooter(row.visitor_company, row.visitor_role, row.ts, getConfig<string>(getDb(), 'portal_public_url', '')),
+    tailoredFooter(row.visitor_company, row.visitor_role, row.ts, url),
+    url,
   );
   const base =
     `${tailored.name}-${row.visitor_company ?? 'tailored'}`.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '') ||
