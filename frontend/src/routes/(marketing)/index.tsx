@@ -115,19 +115,20 @@ function Home() {
         }
       />
 
-      {/* Viewport 4 — simulator pitch (PORTAL §5.1): a single high-intent CTA into
-          the grippiest spoke. No form here — the form lives on /simulator. */}
+      {/* Viewport 4 — the "watch me apply" pitch (PORTAL §5.1): a single high-intent
+          CTA into the grippiest spoke. No form here — the form lives on /simulator. */}
       <section aria-labelledby="home-sim-heading" className="mt-24 w-full text-center">
         <h2 id="home-sim-heading" className="text-2xl font-bold tracking-tight">
-          See it work on your role
+          Watch me apply to your role
         </h2>
         <p className="mx-auto mt-3 max-w-xl text-balance text-sm leading-relaxed text-muted-foreground">
-          Type your company and a role. The same agent stack runs live in your browser — researching, tailoring a
-          resume, and drafting outreach in ~30 seconds. Nothing is saved.
+          Name your company and a role you’re hiring for. The same agent stack runs live in your browser — researching
+          it, tailoring my résumé, and drafting outreach — then hands you the tailored résumé to download. Nothing gets
+          submitted anywhere.
         </p>
         <div className="mt-6 flex justify-center">
           <Button asChild size="lg">
-            <Link to="/simulator">Try the simulator →</Link>
+            <Link to="/simulator">Watch me apply to your role →</Link>
           </Button>
         </div>
       </section>

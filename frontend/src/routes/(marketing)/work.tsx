@@ -59,9 +59,10 @@ function Work() {
         {canDownload ? (
           <div className="mt-6 flex flex-col gap-2">
             {downloadBtn}
-            {/* Tier-2 cross-sell (§24.72): the simulator produces a role-tailored cut. */}
+            {/* Tier-2 cross-sell (§24.72): the "watch me apply" spoke produces a
+                role-tailored cut of this résumé, live. */}
             <Link to="/simulator" className="font-mono text-xs text-accent-cool hover:underline">
-              Want one aimed at your role? Run the 2-minute simulator →
+              Want one aimed at your role? Watch me apply to it →
             </Link>
           </div>
         ) : null}

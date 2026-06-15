@@ -9,7 +9,7 @@ const LINKS: { to: string; label: string }[] = [
   { to: '/live', label: 'Live' },
   { to: '/pipeline', label: 'Job Pipeline' },
   { to: '/architecture', label: 'Architecture' },
-  { to: '/simulator', label: 'Simulator' },
+  { to: '/simulator', label: 'Watch it work' },
   { to: '/work', label: 'Work' },
   { to: '/contact', label: 'Contact' },
 ]
@@ -18,7 +18,8 @@ const LINKS: { to: string; label: string }[] = [
  * Slim site nav (PORTAL §8.1 / §13), shared by the marketing pages (`/`, `/work`)
  * and the ops pages (`/pipeline`, `/architecture`, `/live`). Order = lead with the
  * wow (`/live`), cluster its drill-ins (`Job Pipeline`, `Architecture`), then the
- * personal/conversion tail (`Simulator`, `Work`, `Contact`). "Job Pipeline" is the
+ * personal/conversion tail (`Watch it work` → the "watch me apply to your role"
+ * spoke at `/simulator`, `Work`, `Contact`). "Job Pipeline" is the
  * visitor label for the funnel page (`/pipeline`, §24.59); the internal naming
  * stays "funnel". `/about` is a footer link (§8.2), not a header item. Brand
  * wordmark = the candidate's name (not a domain — on a personal hiring portal the
