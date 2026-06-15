@@ -24,7 +24,7 @@ const RAIL: Record<Surface, RailCfg> = {
     items: [
       { label: 'Talk to me', kind: 'convert', to: '/contact' },
       { label: 'See it work', kind: 'deepen', to: '/live' },
-      { label: 'Try it', kind: 'pivot', to: '/simulator' },
+      { label: 'Watch me apply', kind: 'pivot', to: '/simulator' },
     ],
   },
   '/live': {

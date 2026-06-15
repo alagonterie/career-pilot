@@ -48,7 +48,7 @@ export function SimFallback({
   return (
     <div data-testid={`sim-${kind}`} className="rounded-lg border border-border bg-card p-6">
       <p className="font-medium text-foreground">
-        {kind === 'unavailable' ? 'The simulator is taking a breather.' : 'That run didn’t finish.'}
+        {kind === 'unavailable' ? 'This is taking a breather.' : 'That run didn’t finish.'}
       </p>
       <p className="mt-1 text-sm text-muted-foreground">
         {message ??

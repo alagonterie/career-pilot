@@ -123,12 +123,12 @@ function ShareResults() {
         <div data-testid="share-missing" className="rounded-lg border border-border bg-card p-6">
           <h1 className="text-xl font-bold tracking-tight">This result isn’t available</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Shared simulator runs are kept for 30 days, so this one has likely expired. Run your own — it takes a few
-            minutes and you watch every step.
+            Shared runs are kept for 30 days, so this one has likely expired. Run your own — name a role and watch my
+            agent tailor a résumé to it in a few minutes.
           </p>
           <div className="mt-4 flex flex-wrap gap-3">
             <Button asChild>
-              <Link to="/simulator">Run the simulator →</Link>
+              <Link to="/simulator">Watch me apply to your role →</Link>
             </Button>
             <Button asChild variant="outline">
               <Link to="/contact" search={{ from: 'simulator' }}>
@@ -140,36 +140,50 @@ function ShareResults() {
       ) : (
         <>
           <header>
-            <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Shared simulator run</p>
+            <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
+              Shared run · watch me apply
+            </p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight">
               {state.row.visitor_role ?? 'Role'} @ {state.row.visitor_company ?? 'a company'}
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              A read-only result the recruiter simulator produced.
+              A tailored résumé and outreach my job-search agent built for this role, live.
               {state.row.total_cost_cents != null ? ` Cost $${(state.row.total_cost_cents / 100).toFixed(2)}.` : ''}
             </p>
           </header>
 
+          {/* The gift, up top (§24.72): the tailored résumé is the thing to take. */}
+          {state.row.has_tailored_resume ? (
+            <div
+              data-testid="share-gift"
+              className="mt-8 rounded-xl border border-accent-cool/40 bg-accent-cool/5 px-6 py-5"
+            >
+              <p className="font-mono text-xs uppercase tracking-widest text-accent-cool">Your tailored résumé</p>
+              <h2 className="mt-1 text-lg font-semibold tracking-tight">
+                A full résumé, aimed at {state.row.visitor_role ?? 'your role'}
+                {state.row.visitor_company ? ` @ ${state.row.visitor_company}` : ''}
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Auto-tailored from my real experience for this exact role — yours to download and forward.
+              </p>
+              <div className="mt-4">
+                <Button asChild size="lg">
+                  <a
+                    href={`${API_BASE}/api/simulator/results/${encodeURIComponent(state.row.id)}/resume.pdf`}
+                    download
+                    data-testid="share-download-resume"
+                  >
+                    Download tailored résumé (PDF) ↓
+                  </a>
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {/* The pitch the run produced — bullets + outreach — as supporting detail. */}
           <div className="mt-8">
             <SimOutput text={state.row.tailored_resume ?? ''} />
           </div>
-
-          {state.row.has_tailored_resume ? (
-            <div className="mt-6">
-              <Button asChild>
-                <a
-                  href={`${API_BASE}/api/simulator/results/${encodeURIComponent(state.row.id)}/resume.pdf`}
-                  download
-                  data-testid="share-download-resume"
-                >
-                  Download tailored résumé (PDF) ↓
-                </a>
-              </Button>
-              <p className="mt-2 text-xs text-muted-foreground">
-                A full résumé aimed at this role — auto-tailored from my real experience.
-              </p>
-            </div>
-          ) : null}
 
           <ShareActivity
             trace={parseTrace(state.row.trace_json)}
@@ -187,7 +201,7 @@ function ShareResults() {
               </Link>
             </Button>
             <Button asChild variant="outline">
-              <Link to="/simulator">Try your own role →</Link>
+              <Link to="/simulator">Watch me apply to your role →</Link>
             </Button>
           </div>
         </>

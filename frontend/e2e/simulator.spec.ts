@@ -33,7 +33,7 @@ test.describe('/simulator — the recruiter simulator, frontend <-> backend', ()
     const { consoleErrors, failedRequests } = gate(page)
 
     await page.goto('/simulator')
-    await expect(page.getByRole('heading', { level: 1, name: /try it on your own role/i })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: /watch me apply to your role/i })).toBeVisible()
     // The simulator page carries no generic connective rail (its own results CTAs
     // are the next step).
     await expect(page.getByTestId('connective-rail')).toHaveCount(0)
@@ -47,7 +47,7 @@ test.describe('/simulator — the recruiter simulator, frontend <-> backend', ()
       if (await page.getByTestId('sim-activity').isVisible()) return
       await page.getByLabel('Company name').fill('Wayne Enterprises')
       await page.getByLabel('Role / title').fill('Principal Engineer')
-      await page.getByRole('button', { name: /run simulation/i }).click()
+      await page.getByRole('button', { name: /watch me apply/i }).click()
       // The live trace streams in (proof it's a real run, not a screencast).
       await expect(page.getByTestId('sim-activity')).toBeVisible({ timeout: 2000 })
     }).toPass({ timeout: 15_000 })
@@ -108,17 +108,17 @@ test.describe('/simulator — the recruiter simulator, frontend <-> backend', ()
       .getByRole('link', { name: /run it on your role/i })
       .click()
     await expect(page).toHaveURL('/simulator')
-    await expect(page.getByRole('heading', { level: 1, name: /try it on your own role/i })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: /watch me apply to your role/i })).toBeVisible()
 
     // The top nav reaches it.
-    await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Simulator' }).click()
+    await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Watch it work' }).click()
     await expect(page).toHaveURL('/simulator')
 
     // The home Viewport-4 pitch CTA reaches it.
     await page.goto('/')
     await page
       .getByRole('main')
-      .getByRole('link', { name: /try the simulator/i })
+      .getByRole('link', { name: /watch me apply to your role/i })
       .click()
     await expect(page).toHaveURL('/simulator')
   })

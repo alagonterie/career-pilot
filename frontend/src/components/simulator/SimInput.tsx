@@ -76,7 +76,7 @@ export function SimInput({ onRun, disabled }: { onRun: (input: SimRunInput) => v
       <div className="flex flex-col items-center gap-3">
         {widget}
         <Button type="submit" disabled={disabled || (enforce && !token)}>
-          {disabled ? 'Starting…' : 'Run simulation →'}
+          {disabled ? 'Starting…' : 'Watch me apply →'}
         </Button>
       </div>
 
@@ -92,10 +92,14 @@ export function SimInput({ onRun, disabled }: { onRun: (input: SimRunInput) => v
             <span className="text-foreground/90">tailor-resume</span> +{' '}
             <span className="text-foreground/90">draft-outreach</span> run in parallel.
           </li>
-          <li>You get a tailored pitch + outreach email — a real run takes a few minutes.</li>
+          <li>
+            You walk away with a <span className="text-foreground/90">tailored résumé to download</span>, plus pitch
+            bullets + a cold-outreach email — a real run takes a few minutes.
+          </li>
         </ol>
         <p className="mt-3 text-xs">
-          No private data is touched. No DB writes. The run cost is reported transparently.
+          Nothing gets submitted anywhere. No private data is touched, no DB writes. The run cost is reported
+          transparently.
         </p>
       </div>
     </form>

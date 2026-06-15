@@ -377,6 +377,18 @@ export function finalizeSimulatorRun(runId: string, reason: string): void {
   runs.delete(runId); // claim once
   if (acc.hardWall) clearTimeout(acc.hardWall);
 
+  // Persist FIRST (writing the row + the validated tailored résumé), so the
+  // terminal `end` can tell the browser whether the tailored résumé — the gift —
+  // is downloadable. The row is written before completion is signaled, so the
+  // live run page can show the download immediately without a racy refetch.
+  let hasTailored = false;
+  try {
+    hasTailored = persistRun(runId, acc);
+    sweepExpiredSimulatorRuns();
+  } catch (err) {
+    log.error('finalizeSimulatorRun: persist failed', { runId, err });
+  }
+
   // Explicit terminal for the browser (§24.21 Δ): push `end`, then close the
   // run's SSE clients — completion is signaled, never inferred from an idle drop.
   try {
@@ -384,6 +396,7 @@ export function finalizeSimulatorRun(runId: string, reason: string): void {
       reason,
       cost_usd: acc.costCents > 0 ? acc.costCents / 100 : undefined,
       latency_ms: Date.now() - acc.startedAt,
+      has_tailored_resume: hasTailored,
     });
     endSimulatorRun(runId);
   } catch (err) {
@@ -391,20 +404,16 @@ export function finalizeSimulatorRun(runId: string, reason: string): void {
   }
 
   try {
-    persistRun(runId, acc);
-    sweepExpiredSimulatorRuns();
-  } catch (err) {
-    log.error('finalizeSimulatorRun: persist failed', { runId, err });
-  }
-  try {
     teardownSimulatorSession(runId, reason);
   } catch (err) {
     log.warn('finalizeSimulatorRun: teardown failed', { runId, err });
   }
-  log.info('Simulator run finalized', { runId, reason, costCents: acc.costCents });
+  log.info('Simulator run finalized', { runId, reason, costCents: acc.costCents, hasTailored });
 }
 
-function persistRun(runId: string, acc: RunAccumulator): void {
+/** Persist the run; returns whether a guardrail-validated tailored résumé was
+ *  produced (→ the gift is downloadable), so finalize can carry it on `end`. */
+function persistRun(runId: string, acc: RunAccumulator): boolean {
   let ttlDays = DEFAULT_TTL_DAYS;
   try {
     ttlDays = getConfig<number>(getDb(), 'simulator_results_ttl_days', DEFAULT_TTL_DAYS);
@@ -462,6 +471,7 @@ function persistRun(runId: string, acc: RunAccumulator): void {
       clientIp: acc.ip,
       tailoredJson: tailoredResumeJson,
     });
+  return tailoredResumeJson != null;
 }
 
 /** Delete expired cached runs. Sweep-on-write — no timer. Returns the count. */

@@ -47,6 +47,9 @@ export interface SimRunState {
   /** Run start (ms epoch) while a run is active — drives the elapsed ticker. */
   startedAt: number | null
   errorMessage: string | null
+  /** The run produced a downloadable tailored résumé (the gift) — set from the
+   *  terminal `end` event, so the done-state can offer it without a refetch. */
+  hasTailoredResume: boolean
   input: SimRunInput | null
   start: (input: SimRunInput) => void
   reset: () => void
@@ -72,6 +75,7 @@ export function useSimulatorRun(): SimRunState {
   const [elapsedMs, setElapsedMs] = React.useState<number | null>(null)
   const [startedAt, setStartedAt] = React.useState<number | null>(null)
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
+  const [hasTailoredResume, setHasTailoredResume] = React.useState(false)
   const [input, setInput] = React.useState<SimRunInput | null>(null)
 
   const acRef = React.useRef<AbortController | null>(null)
@@ -94,6 +98,7 @@ export function useSimulatorRun(): SimRunState {
     setElapsedMs(null)
     setStartedAt(null)
     setErrorMessage(null)
+    setHasTailoredResume(false)
     setInput(null)
   }, [])
 
@@ -109,6 +114,7 @@ export function useSimulatorRun(): SimRunState {
     setCost(null)
     setElapsedMs(null)
     setErrorMessage(null)
+    setHasTailoredResume(false)
     setInput(runInput)
     startedRef.current = Date.now()
     setStartedAt(startedRef.current)
@@ -190,10 +196,11 @@ export function useSimulatorRun(): SimRunState {
             }
           } else if (ev.event === 'end') {
             // Host-pushed terminal (STRATEGY §24.21 Δ) — complete or hard-wall.
-            const end = payload as { reason?: unknown; cost_usd?: unknown }
+            const end = payload as { reason?: unknown; cost_usd?: unknown; has_tailored_resume?: unknown }
             if (typeof end.cost_usd === 'number' && end.cost_usd > 0) {
               setCost((prev) => prev ?? (end.cost_usd as number))
             }
+            if (end.has_tailored_resume === true) setHasTailoredResume(true)
             setElapsedMs(Date.now() - startedRef.current)
             if (end.reason !== 'complete' && outputRef.current.length === 0) {
               setStatus('error')
@@ -219,5 +226,18 @@ export function useSimulatorRun(): SimRunState {
     })()
   }, [])
 
-  return { status, runId, trace, output, cost_usd: cost, elapsedMs, startedAt, errorMessage, input, start, reset }
+  return {
+    status,
+    runId,
+    trace,
+    output,
+    cost_usd: cost,
+    elapsedMs,
+    startedAt,
+    errorMessage,
+    hasTailoredResume,
+    input,
+    start,
+    reset,
+  }
 }
