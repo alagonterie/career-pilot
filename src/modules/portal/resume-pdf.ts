@@ -86,6 +86,7 @@ const styles = StyleSheet.create({
     color: '#9a9a9a',
     textAlign: 'center',
   },
+  footerLink: { color: LINK, textDecoration: 'none' },
 });
 
 /** Strip protocol + trailing slash for a compact, readable link label. */
@@ -180,9 +181,26 @@ function skillsChildren(profile: WorkProfile): ReactNode[] {
   return [];
 }
 
+/** The fixed footer Text, with the configured host rendered as a clickable Link
+ *  (so the traveling-proof URL is clickable like every other link). */
+function footerElement(footer: string, publicUrl: string) {
+  const host = siteHost(publicUrl);
+  if (!host || !footer.includes(host)) {
+    return h(Text, { style: styles.footer, fixed: true }, footer);
+  }
+  const i = footer.indexOf(host);
+  return h(
+    Text,
+    { style: styles.footer, fixed: true },
+    footer.slice(0, i),
+    h(Link, { src: publicUrl, style: styles.footerLink }, host),
+    footer.slice(i + host.length),
+  );
+}
+
 // Return type is inferred (a `ReactElement<DocumentProps>`) so it satisfies
 // `renderToBuffer` — an explicit `ReactElement` annotation would widen it away.
-function buildResumeDocument(profile: WorkProfile, identity: Identity, footer: string) {
+function buildResumeDocument(profile: WorkProfile, identity: Identity, footer: string, publicUrl: string) {
   const sections: (ReactElement | null)[] = [
     section(
       'Summary',
@@ -221,14 +239,20 @@ function buildResumeDocument(profile: WorkProfile, identity: Identity, footer: s
       { size: 'LETTER', style: styles.page },
       header(profile, identity),
       ...sections,
-      h(Text, { style: styles.footer, fixed: true }, footer),
+      footerElement(footer, publicUrl),
     ),
   );
 }
 
-/** Render the composed `WorkProfile` to a PDF buffer (the Tier-1 / Tier-2 engine). */
-export function renderResumePdf(profile: WorkProfile, identity: Identity, footer: string): Promise<Buffer> {
-  return renderToBuffer(buildResumeDocument(profile, identity, footer));
+/** Render the composed `WorkProfile` to a PDF buffer (the Tier-1 / Tier-2 engine).
+ *  `publicUrl` (the configured portal URL) linkifies the footer host. */
+export function renderResumePdf(
+  profile: WorkProfile,
+  identity: Identity,
+  footer: string,
+  publicUrl = '',
+): Promise<Buffer> {
+  return renderToBuffer(buildResumeDocument(profile, identity, footer, publicUrl));
 }
 
 /** Normalize a configured public URL to a bare host, or null when unset/blank —
