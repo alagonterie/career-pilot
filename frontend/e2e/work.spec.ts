@@ -47,7 +47,7 @@ test.describe('/work — resume/portfolio shell + shared nav', () => {
     await page.goto('/')
     const nav = page.getByRole('navigation', { name: 'Primary' })
 
-    await nav.getByRole('link', { name: 'Work' }).click()
+    await nav.getByRole('link', { name: 'Experience' }).click()
     await expect(page).toHaveURL('/work')
     await expect(page.getByRole('heading', { level: 2, name: 'Experience' })).toBeVisible()
 
