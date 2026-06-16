@@ -111,20 +111,19 @@ function Home() {
           for the interview, then do it again a hundred times. So I built an AI agent system that runs that loop for me,
           continuously, and keeps me in the driver’s seat.
         </p>
-        <ul className="mx-auto mt-6 grid max-w-md grid-cols-1 gap-x-8 gap-y-2 text-left text-sm text-foreground/90 sm:grid-cols-2">
-          <li className="flex gap-2">
-            <span className="font-mono text-xs text-muted-foreground">1</span> finds roles worth applying to
-          </li>
-          <li className="flex gap-2">
-            <span className="font-mono text-xs text-muted-foreground">2</span> tailors my résumé to each
-          </li>
-          <li className="flex gap-2">
-            <span className="font-mono text-xs text-muted-foreground">3</span> drafts the outreach
-          </li>
-          <li className="flex gap-2">
-            <span className="font-mono text-xs text-muted-foreground">4</span> builds interview prep
-          </li>
-        </ul>
+        {/* The loop as four confident steps — centered + wrapping (not a left-aligned
+            2-col grid that hitched against the centered prose), each with a small
+            brand-tinted number chip instead of a footnote-sized grey digit. */}
+        <ol className="mx-auto mt-7 flex max-w-xl flex-wrap items-center justify-center gap-x-4 gap-y-3 text-sm text-foreground/90">
+          {['finds roles', 'tailors my résumé', 'drafts outreach', 'builds interview prep'].map((step, i) => (
+            <li key={step} className="flex items-center gap-2">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/15 font-mono text-[11px] font-semibold text-primary">
+                {i + 1}
+              </span>
+              {step}
+            </li>
+          ))}
+        </ol>
         <p className="mt-6 text-balance text-sm leading-relaxed text-muted-foreground">
           …and you can watch it happen below, or run it on your own open role right now.
         </p>
@@ -180,7 +179,7 @@ function Home() {
         </p>
         <div className="mt-6 flex justify-center">
           <Button asChild size="lg">
-            <Link to="/simulator">Watch me apply to your role →</Link>
+            <Link to="/simulator">Run it on your role →</Link>
           </Button>
         </div>
       </section>
