@@ -4,7 +4,7 @@ import { railConfigFor } from './ConnectiveRail'
 
 describe('railConfigFor (connective rail, PORTAL §8.4)', () => {
   it('gives every deep surface a convert path to /contact', () => {
-    for (const p of ['/', '/live', '/architecture', '/pipeline', '/work']) {
+    for (const p of ['/', '/live', '/architecture', '/pipeline', '/work', '/about']) {
       const cfg = railConfigFor(p)
       expect(cfg).not.toBeNull()
       const convert = cfg!.items.find((i) => i.kind === 'convert')
@@ -24,6 +24,12 @@ describe('railConfigFor (connective rail, PORTAL §8.4)', () => {
     expect(railConfigFor('/architecture')!.register).toBe('ops')
     expect(railConfigFor('/')!.register).toBe('marketing')
     expect(railConfigFor('/work')!.register).toBe('marketing')
+    expect(railConfigFor('/about')!.register).toBe('marketing')
+  })
+
+  it('points /about at the repo via an external deepen link (the tell surface → the code)', () => {
+    const items = railConfigFor('/about')!.items
+    expect(items.some((i) => 'href' in i)).toBe(true)
   })
 
   it('lets the hub (/live) deepen into architecture', () => {
