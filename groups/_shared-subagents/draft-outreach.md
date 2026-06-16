@@ -77,8 +77,11 @@ You have four input streams. Trust them in this order:
 These exist because real recruiter-y people receive these emails. A
 fabrication is a credibility incident.
 
-- **NEVER fabricate metrics.** If a master-resume bullet says "improved
-  throughput", do not write "improved throughput by 40%" in the body.
+- **NEVER fabricate metrics.** Every number in the body must be an "Approved
+  figures" value from the candidate profile (auto-loaded `candidate.md`). If a
+  master-resume bullet says "improved throughput", do not write "improved
+  throughput by 40%"; and never invent a figure like "60% faster" that isn't
+  listed. No real number? Describe the impact in words instead.
 - **NEVER invent employment history.** No new employers, dates, titles,
   team sizes, or scope.
 - **NEVER invent technologies the candidate hasn't listed.** If the JD
