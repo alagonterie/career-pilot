@@ -18,16 +18,15 @@ describe('AgentRef (§24.73)', () => {
     fireEvent.click(screen.getByTestId('agent-ref'))
     const panel = screen.getByTestId('agent-ref-panel')
     expect(panel).toHaveTextContent('Résumé tailor')
-    expect(panel).toHaveTextContent('Rewrites my master résumé')
-    expect(panel).toHaveTextContent('reads only')
+    expect(panel).toHaveTextContent('Tailors my master résumé')
+    expect(panel).toHaveTextContent('changes nothing')
   })
 
-  it('resolves a host actor and notes it runs outside the loop (in the aria-label)', () => {
+  it('resolves a host actor (via alias) and notes the system runs it (in the aria-label)', () => {
     render(<AgentRef name="win-confidence" />)
-    expect(screen.getByTestId('agent-ref')).toHaveAttribute(
-      'aria-label',
-      expect.stringContaining('outside the agent loop'),
-    )
+    const btn = screen.getByTestId('agent-ref')
+    expect(btn).toHaveAttribute('data-actor', 'win-confidence-scorer')
+    expect(btn).toHaveAttribute('aria-label', expect.stringContaining('the system runs on its own'))
   })
 
   it('closes on Escape', () => {

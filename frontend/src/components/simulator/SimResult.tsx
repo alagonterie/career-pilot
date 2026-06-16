@@ -155,13 +155,10 @@ function OutreachGift({ subject, body }: { subject: string; body: string }) {
   return (
     <div data-testid="sim-outreach" className="rounded-xl border border-accent-cool/40 bg-accent-cool/5 px-6 py-5">
       <p className="font-mono text-xs uppercase tracking-widest text-accent-cool">My cold-outreach email to you</p>
+      {/* Honest framing (§24.73): the "sample draft → Gmail draft for review"
+          note now lives in the draft-outreach chip's popover, so no separate
+          caption is needed here. */}
       <AgentMark actor="draft-outreach" lead="Written by" className="mt-1" />
-      {/* Honest framing (§24.72 / §24.73): the email is a sample DRAFT, not a
-          verified document like the résumé — in the real flow draft-outreach
-          writes it into a Gmail draft for human review before anything sends. */}
-      <p className="mt-1 text-xs text-muted-foreground">
-        A sample draft — in my real search it lands as a Gmail draft for me to review before I send.
-      </p>
       {subject ? <p className="mt-2 text-sm font-semibold text-foreground">Subject: {subject}</p> : null}
       {open ? (
         <div data-testid="sim-outreach-body" className="mt-2 text-sm leading-relaxed">

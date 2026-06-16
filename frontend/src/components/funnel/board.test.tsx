@@ -207,10 +207,8 @@ describe('DetailPanel', () => {
     const dialog = screen.getByRole('dialog', { name: 'Wayne Enterprises' })
     expect(dialog).toBeInTheDocument()
     expect(screen.getByText('84%')).toBeInTheDocument()
-    // §24.73: the score is attributed to the host win-confidence model, with the
-    // honest "an estimate … not a promise" framing carried in the marker's trail.
-    expect(screen.getByTestId('agent-ref')).toHaveAttribute('data-actor', 'win-confidence')
-    expect(screen.getByText(/not a promise/i)).toBeInTheDocument()
+    // §24.73: the score is attributed to the host win-confidence-scorer.
+    expect(screen.getByTestId('agent-ref')).toHaveAttribute('data-actor', 'win-confidence-scorer')
   })
 
   it('renders the Gen-AI rationale for the win-confidence score when present', () => {
@@ -237,15 +235,15 @@ describe('DetailPanel', () => {
     expect(onClose).toHaveBeenCalledTimes(2)
   })
 
-  it('explains win confidence via an InfoTip — heuristic, not a probability (§24.60)', () => {
+  it('explains win confidence via the scorer chip — a heuristic, not a promise (§24.73)', () => {
     render(<DetailPanel app={APPS[4]} onClose={() => {}} />)
-    fireEvent.click(screen.getByRole('button', { name: 'About: win confidence' }))
-    expect(screen.getByTestId('info-tip-panel')).toHaveTextContent(/heuristic, not a probability/i)
+    fireEvent.click(screen.getByTestId('agent-ref'))
+    expect(screen.getByTestId('agent-ref-panel')).toHaveTextContent(/a heuristic .* not a promise/i)
   })
 
-  it('omits the win-confidence InfoTip when there is no score to explain', () => {
+  it('omits the win-confidence attribution when there is no score to explain', () => {
     render(<DetailPanel app={APPS[0]} onClose={() => {}} />) // win_confidence null
-    expect(screen.queryByRole('button', { name: 'About: win confidence' })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('agent-ref')).not.toBeInTheDocument()
   })
 
   it('links to this application’s filtered /live activity (§24.60)', () => {

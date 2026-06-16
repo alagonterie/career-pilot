@@ -13,8 +13,9 @@ describe('ai-actors registry (§24.73)', () => {
       'scrape-jobs',
       'pipeline-scribe',
     ])
-    expect(AI_ACTORS.some((a) => a.kind === 'host' && a.name === 'win-confidence')).toBe(true)
-    expect(AI_ACTORS.some((a) => a.kind === 'host' && a.name === 'sanitizer')).toBe(true)
+    expect(AI_ACTORS.some((a) => a.kind === 'host' && a.name === 'win-confidence-scorer')).toBe(true)
+    // The sanitizer is deterministic (regex), NOT AI — deliberately absent.
+    expect(AI_ACTORS.some((a) => a.name === 'sanitizer')).toBe(false)
     expect(SYSTEM_ACTOR.kind).toBe('system')
     // Every actor carries the visitor-facing copy the AgentRef popover renders.
     for (const a of AI_ACTORS) {
@@ -37,7 +38,8 @@ describe('ai-actors registry (§24.73)', () => {
 
   it('renders a natural plain-text reference per kind (for the PDF / alt text)', () => {
     expect(actorPlainText(resolveActor('tailor-resume')!)).toBe('the tailor-resume agent')
-    expect(actorPlainText(resolveActor('win-confidence')!)).toBe('the win-confidence model')
+    // 'win-confidence' (the raw metric name) resolves to the scorer via alias.
+    expect(actorPlainText(resolveActor('win-confidence')!)).toBe('the win-confidence-scorer model')
     expect(actorPlainText(SYSTEM_ACTOR)).toBe('my agent system')
   })
 })

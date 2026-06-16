@@ -1,9 +1,10 @@
 import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 
+import { EventSourceLabel } from '~/components/EventSourceLabel'
 import { LiveCursor, StateNote } from '~/components/states'
 import type { StreamStatus } from '~/lib/sse'
-import { eventSourceLabel, type AuditEvent } from '~/lib/use-activity-stream'
+import type { AuditEvent } from '~/lib/use-activity-stream'
 
 /**
  * The ticker clock (§24.57): today's events render `HH:MM`; an event from a
@@ -78,7 +79,7 @@ export function LiveTicker({
             {shown.map((e) => (
               <li key={e.seq} data-testid="ticker-row" className="flex flex-wrap items-center gap-x-2">
                 <span className="whitespace-nowrap tabular-nums text-muted-foreground">{tickerClock(e.ts)}</span>
-                <span className="text-accent-cool">{eventSourceLabel(e)}</span>
+                <EventSourceLabel event={e} />
                 {e.proactive ? (
                   <span
                     data-testid="proactive-marker"

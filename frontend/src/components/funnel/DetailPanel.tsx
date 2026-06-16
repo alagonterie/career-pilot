@@ -154,16 +154,11 @@ export function DetailPanel({ app, onClose }: { app: FunnelApplication | null; o
 
         {win != null ? (
           <section aria-labelledby="win-heading" className="flex flex-col gap-2">
-            <h3
-              id="win-heading"
-              className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-widest text-muted-foreground"
-            >
+            {/* §24.73: no metric InfoTip here — the AgentMark below names the
+                scorer and its popover carries the "heuristic, not a promise"
+                framing, so a second tip would be redundant. */}
+            <h3 id="win-heading" className="font-mono text-[11px] uppercase tracking-widest text-muted-foreground">
               Win confidence
-              <InfoTip label="win confidence">
-                A host model scores this 0–100 estimate of reaching an offer, recomputed as recruiter signals arrive —
-                stage, response cadence, tone — and writes the one-line rationale below. It runs on its own, outside the
-                agent loop. A heuristic, not a probability.
-              </InfoTip>
             </h3>
             <div className="flex items-center gap-3">
               <div aria-hidden="true" className="h-2 flex-1 overflow-hidden rounded-full bg-secondary">
@@ -176,12 +171,7 @@ export function DetailPanel({ app, onClose }: { app: FunnelApplication | null; o
                 {app.win_confidence_rationale}
               </p>
             ) : null}
-            <AgentMark
-              actor="win-confidence"
-              lead="Scored by"
-              trail="— an estimate from the recruiter signals, not a promise"
-              className="text-[10px]"
-            />
+            <AgentMark actor="win-confidence-scorer" lead="Scored by" />
           </section>
         ) : null}
 
@@ -191,7 +181,7 @@ export function DetailPanel({ app, onClose }: { app: FunnelApplication | null; o
               Published note
             </h3>
             <p className="text-sm leading-relaxed text-foreground/90">{app.published_learning}</p>
-            <AgentMark actor="pipeline-scribe" lead="Published by" className="text-[10px]" />
+            <AgentMark actor="pipeline-scribe" lead="Published by" />
           </section>
         ) : null}
 

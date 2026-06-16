@@ -74,16 +74,13 @@ test.describe('/pipeline — the funnel board, frontend <-> backend', () => {
     await expect(panel).toBeFocused()
 
     // Tab cycles the dialog's tabbables (Close → Live activity → the
-    // Interview-prep InfoTip + the two seeded kit rows (§24.65) → the win-
-    // confidence InfoTip, §24.60 → the §24.73 win-confidence AgentRef chip)
-    // and the trap wraps at both ends — focus never escapes the page behind.
+    // Interview-prep InfoTip + the two seeded kit rows (§24.65) → the §24.73
+    // win-confidence-scorer AgentRef chip, the last tabbable) and the trap
+    // wraps at both ends — focus never escapes the page behind.
     const close = panel.getByRole('button', { name: 'Close panel' })
     const liveLink = panel.getByTestId('detail-live-link')
     const kitTip = panel.getByRole('button', { name: 'About: interview prep' })
     const kitLinks = panel.getByTestId('detail-kit-link')
-    const winTip = panel.getByRole('button', { name: 'About: win confidence' })
-    // §24.73: the win-confidence score is attributed to the host model via an
-    // AgentRef, which is the last tabbable in the panel.
     const winRef = panel.getByTestId('agent-ref').filter({ hasText: 'win-confidence' })
     await page.keyboard.press('Tab')
     await expect(close).toBeFocused()
@@ -95,8 +92,6 @@ test.describe('/pipeline — the funnel board, frontend <-> backend', () => {
     await expect(kitLinks.first()).toBeFocused()
     await page.keyboard.press('Tab')
     await expect(kitLinks.nth(1)).toBeFocused()
-    await page.keyboard.press('Tab')
-    await expect(winTip).toBeFocused()
     await page.keyboard.press('Tab')
     await expect(winRef).toBeFocused()
     await page.keyboard.press('Tab') // off the end → wraps to the start
@@ -173,12 +168,13 @@ test.describe('/pipeline — the funnel board, frontend <-> backend', () => {
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('info-tip-panel')).toBeHidden()
 
-    // The drawer's win-confidence tip (the seeded public OFFER carries a score).
+    // The drawer's win-confidence-scorer chip (the seeded public OFFER carries a
+    // score) — §24.73: its popover carries the "heuristic, not a promise" framing.
     await page.getByText('Wayne Enterprises').click()
     const panel = page.getByRole('dialog', { name: 'Wayne Enterprises' })
     await expect(panel).toBeVisible()
-    await panel.getByRole('button', { name: 'About: win confidence' }).click()
-    await expect(page.getByTestId('info-tip-panel')).toContainText(/not a probability/i)
+    await panel.getByTestId('agent-ref').filter({ hasText: 'win-confidence' }).click()
+    await expect(page.getByTestId('agent-ref-panel')).toContainText(/not a promise/i)
   })
 
   test('the drawer’s Interview prep rows open the /kit dossier; back returns to the drawer (§24.65)', async ({

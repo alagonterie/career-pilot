@@ -16,8 +16,8 @@ describe('AgentMark (§24.73)', () => {
   })
 
   it('attributes host-authored content to the host actor (no false subagent)', () => {
-    render(<AgentMark actor="win-confidence" lead="Scored by" />)
+    render(<AgentMark actor="win-confidence-scorer" lead="Scored by" />)
     fireEvent.click(screen.getByTestId('agent-ref'))
-    expect(screen.getByTestId('agent-ref-panel')).toHaveTextContent('outside the agent loop')
+    expect(screen.getByTestId('agent-ref-panel')).toHaveTextContent('runs on its own')
   })
 })
