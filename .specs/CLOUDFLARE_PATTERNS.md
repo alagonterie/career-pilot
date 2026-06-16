@@ -345,6 +345,8 @@ Source: [Bot Fight Mode](https://developers.cloudflare.com/bots/get-started/bot-
 
 ## 7. Cloudflare Web Analytics
 
+> **Declined for attribution (STRATEGY §24.74 D4).** The beacon is **aggregate-only** — it cannot join a pageview to a specific link/token, so it can't answer the owner's core question ("did the link I emailed company X get clicked, and by whom"). Visitor *attribution* is therefore done **first-party**: opaque `/r/<code>` tokens minted into outbound artifacts → a private `visit_telemetry` table (salted-hash IP, coarse geo), surfaced on the Access-gated `/admin`. The beacon also adds a third-party script against that all-first-party posture. The aggregate-dashboard pattern below is retained only as **reference** (a zero-cost option if a purely-aggregate traffic view is ever wanted); it is **not** part of the attribution system.
+
 Free, no cookies, GDPR/CCPA-clean. Use **mode (a)** — JS beacon snippet in TanStack Start root layout (works even though `hire.example.com` is orange-clouded; mode (b) automatic would also work but explicit is clearer):
 
 ```tsx
