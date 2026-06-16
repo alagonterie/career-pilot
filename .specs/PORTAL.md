@@ -880,6 +880,7 @@ Linked from footer. Less prominent but substantive — this is where a curious e
 - **Why this portal exists** — 1 paragraph framing
 - **Anonymization policy** — the rules (see §9)
 - **Credential & data privacy** — see "Two-tier vault" below
+- **Visitor privacy** — the first-party visit log, stated plainly (see "Visitor privacy" below)
 - **System modes & safety controls** — high-level explanation linking to §7
 - **Cost of running this thing** — live numbers, not estimates
 - **Why these specific tech choices** — NanoClaw, Claude Agent SDK, Portkey (Model Catalog), OneCLI, TanStack Start
@@ -899,6 +900,12 @@ A subsection that calls out a deliberately strong security model — it's a cred
 > The container's environment contains exactly **zero** secrets. Even if a Worker handler dumps `process.env`, nothing useful leaks. Outbound HTTPS routes through OneCLI, which knows what credential to apply for each destination and which actions require human approval.
 >
 > This isn't security theater — it's how Anthropic, AWS, and most enterprise AI shops manage agent credentials in 2026.
+
+#### Visitor privacy (the first-party visit log)
+
+A short subsection that says the quiet part out loud — the site keeps a basic, first-party log of visits, and is honest about it rather than reaching for a third-party tracker (STRATEGY §24.74 D4):
+
+> This site keeps a **first-party** log of visits — no third-party trackers, no cross-site cookies, no ad-tech. When the agent puts a link to this showcase into something it sends out (a cold-outreach email; a résumé that gets forwarded), that link carries a short opaque code so a click tells me *which* outreach it came from — that's the whole point of a public job-search showcase. The log records a **salted hash** of your IP (so I can tell a repeat visit from a new one without storing the raw address), a coarse country/region, and which page you landed on. It's retained for a bounded window and then deleted, and it's visible only to me behind an authenticated admin page. I deliberately **declined** Cloudflare's free analytics beacon — it's aggregate-only and would add a third-party script, and I'd rather keep the whole thing first-party and legible.
 
 #### Content privacy (resume isn't in the repo)
 
