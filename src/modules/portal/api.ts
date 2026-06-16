@@ -40,6 +40,7 @@ import { runHealthChecks } from '../career-pilot/health.js';
 import { loadState, simStatePath } from '../career-pilot/recruiter-sim/runner.js';
 
 import { validateAccessJwt } from './access-jwt.js';
+import { adminEnabled, buildAttributionReport } from './admin.js';
 import { relayContactSubmission, type ContactInput } from './contact-relay.js';
 import {
   applyDevControl,
@@ -281,6 +282,16 @@ function handleAttributionRedirect(
   }
   res.writeHead(302, { Location: dest, 'Cache-Control': 'no-store', ...cors });
   res.end();
+}
+
+/**
+ * `GET /api/admin/attribution` (§24.74 D5) — the owner-only attribution browser:
+ * minted `/r/<code>` links joined to their visit_telemetry clicks + the recent
+ * visit feed. Reachability is gated upstream (`adminEnabled()` in the dispatch);
+ * this just renders the read-model.
+ */
+function handleAdminAttribution(res: http.ServerResponse, cors: Record<string, string>): void {
+  json(res, 200, buildAttributionReport(getDb()), cors);
 }
 
 /**
@@ -890,6 +901,15 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
     if (method === 'GET' && path.startsWith('/api/simulator/') && path.endsWith('/stream')) {
       const runId = path.slice('/api/simulator/'.length, -'/stream'.length);
       if (runId.length > 0) return handleSimulatorStream(req, res, runId, cors);
+    }
+
+    // Owner-only /admin surface (§24.74 D5): OPEN on dev (the surface is
+    // owner-Access-gated), FAIL-CLOSED → 404 elsewhere until the owner wires the
+    // prod /admin Access app + flips admin_api_enabled. Read-only; no sim/dev
+    // knobs/destructive ops here by design.
+    if (path.startsWith('/api/admin/')) {
+      if (!adminEnabled()) return json(res, 404, { error: 'not_found', path }, cors);
+      if (method === 'GET' && path === '/api/admin/attribution') return handleAdminAttribution(res, cors);
     }
 
     // Dev inspector (§24.42b): the whole `/api/dev/*` prefix is invisible
