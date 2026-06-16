@@ -146,7 +146,7 @@ function ShareResults() {
               </Link>
             </Button>
             <Button asChild variant="outline">
-              <Link to="/simulator">Watch me apply to your role →</Link>
+              <Link to="/simulator">Watch me apply to another role →</Link>
             </Button>
           </div>
         </>

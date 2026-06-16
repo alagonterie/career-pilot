@@ -206,7 +206,7 @@ test('simulator share results matches visual baseline', { tag: '@visual' }, asyn
   await page.goto('/simulator/results/det-sim-1')
   // The seeded, far-future-expiry shareable run — deterministic (no streaming).
   await expect(page.getByRole('heading', { name: /Principal Engineer @ Wayne Enterprises/i, level: 1 })).toBeVisible()
-  await expect(page.getByTestId('sim-output-body')).toBeVisible()
+  await expect(page.getByTestId('sim-outreach')).toBeVisible()
   await expect(page).toHaveScreenshot('simulator-results.png', {
     animations: 'disabled',
     fullPage: true,
