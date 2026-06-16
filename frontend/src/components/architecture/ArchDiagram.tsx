@@ -272,6 +272,8 @@ export function ArchDiagram({
                   textAnchor="middle"
                   className={`font-mono text-[12px] ${structural && !actor ? 'fill-muted-foreground' : 'fill-foreground'}`}
                 >
+                  {/* §24.73: AI I built carries the ✦ provenance glyph (AI accent). */}
+                  {n.ai ? <tspan className="fill-ai">✦ </tspan> : null}
                   {n.label}
                 </text>
                 {/* Demo nodes get an interactive ▶ (a behavioral proof, not a health probe — §24.35 Pass B);
