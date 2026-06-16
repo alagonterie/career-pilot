@@ -45,8 +45,10 @@ function ResumeGift({ runId, company, role }: { runId: string; company: string |
       <p className="mt-1 text-sm text-muted-foreground">
         Auto-tailored from my real experience for this exact role — yours to download and forward.
       </p>
-      <div className="mt-4 flex flex-wrap gap-3">
-        <Button asChild size="lg">
+      {/* Full-width + stacked on mobile (no awkward half-width wrap), side-by-side
+          from sm up. */}
+      <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+        <Button asChild size="lg" className="w-full sm:w-auto">
           <a href={pdfUrl} download data-testid="sim-download-resume">
             Download résumé (PDF) ↓
           </a>
@@ -54,6 +56,7 @@ function ResumeGift({ runId, company, role }: { runId: string; company: string |
         <Button
           variant="outline"
           size="lg"
+          className="w-full sm:w-auto"
           data-testid="sim-resume-preview-open"
           onClick={() => dialogRef.current?.showModal()}
         >
