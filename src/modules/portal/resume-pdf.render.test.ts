@@ -178,4 +178,36 @@ describe('rendered résumé — structural guarantees', () => {
     expect(text).toContain('Languages');
     expect(text).toContain('Backend & Data');
   });
+
+  // The tailored-PDF one-page fix: a résumé that runs marginally past one page at
+  // the normal (master) density still fits one page in compact mode (the tailored
+  // caller passes `{ compact: true }`) — the master itself stays normal.
+  it('compact mode fits a slightly-too-long résumé on one page', async () => {
+    const DENSE: WorkProfile = {
+      ...FULL_MASTER,
+      bio: [
+        ...FULL_MASTER.bio,
+        'A third summary paragraph that pushes the document just past a single page at the normal density, so the compact path has something real to reclaim and the one-page guarantee is meaningful.',
+      ],
+      experience: [
+        ...FULL_MASTER.experience,
+        {
+          role: 'Software Engineer',
+          company: 'Initech',
+          period: '2015 — 2017',
+          bullets: [
+            'Built and operated a high-throughput billing pipeline processing millions of records nightly.',
+            'Owned the migration from a monolith to a set of well-bounded services with clear contracts.',
+            'Cut the integration test suite runtime by reworking fixtures and parallelizing the run.',
+          ],
+        },
+      ],
+    };
+    const atNormal = await inspectPdf(await renderResumePdf(DENSE, FULL_IDENTITY, masterFooter('')));
+    const atCompact = await inspectPdf(
+      await renderResumePdf(DENSE, FULL_IDENTITY, masterFooter(''), '', { compact: true }),
+    );
+    expect(atNormal.pageCount).toBe(2); // spills at the master density
+    expect(atCompact.pageCount).toBe(1); // compact reclaims the page
+  });
 });

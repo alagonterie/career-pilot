@@ -34,60 +34,73 @@ Font.registerHyphenationCallback((word) => [word]);
 
 const LINK = '#0b66c3'; // a subtle, print-safe link blue
 
-const styles = StyleSheet.create({
-  page: {
-    paddingTop: 32,
-    paddingBottom: 34,
-    paddingHorizontal: 42,
-    fontFamily: 'Inter',
-    color: '#1a1a1a',
-    fontSize: 9,
-    lineHeight: 1.3,
-  },
-  name: { fontSize: 20, fontWeight: 700, letterSpacing: 0.2, lineHeight: 1.15 },
-  title: { fontSize: 10.5, color: '#555555', marginTop: 5 },
-  contact: { fontSize: 8.5, color: '#555555', marginTop: 5 },
-  contactSep: { color: '#999999' },
-  link: { color: LINK, textDecoration: 'none' },
-  section: { marginTop: 10 },
-  heading: {
-    fontSize: 8.5,
-    fontWeight: 600,
-    color: '#222222',
-    letterSpacing: 1,
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#cfcfcf',
-    paddingBottom: 2.5,
-    marginBottom: 5,
-  },
-  para: { marginBottom: 3 },
-  expRow: { marginBottom: 6 },
-  expHead: { flexDirection: 'row', justifyContent: 'space-between' },
-  role: { fontWeight: 600, fontSize: 10 },
-  period: { fontSize: 8.5, color: '#777777' },
-  company: { fontSize: 9.5, color: '#444444', marginBottom: 1.5 },
-  bullet: { flexDirection: 'row', marginBottom: 1 },
-  bulletDot: { width: 9, color: '#888888' },
-  bulletText: { flex: 1 },
-  projName: { fontWeight: 600 },
-  projLink: { fontSize: 8.5, color: LINK, textDecoration: 'none' },
-  projDesc: { color: '#444444' },
-  projTags: { fontSize: 8.5, color: '#777777', marginTop: 0.5 },
-  body: { color: '#333333' },
-  skillRow: { flexDirection: 'row', marginBottom: 2 },
-  skillCat: { width: 96, fontWeight: 600, color: '#333333' },
-  skillItems: { flex: 1, color: '#333333' },
-  footer: {
-    position: 'absolute',
-    bottom: 16,
-    left: 42,
-    right: 42,
-    fontSize: 7,
-    color: '#9a9a9a',
-    textAlign: 'center',
-  },
-  footerLink: { color: LINK, textDecoration: 'none' },
-});
+/** The PDF stylesheet. `compact` tightens vertical spacing + fonts a touch so a
+ *  TAILORED résumé that runs marginally longer than the master (a role summary +
+ *  an extra target-role line) still fits one page; the MASTER renders at the
+ *  normal, owner-verified density (it's not passed `compact`). Both variants are
+ *  built once at module load. */
+function makeStyles(compact: boolean) {
+  const f = (normal: number, tight: number): number => (compact ? tight : normal);
+  return StyleSheet.create({
+    page: {
+      paddingTop: f(32, 26),
+      paddingBottom: f(34, 26),
+      paddingHorizontal: 42,
+      fontFamily: 'Inter',
+      color: '#1a1a1a',
+      fontSize: f(9, 8.6),
+      lineHeight: f(1.3, 1.24),
+    },
+    name: { fontSize: f(20, 17), fontWeight: 700, letterSpacing: 0.2, lineHeight: 1.15 },
+    title: { fontSize: f(10.5, 9.5), color: '#555555', marginTop: f(5, 3) },
+    contact: { fontSize: 8.5, color: '#555555', marginTop: f(5, 3) },
+    contactSep: { color: '#999999' },
+    link: { color: LINK, textDecoration: 'none' },
+    section: { marginTop: f(10, 7) },
+    heading: {
+      fontSize: 8.5,
+      fontWeight: 600,
+      color: '#222222',
+      letterSpacing: 1,
+      borderBottomWidth: 0.5,
+      borderBottomColor: '#cfcfcf',
+      paddingBottom: f(2.5, 2),
+      marginBottom: f(5, 3.5),
+    },
+    para: { marginBottom: f(3, 2) },
+    expRow: { marginBottom: f(6, 4) },
+    expHead: { flexDirection: 'row', justifyContent: 'space-between' },
+    role: { fontWeight: 600, fontSize: f(10, 9.5) },
+    period: { fontSize: 8.5, color: '#777777' },
+    company: { fontSize: 9.5, color: '#444444', marginBottom: f(1.5, 1) },
+    bullet: { flexDirection: 'row', marginBottom: f(1, 0.5) },
+    bulletDot: { width: 9, color: '#888888' },
+    bulletText: { flex: 1 },
+    projRow: { marginBottom: f(4, 3) },
+    projName: { fontWeight: 600 },
+    projLink: { fontSize: 8.5, color: LINK, textDecoration: 'none' },
+    projDesc: { color: '#444444' },
+    projTags: { fontSize: 8.5, color: '#777777', marginTop: 0.5 },
+    body: { color: '#333333' },
+    skillRow: { flexDirection: 'row', marginBottom: f(2, 1) },
+    skillCat: { width: 96, fontWeight: 600, color: '#333333' },
+    skillItems: { flex: 1, color: '#333333' },
+    footer: {
+      position: 'absolute',
+      bottom: f(16, 12),
+      left: 42,
+      right: 42,
+      fontSize: 7,
+      color: '#9a9a9a',
+      textAlign: 'center',
+    },
+    footerLink: { color: LINK, textDecoration: 'none' },
+  });
+}
+
+const NORMAL = makeStyles(false);
+const COMPACT = makeStyles(true);
+type Styles = ReturnType<typeof makeStyles>;
 
 /** Strip protocol + trailing slash for a compact, readable link label. */
 function cleanUrl(u: string): string {
@@ -106,128 +119,129 @@ function contactSegments(id: Identity): { label: string; href: string }[] {
 }
 
 /** A titled section, or null when it has no content (omit — never invent). */
-function section(heading: string, children: ReactNode[]): ReactElement | null {
+function section(s: Styles, heading: string, children: ReactNode[]): ReactElement | null {
   if (children.length === 0) return null;
-  return h(View, { style: styles.section }, h(Text, { style: styles.heading }, heading.toUpperCase()), ...children);
+  return h(View, { style: s.section }, h(Text, { style: s.heading }, heading.toUpperCase()), ...children);
 }
 
-function header(profile: WorkProfile, identity: Identity): ReactElement {
+function header(s: Styles, profile: WorkProfile, identity: Identity): ReactElement {
   const segs = contactSegments(identity);
   const contactChildren: ReactNode[] = [];
-  segs.forEach((s, i) => {
-    if (i > 0) contactChildren.push(h(Text, { key: `sep${i}`, style: styles.contactSep }, '   ·   '));
-    contactChildren.push(h(Link, { key: `lnk${i}`, src: s.href, style: styles.link }, s.label));
+  segs.forEach((seg, i) => {
+    if (i > 0) contactChildren.push(h(Text, { key: `sep${i}`, style: s.contactSep }, '   ·   '));
+    contactChildren.push(h(Link, { key: `lnk${i}`, src: seg.href, style: s.link }, seg.label));
   });
   return h(
     View,
     {},
-    h(Text, { style: styles.name }, profile.name),
-    profile.title ? h(Text, { style: styles.title }, profile.title) : null,
-    segs.length > 0 ? h(Text, { style: styles.contact }, ...contactChildren) : null,
+    h(Text, { style: s.name }, profile.name),
+    profile.title ? h(Text, { style: s.title }, profile.title) : null,
+    segs.length > 0 ? h(Text, { style: s.contact }, ...contactChildren) : null,
   );
 }
 
-function experienceRow(e: WorkProfile['experience'][number], key: number): ReactElement {
+function experienceRow(s: Styles, e: WorkProfile['experience'][number], key: number): ReactElement {
   return h(
     View,
-    { key, style: styles.expRow, wrap: false },
+    { key, style: s.expRow, wrap: false },
     h(
       View,
-      { style: styles.expHead },
-      h(Text, { style: styles.role }, e.role),
-      e.period ? h(Text, { style: styles.period }, e.period) : null,
+      { style: s.expHead },
+      h(Text, { style: s.role }, e.role),
+      e.period ? h(Text, { style: s.period }, e.period) : null,
     ),
-    e.company ? h(Text, { style: styles.company }, e.company) : null,
+    e.company ? h(Text, { style: s.company }, e.company) : null,
     ...e.bullets.map((b, j) =>
-      h(
-        View,
-        { key: j, style: styles.bullet },
-        h(Text, { style: styles.bulletDot }, '•'),
-        h(Text, { style: styles.bulletText }, b),
-      ),
+      h(View, { key: j, style: s.bullet }, h(Text, { style: s.bulletDot }, '•'), h(Text, { style: s.bulletText }, b)),
     ),
   );
 }
 
-function projectRow(p: WorkProfile['projects'][number], key: number): ReactElement {
+function projectRow(s: Styles, p: WorkProfile['projects'][number], key: number): ReactElement {
   return h(
     View,
-    { key, style: { marginBottom: 4 }, wrap: false },
+    { key, style: s.projRow, wrap: false },
     h(
       Text,
       {},
-      h(Text, { style: styles.projName }, p.name),
-      p.href ? h(Link, { src: p.href, style: styles.projLink }, `   ${cleanUrl(p.href)}`) : null,
+      h(Text, { style: s.projName }, p.name),
+      p.href ? h(Link, { src: p.href, style: s.projLink }, `   ${cleanUrl(p.href)}`) : null,
     ),
-    p.description ? h(Text, { style: styles.projDesc }, p.description) : null,
-    p.tags && p.tags.length > 0 ? h(Text, { style: styles.projTags }, p.tags.join('  ·  ')) : null,
+    p.description ? h(Text, { style: s.projDesc }, p.description) : null,
+    p.tags && p.tags.length > 0 ? h(Text, { style: s.projTags }, p.tags.join('  ·  ')) : null,
   );
 }
 
 /** Skills children: grouped (category → items) when `skillGroups` is present,
  *  else the flat list; empty → []. */
-function skillsChildren(profile: WorkProfile): ReactNode[] {
+function skillsChildren(s: Styles, profile: WorkProfile): ReactNode[] {
   if (profile.skillGroups && profile.skillGroups.length > 0) {
     return profile.skillGroups.map((g, i) =>
       h(
         View,
-        { key: i, style: styles.skillRow, wrap: false },
-        h(Text, { style: styles.skillCat }, g.category),
-        h(Text, { style: styles.skillItems }, g.items.join('  ·  ')),
+        { key: i, style: s.skillRow, wrap: false },
+        h(Text, { style: s.skillCat }, g.category),
+        h(Text, { style: s.skillItems }, g.items.join('  ·  ')),
       ),
     );
   }
-  if (profile.skills.length > 0) return [h(Text, { style: styles.body }, profile.skills.join('   ·   '))];
+  if (profile.skills.length > 0) return [h(Text, { style: s.body }, profile.skills.join('   ·   '))];
   return [];
 }
 
 /** The fixed footer Text, with the configured host rendered as a clickable Link
  *  (so the traveling-proof URL is clickable like every other link). */
-function footerElement(footer: string, publicUrl: string) {
+function footerElement(s: Styles, footer: string, publicUrl: string) {
   const host = siteHost(publicUrl);
   if (!host || !footer.includes(host)) {
-    return h(Text, { style: styles.footer, fixed: true }, footer);
+    return h(Text, { style: s.footer, fixed: true }, footer);
   }
   const i = footer.indexOf(host);
   return h(
     Text,
-    { style: styles.footer, fixed: true },
+    { style: s.footer, fixed: true },
     footer.slice(0, i),
-    h(Link, { src: publicUrl, style: styles.footerLink }, host),
+    h(Link, { src: publicUrl, style: s.footerLink }, host),
     footer.slice(i + host.length),
   );
 }
 
 // Return type is inferred (a `ReactElement<DocumentProps>`) so it satisfies
 // `renderToBuffer` — an explicit `ReactElement` annotation would widen it away.
-function buildResumeDocument(profile: WorkProfile, identity: Identity, footer: string, publicUrl: string) {
+function buildResumeDocument(profile: WorkProfile, identity: Identity, footer: string, publicUrl: string, s: Styles) {
   const sections: (ReactElement | null)[] = [
     section(
+      s,
       'Summary',
-      profile.bio.map((p, i) => h(Text, { key: i, style: styles.para }, p)),
+      profile.bio.map((p, i) => h(Text, { key: i, style: s.para }, p)),
     ),
     section(
+      s,
       "What I'm looking for",
-      profile.lookingFor.length > 0 ? [h(Text, { style: styles.body }, profile.lookingFor.join('   ·   '))] : [],
+      profile.lookingFor.length > 0 ? [h(Text, { style: s.body }, profile.lookingFor.join('   ·   '))] : [],
     ),
     section(
+      s,
       'Experience',
-      profile.experience.map((e, i) => experienceRow(e, i)),
+      profile.experience.map((e, i) => experienceRow(s, e, i)),
     ),
     section(
+      s,
       'Projects',
-      profile.projects.map((p, i) => projectRow(p, i)),
+      profile.projects.map((p, i) => projectRow(s, p, i)),
     ),
     section(
+      s,
       'Writing & Talks',
       (profile.writing ?? []).map((w, i) =>
-        h(Text, { key: i, style: styles.para }, w.venue ? `${w.title} — ${w.venue}` : w.title),
+        h(Text, { key: i, style: s.para }, w.venue ? `${w.title} — ${w.venue}` : w.title),
       ),
     ),
-    section('Skills', skillsChildren(profile)),
+    section(s, 'Skills', skillsChildren(s, profile)),
     section(
+      s,
       'Education',
-      profile.education.map((e, i) => h(Text, { key: i, style: styles.para }, e)),
+      profile.education.map((e, i) => h(Text, { key: i, style: s.para }, e)),
     ),
   ];
 
@@ -236,23 +250,27 @@ function buildResumeDocument(profile: WorkProfile, identity: Identity, footer: s
     { title: `${profile.name} — Résumé`, author: profile.name },
     h(
       Page,
-      { size: 'LETTER', style: styles.page },
-      header(profile, identity),
+      { size: 'LETTER', style: s.page },
+      header(s, profile, identity),
       ...sections,
-      footerElement(footer, publicUrl),
+      footerElement(s, footer, publicUrl),
     ),
   );
 }
 
 /** Render the composed `WorkProfile` to a PDF buffer (the Tier-1 / Tier-2 engine).
- *  `publicUrl` (the configured portal URL) linkifies the footer host. */
+ *  `publicUrl` (the configured portal URL) linkifies the footer host. `compact`
+ *  (the tailored caller) tightens the layout a touch to guarantee one page when
+ *  the tailored content runs marginally longer than the master. */
 export function renderResumePdf(
   profile: WorkProfile,
   identity: Identity,
   footer: string,
   publicUrl = '',
+  opts: { compact?: boolean } = {},
 ): Promise<Buffer> {
-  return renderToBuffer(buildResumeDocument(profile, identity, footer, publicUrl));
+  const s = opts.compact ? COMPACT : NORMAL;
+  return renderToBuffer(buildResumeDocument(profile, identity, footer, publicUrl, s));
 }
 
 /** Normalize a configured public URL to a bare host, or null when unset/blank —

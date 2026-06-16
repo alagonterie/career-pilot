@@ -522,6 +522,9 @@ async function handleSimulatorResumePdf(
     identity,
     tailoredFooter(row.visitor_company, row.visitor_role, row.ts, url),
     url,
+    // Tailored content runs marginally longer than the master (role summary + an
+    // extra target-role line) — compact density keeps it to one page.
+    { compact: true },
   );
   const base =
     `${tailored.name}-${row.visitor_company ?? 'tailored'}`.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '') ||
