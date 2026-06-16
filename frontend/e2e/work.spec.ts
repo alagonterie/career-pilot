@@ -53,6 +53,6 @@ test.describe('/work — resume/portfolio shell + shared nav', () => {
 
     await nav.getByRole('link', { name: 'Jane Doe' }).click()
     await expect(page).toHaveURL('/')
-    await expect(page.getByTestId('live-indicator')).toBeVisible()
+    await expect(page.getByTestId('hero-status')).toBeVisible()
   })
 })

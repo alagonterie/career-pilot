@@ -188,6 +188,6 @@ test.describe('/architecture — live system map, frontend <-> backend', () => {
 
     await nav.getByRole('link', { name: 'Jane Doe' }).click()
     await expect(page).toHaveURL('/')
-    await expect(page.getByTestId('live-indicator')).toBeVisible()
+    await expect(page.getByTestId('hero-status')).toBeVisible()
   })
 })
