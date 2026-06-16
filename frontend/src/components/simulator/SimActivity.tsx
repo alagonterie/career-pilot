@@ -114,6 +114,15 @@ export function SimActivity({
                 isSub &&
                 ((trace[i - 1] != null && isSubagentDispatch(trace[i - 1])) ||
                   (trace[i + 1] != null && isSubagentDispatch(trace[i + 1])))
+              // The data dependency (PORTAL §5.3): research-company runs first and
+              // ALONE; the orchestrator then hands its digest to the consuming
+              // subagents (tailor-resume / draft-outreach), which are defined to
+              // read it. Honest by construction — only flagged when a research
+              // dispatch actually precedes this (non-research) subagent on the wire.
+              const usesResearch =
+                isSub &&
+                !/research/i.test(label) &&
+                trace.slice(0, i).some((e) => isSubagentDispatch(e) && /research/i.test(dispatchLabel(e)))
               return (
                 <li
                   key={i}
@@ -129,6 +138,15 @@ export function SimActivity({
                       className="rounded-full border border-primary/40 bg-primary/10 px-1.5 font-mono text-[10px] text-primary"
                     >
                       ∥ parallel
+                    </span>
+                  ) : null}
+                  {usesResearch ? (
+                    <span
+                      data-testid="sim-trace-uses-research"
+                      title="Built on the company digest research-company produced first"
+                      className="rounded-full border border-accent-cool/40 bg-accent-cool/10 px-1.5 font-mono text-[10px] text-accent-cool"
+                    >
+                      ⤷ uses research
                     </span>
                   ) : null}
                   {summary ? (

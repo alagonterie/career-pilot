@@ -62,6 +62,9 @@ test.describe('/simulator — the recruiter simulator, frontend <-> backend', ()
     await expect(page.getByTestId('sim-outreach-body')).toContainText('I came across')
     await page.getByTestId('result-activity-toggle').click()
     await expect(page.getByTestId('sim-trace-complete')).toBeVisible()
+    // The data-flow is shown: the consumer subagents are flagged as building on
+    // research-company's digest (not just running in parallel).
+    await expect(page.getByTestId('sim-trace-uses-research').first()).toBeVisible()
 
     const a11y = await new AxeBuilder({ page }).analyze()
     expect(a11y.violations).toEqual([])
