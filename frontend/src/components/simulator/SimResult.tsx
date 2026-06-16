@@ -1,6 +1,7 @@
 import { Loader2 } from 'lucide-react'
 import * as React from 'react'
 
+import { AgentMark } from '~/components/AgentMark'
 import { Button } from '~/components/ui/button'
 import { renderMarkdownish } from '~/lib/markdownish'
 import { parseOutreach } from '~/lib/parse-outreach'
@@ -78,6 +79,7 @@ function ResumeGift({ runId, company, role }: { runId: string; company: string |
       <p className="mt-1 text-sm text-muted-foreground">
         Auto-tailored from my real experience for this exact role — yours to download and forward.
       </p>
+      <AgentMark actor="tailor-resume" lead="Tailored by" className="mt-2" />
       {/* Full-width + stacked on mobile (no awkward half-width wrap), side-by-side
           from sm up. */}
       <div className="mt-4 flex flex-col gap-3 sm:flex-row">
@@ -153,11 +155,12 @@ function OutreachGift({ subject, body }: { subject: string; body: string }) {
   return (
     <div data-testid="sim-outreach" className="rounded-xl border border-accent-cool/40 bg-accent-cool/5 px-6 py-5">
       <p className="font-mono text-xs uppercase tracking-widest text-accent-cool">My cold-outreach email to you</p>
-      {/* Honest framing (§24.72): the email is a sample DRAFT, not a verified
-          document like the résumé — in the real flow the agent writes it into a
-          Gmail draft for human review before anything sends. */}
+      <AgentMark actor="draft-outreach" lead="Written by" className="mt-1" />
+      {/* Honest framing (§24.72 / §24.73): the email is a sample DRAFT, not a
+          verified document like the résumé — in the real flow draft-outreach
+          writes it into a Gmail draft for human review before anything sends. */}
       <p className="mt-1 text-xs text-muted-foreground">
-        A sample draft — in my real search my agent writes these into a Gmail draft for me to review before I send.
+        A sample draft — in my real search it lands as a Gmail draft for me to review before I send.
       </p>
       {subject ? <p className="mt-2 text-sm font-semibold text-foreground">Subject: {subject}</p> : null}
       {open ? (

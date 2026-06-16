@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router'
 import { motion } from 'motion/react'
 import * as React from 'react'
 
+import { AgentMark } from '~/components/AgentMark'
 import { InfoTip } from '~/components/InfoTip'
 import { useDialog } from '~/lib/use-dialog'
 import type { FunnelApplication } from '~/lib/use-funnel'
@@ -128,7 +129,10 @@ export function DetailPanel({ app, onClose }: { app: FunnelApplication | null; o
                     className="flex items-baseline justify-between gap-3 rounded-md border border-border px-3 py-2 transition-colors hover:border-primary/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <span className="min-w-0 truncate font-mono text-xs text-foreground">
-                      ▤ {roundLabel(kit.round)}
+                      <span aria-hidden="true" className="text-ai">
+                        ▤
+                      </span>{' '}
+                      {roundLabel(kit.round)}
                       {kit.interview_at ? (
                         <span className="ml-2 text-muted-foreground">{kitDate(kit.interview_at)}</span>
                       ) : null}
@@ -156,17 +160,14 @@ export function DetailPanel({ app, onClose }: { app: FunnelApplication | null; o
             >
               Win confidence
               <InfoTip label="win confidence">
-                An AI-scored 0–100 estimate of this application reaching an offer, recomputed as recruiter signals
-                arrive — stage, response cadence, tone. The sentence below the bar is the model&apos;s own one-line
-                rationale. A heuristic, not a probability.
+                A host model scores this 0–100 estimate of reaching an offer, recomputed as recruiter signals arrive —
+                stage, response cadence, tone — and writes the one-line rationale below. It runs on its own, outside the
+                agent loop. A heuristic, not a probability.
               </InfoTip>
             </h3>
             <div className="flex items-center gap-3">
               <div aria-hidden="true" className="h-2 flex-1 overflow-hidden rounded-full bg-secondary">
-                <div
-                  className="h-full rounded-full bg-primary"
-                  style={{ width: `${Math.max(0, Math.min(100, win))}%` }}
-                />
+                <div className="h-full rounded-full bg-ai" style={{ width: `${Math.max(0, Math.min(100, win))}%` }} />
               </div>
               <span className="font-mono text-sm tabular-nums text-foreground">{win}%</span>
             </div>
@@ -175,9 +176,12 @@ export function DetailPanel({ app, onClose }: { app: FunnelApplication | null; o
                 {app.win_confidence_rationale}
               </p>
             ) : null}
-            <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-              AI estimate from the recruiter signals — not a promise.
-            </p>
+            <AgentMark
+              actor="win-confidence"
+              lead="Scored by"
+              trail="— an estimate from the recruiter signals, not a promise"
+              className="text-[10px]"
+            />
           </section>
         ) : null}
 
@@ -187,6 +191,7 @@ export function DetailPanel({ app, onClose }: { app: FunnelApplication | null; o
               Published note
             </h3>
             <p className="text-sm leading-relaxed text-foreground/90">{app.published_learning}</p>
+            <AgentMark actor="pipeline-scribe" lead="Published by" className="text-[10px]" />
           </section>
         ) : null}
 

@@ -1,6 +1,8 @@
 import { motion } from 'motion/react'
 import * as React from 'react'
 
+import { AgentRef } from '~/components/AgentRef'
+import { AI_ACTORS } from '~/lib/ai-actors'
 import { useDialog } from '~/lib/use-dialog'
 import { repoBlob } from '~/lib/site'
 import type { ArchitectureData, SystemMode } from '~/lib/use-architecture'
@@ -211,6 +213,22 @@ export function NodePanel({
           <p id="arch-node-desc" className="text-sm leading-relaxed text-foreground/90">
             {node.description}
           </p>
+
+          {/* §24.73: the Subagents node is where the cast is introduced — render
+              the roster as tappable AgentRef chips so each name is explainable,
+              consistent with how the cast appears everywhere else on the site. */}
+          {node.id === 'cont-subagents' ? (
+            <div data-testid="arch-cast" className="flex flex-col gap-2">
+              <p className="font-mono text-[11px] uppercase tracking-widest text-muted-foreground">Meet the cast</p>
+              <ul className="flex flex-wrap gap-x-5 gap-y-2">
+                {AI_ACTORS.filter((a) => a.kind === 'subagent').map((a) => (
+                  <li key={a.name}>
+                    <AgentRef name={a.name} />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
           {facts.length > 0 ? (
             <dl className="grid grid-cols-2 gap-4">

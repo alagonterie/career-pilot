@@ -85,6 +85,8 @@ describe('tailoredFooter', () => {
     expect(f).toContain('hire.example.com');
     expect(f).toContain('All content reflects real experience');
     expect(f).toContain('Generated Jun 14, 2026');
+    // §24.73: names the responsible agent so it reads as AI-authored out of context.
+    expect(f).toContain('the tailor-resume agent');
   });
 
   it('degrades gracefully when company/role/date/host are missing', () => {

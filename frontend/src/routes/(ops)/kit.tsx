@@ -1,5 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 
+import { AgentMark } from '~/components/AgentMark'
+import { AgentRef } from '~/components/AgentRef'
 import { KitDossier } from '~/components/kit/KitDossier'
 import { StateNote } from '~/components/states'
 import { seo } from '~/lib/seo'
@@ -92,6 +94,7 @@ function KitPage() {
               {roundLabel(kit.round)}
               {kit.interview_at ? ` · ${kitDate(kit.interview_at)}` : ''} · {kit.status}
             </p>
+            <AgentMark actor="build-interview-kit" lead="Built by" className="mt-3" />
           </header>
 
           {/* Reveal banner: which policy state this dossier is rendered under. */}
@@ -117,9 +120,9 @@ function KitPage() {
           )}
 
           <footer className="mt-4 border-t border-border pt-5 text-[11px] leading-relaxed text-muted-foreground">
-            Built by the build-interview-kit subagent the moment this application entered the round. The kit lives as a
-            Google Doc in the candidate&apos;s private Drive and is conducted live as a voice mock — this page is its
-            public projection.
+            Built by <AgentRef name="build-interview-kit" /> the moment this application entered the round. The kit
+            lives as a Google Doc in the candidate&apos;s private Drive and is conducted live as a voice mock — this
+            page is its public projection.
           </footer>
         </>
       )}
