@@ -53,14 +53,22 @@ function ResumeGift({ runId, company, role }: { runId: string; company: string |
             Download résumé (PDF) ↓
           </a>
         </Button>
+        {/* Desktop: inline modal preview (browsers render the PDF in the iframe). */}
         <Button
           variant="outline"
           size="lg"
-          className="w-full sm:w-auto"
+          className="hidden w-full sm:inline-flex sm:w-auto"
           data-testid="sim-resume-preview-open"
           onClick={() => dialogRef.current?.showModal()}
         >
           Preview
+        </Button>
+        {/* Mobile: mobile browsers won't render a PDF inside an iframe (they show a
+            dead-end "open" affordance), so open it directly in a new tab — one tap. */}
+        <Button asChild variant="outline" size="lg" className="w-full sm:hidden">
+          <a href={pdfUrl} target="_blank" rel="noopener noreferrer">
+            Preview
+          </a>
         </Button>
       </div>
       <dialog
