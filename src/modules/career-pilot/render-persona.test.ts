@@ -243,6 +243,25 @@ describe('renderSandboxCandidate (§24.54 — public simulator subset)', () => {
     expect(out).not.toContain('## Quiet hours');
   });
 
+  it('injects an Approved-figures honesty allow-list from the real résumé numbers (§24.72)', () => {
+    const p = profile({
+      full_name: 'Jane Doe',
+      master_resume: '## Experience\n\n- Cut latency to 137ns; 850× faster on 6.85M policies; 600+ tests.',
+      bio: 'Senior engineer.',
+    });
+    const out = renderSandboxCandidate(p);
+    expect(out).toContain('## Approved figures');
+    expect(out).toContain('137');
+    expect(out).toContain('850');
+    expect(out).toContain('6.85');
+    expect(out).toContain('600');
+  });
+
+  it('omits the Approved-figures section when the résumé has no numbers', () => {
+    const p = profile({ full_name: 'Jane Doe', master_resume: '## Experience\n\n- Built and shipped things.' });
+    expect(renderSandboxCandidate(p)).not.toContain('## Approved figures');
+  });
+
   it('returns the sandbox sentinel (never the owner onboarding flow) for null/empty profiles', () => {
     for (const p of [null, profile(), profile({ comp_floor: 220000 })]) {
       const out = renderSandboxCandidate(p);

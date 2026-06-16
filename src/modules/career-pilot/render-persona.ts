@@ -246,6 +246,26 @@ export function renderSandboxCandidate(profile: CandidateProfile | null): string
     sections.push('## Skills', skills.map((s) => `- ${s}`).join('\n'));
   }
 
+  // Approved figures (§24.72 honesty): the ONLY numbers the agent may cite, drawn
+  // from the real résumé. The bio is mechanically re-checked against this set
+  // host-side, but the cold-outreach email is free prose — this list curbs an
+  // invented metric (the recurring "60% faster") at the source for BOTH.
+  const figures = approvedFigures(profile);
+  if (figures.length > 0) {
+    sections.push(
+      '## Approved figures (honesty)',
+      [
+        'Every number or metric you cite — in the tailored résumé summary AND the',
+        'cold-outreach email — must be one of these real figures from my résumé.',
+        'Never invent, round, or approximate a metric (never write e.g. "60% faster"',
+        'unless that exact number is below). When unsure, describe the impact in',
+        'words, not a made-up number.',
+        '',
+        figures.join(' · '),
+      ].join('\n'),
+    );
+  }
+
   const links: string[] = [];
   if (profile.github_url) links.push(`- [GitHub](${profile.github_url})`);
   if (profile.linkedin_url) links.push(`- [LinkedIn](${profile.linkedin_url})`);
@@ -256,6 +276,25 @@ export function renderSandboxCandidate(profile: CandidateProfile | null): string
   }
 
   return sections.join('\n\n') + '\n';
+}
+
+/** The distinct digit-number tokens (comma-normalized) in the candidate's real
+ *  résumé text — the honesty allow-list for any metric the agent cites. Mirrors
+ *  the bio check's token extraction in tailored-resume.ts so the two agree. */
+function approvedFigures(profile: CandidateProfile): string[] {
+  const text = [profile.master_resume ?? '', profile.bio ?? '', profile.skills ?? '', profile.target_roles ?? ''].join(
+    ' ',
+  );
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const m of text.match(/\d[\d,]*(?:\.\d+)?/g) ?? []) {
+    const n = m.replace(/,/g, '');
+    if (!seen.has(n)) {
+      seen.add(n);
+      out.push(n);
+    }
+  }
+  return out;
 }
 
 interface LocationPref {
