@@ -21,6 +21,7 @@ import { Route as opsKitRouteImport } from './routes/(ops)/kit'
 import { Route as opsDevRouteImport } from './routes/(ops)/dev'
 import { Route as opsCrashRouteImport } from './routes/(ops)/crash'
 import { Route as opsArchitectureRouteImport } from './routes/(ops)/architecture'
+import { Route as opsAdminRouteImport } from './routes/(ops)/admin'
 import { Route as marketingWorkRouteImport } from './routes/(marketing)/work'
 import { Route as marketingContactRouteImport } from './routes/(marketing)/contact'
 import { Route as marketingSimulatorIndexRouteImport } from './routes/(marketing)/simulator.index'
@@ -84,6 +85,11 @@ const opsArchitectureRoute = opsArchitectureRouteImport.update({
   path: '/architecture',
   getParentRoute: () => opsRouteRoute,
 } as any)
+const opsAdminRoute = opsAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => opsRouteRoute,
+} as any)
 const marketingWorkRoute = marketingWorkRouteImport.update({
   id: '/work',
   path: '/work',
@@ -109,6 +115,7 @@ const marketingSimulatorResultsIdRoute =
 export interface FileRoutesByFullPath {
   '/contact': typeof marketingContactRoute
   '/work': typeof marketingWorkRoute
+  '/admin': typeof opsAdminRoute
   '/architecture': typeof opsArchitectureRoute
   '/crash': typeof opsCrashRoute
   '/dev': typeof opsDevRoute
@@ -125,6 +132,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/contact': typeof marketingContactRoute
   '/work': typeof marketingWorkRoute
+  '/admin': typeof opsAdminRoute
   '/architecture': typeof opsArchitectureRoute
   '/crash': typeof opsCrashRoute
   '/dev': typeof opsDevRoute
@@ -144,6 +152,7 @@ export interface FileRoutesById {
   '/(ops)': typeof opsRouteRouteWithChildren
   '/(marketing)/contact': typeof marketingContactRoute
   '/(marketing)/work': typeof marketingWorkRoute
+  '/(ops)/admin': typeof opsAdminRoute
   '/(ops)/architecture': typeof opsArchitectureRoute
   '/(ops)/crash': typeof opsCrashRoute
   '/(ops)/dev': typeof opsDevRoute
@@ -162,6 +171,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/contact'
     | '/work'
+    | '/admin'
     | '/architecture'
     | '/crash'
     | '/dev'
@@ -178,6 +188,7 @@ export interface FileRouteTypes {
   to:
     | '/contact'
     | '/work'
+    | '/admin'
     | '/architecture'
     | '/crash'
     | '/dev'
@@ -196,6 +207,7 @@ export interface FileRouteTypes {
     | '/(ops)'
     | '/(marketing)/contact'
     | '/(marketing)/work'
+    | '/(ops)/admin'
     | '/(ops)/architecture'
     | '/(ops)/crash'
     | '/(ops)/dev'
@@ -303,6 +315,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof opsArchitectureRouteImport
       parentRoute: typeof opsRouteRoute
     }
+    '/(ops)/admin': {
+      id: '/(ops)/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof opsAdminRouteImport
+      parentRoute: typeof opsRouteRoute
+    }
     '/(marketing)/work': {
       id: '/(marketing)/work'
       path: '/work'
@@ -355,6 +374,7 @@ const marketingRouteRouteWithChildren = marketingRouteRoute._addFileChildren(
 )
 
 interface opsRouteRouteChildren {
+  opsAdminRoute: typeof opsAdminRoute
   opsArchitectureRoute: typeof opsArchitectureRoute
   opsCrashRoute: typeof opsCrashRoute
   opsDevRoute: typeof opsDevRoute
@@ -365,6 +385,7 @@ interface opsRouteRouteChildren {
 }
 
 const opsRouteRouteChildren: opsRouteRouteChildren = {
+  opsAdminRoute: opsAdminRoute,
   opsArchitectureRoute: opsArchitectureRoute,
   opsCrashRoute: opsCrashRoute,
   opsDevRoute: opsDevRoute,
