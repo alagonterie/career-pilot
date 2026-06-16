@@ -1,3 +1,4 @@
+import { Loader2 } from 'lucide-react'
 import * as React from 'react'
 
 import { Button } from '~/components/ui/button'
@@ -35,6 +36,38 @@ interface SimResultProps {
 function ResumeGift({ runId, company, role }: { runId: string; company: string | null; role: string | null }) {
   const pdfUrl = `${API_BASE}/api/simulator/results/${encodeURIComponent(runId)}/resume.pdf`
   const dialogRef = React.useRef<HTMLDialogElement>(null)
+  const [downloading, setDownloading] = React.useState(false)
+
+  // The PDF is rendered server-side per request (no cache, by design), so there's
+  // a real beat between tap and save. Fetch it in JS so the button can show a
+  // "Preparing…" state for exactly that long (self-adjusts to connection speed),
+  // then trigger the save — reusing the server's Content-Disposition filename.
+  async function downloadPdf() {
+    if (downloading) return
+    setDownloading(true)
+    try {
+      const res = await fetch(pdfUrl)
+      if (!res.ok) throw new Error(`status ${res.status}`)
+      const blob = await res.blob()
+      const cd = res.headers.get('content-disposition') ?? ''
+      const m = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i)
+      const filename = m ? decodeURIComponent(m[1]) : 'tailored-resume.pdf'
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch {
+      // Network/headers issue (e.g. cross-origin local dev) — let the browser handle it.
+      window.open(pdfUrl, '_blank', 'noopener')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   return (
     <div data-testid="sim-gift" className="rounded-xl border border-accent-cool/40 bg-accent-cool/5 px-6 py-5">
       <p className="font-mono text-xs uppercase tracking-widest text-accent-cool">Your tailored résumé</p>
@@ -48,10 +81,22 @@ function ResumeGift({ runId, company, role }: { runId: string; company: string |
       {/* Full-width + stacked on mobile (no awkward half-width wrap), side-by-side
           from sm up. */}
       <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-        <Button asChild size="lg" className="w-full sm:w-auto">
-          <a href={pdfUrl} download data-testid="sim-download-resume">
-            Download résumé (PDF) ↓
-          </a>
+        <Button
+          size="lg"
+          className="w-full sm:w-auto"
+          onClick={downloadPdf}
+          disabled={downloading}
+          aria-busy={downloading}
+          data-testid="sim-download-resume"
+        >
+          {downloading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+              Preparing…
+            </>
+          ) : (
+            'Download résumé (PDF) ↓'
+          )}
         </Button>
         {/* Desktop: inline modal preview (browsers render the PDF in the iframe). */}
         <Button
