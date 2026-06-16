@@ -30,6 +30,7 @@
  */
 import http from 'http';
 
+import { ensureMasterPdfLink, recordVisit, resolveLink } from '../../attribution.js';
 import { getDb } from '../../db/connection.js';
 import { countRunningContainers } from '../../container-runtime.js';
 import { getActiveSessions, getRunningSessions } from '../../db/sessions.js';
@@ -227,7 +228,16 @@ async function handleResumePdf(res: http.ServerResponse, cors: Record<string, st
     return;
   }
   const url = getConfig<string>(getDb(), 'portal_public_url', '');
-  const buf = await renderResumePdf(profile, identity, masterFooter(url), url);
+  // §24.74: route the footer's host link through a stable /r/<code> token so a
+  // FORWARDED master résumé attributes its click-throughs (the displayed host
+  // stays bare). Only when a public URL is configured (else there's no footer
+  // link to tokenize); best-effort — a mint failure falls back to the plain host.
+  let footerLinkUrl: string | undefined;
+  if (url) {
+    const link = ensureMasterPdfLink();
+    if (link) footerLinkUrl = url.replace(/\/$/, '') + link.path;
+  }
+  const buf = await renderResumePdf(profile, identity, masterFooter(url), url, { footerLinkUrl });
   const base = profile.name.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'resume';
   res.writeHead(200, {
     'Content-Type': 'application/pdf',
@@ -239,6 +249,38 @@ async function handleResumePdf(res: http.ServerResponse, cors: Record<string, st
     ...cors,
   });
   res.end(buf);
+}
+
+/**
+ * `GET /r/<code>` — resolve a minted attribution link (§24.74): record one
+ * first-party visit, then 302 to the link's destination (always '/'). The
+ * visitor stays anonymous — the Worker proxies `/r/*` here with the service
+ * token + the CF signals as `x-cp-*` headers (the same D12 model as `/api/*`).
+ * An unknown/expired code still lands the visitor on '/', but records nothing
+ * (no noise, no probe surface). The redirect target is DB-controlled + checked
+ * relative ('/...') so it can never be an open redirect.
+ */
+function handleAttributionRedirect(
+  req: http.IncomingMessage,
+  code: string,
+  res: http.ServerResponse,
+  cors: Record<string, string>,
+): void {
+  const link = resolveLink(code);
+  const dest = link && link.dest_path.startsWith('/') && !link.dest_path.startsWith('//') ? link.dest_path : '/';
+  if (link) {
+    const h = req.headers;
+    recordVisit({
+      linkCode: link.code,
+      path: dest,
+      ip: (h['x-cp-client-ip'] as string | undefined) ?? null,
+      country: (h['x-cp-country'] as string | undefined) ?? null,
+      userAgent: (h['user-agent'] as string | undefined) ?? null,
+      referrer: (h['referer'] as string | undefined) ?? null,
+    });
+  }
+  res.writeHead(302, { Location: dest, 'Cache-Control': 'no-store', ...cors });
+  res.end();
 }
 
 /**
@@ -819,6 +861,12 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
     if (method === 'GET' && path === '/api/funnel') return handleFunnel(res, cors);
     if (method === 'GET' && path === '/api/profile') return handleProfile(res, cors);
     if (method === 'GET' && path === '/api/resume.pdf') return await handleResumePdf(res, cors);
+    // §24.74 attribution redirect — `/r/<code>` (not under /api/*; the Worker
+    // proxies it here with the CF signals). Resolve → record → 302 to '/'.
+    if (method === 'GET' && path.startsWith('/r/')) {
+      const code = path.slice('/r/'.length);
+      if (code.length > 0 && !code.includes('/')) return handleAttributionRedirect(req, code, res, cors);
+    }
     if (method === 'GET' && path === '/api/kit') return handleKit(url, res, cors);
     if (method === 'GET' && path === '/api/activity/stream') return handleActivityStream(req, res, url, cors);
     if (method === 'GET' && path === '/api/activity') return handleActivity(url, res, cors);

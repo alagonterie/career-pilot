@@ -190,8 +190,10 @@ function skillsChildren(s: Styles, profile: WorkProfile): ReactNode[] {
 }
 
 /** The fixed footer Text, with the configured host rendered as a clickable Link
- *  (so the traveling-proof URL is clickable like every other link). */
-function footerElement(s: Styles, footer: string, publicUrl: string) {
+ *  (so the traveling-proof URL is clickable like every other link). `linkUrl`
+ *  defaults to `publicUrl` but can differ — the §24.74 master-PDF token points
+ *  the host text at `…/r/<code>` while still DISPLAYING the bare host. */
+function footerElement(s: Styles, footer: string, publicUrl: string, linkUrl: string = publicUrl) {
   const host = siteHost(publicUrl);
   if (!host || !footer.includes(host)) {
     return h(Text, { style: s.footer, fixed: true }, footer);
@@ -201,14 +203,21 @@ function footerElement(s: Styles, footer: string, publicUrl: string) {
     Text,
     { style: s.footer, fixed: true },
     footer.slice(0, i),
-    h(Link, { src: publicUrl, style: s.footerLink }, host),
+    h(Link, { src: linkUrl, style: s.footerLink }, host),
     footer.slice(i + host.length),
   );
 }
 
 // Return type is inferred (a `ReactElement<DocumentProps>`) so it satisfies
 // `renderToBuffer` — an explicit `ReactElement` annotation would widen it away.
-function buildResumeDocument(profile: WorkProfile, identity: Identity, footer: string, publicUrl: string, s: Styles) {
+function buildResumeDocument(
+  profile: WorkProfile,
+  identity: Identity,
+  footer: string,
+  publicUrl: string,
+  s: Styles,
+  footerLinkUrl?: string,
+) {
   const sections: (ReactElement | null)[] = [
     section(
       s,
@@ -253,7 +262,7 @@ function buildResumeDocument(profile: WorkProfile, identity: Identity, footer: s
       { size: 'LETTER', style: s.page },
       header(s, profile, identity),
       ...sections,
-      footerElement(s, footer, publicUrl),
+      footerElement(s, footer, publicUrl, footerLinkUrl ?? publicUrl),
     ),
   );
 }
@@ -267,10 +276,10 @@ export function renderResumePdf(
   identity: Identity,
   footer: string,
   publicUrl = '',
-  opts: { compact?: boolean } = {},
+  opts: { compact?: boolean; footerLinkUrl?: string } = {},
 ): Promise<Buffer> {
   const s = opts.compact ? COMPACT : NORMAL;
-  return renderToBuffer(buildResumeDocument(profile, identity, footer, publicUrl, s));
+  return renderToBuffer(buildResumeDocument(profile, identity, footer, publicUrl, s, opts.footerLinkUrl));
 }
 
 /** Normalize a configured public URL to a bare host, or null when unset/blank —

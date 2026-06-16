@@ -173,6 +173,17 @@ describe('rendered résumé — structural guarantees', () => {
     expect(links.some((u) => u.includes('hire.example.com'))).toBe(true);
   });
 
+  it('routes the footer host link through the attribution token when footerLinkUrl is set (§24.74)', async () => {
+    const url = 'https://hire.example.com';
+    const footerLinkUrl = 'https://hire.example.com/r/Xk9f2Abc';
+    const { links } = await inspectPdf(
+      await renderResumePdf(FULL_MASTER, FULL_IDENTITY, masterFooter(url), url, { footerLinkUrl }),
+    );
+    // The clickable link target is the tokenized URL; the displayed host stays bare.
+    expect(links).toContain(footerLinkUrl);
+    expect(links).not.toContain(url);
+  });
+
   it('renders grouped skills with their category labels', async () => {
     const { text } = await inspectPdf(await renderResumePdf(FULL_MASTER, FULL_IDENTITY, masterFooter('')));
     expect(text).toContain('Languages');
