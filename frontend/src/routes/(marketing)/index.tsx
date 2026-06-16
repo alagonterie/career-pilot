@@ -28,12 +28,16 @@ function Home() {
   // (those are the /live story) — so a stretch of turns can't blank the ticker.
   const { events, status, count } = useActivityStream(API_BASE, { exclude: ['turn'] })
   const { data: funnel, status: funnelStatus } = useFunnel(API_BASE)
-  const { data: telemetry } = useTelemetry(API_BASE)
+  const { data: telemetry, status: telemetryStatus } = useTelemetry(API_BASE)
   const apps = funnel?.applications ?? []
   // Honest hero stat line (PORTAL §5.1 Viewport 1): real numbers from the live
   // hooks, each omitted when empty. Replaces the spec's cryptic "cache hit rate"
   // with "agent actions in 24h" (§24.71 hero audit).
   const stats = heroStats({ apps, events, actionsIn24h: telemetry?.local.activity_events_24h ?? null })
+  // Gate the swap on the two deterministic polls settling, so the line appears
+  // complete in one shot rather than cascading segment-by-segment as each hook
+  // lands (the / polish pass — that incremental fill was the residual shift).
+  const statsReady = funnelStatus !== 'loading' && telemetryStatus !== 'loading'
   // SSR-resolved candidate profile (placeholder fallback). De-`Jane Doe`s the hero.
   const { profile, identity } = Route.useLoaderData()
   const p = profile ?? workProfile
@@ -89,16 +93,15 @@ function Home() {
         </div>
 
         {/* Honest live stat line (PORTAL §5.1 Viewport 1) — the first-paint "this
-            is real, right now" proof under the CTAs. Skeleton pills hold the slot
-            until the client hooks land, and the reserved height fits the 2-line
-            mobile wrap (not just one line), so populating it never shoves the page
-            (§24.36 + the / polish pass — the old single-line min-height shifted on
-            mobile when the stats wrapped). */}
+            is real, right now" proof under the CTAs. A FIXED height (2-line mobile,
+            1-line desktop) + a readiness gate so the skeleton→text swap never moves
+            the page vertically and the text lands in one shot, not segment-by-segment
+            (§24.36 + the / polish pass — fixes the residual load-shift). */}
         <div
-          className="mt-6 flex min-h-[2.25rem] flex-wrap items-center justify-center gap-x-2 gap-y-1 font-mono text-xs text-muted-foreground sm:min-h-5"
+          className="mt-6 flex h-9 flex-wrap items-center justify-center gap-x-2 gap-y-1 font-mono text-xs text-muted-foreground sm:h-5"
           aria-live="polite"
         >
-          {stats.length > 0 ? (
+          {statsReady ? (
             <p className="text-balance">{stats.join('  ·  ')}</p>
           ) : (
             <>
@@ -155,10 +158,10 @@ function Home() {
         <section aria-labelledby="home-funnel-heading" className="mt-20 w-full">
           <div className="mb-3 flex items-center justify-between">
             <h2 id="home-funnel-heading" className="text-sm font-semibold text-muted-foreground">
-              The search, live
+              My job search, live
             </h2>
             <Link to="/pipeline" className="font-mono text-xs text-accent-cool hover:underline">
-              track the search →
+              track it →
             </Link>
           </div>
           <FunnelCompact apps={apps} loading={funnelStatus === 'loading'} />
@@ -168,14 +171,14 @@ function Home() {
         </section>
       ) : null}
 
-      {/* Viewport 3 — live activity hook. The "watch live →" link is the
+      {/* Viewport 3 — agent-activity hook. The "see it all →" link is the
           contextual bridge into the ops register (PORTAL §5.1 / §24.35 Pass A). */}
       <LiveTicker
         events={events}
         status={status}
         action={
           <Link to="/live" className="font-mono text-xs text-accent-cool hover:underline">
-            watch live →
+            see it all →
           </Link>
         }
       />
@@ -187,9 +190,9 @@ function Home() {
           Watch me apply to your role
         </h2>
         <p className="mx-auto mt-3 max-w-xl text-balance text-sm leading-relaxed text-muted-foreground">
-          Name your company and a role you’re hiring for. The same agent stack runs live in your browser — researching
-          it, tailoring my résumé, and drafting outreach — then hands you the tailored résumé to download. Nothing gets
-          submitted anywhere.
+          Name your company and a role you’re hiring for. The same agent stack runs right in your browser — researching
+          it, tailoring my résumé, and drafting outreach — then hands you both the tailored résumé and the cold-email
+          draft. Nothing gets sent or submitted anywhere.
         </p>
         <div className="mt-6 flex justify-center">
           <Button asChild size="lg">

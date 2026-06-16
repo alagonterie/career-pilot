@@ -60,7 +60,7 @@ test.describe('landing (/) — hero + live ticker, frontend <-> backend', () => 
     await page.goto('/')
     const ticker = page.getByTestId('live-ticker')
     await expect(ticker).toBeVisible()
-    await ticker.getByRole('link', { name: /watch live/i }).click()
+    await ticker.getByRole('link', { name: /see it all/i }).click()
     await expect(page).toHaveURL(/\/live$/)
     await expect(page.getByRole('heading', { name: 'Live', level: 1 })).toBeVisible()
   })

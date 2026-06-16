@@ -107,14 +107,16 @@ export function ConnectiveRail() {
       aria-label="What's next"
       data-testid="connective-rail"
       className={[
-        'mx-auto flex w-full flex-wrap items-center gap-x-4 gap-y-3 border-t border-border px-6',
+        // Centered wrap on a phone (the buttons stack 2+1 there — left-aligned it
+        // read as ragged overflow); left-aligned inline from sm up (unchanged).
+        'mx-auto flex w-full flex-wrap items-center justify-center gap-x-4 gap-y-3 border-t border-border px-6 sm:justify-start',
         ops ? 'max-w-6xl py-5 font-mono text-xs' : 'max-w-3xl py-8 text-sm',
       ].join(' ')}
     >
       <span className={ops ? 'uppercase tracking-widest text-muted-foreground' : 'text-muted-foreground'}>
         What&apos;s next
       </span>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
         {cfg.items.map((it) => {
           if ('href' in it) {
             return (
