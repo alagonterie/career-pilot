@@ -16,6 +16,7 @@
  * Best-effort discipline throughout: never throws into the sweep.
  */
 import { getAgentGroupByFolder } from '../../db/agent-groups.js';
+import { pruneVisitTelemetry } from '../../attribution.js';
 import { getDb, hasTable } from '../../db/connection.js';
 import { getMessagingGroupsByAgentGroup } from '../../db/messaging-groups.js';
 import { getDeliveryAdapter } from '../../delivery.js';
@@ -27,11 +28,13 @@ import { type HealthFinding, runHealthChecks } from './health.js';
 import { OWNER_GROUP_FOLDER } from './ops-session.js';
 
 let lastPruneMs = 0;
+let lastVisitPruneMs = 0;
 let lastHealthMs = 0;
 
 /** Test-only: reset the step throttles. */
 export function _resetMaintenanceThrottleForTesting(): void {
   lastPruneMs = 0;
+  lastVisitPruneMs = 0;
   lastHealthMs = 0;
 }
 
@@ -125,6 +128,15 @@ export async function runTelemetryMaintenance(): Promise<void> {
       const retentionDays = getConfig<number>(db, 'request_telemetry_retention_days');
       const pruned = pruneRequestTelemetry(db, retentionDays);
       if (pruned > 0) log.info('request telemetry pruned', { pruned, retentionDays });
+    }
+
+    // §24.74: visit_telemetry prune — its own retention + interval.
+    const visitPruneIntervalSec = getConfig<number>(db, 'visit_telemetry_prune_interval_sec');
+    if (Date.now() - lastVisitPruneMs >= visitPruneIntervalSec * 1000) {
+      lastVisitPruneMs = Date.now();
+      const retentionDays = getConfig<number>(db, 'visit_telemetry_retention_days');
+      const pruned = pruneVisitTelemetry(db, retentionDays);
+      if (pruned > 0) log.info('visit telemetry pruned', { pruned, retentionDays });
     }
 
     const healthIntervalSec = getConfig<number>(db, 'health_check_interval_sec');

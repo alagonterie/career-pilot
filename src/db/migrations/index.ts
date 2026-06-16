@@ -42,6 +42,7 @@ import { migration132 } from './132-simulator-client-ip.js';
 import { migration133 } from './133-candidate-profile-work-page.js';
 import { migration134 } from './134-candidate-profile-public-email.js';
 import { migration135 } from './135-simulator-tailored-resume-json.js';
+import { migration136 } from './136-visitor-attribution.js';
 
 export interface Migration {
   version: number;
@@ -91,6 +92,7 @@ const migrations: Migration[] = [
   migration133,
   migration134,
   migration135,
+  migration136,
 ];
 
 export function runMigrations(db: Database.Database): void {

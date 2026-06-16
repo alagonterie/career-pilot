@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as opsRouteRouteImport } from './routes/(ops)/route'
 import { Route as marketingRouteRouteImport } from './routes/(marketing)/route'
 import { Route as marketingIndexRouteImport } from './routes/(marketing)/index'
+import { Route as RSplatRouteImport } from './routes/r/$'
 import { Route as ApiSplatRouteImport } from './routes/api/$'
 import { Route as opsPipelineRouteImport } from './routes/(ops)/pipeline'
 import { Route as opsMomentumRouteImport } from './routes/(ops)/momentum'
@@ -37,6 +38,11 @@ const marketingIndexRoute = marketingIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => marketingRouteRoute,
+} as any)
+const RSplatRoute = RSplatRouteImport.update({
+  id: '/r/$',
+  path: '/r/$',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ApiSplatRoute = ApiSplatRouteImport.update({
   id: '/api/$',
@@ -111,6 +117,7 @@ export interface FileRoutesByFullPath {
   '/momentum': typeof opsMomentumRoute
   '/pipeline': typeof opsPipelineRoute
   '/api/$': typeof ApiSplatRoute
+  '/r/$': typeof RSplatRoute
   '/': typeof marketingIndexRoute
   '/simulator/': typeof marketingSimulatorIndexRoute
   '/simulator/results/$id': typeof marketingSimulatorResultsIdRoute
@@ -126,6 +133,7 @@ export interface FileRoutesByTo {
   '/momentum': typeof opsMomentumRoute
   '/pipeline': typeof opsPipelineRoute
   '/api/$': typeof ApiSplatRoute
+  '/r/$': typeof RSplatRoute
   '/': typeof marketingIndexRoute
   '/simulator': typeof marketingSimulatorIndexRoute
   '/simulator/results/$id': typeof marketingSimulatorResultsIdRoute
@@ -144,6 +152,7 @@ export interface FileRoutesById {
   '/(ops)/momentum': typeof opsMomentumRoute
   '/(ops)/pipeline': typeof opsPipelineRoute
   '/api/$': typeof ApiSplatRoute
+  '/r/$': typeof RSplatRoute
   '/(marketing)/': typeof marketingIndexRoute
   '/(marketing)/simulator/': typeof marketingSimulatorIndexRoute
   '/(marketing)/simulator/results/$id': typeof marketingSimulatorResultsIdRoute
@@ -161,6 +170,7 @@ export interface FileRouteTypes {
     | '/momentum'
     | '/pipeline'
     | '/api/$'
+    | '/r/$'
     | '/'
     | '/simulator/'
     | '/simulator/results/$id'
@@ -176,6 +186,7 @@ export interface FileRouteTypes {
     | '/momentum'
     | '/pipeline'
     | '/api/$'
+    | '/r/$'
     | '/'
     | '/simulator'
     | '/simulator/results/$id'
@@ -193,6 +204,7 @@ export interface FileRouteTypes {
     | '/(ops)/momentum'
     | '/(ops)/pipeline'
     | '/api/$'
+    | '/r/$'
     | '/(marketing)/'
     | '/(marketing)/simulator/'
     | '/(marketing)/simulator/results/$id'
@@ -202,6 +214,7 @@ export interface RootRouteChildren {
   marketingRouteRoute: typeof marketingRouteRouteWithChildren
   opsRouteRoute: typeof opsRouteRouteWithChildren
   ApiSplatRoute: typeof ApiSplatRoute
+  RSplatRoute: typeof RSplatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -226,6 +239,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof marketingIndexRouteImport
       parentRoute: typeof marketingRouteRoute
+    }
+    '/r/$': {
+      id: '/r/$'
+      path: '/r/$'
+      fullPath: '/r/$'
+      preLoaderRoute: typeof RSplatRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/$': {
       id: '/api/$'
@@ -362,6 +382,7 @@ const rootRouteChildren: RootRouteChildren = {
   marketingRouteRoute: marketingRouteRouteWithChildren,
   opsRouteRoute: opsRouteRouteWithChildren,
   ApiSplatRoute: ApiSplatRoute,
+  RSplatRoute: RSplatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

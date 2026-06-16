@@ -22,6 +22,7 @@
  */
 import type Database from 'better-sqlite3';
 
+import { companyFromEmail, mintLink } from '../../attribution.js';
 import { getAgentGroup } from '../../db/agent-groups.js';
 import { getDb } from '../../db/connection.js';
 import { getConfig } from '../../get-config.js';
@@ -887,11 +888,23 @@ export async function handleCreateGmailDraft(
     return;
   }
 
+  // §24.74: if the body carries the portal URL (the attribution footer the
+  // orchestrator appends), mint a per-company outreach token and route that link
+  // through `/r/<code>`, so a recruiter's click attributes to the company we
+  // emailed (the recipient's domain is the key). Best-effort: a miss (no portal
+  // URL in the body, or a mint failure) leaves the body untouched.
+  let outBody = body;
+  const portalUrl = getConfig<string>(getDb(), 'portal_public_url', '');
+  if (portalUrl && outBody.includes(portalUrl)) {
+    const minted = mintLink({ artifactType: 'outreach', company: companyFromEmail(to), recipient: to });
+    if (minted) outBody = outBody.replace(portalUrl, portalUrl.replace(/\/$/, '') + minted.path);
+  }
+
   const stubMode = process.env.GMAIL_STUB === '1';
   if (stubMode) {
     const draft_id = `${STUB_DRAFT_PREFIX}${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     const draft_url = `https://mail.google.com/mail/u/0/#drafts/${draft_id}`;
-    log.info('create_gmail_draft (stub)', { to, subject, body_chars: body.length, draft_id });
+    log.info('create_gmail_draft (stub)', { to, subject, body_chars: outBody.length, draft_id });
     writeResponse(inDb, requestId, {
       ok: true,
       data: { draft_id, draft_url, stub: true, in_reply_to },

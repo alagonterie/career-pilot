@@ -1477,6 +1477,54 @@ describe('handleCreateGmailDraft', () => {
     }
   });
 
+  it('mints a company-keyed outreach token when the body carries the portal URL (§24.74)', async () => {
+    process.env.GMAIL_STUB = '1';
+    getDb()
+      .prepare(
+        "INSERT OR REPLACE INTO preferences (key, value, updated_at) VALUES ('portal_public_url', 'https://hire.example.com', datetime('now'))",
+      )
+      .run();
+    const c = actionContent('career_pilot.create_gmail_draft', {
+      to: 'jane.doe@anthropic.com',
+      subject: 'Reaching out',
+      body: 'Hi Jane.\n\n---\n_Prepared by my agent. See it work live at https://hire.example.com._',
+    });
+    await handleCreateGmailDraft(c, OWNER_SESSION, inDb);
+
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+    const link = getDb()
+      .prepare(
+        "SELECT artifact_type, company, recipient, dest_path FROM attribution_link WHERE artifact_type = 'outreach'",
+      )
+      .get() as { artifact_type: string; company: string; recipient: string; dest_path: string } | undefined;
+    expect(link).toBeTruthy();
+    expect(link!.company).toBe('anthropic.com');
+    expect(link!.recipient).toBe('jane.doe@anthropic.com');
+    expect(link!.dest_path).toBe('/');
+  });
+
+  it('does NOT mint when the body has no portal URL', async () => {
+    process.env.GMAIL_STUB = '1';
+    getDb().prepare("DELETE FROM attribution_link WHERE artifact_type = 'outreach'").run();
+    getDb()
+      .prepare(
+        "INSERT OR REPLACE INTO preferences (key, value, updated_at) VALUES ('portal_public_url', 'https://hire.example.com', datetime('now'))",
+      )
+      .run();
+    const c = actionContent('career_pilot.create_gmail_draft', {
+      to: 'jane.doe@anthropic.com',
+      subject: 'Reaching out',
+      body: 'Hi Jane, a plain body with no footer.',
+    });
+    await handleCreateGmailDraft(c, OWNER_SESSION, inDb);
+
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+    const n = getDb().prepare("SELECT COUNT(*) AS n FROM attribution_link WHERE artifact_type = 'outreach'").get() as {
+      n: number;
+    };
+    expect(n.n).toBe(0);
+  });
+
   it('refuses with FORBIDDEN when session belongs to sandbox group (DoD #8)', async () => {
     process.env.GMAIL_STUB = '1';
     const c = actionContent('career_pilot.create_gmail_draft', {
