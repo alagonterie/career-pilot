@@ -239,6 +239,30 @@ Sources: the funnel (`/api/funnel`, active = in-flight), telemetry (`/api/teleme
 
 > **Build note (§24.71 hero audit).** Two changes land here. (1) The spec's third stat was "cache hit rate 91%" — dropped: it's LLM prompt-cache jargon that reads as cryptic on a first impression. `activity_events_24h` ("agent actions in 24h") replaces it — same "working right now" signal, plain language. The honest line is built by the pure, tested `heroStats()` helper (omit-when-empty) and reserves a line of height so populating it doesn't shove the hero (§24.36). (2) The hook is reordered to **orient before it proves** — it leads with *what this is* ("I built an AI agent system that runs my job search") before the live indicator, stat line, and funnel corroborate it — killing the "what am I looking at?" landing. The hook bolds **AI agent system** (the one emphasized phrase) as the single differentiator. Hero positioning is "Senior Software Engineer · Team Lead" — deliberately generalist (no pinned specialty: the candidate reads as someone who ships across the stack), and it avoids repeating "AI agent system", which the hook already carries.
 
+**Viewport 1.5: The pitch (plain English) — STRATEGY §24.75**
+
+The hero *hooks*; the live viewports below *prove*. Between them sat a gap — the site was show-rich and tell-poor, so a visitor had to reverse-engineer what the system actually does and why it's worth caring about. This beat closes it: a compact, value-first narrative in the candidate's own voice, the one place the whole thing is *explained* before the evidence arrives.
+
+```
+                 The job hunt is a grind: find the roles, research
+                 each company, tailor your résumé, write the outreach,
+                 prep for the interview — then do it again, a hundred times.
+
+                 So I built an AI agent system that runs that loop for me,
+                 continuously, and keeps me in the driver's seat.
+                 This whole page is that system, working live.
+
+                   1 · finds roles      2 · tailors my materials to each
+                   3 · drafts outreach   4 · builds interview prep
+
+                 …and you can watch it happen, or run it on your own
+                 open role right now.
+
+                                              Read the full story →   (/about)
+```
+
+Marketing register, calm prose, `max-w-prose`. Candidate's-POV, **value-first** — what the system does and why it's a smart way to run a real search, in plain language, before any live data appears. It is static prose (no per-visitor data; the name/voice come from the SSR'd `candidate_profile` identity, like the hero). It ends with **one quiet, ignorable deepener** — "Read the full story →" → `/about` (the story-first depth page, §5.8) — for the visitor who wants the long version; everyone else scrolls straight into the proof below. This is the *only* path to the long-form story besides the footer's "About" link — the page is deliberately **not** in the header (§8.1: header = the journey, footer/depth = background). The less-interested visitor is never dead-ended by it.
+
 **Viewport 2: Funnel strip**
 
 A horizontal 5-stage strip with the visitor's eye-line drawn left to right:
@@ -873,20 +897,28 @@ When submitted, the message is relayed to the candidate via Telegram. Sender get
 
 ---
 
-### 5.8 `/about` — Methodology / FAQ
+### 5.8 `/about` — The story + methodology (the "tell" surface)
 
-Linked from footer. Less prominent but substantive — this is where a curious engineer reading the GitHub repo lands when they want the "why" behind decisions. Covers:
+**Two doorways, never the header (STRATEGY §24.75).** This is the site's one *deep, optional* read for the visitor who wants more than the page in front of them. It is reached exactly two ways, framed for two motivations: from the home pitch beat (§5.1 Viewport 1.5) as **"Read the full story →"** (the freshly-hooked visitor who wants the narrative), and from the footer (§8.2) as **"About"** (the conventional background slot). It is deliberately **not** a top-nav item (the §8.1 rule: header = the journey, footer/background = depth). The route stays `/about` — the `#anonymization` deep-link (from `/work` + the funnel obfuscation note) and the footer/home references already point here, and the URL sits behind framed link text anyway.
 
-- **Why this portal exists** — 1 paragraph framing
-- **Anonymization policy** — the rules (see §9)
-- **Credential & data privacy** — see "Two-tier vault" below
-- **Visitor privacy** — the first-party visit log, stated plainly (see "Visitor privacy" below)
-- **System modes & safety controls** — high-level explanation linking to §7
-- **Cost of running this thing** — live numbers, not estimates
-- **Why these specific tech choices** — NanoClaw, Claude Agent SDK, Portkey (Model Catalog), OneCLI, TanStack Start
-- **How to fork it for yourself** — generic-by-design, the repo is meant to be forked
-- **Honest limitations** — what this system doesn't do (anti-claims build credibility)
-- **FAQ** — common recruiter questions
+**Why this page, and why story-first.** It is the companion to the `/architecture` *proof* surface (§5.5): `/architecture` **shows** the live system; this page **tells** the story and substantiates the claims — they don't duplicate (this page links *out* to `/architecture` for the live map and the repo for the code, never re-draws them). It opens with the value narrative — the long version of the §5.1 beat, in the candidate's voice, on *what the system does and why it's a smart way to run a real job search* — and flows into the substance a skeptic reads next. Story → substance, one coherent read:
+
+1. **The story** — the plain-English value narrative, candidate's-POV (the §5.1 beat, at length).
+2. **How it works, in words** — the loop explained plainly for a non-engineer; links to `/architecture` for the live map and GitHub for the code (no diagram re-draw here).
+3. **Meet the cast** — the agent roster via the §8.6 cast registry (`lib/ai-actors.ts` + `AgentRef`); no new content model.
+4. **Anonymization policy** (`#anonymization`) — the rules (see §9).
+5. **The two-tier vault** — credential & data privacy (see "Two-tier vault" below); a credibility move with engineering visitors.
+6. **Visitor privacy** — the first-party visit log, stated plainly (see "Visitor privacy" below; this is the STRATEGY §24.74 D4 disclosure, landing here).
+7. **System modes & safety controls** — high-level, linking to §7.
+8. **Cost of running this thing** — live *estimates*, honestly labeled (see the cost note below).
+9. **Why these specific tech choices** — NanoClaw, Claude Agent SDK, Portkey (Model Catalog), OneCLI, TanStack Start.
+10. **How to fork it for yourself** — generic-by-design, the repo is meant to be forked (see "How to fork it" below).
+11. **Honest limitations** — what this system doesn't do (anti-claims build credibility).
+12. **FAQ** — common recruiter questions.
+
+Marketing register throughout (calm, `max-w-prose`), opening warm/narrative and deepening into precise/technical — a normal long-form arc. The connective rail's existing `/about` row (§8.4) applies.
+
+> **Cost note (STRATEGY §24.75 — reuse, don't rebuild).** The cost section renders from the **existing public** `GET /api/telemetry` — `turn_cost_cents_total` + `sim_cost_cents_total` (the combined headline) and `cache_hit_rate` — the same data `/live`'s "Cost & cache" panel already shows. No new endpoint, and no "should real $ be public" decision: the number is *already* public on `/live`. The earlier wording here — "live numbers, **not** estimates" — is reconciled to the honest reality: the Agent SDK resolves **estimates** only (exact per-call figures need Portkey's Enterprise admin key, STRATEGY §24.47), so the figures render **labeled `est`**, exactly as on `/live`. "Live estimates, honestly labeled" — the honesty rule wins over the aspiration.
 
 #### Two-tier vault (the credential story)
 
