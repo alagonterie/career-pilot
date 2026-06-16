@@ -22,6 +22,7 @@ import crypto from 'node:crypto';
 import type Database from 'better-sqlite3';
 
 import { getDb, hasTable } from './db/connection.js';
+import { readEnvFile } from './env.js';
 import { getConfig } from './get-config.js';
 import { log } from './log.js';
 
@@ -70,6 +71,13 @@ const CODE_LEN = 8;
 const REFERRER_CAP = 120;
 const COMPANY_CAP = 120;
 
+// The IP-hash salt (§24.74 D4), resolved once at load. Read from .env via
+// readEnvFile — kept OUT of process.env like every other host secret (src/env.ts)
+// — with a process.env secondary (for contexts that do export it) and a constant
+// fallback so we never store a raw IP even when the salt is unset (dev/test).
+const IP_HASH_SALT =
+  readEnvFile(['VISIT_IP_HASH_SALT']).VISIT_IP_HASH_SALT ?? process.env.VISIT_IP_HASH_SALT ?? 'career-pilot-visit';
+
 /** A short opaque code for `/r/<code>` (crypto-random; collision-checked on insert). */
 export function genCode(len = CODE_LEN): string {
   const bytes = crypto.randomBytes(len);
@@ -91,14 +99,14 @@ export function companyFromEmail(to: string | null | undefined): string | null {
 }
 
 /**
- * A SALTED hash of the IP — the only form we persist (§24.74 D4). The salt is a
- * host secret (`VISIT_IP_HASH_SALT`); when unset (dev/test) we still hash so we
- * never store a raw IP, just with a weaker constant salt. Truncated — we only
+ * A SALTED hash of the IP — the only form we persist (§24.74 D4). The salt
+ * defaults to the load-time `IP_HASH_SALT` (the `VISIT_IP_HASH_SALT` secret from
+ * .env, else a constant); callers can pass an explicit salt (tests). When the
+ * secret is unset we still hash, so we never store a raw IP. Truncated — we only
  * need enough to tell a repeat visit from a new one.
  */
-export function hashIp(ip: string | null | undefined): string | null {
+export function hashIp(ip: string | null | undefined, salt: string = IP_HASH_SALT): string | null {
   if (!ip || typeof ip !== 'string' || !ip.trim()) return null;
-  const salt = process.env.VISIT_IP_HASH_SALT ?? 'career-pilot-visit';
   return crypto.createHash('sha256').update(`${salt}:${ip.trim()}`).digest('hex').slice(0, 16);
 }
 

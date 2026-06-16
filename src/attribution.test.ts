@@ -48,7 +48,6 @@ beforeEach(() => {
 
 afterEach(() => {
   closeDb();
-  delete process.env.VISIT_IP_HASH_SALT;
 });
 
 describe('pure helpers', () => {
@@ -70,17 +69,15 @@ describe('pure helpers', () => {
 
   it('hashIp never returns the raw IP and is salt-sensitive + stable', () => {
     const ip = '203.0.113.7';
-    const h1 = hashIp(ip);
+    const h1 = hashIp(ip, 'salt-a');
     expect(h1).toBeTruthy();
     expect(h1).not.toContain(ip);
     expect(h1).toMatch(/^[0-9a-f]{16}$/);
-    // Stable for the same (salt, ip).
-    expect(hashIp(ip)).toBe(h1);
-    // A different salt yields a different hash.
-    process.env.VISIT_IP_HASH_SALT = 'a-different-salt';
-    expect(hashIp(ip)).not.toBe(h1);
-    expect(hashIp(null)).toBeNull();
-    expect(hashIp('')).toBeNull();
+    // Stable for the same (salt, ip); a different salt yields a different hash.
+    expect(hashIp(ip, 'salt-a')).toBe(h1);
+    expect(hashIp(ip, 'salt-b')).not.toBe(h1);
+    expect(hashIp(null, 'salt-a')).toBeNull();
+    expect(hashIp('', 'salt-a')).toBeNull();
   });
 
   it('uaClass buckets bots, mobile, desktop', () => {
