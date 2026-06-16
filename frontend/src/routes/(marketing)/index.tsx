@@ -81,6 +81,43 @@ function Home() {
         </p>
       </section>
 
+      {/* Viewport 1.5 — the pitch (PORTAL §5.1 / §24.75). The hero hooks; the live
+          viewports below prove. This beat is the one place the system is *explained*
+          in plain English — value-first, the candidate's voice — before the evidence
+          arrives, so a visitor isn't left reverse-engineering what's happening. Static
+          prose (no per-visitor data); ends with one quiet deepener into the full story
+          (/about). The less-interested scroll straight past into the proof below. */}
+      <section aria-labelledby="home-pitch-heading" className="mt-16 w-full max-w-xl text-center">
+        <h2 id="home-pitch-heading" className="sr-only">
+          What this is
+        </h2>
+        <p className="text-balance text-base leading-relaxed text-foreground/90">
+          The job hunt is a grind — find the roles, research each company, tailor your résumé, write the outreach, prep
+          for the interview, then do it again a hundred times. So I built an AI agent system that runs that loop for me,
+          continuously, and keeps me in the driver’s seat.
+        </p>
+        <ul className="mx-auto mt-6 grid max-w-md grid-cols-1 gap-x-8 gap-y-2 text-left text-sm text-foreground/90 sm:grid-cols-2">
+          <li className="flex gap-2">
+            <span className="font-mono text-xs text-muted-foreground">1</span> finds roles worth applying to
+          </li>
+          <li className="flex gap-2">
+            <span className="font-mono text-xs text-muted-foreground">2</span> tailors my résumé to each
+          </li>
+          <li className="flex gap-2">
+            <span className="font-mono text-xs text-muted-foreground">3</span> drafts the outreach
+          </li>
+          <li className="flex gap-2">
+            <span className="font-mono text-xs text-muted-foreground">4</span> builds interview prep
+          </li>
+        </ul>
+        <p className="mt-6 text-balance text-sm leading-relaxed text-muted-foreground">
+          …and you can watch it happen below, or run it on your own open role right now.
+        </p>
+        <Link to="/about" className="mt-5 inline-block text-sm text-accent-cool hover:underline">
+          Read the full story →
+        </Link>
+      </section>
+
       {/* Viewport 2 — funnel strip (PORTAL §5.1): the search as a live pipeline,
           reusing the compact funnel; clicking through opens /pipeline. Rendered
           from first paint (skeleton while the first poll lands) so it holds its
