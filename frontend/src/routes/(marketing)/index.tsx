@@ -4,6 +4,7 @@ import { FunnelCompact } from '~/components/live/FunnelCompact'
 import { LiveTicker } from '~/components/LiveTicker'
 import { Button } from '~/components/ui/button'
 import { Skeleton } from '~/components/ui/skeleton'
+import { getHeroSeed } from '~/lib/hero-seed-loader'
 import { getWorkProfile } from '~/lib/profile-loader'
 import { heroStats } from '~/lib/hero-stats'
 import { seo } from '~/lib/seo'
@@ -15,8 +16,13 @@ import { workProfile } from '~/lib/work-profile'
 export const Route = createFileRoute('/(marketing)/')({
   component: Home,
   // SSR loader (§24.71 / 9.4b-1): the hero name/title + teasers render from the
-  // live candidate_profile, falling back to the typed placeholder.
-  loader: () => getWorkProfile(),
+  // live candidate_profile (placeholder fallback). The polish pass adds the hero
+  // stat SEED — the two count segments rendered into the SSR HTML so they don't
+  // pop in from a skeleton (the live hooks take over after mount).
+  loader: async () => {
+    const [profilePayload, heroSeed] = await Promise.all([getWorkProfile(), getHeroSeed()])
+    return { ...profilePayload, heroSeedStats: heroSeed.stats }
+  },
   head: ({ loaderData }) =>
     seo({ title: `${(loaderData?.profile ?? workProfile).name} — an AI agent runs my job search, live` }),
 })
@@ -39,7 +45,12 @@ function Home() {
   // lands (the / polish pass — that incremental fill was the residual shift).
   const statsReady = funnelStatus !== 'loading' && telemetryStatus !== 'loading'
   // SSR-resolved candidate profile (placeholder fallback). De-`Jane Doe`s the hero.
-  const { profile, identity } = Route.useLoaderData()
+  const { profile, identity, heroSeedStats } = Route.useLoaderData()
+  // Until the live hooks settle, show the SSR'd seed (the two counts, already in
+  // the server HTML) instead of a skeleton — so the numbers are present on first
+  // paint and don't pop in. The skeleton only shows when the seed is empty (the
+  // backend was unreachable at SSR); the hooks then take over live.
+  const shownStats = statsReady ? stats : heroSeedStats
   const p = profile ?? workProfile
 
   return (
@@ -93,16 +104,17 @@ function Home() {
         </div>
 
         {/* Honest live stat line (PORTAL §5.1 Viewport 1) — the first-paint "this
-            is real, right now" proof under the CTAs. A FIXED height (2-line mobile,
-            1-line desktop) + a readiness gate so the skeleton→text swap never moves
-            the page vertically and the text lands in one shot, not segment-by-segment
-            (§24.36 + the / polish pass — fixes the residual load-shift). */}
+            is real, right now" proof under the CTAs. The two counts are SSR-seeded
+            (present in the server HTML, no pop); a FIXED height (1-line desktop /
+            2-line mobile) holds the slot so the client hooks taking over + the
+            client-only "last activity" appending never move the page. The skeleton
+            shows only when the SSR seed was empty (§24.36 + the / polish pass). */}
         <div
           className="mt-6 flex h-9 flex-wrap items-center justify-center gap-x-2 gap-y-1 font-mono text-xs text-muted-foreground sm:h-5"
           aria-live="polite"
         >
-          {statsReady ? (
-            <p className="text-balance">{stats.join('  ·  ')}</p>
+          {shownStats.length > 0 ? (
+            <p className="text-balance">{shownStats.join('  ·  ')}</p>
           ) : (
             <>
               <Skeleton className="h-3 w-28 rounded-full" />
