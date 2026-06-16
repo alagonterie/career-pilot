@@ -48,8 +48,8 @@ export function FunnelCard({ app, onSelect }: { app: FunnelApplication; onSelect
         {kitCount > 0 ? (
           <span
             data-testid="funnel-card-kit"
-            className="shrink-0 font-mono text-[10px] text-muted-foreground"
-            title="interview kits prepared — open the card for details"
+            className="shrink-0 font-mono text-[10px] text-ai"
+            title="AI-built interview kits — open the card for details"
           >
             ▤ {kitCount > 1 ? `${kitCount} kits` : 'kit'}
           </span>
@@ -57,14 +57,11 @@ export function FunnelCard({ app, onSelect }: { app: FunnelApplication; onSelect
       </div>
 
       {win != null ? (
-        <div className="mt-2 flex items-center gap-1.5" title="win confidence — a low-rigor heuristic">
+        <div className="mt-2 flex items-center gap-1.5" title="AI-scored win confidence — a low-rigor heuristic">
           <div aria-hidden="true" className="h-1 flex-1 overflow-hidden rounded-full bg-secondary">
-            <div
-              className="h-full rounded-full bg-primary/70"
-              style={{ width: `${Math.max(0, Math.min(100, win))}%` }}
-            />
+            <div className="h-full rounded-full bg-ai/70" style={{ width: `${Math.max(0, Math.min(100, win))}%` }} />
           </div>
-          <span className="font-mono text-[10px] tabular-nums text-muted-foreground">~{win}%</span>
+          <span className="font-mono text-[10px] tabular-nums text-ai">~{win}%</span>
         </div>
       ) : null}
     </button>

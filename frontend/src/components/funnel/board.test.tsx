@@ -207,7 +207,10 @@ describe('DetailPanel', () => {
     const dialog = screen.getByRole('dialog', { name: 'Wayne Enterprises' })
     expect(dialog).toBeInTheDocument()
     expect(screen.getByText('84%')).toBeInTheDocument()
-    expect(screen.getByText(/AI estimate/i)).toBeInTheDocument()
+    // §24.73: the score is attributed to the host win-confidence model, with the
+    // honest "an estimate … not a promise" framing carried in the marker's trail.
+    expect(screen.getByTestId('agent-ref')).toHaveAttribute('data-actor', 'win-confidence')
+    expect(screen.getByText(/not a promise/i)).toBeInTheDocument()
   })
 
   it('renders the Gen-AI rationale for the win-confidence score when present', () => {

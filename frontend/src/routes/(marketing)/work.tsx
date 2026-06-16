@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 
+import { AgentMark } from '~/components/AgentMark'
 import { Button } from '~/components/ui/button'
 import { WorkSections } from '~/components/work/sections'
 import { getWorkProfile } from '~/lib/profile-loader'
@@ -49,12 +50,17 @@ function Work() {
       <main className="mx-auto flex max-w-3xl flex-col items-start px-6 py-16">
         <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{p.name}</h1>
         <p className="mt-2 text-lg text-muted-foreground">{p.title}</p>
-        {/* Provenance (§24.71 D4): honest only when the agent actually composed
-            this page — a hand-seed (source='seed') or the placeholder shows no marker. */}
+        {/* Provenance (§24.71 D4 / §24.73): honest only when the agent actually
+            composed this page — a hand-seed (source='seed') or the placeholder
+            shows no marker. The master page is whole-system output, so it's
+            attributed to the orchestrator, not a single specialist. */}
         {source === 'agent' && generatedAt ? (
-          <p className="mt-3 font-mono text-xs text-accent-cool">
-            ✦ Composed by my agent from my master resume · {composedOn(generatedAt)}
-          </p>
+          <AgentMark
+            actor="my agent system"
+            lead="Composed by"
+            trail={`from my master résumé · ${composedOn(generatedAt)}`}
+            className="mt-3"
+          />
         ) : null}
         {canDownload ? (
           <div className="mt-6 flex flex-col gap-2">

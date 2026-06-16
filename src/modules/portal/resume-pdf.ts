@@ -314,8 +314,12 @@ export function tailoredFooter(
   const host = siteHost(publicUrl);
   const r = role && role.trim() ? role.trim() : 'this';
   const c = company && company.trim() ? company.trim() : 'your company';
-  const where = host ? ` — the same system running my live job search at ${host}` : '';
+  // Names the responsible agent (§24.73): "the tailor-resume agent" reads
+  // unambiguously as an AI author even out of context, where the on-screen ✦
+  // marker can't travel. (No ✦ glyph in the PDF — Inter doesn't ship the
+  // dingbat; the wording carries the signal.)
+  const where = host ? ` — part of the same AI system running my live job search at ${host}` : '';
   const when = footerDate(isoDate);
   const gen = when ? ` Generated ${when};` : '';
-  return `Auto-tailored for the ${r} role at ${c} by my own AI agent system${where}.${gen} All content reflects real experience.`;
+  return `Auto-tailored for the ${r} role at ${c} by the tailor-resume agent${where}.${gen} All content reflects real experience.`;
 }

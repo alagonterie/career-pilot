@@ -1,6 +1,7 @@
 import { useReducedMotion } from 'motion/react'
 import * as React from 'react'
 
+import { AgentRef } from '~/components/AgentRef'
 import { dispatchLabel, humanizeTraceSummary, isSubagentDispatch } from '~/lib/trace-summary'
 import { cn } from '~/lib/utils'
 import type { SimRunStatus, SimTraceEvent } from '~/lib/use-simulator-run'
@@ -130,7 +131,11 @@ export function SimActivity({
                   className={cn('flex flex-wrap items-baseline gap-x-2 py-0.5', nested && 'pl-5')}
                 >
                   <span className="text-muted-foreground">▸</span>
-                  <span className={isSub ? 'text-primary' : 'text-accent-cool'}>{label}</span>
+                  {/* §24.73: a dispatched subagent is a named member of the cast —
+                      render it as an explainable AgentRef (AI-violet, tap to learn
+                      who it is). Plain tools stay in the link register. An
+                      unresolved name falls back to plain text (no false chip). */}
+                  {isSub ? <AgentRef name={label} /> : <span className="text-accent-cool">{label}</span>}
                   {parallel ? (
                     <span
                       data-testid="sim-trace-parallel"

@@ -3,6 +3,7 @@ import * as React from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
+import { AgentRef } from '~/components/AgentRef'
 import { Button } from '~/components/ui/button'
 import { useTurnstile } from '~/lib/use-turnstile'
 import type { SimRunInput } from '~/lib/use-simulator-run'
@@ -85,12 +86,10 @@ export function SimInput({ onRun, disabled }: { onRun: (input: SimRunInput) => v
         <ol className="ml-4 list-decimal space-y-1">
           <li>A sandbox container spins up.</li>
           <li>
-            <span className="text-foreground/90">research-company</span> digests your role + company — live web
-            research, not a canned demo.
+            <AgentRef name="research-company" /> digests your role + company — live web research, not a canned demo.
           </li>
           <li>
-            <span className="text-foreground/90">tailor-resume</span> +{' '}
-            <span className="text-foreground/90">draft-outreach</span> run in parallel.
+            <AgentRef name="tailor-resume" /> + <AgentRef name="draft-outreach" /> run in parallel.
           </li>
           <li>
             You walk away with a <span className="text-foreground/90">tailored résumé to download</span>, plus pitch

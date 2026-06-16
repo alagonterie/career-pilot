@@ -1290,6 +1290,18 @@ The contract, when a dialog is open:
 
 This is the load-bearing answer to the §14 accessibility open-question for overlays (keyboard navigation + focus management), closed for dialogs in STRATEGY §24.36 36.2. New overlay surfaces consume `useDialog` rather than re-implementing it.
 
+### 8.6 AI-authorship marker + the cast registry (STRATEGY §24.73)
+
+The site shows a lot of agent-authored content; it marks that authorship in **one** consistent language, the `✦` provenance marker, so a recruiter always knows what an AI wrote — and *which* AI. This is a cross-cutting component, not per-page copy.
+
+- **The cast registry (`lib/ai-actors.ts`) is the single source of truth.** Every AI *actor* the visitor can see, with `kind`: the six `subagent` specialists, the `host` models that run outside the orchestrator loop (the win-confidence scorer, the public-view sanitizer), and the `system` orchestrator ("my agent system"). Each carries a role, a visitor-facing blurb, and an honest access badge. Anywhere the site names an agent reads from here — never a bare string — so the trace log, the `/kit` footer, the architecture roster, and the win-confidence rationale all agree.
+- **`AgentRef`** renders an actor's handle as an explainable term (the AI color, dotted underline) with a tap/click popover (role · blurb · access). It shares the `DisclosureTip` mechanism with the §5.2 `InfoTip` — one interaction contract, not two. It's a `<button>`, so it is never nested inside another button.
+- **`AgentMark`** is the `✦` marker built on `AgentRef`: inline (footers, cards, ticker) and block-header (the kit dossier, a rationale) scales. The marker stamps authored **content** at its point of display; pure transforms (sanitization) are *explained* in the registry/architecture but don't stamp every field.
+- **The AI color** is a dedicated semantic token (`--ai`, iris/violet), distinct from `primary` (green) and `accent-cool` (cyan/links). It carries the glyph, the `AgentRef` names, and AI-scored data viz (the win-confidence bar + `~%`, the `▤` kit cue) so the AI signal reads instead of blending into the theme.
+- **Honest by construction:** an unknown name falls back to plain text (no false chip); host-side output is attributed to its host actor (not a subagent); non-interactive surfaces (the résumé PDF — Inter has no `✦` glyph) use the registry's plain-text form ("the tailor-resume agent"), same signal, wording only.
+
+The surfaces wearing it today: `/work` provenance, the simulator résumé + email gifts + trace, `/kit`, the funnel detail panel (win-confidence rationale, published note) + card data viz, and the `/architecture` Subagents roster. New AI-authored surfaces adopt `AgentMark`/`AgentRef` rather than inventing a marker. Feeds the §5.8 `/about` "how it works" surface.
+
 ---
 
 ## 9. Anonymization model

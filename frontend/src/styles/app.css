@@ -38,6 +38,12 @@
   --accent-cool: hsl(200 90% 60%); /* cyan — traces / links */
   --warn: hsl(38 95% 60%);
   --grid: hsl(220 12% 13%);
+  /* AI-authorship accent (§24.73): the one color that reads "an AI did this".
+     Iris/violet — the 2026 convention for AI — deliberately distinct from
+     `primary` (green) and `accent-cool` (cyan/links) so the ✦ provenance
+     mark, the AgentRef names, and AI-scored data viz never blend into the
+     ambient theme. ~76% L clears WCAG AA 4.5:1 on the near-black bg. */
+  --ai: hsl(255 92% 76%);
 }
 
 @theme inline {
@@ -63,6 +69,7 @@
   --color-accent-cool: var(--accent-cool);
   --color-warn: var(--warn);
   --color-grid: var(--grid);
+  --color-ai: var(--ai);
 
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
