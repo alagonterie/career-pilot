@@ -112,18 +112,17 @@ function OutreachGift({ subject, body }: { subject: string; body: string }) {
           {renderMarkdownish(body)}
         </div>
       ) : (
-        <>
-          <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{peek}</p>
-          <button
-            type="button"
-            data-testid="sim-outreach-expand"
-            onClick={() => setOpen(true)}
-            className="mt-3 inline-flex items-center gap-2 font-mono text-xs text-accent-cool transition-colors hover:underline"
-          >
-            <span aria-hidden="true">▸</span> Read the full email
-          </button>
-        </>
+        <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{peek}</p>
       )}
+      <button
+        type="button"
+        data-testid="sim-outreach-expand"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="mt-3 inline-flex items-center gap-2 font-mono text-xs text-accent-cool transition-colors hover:underline"
+      >
+        <span aria-hidden="true">{open ? '▾' : '▸'}</span> {open ? 'Hide the full email' : 'Read the full email'}
+      </button>
     </div>
   )
 }
