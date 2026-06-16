@@ -49,7 +49,7 @@ export function LiveTicker({
     >
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 id="ticker-heading" className="text-sm font-semibold text-muted-foreground">
-          Live activity
+          Agent activity
         </h2>
         {action}
       </div>
