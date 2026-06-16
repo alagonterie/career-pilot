@@ -53,12 +53,13 @@ test.describe('/simulator — the recruiter simulator, frontend <-> backend', ()
     }).toPass({ timeout: 15_000 })
     await expect(page.getByTestId('sim-trace-subagent').first()).toBeVisible()
 
-    // The run completes → the gift-first results. The pitch (bullets + outreach)
-    // shows by default when there's no tailored résumé (the mock run); the run
+    // The run completes → the gift-first results: the cold-outreach email is its
+    // own gift (subject sneak-peeked, expandable to the full email); the agent
     // activity is tucked into a collapsed section that expands on demand.
     await expect(page.getByTestId('sim-results')).toBeVisible()
-    await expect(page.getByTestId('sim-output-body')).toContainText('Tailored resume')
-    await expect(page.getByTestId('sim-output-body')).toContainText('Cold outreach')
+    await expect(page.getByTestId('sim-outreach')).toContainText('builder who ships at your scale')
+    await page.getByTestId('sim-outreach-expand').click()
+    await expect(page.getByTestId('sim-outreach-body')).toContainText('I came across')
     await page.getByTestId('result-activity-toggle').click()
     await expect(page.getByTestId('sim-trace-complete')).toBeVisible()
 
@@ -81,12 +82,12 @@ test.describe('/simulator — the recruiter simulator, frontend <-> backend', ()
 
     await page.goto('/simulator/results/det-sim-1')
     await expect(page.getByRole('heading', { level: 1, name: /Principal Engineer @ Wayne Enterprises/i })).toBeVisible()
-    await expect(page.getByTestId('sim-output-body')).toContainText('Tailored resume')
+    await expect(page.getByTestId('sim-outreach')).toContainText('builder who ships at your scale')
     await expect(page.getByTestId('share-talk')).toBeVisible()
 
     // The persisted run activity, collapsed by default, expands on demand (§24.31 Δ).
     const toggle = page.getByTestId('result-activity-toggle')
-    await expect(toggle).toContainText(/see how this run worked/i)
+    await expect(toggle).toContainText(/see how my agents worked/i)
     await expect(page.getByTestId('sim-activity')).toHaveCount(0)
     await toggle.click()
     await expect(page.getByTestId('sim-activity')).toBeVisible()
