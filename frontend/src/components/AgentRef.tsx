@@ -18,7 +18,7 @@ import { cn } from '~/lib/utils'
 
 const KIND_NOTE: Record<AiActor['kind'], string> = {
   subagent: 'a specialist subagent',
-  host: 'a host-side model, outside the agent loop',
+  host: 'a model the system runs on its own',
   system: 'the orchestrating agent',
 }
 

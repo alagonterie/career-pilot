@@ -2,11 +2,12 @@ import { Link } from '@tanstack/react-router'
 import { useReducedMotion } from 'motion/react'
 import * as React from 'react'
 
+import { EventSourceLabel } from '~/components/EventSourceLabel'
 import { InfoTip } from '~/components/InfoTip'
 import { LiveIndicator } from '~/components/LiveIndicator'
 import { LiveCursor, StateNote } from '~/components/states'
 import type { StreamStatus } from '~/lib/sse'
-import { eventSourceLabel, type AuditEvent } from '~/lib/use-activity-stream'
+import type { AuditEvent } from '~/lib/use-activity-stream'
 
 function clock(ts: string): string {
   const d = new Date(ts)
@@ -348,7 +349,7 @@ export function LogStream({
               ) : (
                 <li key={row.e.seq} data-testid="trace-line" className="flex flex-wrap items-baseline gap-x-2 py-0.5">
                   <span className="tabular-nums text-muted-foreground">{clock(row.e.ts)}</span>
-                  <span className="text-accent-cool">{eventSourceLabel(row.e)}</span>
+                  <EventSourceLabel event={row.e} />
                   {row.e.proactive ? (
                     <span
                       data-testid="trace-proactive"

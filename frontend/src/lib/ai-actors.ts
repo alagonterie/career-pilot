@@ -7,13 +7,17 @@
  * everywhere else.
  *
  * It's a registry of AI *actors*, not just subagents, because honesty demands
- * it: the win-confidence score and the public-view sanitizer are host-side LLM
- * calls that run OUTSIDE the orchestrator's agent loop — attributing them to a
- * subagent would be a fabrication. `kind` keeps that distinction visible:
+ * it: the win-confidence score is a model that runs OUTSIDE the orchestrator's
+ * agent loop — attributing it to a subagent would be a fabrication. `kind`
+ * keeps that distinction visible:
  *   - 'subagent' — a specialist the orchestrator dispatches inside the loop
- *   - 'host'     — a host-side model, on its own, outside the loop
+ *   - 'host'     — a model the system runs on its own, outside the loop
  *   - 'system'   — the orchestrator itself; the honest fallback for
  *                  whole-system output with no single specialist author
+ *
+ * The public-view sanitizer is deliberately NOT here: it's deterministic
+ * (regex + name replacement), not AI, so marking it would be the very
+ * dishonesty this registry guards against.
  */
 
 export type ActorKind = 'subagent' | 'host' | 'system'
@@ -43,15 +47,15 @@ export const AI_ACTORS: AiActor[] = [
     role: 'Company researcher',
     blurb:
       'Digs into a target company — product, tech, what they’re hiring for — and produces the briefing the other agents build on.',
-    access: 'reads only',
+    access: 'reads, changes nothing',
     kind: 'subagent',
   },
   {
     name: 'tailor-resume',
     role: 'Résumé tailor',
     blurb:
-      'Rewrites my master résumé for one specific role, foregrounding the experience that fits. Never invents facts.',
-    access: 'reads only',
+      'Tailors my master résumé to one specific role, foregrounding the experience that fits — it selects and re-emphasizes, never invents.',
+    access: 'reads, changes nothing',
     kind: 'subagent',
   },
   {
@@ -89,22 +93,13 @@ export const AI_ACTORS: AiActor[] = [
     aliases: ['funnel-curator'],
   },
   {
-    name: 'win-confidence',
+    name: 'win-confidence-scorer',
     role: 'Win-confidence scorer',
     blurb:
-      'A host model that scores each application’s odds of becoming an offer and writes the one-line rationale. It runs on its own, outside the agent loop.',
-    access: 'host-side · reads the funnel',
+      'Scores each application’s odds of becoming an offer and writes the one-line note below — a heuristic that updates as recruiter signals arrive, not a promise. It runs on its own, not as one of the dispatched agents.',
+    access: 'scores the pipeline',
     kind: 'host',
-    aliases: ['win confidence', 'win_confidence'],
-  },
-  {
-    name: 'sanitizer',
-    role: 'Sanitizer',
-    blurb:
-      'A host model on the public read path that scrubs anything company-identifying out of the view before it’s shown.',
-    access: 'host-side · public read path',
-    kind: 'host',
-    aliases: ['sanitization', 'sanitize'],
+    aliases: ['win-confidence', 'win confidence', 'win_confidence'],
   },
   {
     name: 'my agent system',
