@@ -135,7 +135,7 @@ export function SimActivity({
                     <span
                       data-testid="sim-trace-parallel"
                       title="Dispatched together — these subagents run concurrently"
-                      className="rounded-full border border-primary/40 bg-primary/10 px-1.5 font-mono text-[10px] text-primary"
+                      className="whitespace-nowrap rounded-full border border-primary/40 bg-primary/10 px-1.5 font-mono text-[10px] text-primary"
                     >
                       ∥ parallel
                     </span>
@@ -144,13 +144,17 @@ export function SimActivity({
                     <span
                       data-testid="sim-trace-uses-research"
                       title="Built on the company digest research-company produced first"
-                      className="rounded-full border border-accent-cool/40 bg-accent-cool/10 px-1.5 font-mono text-[10px] text-accent-cool"
+                      className="whitespace-nowrap rounded-full border border-accent-cool/40 bg-accent-cool/10 px-1.5 font-mono text-[10px] text-accent-cool"
                     >
-                      ⤷ uses research
+                      ⤷ research
                     </span>
                   ) : null}
+                  {/* On mobile the summary drops to its own full-width line (so the
+                      label + badges don't squeeze it into a cramped column); inline from sm. */}
                   {summary ? (
-                    <span className="min-w-0 flex-1 text-muted-foreground [overflow-wrap:anywhere]">{summary}</span>
+                    <span className="min-w-0 grow basis-full text-muted-foreground [overflow-wrap:anywhere] sm:basis-0">
+                      {summary}
+                    </span>
                   ) : null}
                 </li>
               )
