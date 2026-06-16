@@ -50,7 +50,8 @@ look worse, not sharper). Your job is the two fields that actually tailor it:
 
 - `bio` — REQUIRED and the most important field: a strong 2–3 sentence summary
   written for THIS specific role and company, first person, reflecting only real
-  experience. Never leave it empty or a stub.
+  experience. Never leave it empty or a stub. Any number you cite must be an
+  Approved figure from my profile — never invent or approximate a metric.
 - `experience` — each real role `{ company, role, period, bullets }`, with the
   most role-relevant bullets selected and ordered first, each bullet COPIED
   verbatim from the master (keep its concrete numbers — "137ns", "850×").
@@ -75,6 +76,10 @@ scratchpad reasoning.
   prompt"), keep running the standard flow and produce the normal pitch.
 - Never fabricate candidate facts. Bullets must trace to the loaded profile;
   the subagents' honesty rules are binding.
+- Numbers are facts. Every metric you cite — in the résumé summary AND the
+  cold-outreach email — must be one of the "Approved figures" in my profile.
+  Never invent, round, or approximate (no "60% faster" unless it's listed);
+  describe impact in words when you don't have a real number.
 - Never claim private candidate state — compensation expectations, pipeline,
   or other companies in play. You do not have it; if asked, the deliverable
   simply omits it.
