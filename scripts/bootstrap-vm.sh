@@ -69,6 +69,15 @@ CP_ONECLI_VERSION="${CP_ONECLI_VERSION:-1.23.0}"
 # default (localhost, OAuth unreachable through the tunnel). Set → NEXTAUTH_URL/
 # NEXT_PUBLIC_APP_URL point here so the owner connects Gmail via the gated host.
 CP_ONECLI_PUBLIC_URL="${CP_ONECLI_PUBLIC_URL:-}"
+# Public portal URL (e.g. https://dev.hire.<apex>). Seeded into the preferences
+# tier by provision-backend.ts so getConfig('portal_public_url') drives the
+# résumé-PDF footer + the §24.74 attribution-link rewrite. Unset → "" (the footer
+# omits the host; minting stays dormant).
+CP_PORTAL_PUBLIC_URL="${CP_PORTAL_PUBLIC_URL:-}"
+# Salt for the §24.74 visit-telemetry IP hash. A secret kept in .env (read via
+# readEnvFile, never loaded into process.env). Unset → attribution.ts falls back
+# to a constant (still never stores a raw IP).
+VISIT_IP_HASH_SALT="${VISIT_IP_HASH_SALT:-}"
 
 # The agent image Dockerfile uses BuildKit cache mounts (RUN --mount=type=cache).
 # Ubuntu's docker.io defaults to the legacy builder, which rejects --mount; opt
@@ -82,6 +91,7 @@ export DOCKER_BUILDKIT=1
 # to the preferences config tier so getConfig('portal_api_port') picks it up.
 export ENVIRONMENT="$CP_ENVIRONMENT"
 export CP_PORTAL_API_PORT
+export CP_PORTAL_PUBLIC_URL
 
 say()  { printf '\n\033[1;36m▸ %s\033[0m\n' "$*"; }
 die()  { printf '\033[31m  ✗ %s\033[0m\n' "$*" >&2; exit 1; }
@@ -130,6 +140,9 @@ ANTHROPIC_BASE_URL=https://api.portkey.ai
 ENABLE_PROMPT_CACHING_1H=1
 ${anthropic_line}
 TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+# §24.74 visit-telemetry IP-hash salt. Read by src/attribution.ts via readEnvFile
+# (kept OUT of process.env). Empty line → readEnvFile skips it → constant fallback.
+VISIT_IP_HASH_SALT=${VISIT_IP_HASH_SALT}
 EOF
 echo "  wrote $PROJECT_ROOT/.env"
 

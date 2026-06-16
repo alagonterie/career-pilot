@@ -119,6 +119,21 @@ function main(): void {
     console.log(`  set preferences.portal_api_port = ${portalPort}`);
   }
 
+  // Public portal URL via the `preferences` tier (§24.74 / §24.72). The backend
+  // reads getConfig('portal_public_url') for the résumé-PDF footer + the
+  // attribution-link rewrite; like the port, its env tier is empty under systemd,
+  // so the preference is the durable, per-env home for it. CP_PORTAL_PUBLIC_URL
+  // is exported by bootstrap-vm.sh (from the GH env var PORTAL_PUBLIC_URL). UPDATE
+  // so the per-env canonical URL is always reconciled on deploy.
+  const portalPublicUrl = process.env.CP_PORTAL_PUBLIC_URL;
+  if (portalPublicUrl && /^https?:\/\//.test(portalPublicUrl)) {
+    db.prepare(
+      `INSERT INTO preferences (key, value, updated_at) VALUES ('portal_public_url', ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    ).run(portalPublicUrl, new Date().toISOString());
+    console.log(`  set preferences.portal_public_url = ${portalPublicUrl}`);
+  }
+
   // Dev cost caps — tighten the daily LLM budgets below the shared defaults
   // (config/defaults.json: owner 5 / sandbox 5) for the unattended dev closed
   // loop, so a runaway (e.g. a recruiter-sim bug — 9.3) is bounded. Seeded only

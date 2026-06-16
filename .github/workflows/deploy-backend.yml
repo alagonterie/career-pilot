@@ -83,6 +83,13 @@ jobs:
           # VARIABLE. Sets OneCLI's NEXTAUTH_URL so browser OAuth callbacks use
           # the gated host (no SSH-forward). Bootstrap no-ops the URL if unset.
           ONECLI_PUBLIC_URL: ${{ vars.ONECLI_PUBLIC_URL }}
+          # Public portal URL (a GH `dev` env VARIABLE — the apex stays out of the
+          # forkable repo). Seeded into preferences.portal_public_url by
+          # provision-backend.ts → drives the résumé-PDF footer + §24.74 minting.
+          PORTAL_PUBLIC_URL: ${{ vars.PORTAL_PUBLIC_URL }}
+          # §24.74 visit-telemetry IP-hash salt (a GH `dev` env SECRET). Written
+          # into the box .env by bootstrap-vm.sh; read via readEnvFile.
+          VISIT_IP_HASH_SALT: ${{ secrets.VISIT_IP_HASH_SALT }}
           # Clean app-data reset toggle — only true via workflow_dispatch -f
           # reset=true; empty/false on push. Gates the destructive reset-dev.ts
           # below (off any web button, per the destructive-ops-via-CI decision).
@@ -179,7 +186,7 @@ jobs:
           # Run the idempotent bootstrap as the service user (one line — \`env\`
           # guarantees the vars reach the script regardless of sudo's env policy;
           # single-quoted values survive spaces; \${CP_UID} defers to the box).
-          sudo -u career-pilot env XDG_RUNTIME_DIR=/run/user/\${CP_UID} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/\${CP_UID}/bus CP_ENVIRONMENT=dev CP_PORTAL_API_PORT=3002 CP_WEBHOOK_PORT=3001 CP_ASSISTANT_NAME='${CP_ASSISTANT_NAME}' CP_TZ='${CP_TZ}' CP_ONECLI_PUBLIC_URL='${ONECLI_PUBLIC_URL}' TELEGRAM_BOT_TOKEN='${TELEGRAM_BOT_TOKEN}' PORTKEY_API_KEY='${PORTKEY_API_KEY}' ANTHROPIC_API_KEY='${ANTHROPIC_API_KEY}' bash /opt/career-pilot-dev/scripts/bootstrap-vm.sh
+          sudo -u career-pilot env XDG_RUNTIME_DIR=/run/user/\${CP_UID} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/\${CP_UID}/bus CP_ENVIRONMENT=dev CP_PORTAL_API_PORT=3002 CP_WEBHOOK_PORT=3001 CP_ASSISTANT_NAME='${CP_ASSISTANT_NAME}' CP_TZ='${CP_TZ}' CP_ONECLI_PUBLIC_URL='${ONECLI_PUBLIC_URL}' CP_PORTAL_PUBLIC_URL='${PORTAL_PUBLIC_URL}' VISIT_IP_HASH_SALT='${VISIT_IP_HASH_SALT}' TELEGRAM_BOT_TOKEN='${TELEGRAM_BOT_TOKEN}' PORTKEY_API_KEY='${PORTKEY_API_KEY}' ANTHROPIC_API_KEY='${ANTHROPIC_API_KEY}' bash /opt/career-pilot-dev/scripts/bootstrap-vm.sh
 
           # Post-bootstrap smoke check — the portal API answering proves the host
           # process is up and serving (give it a moment to bind the port). On
