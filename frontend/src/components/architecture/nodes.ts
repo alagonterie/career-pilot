@@ -36,6 +36,9 @@ export interface ArchNode {
   linkLabel?: string
   /** A human/external actor (e.g. the owner) — rendered with no status badge. */
   actor?: boolean
+  /** AI I built (the orchestrator, the subagents) — gets the ✦ provenance glyph
+   *  (§24.73) before its name, in the AI accent. */
+  ai?: boolean
   /** Hosts a live interactive demo in its modal (a behavioral proof, NOT a health
    * probe — §24.35 Pass B). Drives the diagram's interactive marker. */
   demo?: 'sanitizer'
@@ -205,6 +208,7 @@ export const NODES: ArchNode[] = [
   {
     id: 'cont-orch',
     label: 'Orchestrator',
+    ai: true,
     region: 'container',
     probe: 'sessions',
     description: 'The Claude Agent SDK loop. Healthy when at least one session is actively running.',
@@ -219,10 +223,10 @@ export const NODES: ArchNode[] = [
   {
     id: 'cont-subagents',
     label: 'Subagents',
+    ai: true,
     region: 'container',
     probe: 'structural',
-    description:
-      'Six specialists the orchestrator dispatches. research-company and tailor-resume are read-only; draft-outreach writes reversible Gmail drafts; build-interview-kit writes prep-kit Docs to Drive; scrape-jobs fills the job-leads pool; pipeline-scribe curates the public pipeline view. Each makes its own LLM calls.',
+    description: 'Six specialists the orchestrator dispatches, each making its own LLM calls — meet them below.',
     link: `${REPO_URL}/tree/master/groups/career-pilot/.claude/agents-src`,
     linkLabel: 'Agent definitions (repo)',
     x: 514,

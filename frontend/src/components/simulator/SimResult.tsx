@@ -79,7 +79,6 @@ function ResumeGift({ runId, company, role }: { runId: string; company: string |
       <p className="mt-1 text-sm text-muted-foreground">
         Auto-tailored from my real experience for this exact role — yours to download and forward.
       </p>
-      <AgentMark actor="tailor-resume" lead="Tailored by" className="mt-2" />
       {/* Full-width + stacked on mobile (no awkward half-width wrap), side-by-side
           from sm up. */}
       <div className="mt-4 flex flex-col gap-3 sm:flex-row">
@@ -138,6 +137,9 @@ function ResumeGift({ runId, company, role }: { runId: string; company: string |
         </div>
         <iframe src={pdfUrl} title="Tailored résumé preview" className="h-[78vh] w-full" />
       </dialog>
+      {/* The agent's signature sits at the foot of the card (§24.73) — provenance
+          reads like a signature, so it goes at the bottom, consistent across gifts. */}
+      <AgentMark actor="tailor-resume" lead="Tailored by" className="mt-4" />
     </div>
   )
 }
@@ -155,10 +157,6 @@ function OutreachGift({ subject, body }: { subject: string; body: string }) {
   return (
     <div data-testid="sim-outreach" className="rounded-xl border border-accent-cool/40 bg-accent-cool/5 px-6 py-5">
       <p className="font-mono text-xs uppercase tracking-widest text-accent-cool">My cold-outreach email to you</p>
-      {/* Honest framing (§24.73): the "sample draft → Gmail draft for review"
-          note now lives in the draft-outreach chip's popover, so no separate
-          caption is needed here. */}
-      <AgentMark actor="draft-outreach" lead="Written by" className="mt-1" />
       {subject ? <p className="mt-2 text-sm font-semibold text-foreground">Subject: {subject}</p> : null}
       {open ? (
         <div data-testid="sim-outreach-body" className="mt-2 text-sm leading-relaxed">
@@ -176,6 +174,10 @@ function OutreachGift({ subject, body }: { subject: string; body: string }) {
       >
         <span aria-hidden="true">{open ? '▾' : '▸'}</span> {open ? 'Hide the full email' : 'Read the full email'}
       </button>
+      {/* Signature at the foot of the card (§24.73), below the expand toggle —
+          the "sample draft → Gmail draft for review" note lives in the chip's
+          popover, so the bare signature is all that's needed here. */}
+      <AgentMark actor="draft-outreach" lead="Written by" className="mt-4" />
     </div>
   )
 }

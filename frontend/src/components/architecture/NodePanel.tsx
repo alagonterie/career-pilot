@@ -174,6 +174,11 @@ export function NodePanel({
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <h2 id="arch-node-title" className="truncate font-mono text-lg font-semibold text-foreground">
+                {node.ai ? (
+                  <span aria-hidden="true" className="text-ai">
+                    ✦{' '}
+                  </span>
+                ) : null}
                 {node.label}
               </h2>
               <p className="mt-1 font-mono text-[11px] uppercase tracking-widest text-muted-foreground">

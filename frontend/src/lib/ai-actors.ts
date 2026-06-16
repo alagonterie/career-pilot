@@ -77,8 +77,7 @@ export const AI_ACTORS: AiActor[] = [
   {
     name: 'scrape-jobs',
     role: 'Job scout',
-    blurb:
-      'Continuously queries a live jobs index for fresh postings, filling the pool of leads the search works from. Not an LLM call — a plain search.',
+    blurb: 'Continuously scouts a live jobs index for fresh postings, filling the pool of leads the search works from.',
     access: 'fills the leads pool',
     kind: 'subagent',
   },
@@ -96,7 +95,7 @@ export const AI_ACTORS: AiActor[] = [
     name: 'win-confidence-scorer',
     role: 'Win-confidence scorer',
     blurb:
-      'Scores each application’s odds of becoming an offer and writes the one-line note below — a heuristic that updates as recruiter signals arrive, not a promise. It runs on its own, not as one of the dispatched agents.',
+      'Scores each application’s odds of becoming an offer and writes the one-line rationale for it — a heuristic that updates as recruiter signals arrive, not a promise. It runs on its own, not as one of the dispatched agents.',
     access: 'scores the pipeline',
     kind: 'host',
     aliases: ['win-confidence', 'win confidence', 'win_confidence'],
