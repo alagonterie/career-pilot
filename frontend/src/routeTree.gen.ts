@@ -24,6 +24,7 @@ import { Route as opsArchitectureRouteImport } from './routes/(ops)/architecture
 import { Route as opsAdminRouteImport } from './routes/(ops)/admin'
 import { Route as marketingWorkRouteImport } from './routes/(marketing)/work'
 import { Route as marketingContactRouteImport } from './routes/(marketing)/contact'
+import { Route as marketingAboutRouteImport } from './routes/(marketing)/about'
 import { Route as marketingSimulatorIndexRouteImport } from './routes/(marketing)/simulator.index'
 import { Route as marketingSimulatorResultsIdRouteImport } from './routes/(marketing)/simulator.results.$id'
 
@@ -100,6 +101,11 @@ const marketingContactRoute = marketingContactRouteImport.update({
   path: '/contact',
   getParentRoute: () => marketingRouteRoute,
 } as any)
+const marketingAboutRoute = marketingAboutRouteImport.update({
+  id: '/about',
+  path: '/about',
+  getParentRoute: () => marketingRouteRoute,
+} as any)
 const marketingSimulatorIndexRoute = marketingSimulatorIndexRouteImport.update({
   id: '/simulator/',
   path: '/simulator/',
@@ -113,6 +119,7 @@ const marketingSimulatorResultsIdRoute =
   } as any)
 
 export interface FileRoutesByFullPath {
+  '/about': typeof marketingAboutRoute
   '/contact': typeof marketingContactRoute
   '/work': typeof marketingWorkRoute
   '/admin': typeof opsAdminRoute
@@ -130,6 +137,7 @@ export interface FileRoutesByFullPath {
   '/simulator/results/$id': typeof marketingSimulatorResultsIdRoute
 }
 export interface FileRoutesByTo {
+  '/about': typeof marketingAboutRoute
   '/contact': typeof marketingContactRoute
   '/work': typeof marketingWorkRoute
   '/admin': typeof opsAdminRoute
@@ -150,6 +158,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/(marketing)': typeof marketingRouteRouteWithChildren
   '/(ops)': typeof opsRouteRouteWithChildren
+  '/(marketing)/about': typeof marketingAboutRoute
   '/(marketing)/contact': typeof marketingContactRoute
   '/(marketing)/work': typeof marketingWorkRoute
   '/(ops)/admin': typeof opsAdminRoute
@@ -169,6 +178,7 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
+    | '/about'
     | '/contact'
     | '/work'
     | '/admin'
@@ -186,6 +196,7 @@ export interface FileRouteTypes {
     | '/simulator/results/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/about'
     | '/contact'
     | '/work'
     | '/admin'
@@ -205,6 +216,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/(marketing)'
     | '/(ops)'
+    | '/(marketing)/about'
     | '/(marketing)/contact'
     | '/(marketing)/work'
     | '/(ops)/admin'
@@ -336,6 +348,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof marketingContactRouteImport
       parentRoute: typeof marketingRouteRoute
     }
+    '/(marketing)/about': {
+      id: '/(marketing)/about'
+      path: '/about'
+      fullPath: '/about'
+      preLoaderRoute: typeof marketingAboutRouteImport
+      parentRoute: typeof marketingRouteRoute
+    }
     '/(marketing)/simulator/': {
       id: '/(marketing)/simulator/'
       path: '/simulator'
@@ -354,6 +373,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface marketingRouteRouteChildren {
+  marketingAboutRoute: typeof marketingAboutRoute
   marketingContactRoute: typeof marketingContactRoute
   marketingWorkRoute: typeof marketingWorkRoute
   marketingIndexRoute: typeof marketingIndexRoute
@@ -362,6 +382,7 @@ interface marketingRouteRouteChildren {
 }
 
 const marketingRouteRouteChildren: marketingRouteRouteChildren = {
+  marketingAboutRoute: marketingAboutRoute,
   marketingContactRoute: marketingContactRoute,
   marketingWorkRoute: marketingWorkRoute,
   marketingIndexRoute: marketingIndexRoute,
