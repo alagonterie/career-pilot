@@ -1,7 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 
 import { FunnelCompact } from '~/components/live/FunnelCompact'
-import { LiveIndicator } from '~/components/LiveIndicator'
 import { LiveTicker } from '~/components/LiveTicker'
 import { Button } from '~/components/ui/button'
 import { Skeleton } from '~/components/ui/skeleton'
@@ -49,9 +48,24 @@ function Home() {
         ops register (/live, the hub); "Talk to me" → the conversion sink (/contact).
       */}
       <section className="flex w-full max-w-xl flex-col items-center text-center">
-        <div className="mb-6 flex items-center gap-4 text-sm">
-          <span className="inline-flex items-center gap-1.5 text-foreground">🟢 Open to offers</span>
-          <LiveIndicator status={status} count={count} />
+        {/* One intentional availability badge (PORTAL §5.1 / the / polish pass).
+            "Open to offers" is the signal a recruiter actually wants; the brand-green
+            dot pulses while the live feed is connected (the page's own liveness) and
+            falls still if it drops — replacing the literal 🟢 emoji + a second
+            competing live indicator with a single, on-brand pill. */}
+        <div className="mb-6 flex justify-center">
+          <span
+            data-testid="hero-status"
+            data-status={status}
+            title={status === 'open' ? `live — ${count} event${count === 1 ? '' : 's'} received` : status}
+            className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3.5 py-1.5 text-sm text-foreground"
+          >
+            <span
+              aria-hidden="true"
+              className={`h-2 w-2 rounded-full ${status === 'open' ? 'bg-primary cp-live-pulse' : 'bg-muted-foreground'}`}
+            />
+            Open to offers
+          </span>
         </div>
 
         <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">{p.name}</h1>

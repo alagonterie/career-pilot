@@ -216,7 +216,7 @@ Public routes are TanStack Start pages running on Cloudflare Workers. Route load
                  job search — and this entire page is it,
                  working live.
 
-                  🟢 Open to offers                  ● live
+                       ( ● Open to offers )
 
                  [  See it work →   ]   [  Talk to me →  ]
 
@@ -225,10 +225,9 @@ Public routes are TanStack Start pages running on Cloudflare Workers. Route load
 
 Layout: centered, max-width 640px, vertical center on first viewport-height. The two CTAs are equal weight; the first is filled (accent), the second is outlined.
 
-The "● live" indicator is a real-time signal:
-- Connected to `/api/activity/stream`. Pulses on every received event.
-- Tooltip on hover shows the latest event count and uptime.
-- This single element is the visitor's first hint that this is a live system.
+A single **"Open to offers" availability badge** (`hero-status`) — a bordered pill with a brand-green dot that **pulses while the live feed (`/api/activity/stream`) is connected** and falls still if it drops. "Open to offers" is the signal a recruiter actually wants; the pulse is the page's own liveness cue, and the tooltip shows the received-event count. It is the visitor's first hint that this is a live system.
+
+> **Build note (the `/` polish pass).** This badge replaces the original two competing elements — a literal `🟢` emoji "Open to offers" beside a separate "● live" word (the only emoji on a site with an otherwise custom dot/glyph vocabulary). Unified into one on-brand pill: the SSE liveness is folded into the dot's pulse rather than spelled out a second time (the hook already says "working live", and the "Live activity" ticker carries the word), so the badge leads with the availability signal. Same pass: the stat line now reserves the 2-line mobile height with skeleton pills so populating it never shifts the page; the funnel + "Live activity" ticker share one width (both `max-w-3xl`); the pitch-beat steps became one centered row of brand-tinted number chips; and the simulator CTA stopped echoing its own heading ("Run it on your role →"). Visual baselines re-blessed at the end of the pass.
 
 > **Build note (per STRATEGY §24.57).** The indicator's hover `title` shows the event count; **uptime is not captured anywhere** and is dropped from the promise (an invented number would violate the honesty rule). Ticker time legibility: a line from a previous local day renders `«Mon D» HH:MM` in the clock slot (today's lines keep `HH:MM:SS`) — same width class, mobile-safe.
 
