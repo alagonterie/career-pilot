@@ -4,6 +4,7 @@ import { FunnelCompact } from '~/components/live/FunnelCompact'
 import { LiveIndicator } from '~/components/LiveIndicator'
 import { LiveTicker } from '~/components/LiveTicker'
 import { Button } from '~/components/ui/button'
+import { Skeleton } from '~/components/ui/skeleton'
 import { getWorkProfile } from '~/lib/profile-loader'
 import { heroStats } from '~/lib/hero-stats'
 import { seo } from '~/lib/seo'
@@ -39,7 +40,7 @@ function Home() {
   const p = profile ?? workProfile
 
   return (
-    <main className="mx-auto flex max-w-3xl flex-col items-center px-6 py-20">
+    <main className="mx-auto flex max-w-3xl flex-col items-center px-6 py-16">
       {/*
         Viewport 1 — hero (PORTAL §5.1). Name/title SSR'd from candidate_profile
         (placeholder fallback). The hook orients first (what this is) before the
@@ -74,11 +75,25 @@ function Home() {
         </div>
 
         {/* Honest live stat line (PORTAL §5.1 Viewport 1) — the first-paint "this
-            is real, right now" proof under the CTAs. Reserves a line of height so
-            populating it (client-only hooks) doesn't shove the hero (§24.36). */}
-        <p className="mt-6 min-h-5 font-mono text-xs text-muted-foreground" aria-live="polite">
-          {stats.length > 0 ? stats.join('  ·  ') : null}
-        </p>
+            is real, right now" proof under the CTAs. Skeleton pills hold the slot
+            until the client hooks land, and the reserved height fits the 2-line
+            mobile wrap (not just one line), so populating it never shoves the page
+            (§24.36 + the / polish pass — the old single-line min-height shifted on
+            mobile when the stats wrapped). */}
+        <div
+          className="mt-6 flex min-h-[2.25rem] flex-wrap items-center justify-center gap-x-2 gap-y-1 font-mono text-xs text-muted-foreground sm:min-h-5"
+          aria-live="polite"
+        >
+          {stats.length > 0 ? (
+            <p className="text-balance">{stats.join('  ·  ')}</p>
+          ) : (
+            <>
+              <Skeleton className="h-3 w-28 rounded-full" />
+              <Skeleton className="h-3 w-32 rounded-full" />
+              <Skeleton className="h-3 w-24 rounded-full" />
+            </>
+          )}
+        </div>
       </section>
 
       {/* Viewport 1.5 — the pitch (PORTAL §5.1 / §24.75). The hero hooks; the live
@@ -124,7 +139,7 @@ function Home() {
           space instead of popping in — there's essentially always live data here.
           A cold backend error is the one case it collapses (no stranded skeleton). */}
       {funnelStatus !== 'error' ? (
-        <section aria-labelledby="home-funnel-heading" className="mt-24 w-full">
+        <section aria-labelledby="home-funnel-heading" className="mt-20 w-full">
           <div className="mb-3 flex items-center justify-between">
             <h2 id="home-funnel-heading" className="text-sm font-semibold text-muted-foreground">
               The search, live
@@ -154,7 +169,7 @@ function Home() {
 
       {/* Viewport 4 — the "watch me apply" pitch (PORTAL §5.1): a single high-intent
           CTA into the grippiest spoke. No form here — the form lives on /simulator. */}
-      <section aria-labelledby="home-sim-heading" className="mt-24 w-full text-center">
+      <section aria-labelledby="home-sim-heading" className="mt-20 w-full text-center">
         <h2 id="home-sim-heading" className="text-2xl font-bold tracking-tight">
           Watch me apply to your role
         </h2>
@@ -171,7 +186,7 @@ function Home() {
       </section>
 
       {/* Viewport 5 — resume + contact teaser (PORTAL §5.1). */}
-      <section aria-labelledby="home-teaser-heading" className="mt-24 grid w-full gap-10 sm:grid-cols-3">
+      <section aria-labelledby="home-teaser-heading" className="mt-20 grid w-full gap-10 sm:grid-cols-3">
         <h2 id="home-teaser-heading" className="sr-only">
           More about me
         </h2>

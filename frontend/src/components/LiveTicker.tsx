@@ -45,7 +45,7 @@ export function LiveTicker({
       id="live-ticker"
       aria-labelledby="ticker-heading"
       data-testid="live-ticker"
-      className="mx-auto mt-16 w-full max-w-2xl rounded-lg border border-border bg-card p-4"
+      className="mx-auto mt-20 w-full max-w-3xl rounded-lg border border-border bg-card p-4"
     >
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 id="ticker-heading" className="text-sm font-semibold text-muted-foreground">
