@@ -5733,6 +5733,28 @@ The three explainer surfaces, disambiguated: the **pitch** (this §, plain-Engli
 
 ---
 
+#### 24.86 InfoTip ⓘ vertical alignment vs adjacent text (owner T6, part 2)
+
+**Problem.** §24.85 centered the glyph *inside* the circle; the owner then flagged the other half of the original nitpick — the ⓘ *circle* sits slightly low relative to the text it follows, and the offset varies by surface ("not always aligned"). Cause: every InfoTip sits next to **uppercase mono** text in a `flex`/`inline-flex items-center` wrapper. `items-center` centers the 14 px circle on the text's **line box**, but uppercase ink occupies the *upper* part of that box (the descender space below the baseline is empty for all-caps), so the circle's center lands ~0.5–1 px below the caps' optical center. The magnitude scales with each context's font-size / line-height (10 px labels, 12 px headers, the 14 px chip value), which is why it reads as inconsistent.
+
+- **Fix.** Nudge the InfoTip trigger up a hair (`-translate-y-px`) so the circle optically centers on the uppercase caps rather than the line box. It's a transform (no layout reflow, tap target moves with the icon), applied once at the shared component → uniform across every surface (all of which are uppercase contexts: the `Metric` labels, the `ModeBanner` Mode/Agents chips, the trace-stream header + turn seal, the `StatTiles`, the kit drawer). The circle, size, colors, and interaction are otherwise unchanged.
+- **Note.** A fixed 1 px is the pragmatic single-value correction (the contexts cluster at 10–12 px). It is intentionally simple, not per-context-perfect; verified against the real render so it reads centered, not over-corrected.
+
+**DoD.** The ⓘ circle reads vertically centered with its adjacent uppercase label across `/dashboard` + `/architecture` (chips, stat tiles, headers, seal); fe `tsc` + FE unit + prettier green; the InfoTip-bearing `@visual` baselines re-blessed. **Spec deltas:** this §24.86; folded into the PORTAL §5.2 §24.85 note. Memory: [[todo_backlog]] (T6).
+
+---
+
+#### 24.87 Home pipeline strip: long stage names on desktop (owner)
+
+**Problem.** §24.79 D2 gave the compact pipeline strip the **short** stage codes (APP/SCREEN/TECH/FINAL/OFFER) because it's a small widget that *links to* the full board (which carries the long names). The owner noted the marketing-home strip (`/`) is wide enough on desktop to carry the **long** names (Applied/Screening/Tech interview/Final interview/Offer) and they read better there.
+
+- **Fix.** Add an opt-in `expandLabels` prop to `PipelineCompact` (default off). When on, the strip renders the **short** code below `lg` and the **long** name at `lg+` (`whitespace-nowrap`, the same caps-via-CSS treatment) — responsive, so a phone still gets the compact code. **Only the home strip opts in**; the `/dashboard` rail (narrow side-panel column) keeps the short codes (the long names don't fit its width). Both still source from the one `~/lib/pipeline-stages`.
+- **Scope.** `PipelineCompact.tsx` + the home `/` call site. The `/dashboard` call site and `panels.test` (which renders the default → short) are untouched.
+
+**DoD.** On desktop `/`, the strip shows the long stage names on one line each (no wrap/overflow); on mobile `/` and on `/dashboard` it stays the short codes. fe `tsc` + FE unit (`panels.test` short-label assertions still green — default unchanged) + prettier green; the `home` `@visual` baseline re-blessed (mobile-home unchanged — still short). **Spec deltas:** this §24.87; PORTAL §5.1 build note. Memory: [[todo_backlog]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
