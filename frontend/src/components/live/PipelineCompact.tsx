@@ -11,12 +11,24 @@ import type { PipelineApplication } from '~/lib/use-pipeline'
  * from the shared `~/lib/pipeline-stages` source the board uses for its long
  * names. Pure presentation of the already-polled `/api/funnel` rows.
  *
+ * `expandLabels` (§24.87) opts a wide caller into the LONG stage names at `lg+`
+ * (short below) — the home `/` strip sets it (it has the room and reads better);
+ * the narrower /dashboard rail leaves it off (the long names don't fit its column).
+ *
  * `loading` swaps the per-stage counts for content-shaped skeletons (§24.36 36.1,
  * mirroring `StatTiles`) so the strip keeps its exact shape while the first poll
  * is in flight — the caller can render it from the very first paint instead of
  * popping it into existence once data arrives.
  */
-export function PipelineCompact({ apps, loading = false }: { apps: PipelineApplication[]; loading?: boolean }) {
+export function PipelineCompact({
+  apps,
+  loading = false,
+  expandLabels = false,
+}: {
+  apps: PipelineApplication[]
+  loading?: boolean
+  expandLabels?: boolean
+}) {
   const counts: Record<string, number> = {}
   for (const a of apps) counts[a.stage] = (counts[a.stage] ?? 0) + 1
   const publicOffers = apps.filter((a) => a.stage === 'offer' && a.public_state === 'public')
@@ -38,7 +50,16 @@ export function PipelineCompact({ apps, loading = false }: { apps: PipelineAppli
                 {counts[s.stage] ?? 0}
               </span>
             )}
-            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{s.short}</span>
+            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+              {expandLabels ? (
+                <>
+                  <span className="lg:hidden">{s.short}</span>
+                  <span className="hidden whitespace-nowrap lg:inline">{s.long}</span>
+                </>
+              ) : (
+                s.short
+              )}
+            </span>
           </div>
         ))}
       </div>
