@@ -55,7 +55,10 @@ export const INTERNAL_THREAD_PREFIX = 'internal:';
 
 /** Root directory for all session data. */
 export function sessionsBaseDir(): string {
-  return path.join(DATA_DIR, 'v2-sessions');
+  // Test-isolation seam (prod-inert — unset in production): a test file points
+  // this at a unique temp dir so parallel vitest workers never contend on the
+  // shared data/v2-sessions base (the health.test FS-race flake, §24.77 tail).
+  return process.env.NANOCLAW_SESSIONS_DIR ?? path.join(DATA_DIR, 'v2-sessions');
 }
 
 /** Directory for a specific session: sessions/{agent_group_id}/{session_id}/ */
