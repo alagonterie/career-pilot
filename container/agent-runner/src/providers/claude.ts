@@ -82,6 +82,31 @@ export function sdkMessageToTraceEvents(message: unknown, emitTrace: boolean): T
   return [];
 }
 
+/**
+ * §24.78: the `subagent_type` of each `Agent`/`Task` delegation block in an
+ * assistant message. This is the deterministic, PII-safe signal behind the
+ * owner-path lifecycle trace — we read ONLY `subagent_type` (a closed set of
+ * public-safe agent names), never `prompt`/`description`/any other input field
+ * (that is where real company names live). `[]` for non-assistant messages and
+ * messages with no delegation block. Unlike `sdkMessageToTraceEvents` this is
+ * always-on (not `emitTrace`-gated) — the owner path needs it.
+ */
+export function subagentDispatchesFromMessage(message: unknown): string[] {
+  if (!message || typeof message !== 'object') return [];
+  const m = message as { type?: string; message?: { content?: unknown } };
+  if (m.type !== 'assistant') return [];
+  const blocks = Array.isArray(m.message?.content) ? (m.message!.content as unknown[]) : [];
+  const out: string[] = [];
+  for (const b of blocks) {
+    const block = b as { type?: string; name?: string; input?: unknown };
+    if (block.type !== 'tool_use') continue;
+    if (block.name !== 'Task' && block.name !== 'Agent') continue;
+    const st = (block.input as { subagent_type?: string } | undefined)?.subagent_type;
+    if (typeof st === 'string' && st) out.push(st);
+  }
+  return out;
+}
+
 /** Finite number, or 0. Mirrors the defensive parse style above. */
 function finiteOrZero(v: unknown): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : 0;
@@ -639,6 +664,9 @@ export class ClaudeProvider implements AgentProvider {
       // through here too), so the result event can carry the count.
       let recordCalls = 0;
       const recordSeen = new Set<string>();
+      // §24.78: subagent_types dispatched this turn (deduped) — the host emits a
+      // deterministic lifecycle row per name regardless of emitTrace.
+      const subagentDispatches = new Set<string>();
       for await (const message of sdkResult) {
         if (aborted) return;
         messageCount++;
@@ -660,6 +688,9 @@ export class ClaudeProvider implements AgentProvider {
               const block = b as { type?: string; name?: string };
               if (block.type === 'tool_use' && isRecordCallToolName(block.name)) recordCalls++;
             }
+            // §24.78: collect deterministic owner-path subagent dispatches
+            // (subagent_type only — the Set dedups repeats across the turn).
+            for (const st of subagentDispatchesFromMessage(message)) subagentDispatches.add(st);
           }
         }
 
@@ -677,7 +708,9 @@ export class ClaudeProvider implements AgentProvider {
         } else if (message.type === 'result') {
           const text = 'result' in message ? (message as { result?: string }).result ?? null : null;
           const base = sdkResultToTurnTelemetry(message);
-          const telemetry: TurnTelemetry | undefined = base ? { ...base, record_calls: recordCalls } : undefined;
+          const telemetry: TurnTelemetry | undefined = base
+            ? { ...base, record_calls: recordCalls, subagent_dispatches: [...subagentDispatches] }
+            : undefined;
           yield { type: 'result', text, telemetry };
         } else if (message.type === 'system' && (message as { subtype?: string }).subtype === 'api_retry') {
           yield { type: 'error', message: 'API retry', retryable: true };

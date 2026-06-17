@@ -338,7 +338,7 @@ describe('runHealthChecks', () => {
     const report = await run();
     const f = find(report, 'cascade-silent');
     expect(f?.severity).toBe('warn');
-    expect(f?.next_step).toContain('dev_model_tier');
+    expect(f?.next_step).toContain('owner_subagent_trace_emit_enabled');
     expect(exitCodeForReport(report)).toBe(0); // a warn never exit-codes
   });
 

@@ -504,6 +504,7 @@ async function processQuery(
             cache_hit: t.cache_hit,
             latency_ms: t.latency_ms,
             record_calls: t.record_calls,
+            subagent_dispatches: t.subagent_dispatches, // §24.78
             details: t.details,
           }).catch((err) => log(`turn-telemetry emit failed: ${err instanceof Error ? err.message : String(err)}`));
         }

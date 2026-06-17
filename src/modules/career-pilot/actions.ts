@@ -396,6 +396,31 @@ const PROGRESS_PER_SESSION_CAP = 6;
  * public label and `applicationId` rides details_json (server-side only —
  * /api/activity never delivers details_json) so policy flips can re-derive.
  */
+/**
+ * §24.78 / §24.77: the public-facing subagent name. The subagent definitions
+ * still carry their original ids (`funnel-curator`, `prep-interview`) in
+ * frontmatter, but the portal renamed them (§24.59 / §24.53) and the FE display
+ * alias was retired (§24.77) — so the canonical name is applied at the single
+ * write point (`insertProgressRow`) for BOTH the model-driven `record_progress`
+ * rows and the deterministic §24.78 lifecycle rows. Mirrors migration 137's map
+ * (which renamed the historical rows); this keeps every NEW row natively new.
+ */
+const SUBAGENT_DISPLAY_NAME: Record<string, string> = {
+  'funnel-curator': 'pipeline-scribe',
+  'prep-interview': 'build-interview-kit',
+};
+export function publicSubagentName(subagentType: string): string {
+  return SUBAGENT_DISPLAY_NAME[subagentType] ?? subagentType;
+}
+
+/**
+ * §24.78: the fixed, PII-free summary on a deterministic subagent-lifecycle row.
+ * The row's INFORMATION is the agent_name (which subagent ran); the summary is a
+ * constant so it needs no sanitization. The model's own `record_progress` rows
+ * (when it bothers to call it) still layer richer stage detail alongside.
+ */
+const SUBAGENT_DISPATCH_SUMMARY = 'Dispatched by the orchestrator.';
+
 function insertProgressRow(
   db: Database.Database,
   args: {
@@ -417,7 +442,7 @@ function insertProgressRow(
   ).run({
     id: args.id,
     ts: args.ts,
-    agentName: args.agentName,
+    agentName: publicSubagentName(args.agentName),
     proactive: args.proactive,
     applicationRef: args.applicationRef,
     summary: args.summary,
@@ -683,6 +708,33 @@ export async function handleRecordTurnTelemetry(
 
     let id: string | null = null;
     if (trafficClass !== 'sandbox') {
+      // §24.78: deterministic, PII-safe subagent-lifecycle traces. The owner-path
+      // public stream must not depend on a subagent voluntarily calling
+      // record_progress (chronically skipped — box-confirmed June 16/17: the
+      // subagents ran and wrote durable output, yet zero traces landed). Emit one
+      // subagent_progress row per subagent_type the orchestrator dispatched this
+      // turn, carrying ONLY the public-safe name + a fixed summary (no tool input/
+      // prompt), so it needs no sanitization. Written BEFORE the turn row so these
+      // lifecycle lines precede the turn's batch-sealing row in seq order (§24.35).
+      if (getConfig<boolean>(db, 'owner_subagent_trace_emit_enabled', true)) {
+        const dispatches = Array.isArray(p.subagent_dispatches)
+          ? (p.subagent_dispatches as unknown[]).filter((s): s is string => typeof s === 'string' && s.length > 0)
+          : [];
+        for (const subagentType of new Set(dispatches)) {
+          insertProgressRow(db, {
+            id: generateId('prog'),
+            ts: now,
+            agentName: subagentType,
+            proactive: 0,
+            summary: SUBAGENT_DISPATCH_SUMMARY,
+            stage: 'dispatched',
+            sessionId: session.id,
+            applicationRef: null,
+            applicationId: null,
+          });
+        }
+      }
+
       id = generateId('turn');
       db.prepare(
         `INSERT INTO public_audit_trail
