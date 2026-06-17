@@ -128,6 +128,7 @@
     "health_outbound_backlog_warn_count": 10,
     "health_failure_streak_threshold": 3,
     "health_surface_stale_hours": 48,
+    "health_cascade_silent_window_hours": 26,
     "simulator_enabled": true,
     "simulator_max_turns": 30,
     "simulator_max_budget_usd": 0.1,

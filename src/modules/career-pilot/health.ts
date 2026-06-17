@@ -225,6 +225,76 @@ function checkOpsSeries(handles: SessionHandle[], now: number, findings: HealthF
   }
 }
 
+/**
+ * The §24.68-Δ silent-cascade detector (B1): a trace-emitting ops series fired
+ * but recorded no `subagent_progress` trace. The June-16 shape — the orchestrator
+ * woke, the durable work even landed (leads written, curator output materialized),
+ * but on a too-weak model (`dev_model_tier=haiku`) it skipped `record_progress`
+ * and shipped no digest, while every scheduler-level check stayed green. Anchored
+ * on a COMPLETED occurrence whose due time is in-window, so it never fires on a
+ * fresh or paused install (nothing fired ⇒ nothing to be silent about).
+ */
+const TRACE_EMITTING_SERIES = ['job-scrape', 'funnel-curator'] as const;
+
+function checkCascadeSilent(handles: SessionHandle[], now: number, findings: HealthFinding[]): void {
+  const db = getDb();
+  const opsHandle = handles.find((h) => h.groupFolder === OWNER_GROUP_FOLDER && isOpsSession(h.session));
+  // No ops session (unpaired install) → checkOpsSeries owns that signal.
+  if (!opsHandle) return;
+  // Bare/pre-migration DB without the public mirror → degrade to a no-op.
+  if (!hasTable(db, 'public_audit_trail')) return;
+
+  const windowHours = getConfig<number>(db, 'health_cascade_silent_window_hours');
+  const cutoff = iso(now - windowHours * 3_600_000);
+
+  // Did a trace-emitting cascade series complete an occurrence whose due time is
+  // in-window? `process_after` is the occurrence's fire time; a completed row's
+  // is in the past. Fixed IN-list (2 series) — no injection surface.
+  const placeholders = TRACE_EMITTING_SERIES.map(() => '?').join(',');
+  const fired = opsHandle.inDb
+    .prepare(
+      `SELECT series_id, process_after FROM messages_in
+        WHERE series_id IN (${placeholders}) AND kind = 'task' AND status = 'completed'
+          AND process_after IS NOT NULL AND datetime(process_after) >= datetime(?)
+        ORDER BY datetime(process_after) DESC LIMIT 1`,
+    )
+    .get(...TRACE_EMITTING_SERIES, cutoff) as { series_id: string; process_after: string } | undefined;
+
+  if (!fired) {
+    findings.push({
+      id: 'cascade-silent',
+      severity: 'ok',
+      title: 'No silent cascade (no trace-emitting series fired in window)',
+      detail: '',
+    });
+    return;
+  }
+
+  const traceCount = (
+    db
+      .prepare(`SELECT COUNT(*) AS n FROM public_audit_trail WHERE category = 'subagent_progress' AND ts >= ?`)
+      .get(cutoff) as { n: number }
+  ).n;
+
+  if (traceCount === 0) {
+    findings.push({
+      id: 'cascade-silent',
+      severity: 'warn',
+      title: `The cascade fired but recorded no subagent-progress traces in ${windowHours}h`,
+      detail: `Series '${fired.series_id}' completed an occurrence due ${fired.process_after}, but public_audit_trail has zero 'subagent_progress' rows in the window. The scrape-jobs/pipeline-scribe subagents may have done their durable work (leads/curator state can still land) yet skipped record_progress, or were never dispatched — the weak-orchestrator-model signature (the June-16 incident traced to dev_model_tier=haiku).`,
+      next_step: `${Q_TS} data/v2.db "SELECT value, updated_at FROM preferences WHERE key='dev_model_tier'" (a non-default tier downshifts the orchestrator); then ${Q_TS} data/v2.db "SELECT substr(ts,1,16) AS t, category, agent_name FROM public_audit_trail WHERE ts >= '${cutoff}' ORDER BY ts DESC LIMIT 20" and tail the host log for the ops turn (sessionId="${opsHandle.session.id}").`,
+    });
+    return;
+  }
+
+  findings.push({
+    id: 'cascade-silent',
+    severity: 'ok',
+    title: 'Cascade fired and recorded subagent-progress traces',
+    detail: '',
+  });
+}
+
 /** Orphaned cp-resp rows growing again means the §24.66 TTL sweep is broken. */
 function checkOrphanResponses(handles: SessionHandle[], findings: HealthFinding[]): void {
   const warnCount = getConfig<number>(getDb(), 'health_orphan_response_warn_count');
@@ -449,6 +519,7 @@ export async function runHealthChecks(opts: RunHealthChecksOpts = {}): Promise<H
   try {
     await guarded('stale-due-pending', () => checkStaleDuePending(handles, now, findings));
     await guarded('ops-series', () => checkOpsSeries(handles, now, findings));
+    await guarded('cascade-silent', () => checkCascadeSilent(handles, now, findings));
     await guarded('orphan-responses', () => checkOrphanResponses(handles, findings));
     await guarded('outbound-backlog', () => checkOutboundBacklog(handles, findings));
     await guarded('request-telemetry', () => checkRequestTelemetry(now, findings));

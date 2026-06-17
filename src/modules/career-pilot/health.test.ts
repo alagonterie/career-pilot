@@ -131,6 +131,16 @@ function insertTelemetry(over: Partial<Record<string, unknown>>): void {
     });
 }
 
+/** A subagent_progress row in the public mirror (the cascade's observable trace). */
+function insertProgressRow(ts: string, agent = 'scrape-jobs'): void {
+  getDb()
+    .prepare(
+      `INSERT INTO public_audit_trail (id, seq, ts, category, agent_name, proactive, application_ref, summary, details_json)
+       VALUES (@id, (SELECT COALESCE(MAX(seq), 0) + 1 FROM public_audit_trail), @ts, 'subagent_progress', @agent, 0, NULL, 'did a thing', '{}')`,
+    )
+    .run({ id: `pat-${Math.random().toString(36).slice(2, 10)}`, ts, agent });
+}
+
 function find(report: HealthReport, id: string): HealthFinding | undefined {
   return report.findings.find((f) => f.id === id);
 }
@@ -299,6 +309,61 @@ describe('runHealthChecks', () => {
     const report = await run();
     expect(find(report, 'stale-surface:interview-kit-drive')?.severity).toBe('warn');
     expect(find(report, 'stale-surface:scrape-board')).toBeUndefined();
+  });
+
+  // Seed a completed trace-emitting occurrence (due `dueIso`) PLUS a live pending
+  // successor on top — the real recurrence shape, so the dead-series check (which
+  // reads the newest row by seq) stays green and only cascade-silent reacts.
+  function seedCompletedCascadeFire(series: string, dueIso: string): void {
+    insertInboundRow('sess-ops', {
+      id: `task-${series}-done`,
+      seriesId: series,
+      status: 'completed',
+      processAfter: dueIso,
+    });
+    insertInboundRow('sess-ops', {
+      id: `task-${series}-next`,
+      seriesId: series,
+      status: 'pending',
+      processAfter: new Date(NOW + 3_600_000).toISOString(),
+    });
+  }
+
+  it('warns when a trace-emitting cascade series fired but recorded no traces (B1, §24.68 Δ)', async () => {
+    seedSession('sess-chat', null);
+    seedHealthyOps();
+    // A completed job-scrape occurrence due 5h ago (inside the 26h window), with a
+    // live successor — but zero subagent_progress rows in the window.
+    seedCompletedCascadeFire('job-scrape', new Date(NOW - 5 * 3_600_000).toISOString());
+    const report = await run();
+    const f = find(report, 'cascade-silent');
+    expect(f?.severity).toBe('warn');
+    expect(f?.next_step).toContain('dev_model_tier');
+    expect(exitCodeForReport(report)).toBe(0); // a warn never exit-codes
+  });
+
+  it('stays ok when the cascade fired AND recorded a subagent-progress trace', async () => {
+    seedSession('sess-chat', null);
+    seedHealthyOps();
+    seedCompletedCascadeFire('job-scrape', new Date(NOW - 5 * 3_600_000).toISOString());
+    insertProgressRow(new Date(NOW - 4 * 3_600_000).toISOString()); // a trace landed in-window
+    const report = await run();
+    expect(find(report, 'cascade-silent')?.severity).toBe('ok');
+  });
+
+  it('stays ok when no trace-emitting series fired in the window (nothing to be silent about)', async () => {
+    seedSession('sess-chat', null);
+    seedHealthyOps(); // all pending, none completed
+    const report = await run();
+    expect(find(report, 'cascade-silent')?.severity).toBe('ok');
+  });
+
+  it('ignores a trace-emitting occurrence that completed outside the window', async () => {
+    seedSession('sess-chat', null);
+    seedHealthyOps();
+    seedCompletedCascadeFire('job-scrape', new Date(NOW - 30 * 3_600_000).toISOString()); // 30h > 26h window
+    const report = await run();
+    expect(find(report, 'cascade-silent')?.severity).toBe('ok');
   });
 
   it('degrades to a warn finding when request_telemetry is missing (read-only stance)', async () => {

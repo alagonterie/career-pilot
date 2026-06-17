@@ -211,6 +211,12 @@ export function ensureOpsTopology(): void {
  *  conversation memory so machine ticks don't pollute its recall. */
 const OPS_CONVERSATIONS_DIR = '/workspace/agent/conversations/ops';
 
+/** The ops cascade never runs below Sonnet, even when `dev_model_tier=haiku`
+ *  (§24.68 Δ B1). Haiku is for the owner's interactive loop/plumbing sessions;
+ *  the autonomous background cascade must stay capable enough to dispatch
+ *  subagents + compose the digest. Mirrors the Sonnet id in container-config.ts. */
+const OPS_MODEL_FLOOR = 'claude-sonnet-4-6';
+
 /**
  * Merge aggressive transcript-rotation env into the container config for ops
  * spawns. Returns the config unchanged for every other session. Values read
@@ -223,13 +229,30 @@ export function applyOpsSpawnEnv(config: ContainerConfig, session: Session, agen
     const db = getDb();
     const rotateBytes = getConfig<number>(db, 'ops_transcript_rotate_bytes');
     const rotateAgeDays = getConfig<number>(db, 'ops_transcript_rotate_age_days');
+
+    // Haiku floor (§24.68 Δ B1): materializeContainerJson may have already
+    // downshifted this spawn to Haiku via dev_model_tier=haiku — a tier meant for
+    // the owner's interactive plumbing/loop runs. The ops cascade runs autonomously
+    // 24/7, so clamp it back to Sonnet here (the OPS-gated, post-materialize hook):
+    // a dev tier set for a different purpose must not silently degrade the
+    // background cascade (June-16: it fired but recorded no traces / shipped no
+    // digest). The Haiku alias is kept — WebFetch/WebSearch summarization is fine on
+    // it. The chat session + the sandbox still honor the tier; default/sonnet no-op.
+    const flooringHaiku =
+      process.env.ENVIRONMENT === 'dev' && getConfig<string>(db, 'dev_model_tier', 'default') === 'haiku';
+    const modelFloor: Record<string, string> = flooringHaiku
+      ? { ANTHROPIC_DEFAULT_OPUS_MODEL: OPS_MODEL_FLOOR, ANTHROPIC_DEFAULT_SONNET_MODEL: OPS_MODEL_FLOOR }
+      : {};
+
     return {
       ...config,
+      ...(flooringHaiku ? { model: OPS_MODEL_FLOOR } : {}),
       env: {
         ...config.env,
         CLAUDE_TRANSCRIPT_ROTATE_BYTES: String(rotateBytes),
         CLAUDE_TRANSCRIPT_ROTATE_AGE_DAYS: String(rotateAgeDays),
         NANOCLAW_CONVERSATIONS_DIR: OPS_CONVERSATIONS_DIR,
+        ...modelFloor,
       },
     };
   } catch (err) {
