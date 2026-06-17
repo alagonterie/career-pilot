@@ -41,6 +41,9 @@ describe('WorkSections', () => {
     expect(entries.map((e) => e.textContent)).not.toContain('Elsewhere')
     // Skills present once (skillGroups XOR flat skills), so 6 sections × 2 navs.
     expect(entries).toHaveLength(6 * 2)
+    // The mobile ‹ › prev/next steppers are reused here too (§24.83 owner follow-up).
+    expect(screen.getByTestId('experience-toc-prev')).toBeInTheDocument()
+    expect(screen.getByTestId('experience-toc-next')).toBeInTheDocument()
   })
 
   it('the removed "Elsewhere" social links no longer render (footer owns socials, §24.83 D4)', () => {

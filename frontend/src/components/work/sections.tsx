@@ -226,6 +226,7 @@ export function WorkSections({ profile }: { profile: WorkProfile }) {
       sections={toc}
       idPrefix="experience"
       navLabel="On this page"
+      stepper
       contentClassName="flex w-full flex-col gap-10"
     >
       {items.map((s) => (
