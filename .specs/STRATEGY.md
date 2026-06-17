@@ -6013,6 +6013,18 @@ So the owner's "verify before featuring" gate was correct: featuring it today wo
 
 **DoD.** A reflection persists to `learnings`; `read_learnings(category)` returns it; the sandbox group is FORBIDDEN from both; `publish:true` sets `reflection_published=1` and the learning surfaces on `/pipeline`; the persona instructs persist-then-fuel; `/about` features coaching + fuel honestly. host `tsc` + container `tsc` + new `learnings-actions` host tests (persist, read-by-category, sandbox-reject, publish flag) + FE `about` unit/e2e + prettier green. **Spec deltas:** this §24.107 + the persona + `tailor-resume` subagent (runtime artifacts) + `/about` copy. Memory: [[todo_backlog]], [[project_job_leads_heartbeat]].
 
+#### 24.108 /architecture — make the Google Workspace write-reach visible (item #10)
+
+**Item #10.** The owner felt `/architecture` shows no indication that the agents *reach into* Google Workspace (Gmail drafts, Drive interview-kit Docs, and — verify — Calendar). The page already has a `trig-google` "Google Workspace" node whose description mentions the write-back, **but** the node sits in TRIGGERS with a single inbound edge (`trig-google → host-router`), so the diagram reads as listen-only; the outbound reach is buried in click-to-open prose.
+
+**Verify (Calendar).** The agent **reads** Calendar (the delta/close-detection poll surfaces interview events as pipeline signals) but does **not create or move** events — `insertCalendarEvent` exists only in the recruiter-sim (it simulates a recruiter's invite into the candidate's calendar; not a real agent capability). So Calendar is **read-only**; the node copy must not imply event creation.
+
+**Build (FE only).**
+- Add one outbound edge `host-onecli → trig-google`: the agents' writes (orchestrator `create_gmail_draft`; `build-interview-kit` Drive Docs) egress through the OneCLI gateway, which injects the Google OAuth token, and land in Workspace. Combined with the existing inbound `trig-google → host-router`, Google Workspace now reads as the duplex external service it is (it wakes the system *and* the system writes to it). The OneCLI node already lists `gmail`/`calendar`/`drive` providers, so the edge is consistent with the credential model.
+- Sharpen the `trig-google` description to enumerate the three capabilities with direction and pin the verified Calendar-read-only fact: reads Gmail (recruiter replies) + Calendar (interview events) to wake the pipeline (polling, not webhooks); writes reversible Gmail drafts (never auto-sent) + interview-prep kit Docs in the candidate's own Drive; **Calendar is read-only — it never creates or moves events.**
+
+**DoD.** The diagram shows an edge from the OneCLI gateway to Google Workspace (the write path); the node panel enumerates read (Gmail+Calendar) vs write (Gmail drafts + Drive Docs) and states Calendar is read-only. FE `tsc` + `diagram` unit + architecture `@visual` re-blessed (edge added — verified by eye) + prettier green. **Spec deltas:** this §24.108 + PORTAL §5.5 node note. Memory: [[todo_backlog]].
+
 ---
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
