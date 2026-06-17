@@ -12,7 +12,8 @@ import { enforceStartupBackoff, resetCircuitBreaker } from './circuit-breaker.js
 import { migrateGroupsToClaudeLocal } from './claude-md-compose.js';
 import { initDb } from './db/connection.js';
 import { runMigrations } from './db/migrations/index.js';
-import { ensureContainerRuntimeRunning, cleanupOrphans } from './container-runtime.js';
+import { ensureContainerRuntimeRunning, cleanupOrphans, stopInstallContainers } from './container-runtime.js';
+import { resetAllContainerStatusesToStopped } from './db/sessions.js';
 import { startActiveDeliveryPoll, startSweepDeliveryPoll, setDeliveryAdapter, stopDeliveryPolls } from './delivery.js';
 import { startHostSweep, stopHostSweep } from './host-sweep.js';
 import { startRecruiterSim, stopRecruiterSim } from './modules/career-pilot/recruiter-sim/runner.js';
@@ -87,6 +88,15 @@ async function main(): Promise<void> {
   // 2. Container runtime
   ensureContainerRuntimeRunning();
   cleanupOrphans();
+  // Reconcile the container_status cache: after cleanupOrphans no container from
+  // this install is alive, so any session still marked 'running'/'idle' is a
+  // phantom from a host that died before its container's `close` handler fired.
+  // Clear them so /dashboard (and the active delivery poll) reflect reality.
+  // STRATEGY.md §24.91.
+  const reconciled = resetAllContainerStatusesToStopped();
+  if (reconciled > 0) {
+    log.info('Reconciled phantom container_status rows on startup', { count: reconciled });
+  }
 
   // 3. Channel adapters
   await initChannelAdapters((adapter: ChannelAdapter): ChannelSetup => {
@@ -199,6 +209,12 @@ async function shutdown(signal: string): Promise<void> {
       log.error('Shutdown callback threw', { err });
     }
   }
+  // Stop this install's containers before exiting. Without this, dockerd-owned
+  // containers outlive the host process (KillMode=process can't reap them) and
+  // run unsupervised — spending tokens, mutating their session DBs — until the
+  // next boot's cleanupOrphans(). Safe: resume is via the persisted SDK
+  // continuation, so the next inbound re-spawns and continues. STRATEGY.md §24.91.
+  stopInstallContainers('host-shutdown');
   stopDeliveryPolls();
   stopHostSweep();
   stopRecruiterSim();

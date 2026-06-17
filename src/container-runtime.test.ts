@@ -23,9 +23,13 @@ import {
   stopContainer,
   ensureContainerRuntimeRunning,
   cleanupOrphans,
+  stopInstallContainers,
 } from './container-runtime.js';
 import { CONTAINER_INSTALL_LABEL } from './config.js';
 import { log } from './log.js';
+
+// Mirror the module-private STOP_TIMEOUT_MS so call assertions stay readable.
+const STOP_TIMEOUT_MS = 10_000;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -41,10 +45,11 @@ describe('readonlyMountArgs', () => {
 });
 
 describe('stopContainer', () => {
-  it('calls docker stop for valid container names', () => {
+  it('calls docker stop for valid container names (timeout-bounded)', () => {
     stopContainer('nanoclaw-test-123');
     expect(mockExecSync).toHaveBeenCalledWith(`${CONTAINER_RUNTIME_BIN} stop -t 1 nanoclaw-test-123`, {
       stdio: 'pipe',
+      timeout: STOP_TIMEOUT_MS,
     });
   });
 
@@ -108,9 +113,11 @@ describe('cleanupOrphans', () => {
     expect(mockExecSync).toHaveBeenCalledTimes(3);
     expect(mockExecSync).toHaveBeenNthCalledWith(2, `${CONTAINER_RUNTIME_BIN} stop -t 1 nanoclaw-group1-111`, {
       stdio: 'pipe',
+      timeout: STOP_TIMEOUT_MS,
     });
     expect(mockExecSync).toHaveBeenNthCalledWith(3, `${CONTAINER_RUNTIME_BIN} stop -t 1 nanoclaw-group2-222`, {
       stdio: 'pipe',
+      timeout: STOP_TIMEOUT_MS,
     });
     expect(log.info).toHaveBeenCalledWith('Stopped orphaned containers', {
       count: 2,
@@ -156,5 +163,56 @@ describe('cleanupOrphans', () => {
       count: 2,
       names: ['nanoclaw-a-1', 'nanoclaw-b-2'],
     });
+  });
+});
+
+// --- stopInstallContainers (shutdown path, STRATEGY.md §24.91) ---
+
+describe('stopInstallContainers', () => {
+  it('stops the install-labeled containers and returns their names', () => {
+    mockExecSync.mockReturnValueOnce('nanoclaw-ops-1\nnanoclaw-sb-2\n');
+    mockExecSync.mockReturnValue('');
+
+    const names = stopInstallContainers('host-shutdown');
+
+    expect(names).toEqual(['nanoclaw-ops-1', 'nanoclaw-sb-2']);
+    // ps filtered by the install label, then a timeout-bounded stop per name.
+    expect(mockExecSync).toHaveBeenNthCalledWith(
+      1,
+      `${CONTAINER_RUNTIME_BIN} ps --filter label=${CONTAINER_INSTALL_LABEL} --format '{{.Names}}'`,
+      expect.any(Object),
+    );
+    expect(mockExecSync).toHaveBeenNthCalledWith(2, `${CONTAINER_RUNTIME_BIN} stop -t 1 nanoclaw-ops-1`, {
+      stdio: 'pipe',
+      timeout: STOP_TIMEOUT_MS,
+    });
+    expect(log.info).toHaveBeenCalledWith('Stopped running containers on shutdown', {
+      count: 2,
+      names: ['nanoclaw-ops-1', 'nanoclaw-sb-2'],
+    });
+  });
+
+  it('returns an empty list and logs nothing when there is nothing to stop', () => {
+    mockExecSync.mockReturnValueOnce('');
+
+    const names = stopInstallContainers('host-shutdown');
+
+    expect(names).toEqual([]);
+    expect(mockExecSync).toHaveBeenCalledTimes(1);
+    expect(log.info).not.toHaveBeenCalled();
+  });
+
+  it('swallows a ps failure (returns []) and warns with the reason', () => {
+    mockExecSync.mockImplementationOnce(() => {
+      throw new Error('docker daemon wedged');
+    });
+
+    const names = stopInstallContainers('host-shutdown'); // must not throw
+
+    expect(names).toEqual([]);
+    expect(log.warn).toHaveBeenCalledWith(
+      'Failed to stop running containers on shutdown',
+      expect.objectContaining({ reason: 'host-shutdown', err: expect.any(Error) }),
+    );
   });
 });

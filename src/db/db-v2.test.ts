@@ -26,6 +26,7 @@ import {
   getSessionsByAgentGroup,
   getActiveSessions,
   getRunningSessions,
+  resetAllContainerStatusesToStopped,
   updateSession,
   deleteSession,
   createPendingQuestion,
@@ -352,6 +353,21 @@ describe('sessions', () => {
     createSession({ ...sess(), id: 'sess-idle', container_status: 'idle', thread_id: 'thread-1' });
     createSession({ ...sess(), id: 'sess-stopped', container_status: 'stopped', thread_id: 'thread-2' });
     expect(getRunningSessions()).toHaveLength(2);
+  });
+
+  it('should reset phantom running/idle container_status to stopped (§24.91)', () => {
+    createSession({ ...sess(), container_status: 'running' });
+    createSession({ ...sess(), id: 'sess-idle', container_status: 'idle', thread_id: 'thread-1' });
+    createSession({ ...sess(), id: 'sess-stopped', container_status: 'stopped', thread_id: 'thread-2' });
+
+    // Two phantom rows corrected; the already-stopped one is untouched (no churn).
+    expect(resetAllContainerStatusesToStopped()).toBe(2);
+    expect(getRunningSessions()).toHaveLength(0);
+    expect(getSession('sess-1')!.container_status).toBe('stopped');
+    expect(getSession('sess-idle')!.container_status).toBe('stopped');
+
+    // Idempotent — a second call corrects nothing.
+    expect(resetAllContainerStatusesToStopped()).toBe(0);
   });
 
   it('should update', () => {
