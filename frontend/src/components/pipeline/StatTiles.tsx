@@ -7,9 +7,10 @@ import { deriveStatTiles, type PipelineApplication } from '~/lib/use-pipeline'
  * pipeline rows (no new endpoint). Values carry `data-testid="stat-value"` so the
  * visual baseline can mask the date-windowed numbers (they drift); the labels
  * are stable. `loading` swaps the values for skeletons (§24.36 36.1) so the row
- * keeps its shape while the pipeline poll is in flight. Each label carries an
- * InfoTip with the tile's honest derivation (§24.60) — the copy lives with the
- * math in `deriveStatTiles`.
+ * keeps its shape while the pipeline poll is in flight. A label carries an InfoTip
+ * only when its derivation isn't obvious from the name (§24.79 D1 — just the
+ * heuristic `Avg days active` tile); the honest copy lives with the math in
+ * `deriveStatTiles`.
  */
 export function StatTiles({ apps, loading = false }: { apps: PipelineApplication[]; loading?: boolean }) {
   const tiles = deriveStatTiles(apps)
@@ -19,7 +20,7 @@ export function StatTiles({ apps, loading = false }: { apps: PipelineApplication
         <div key={t.label} className="rounded-lg border border-border bg-card p-4">
           <p className="flex items-center gap-1.5 font-mono text-xs uppercase tracking-widest text-muted-foreground">
             <span className="min-w-0 truncate">{t.label}</span>
-            <InfoTip label={t.label}>{t.tip}</InfoTip>
+            {t.tip ? <InfoTip label={t.label}>{t.tip}</InfoTip> : null}
           </p>
           {loading ? (
             <Skeleton className="mt-2 h-8 w-12" />

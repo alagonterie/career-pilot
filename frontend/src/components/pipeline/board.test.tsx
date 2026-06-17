@@ -67,9 +67,9 @@ const APPS: PipelineApplication[] = [
 ]
 
 describe('PipelineBoard', () => {
-  it('renders a column per pipeline stage with the cards in them', () => {
+  it('renders a column per pipeline stage with the cards in them (long names — §24.79 D2)', () => {
     render(<PipelineBoard apps={APPS} onSelect={() => {}} />)
-    for (const title of ['Applied', 'Screening', 'Tech', 'Final', 'Offer']) {
+    for (const title of ['Applied', 'Screening', 'Tech interview', 'Final interview', 'Offer']) {
       expect(screen.getByRole('region', { name: title })).toBeInTheDocument()
     }
     expect(screen.getByText('[fintech-a]')).toBeInTheDocument()
@@ -190,9 +190,11 @@ describe('StatTiles', () => {
     expect(screen.getAllByTestId('stat-value')).toHaveLength(4)
   })
 
-  it('each tile carries an InfoTip that opens its honest derivation (§24.60)', () => {
+  it('carries an InfoTip only on the heuristic tile, not the self-evident ones (§24.79 D1)', () => {
     render(<StatTiles apps={APPS} />)
-    expect(screen.getAllByTestId('info-tip-trigger')).toHaveLength(4)
+    // Three tiles are clear from their label → exactly one tip remains.
+    expect(screen.getAllByTestId('info-tip-trigger')).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: 'About: Applications YTD' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'About: Avg days active' }))
     expect(screen.getByTestId('info-tip-panel')).toHaveTextContent(/closed applications.*excluded.*heuristic/i)
   })

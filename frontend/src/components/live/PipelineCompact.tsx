@@ -1,20 +1,15 @@
 import { Skeleton } from '~/components/ui/skeleton'
+import { PIPELINE_STAGES } from '~/lib/pipeline-stages'
 import type { PipelineApplication } from '~/lib/use-pipeline'
 
-// The displayed pipeline, left → right (mirrors the 7.1 PipelineBoard columns).
-const STAGES: { stage: string; label: string }[] = [
-  { stage: 'applied', label: 'Applied' },
-  { stage: 'screening', label: 'Screening' },
-  { stage: 'tech', label: 'Tech' },
-  { stage: 'final', label: 'Final' },
-  { stage: 'offer', label: 'Offer' },
-]
-
 /**
- * The compact one-row pipeline for /live (PORTAL §5.2) — the designed reuse of the
- * 7.1 pipeline data flagged in §24.27. Stage counts as a strip; a public OFFER is
- * revealed by name with the ◆ marker (the reveal tier), everything else stays a
- * count. Pure presentation of the already-polled `/api/funnel` rows.
+ * The compact one-row pipeline for the /dashboard rail + the marketing-home strip
+ * (PORTAL §5.2) — the designed reuse of the 7.1 pipeline data flagged in §24.27.
+ * Stage counts as a strip; a public OFFER is revealed by name with the ◆ marker
+ * (the reveal tier), everything else stays a count. Because this strip *links to*
+ * the full board, it renders the short stage codes (§24.79 D2 — APP/SCREEN/…)
+ * from the shared `~/lib/pipeline-stages` source the board uses for its long
+ * names. Pure presentation of the already-polled `/api/funnel` rows.
  *
  * `loading` swaps the per-stage counts for content-shaped skeletons (§24.36 36.1,
  * mirroring `StatTiles`) so the strip keeps its exact shape while the first poll
@@ -29,7 +24,7 @@ export function PipelineCompact({ apps, loading = false }: { apps: PipelineAppli
   return (
     <div data-testid="funnel-compact" className="flex flex-col gap-3">
       <div className="grid grid-cols-5 gap-1.5">
-        {STAGES.map((s) => (
+        {PIPELINE_STAGES.map((s) => (
           <div
             key={s.stage}
             data-testid={`funnel-compact-${s.stage}`}
@@ -43,7 +38,7 @@ export function PipelineCompact({ apps, loading = false }: { apps: PipelineAppli
                 {counts[s.stage] ?? 0}
               </span>
             )}
-            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{s.label}</span>
+            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{s.short}</span>
           </div>
         ))}
       </div>

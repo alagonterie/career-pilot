@@ -74,8 +74,10 @@ export interface StatTile {
   label: string
   value: string
   hint: string
-  /** The InfoTip derivation copy (§24.60) — the honest version of `hint`. */
-  tip: string
+  /** The InfoTip derivation copy (§24.60) — the honest version of `hint`, or
+   * `null` for tiles whose label already says it (§24.79 D1: only the heuristic
+   * `Avg days active` tile earns a tip; the rest are self-evident). */
+  tip: string | null
 }
 
 const INTERVIEW_STAGES = new Set(['screening', 'tech', 'final'])
@@ -106,27 +108,28 @@ export function deriveStatTiles(apps: PipelineApplication[]): StatTile[] {
     ? Math.round(inflight.reduce((sum, a) => sum + (a.days_in_pipeline ?? 0), 0) / inflight.length)
     : 0
 
-  // The `tip` strings are the §24.60 InfoTip derivations — the honest caveats
-  // (calendar windows, active-only averaging) live HERE, next to the math they
-  // describe, so copy and computation can't drift apart.
+  // The first three tiles are clear from their labels (§24.79 D1) → `tip: null`,
+  // no InfoTip. Only `Avg days active` keeps one: its §24.60 derivation (the
+  // active-only averaging caveat) isn't derivable from the name, so the honest
+  // copy lives HERE, next to the math it describes, so the two can't drift apart.
   return [
     {
       label: 'Applications YTD',
       value: String(ytd),
       hint: 'applied this year',
-      tip: 'Every application with an applied date in the current calendar year. The window resets each January 1.',
+      tip: null,
     },
     {
       label: 'Interviews this month',
       value: String(interviewsThisMonth),
       hint: 'entered an interview stage',
-      tip: 'Applications that entered an interview stage (screening, tech, or final) during the current calendar month — counted by stage entry, not by interview date.',
+      tip: null,
     },
     {
       label: 'Offers',
       value: String(offers),
       hint: 'received',
-      tip: 'Applications currently sitting at the offer stage.',
+      tip: null,
     },
     {
       label: 'Avg days active',

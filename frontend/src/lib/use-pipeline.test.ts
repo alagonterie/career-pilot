@@ -61,13 +61,16 @@ describe('deriveStatTiles', () => {
     expect(byLabel['Avg days active']).toBe('0')
   })
 
-  it('every tile carries InfoTip derivation copy with the honest caveats (§24.60)', () => {
-    const tiles = deriveStatTiles([])
-    for (const t of tiles) expect(t.tip.length).toBeGreaterThan(20)
-    const byLabel = Object.fromEntries(tiles.map((t) => [t.label, t.tip]))
-    expect(byLabel['Applications YTD']).toMatch(/calendar year/i)
-    expect(byLabel['Interviews this month']).toMatch(/calendar month/i)
+  it('only the heuristic tile carries InfoTip copy; the self-evident ones are tipless (§24.79 D1)', () => {
+    const byLabel = Object.fromEntries(deriveStatTiles([]).map((t) => [t.label, t.tip]))
+    // The three clear-from-the-label tiles drop their tip (§24.79 D1).
+    expect(byLabel['Applications YTD']).toBeNull()
+    expect(byLabel['Interviews this month']).toBeNull()
+    expect(byLabel['Offers']).toBeNull()
+    // Only `Avg days active` keeps one — its derivation isn't obvious from the
+    // name, and the honest caveat (§24.60) lives with the math.
     expect(byLabel['Avg days active']).toMatch(/heuristic/i)
+    expect(byLabel['Avg days active']?.length ?? 0).toBeGreaterThan(20)
   })
 })
 

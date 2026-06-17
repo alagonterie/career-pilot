@@ -30,7 +30,7 @@ test.describe('/pipeline — the funnel board, frontend <-> backend', () => {
     // Board renders from the seeded /api/funnel over the polling hook.
     const board = page.getByTestId('funnel-board')
     await expect(board).toBeVisible()
-    for (const col of ['Applied', 'Screening', 'Tech', 'Final', 'Offer']) {
+    for (const col of ['Applied', 'Screening', 'Tech interview', 'Final interview', 'Offer']) {
       await expect(page.getByRole('region', { name: col })).toBeVisible()
     }
 
@@ -155,16 +155,17 @@ test.describe('/pipeline — the funnel board, frontend <-> backend', () => {
 
   test('stat tiles + the drawer explain themselves via InfoTips (§24.60)', async ({ page }) => {
     await page.goto('/pipeline')
-    // A stat tile's honest derivation opens on tap. Retried like mobile.spec's
+    // The one stat tile whose derivation isn't obvious from its label (§24.79 D1:
+    // `Avg days active`) opens its honest caveat on tap. Retried like mobile.spec's
     // openMenu: under parallel-worker load a click can land during hydration /
     // a late layout settle (the tip closes on scroll), so a single click is
     // racy — re-click until the panel holds (flaked 3× in-file, §24.62 family).
     await expect(async () => {
       if (await page.getByTestId('info-tip-panel').isVisible()) return
-      await page.getByRole('button', { name: 'About: Applications YTD' }).click()
+      await page.getByRole('button', { name: 'About: Avg days active' }).click()
       await expect(page.getByTestId('info-tip-panel')).toBeVisible({ timeout: 1000 })
     }).toPass({ timeout: 15_000 })
-    await expect(page.getByTestId('info-tip-panel')).toContainText(/calendar year/i)
+    await expect(page.getByTestId('info-tip-panel')).toContainText(/heuristic/i)
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('info-tip-panel')).toBeHidden()
 
