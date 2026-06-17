@@ -5947,6 +5947,24 @@ The B1 deep dive flagged "~115 restarts / every 10–40 min" as possible runaway
 
 **DoD.** The three credits render as links opening in a new tab, muted with a `hover:text-foreground` transition matching the sibling footer links; the `·` separators are preserved; non-link footer behavior (socials, About/Privacy) is byte-stable. FE `tsc` + a small `FOOTER_CREDITS` unit assertion (ordered labels + hrefs) + prettier `--no-semi` green. Re-bless any footer-bearing `@visual` baseline only if the rendered text metrics shift (link styling is color/hover-only — same glyphs, so no diff expected). **Spec deltas:** this §24.103 + the PORTAL §8.2 footer note. Memory: [[todo_backlog]].
 
+#### 24.104 "Watch it work" garbage-input guard (light client heuristics)
+
+**Problem (item #14).** The recruiter-simulator input (`SimInput.tsx`) validates `company` + `role` with only `z.string().min(1)`. So `"asdf"` / `"xxxx"` / `"...."` pass client validation → POST `/api/simulator` → a real sandbox container spins up and spends real LLM tokens researching nonsense. The §24.70 abuse caps (Turnstile + per-IP 5/day + $5/day global) bound the *blast radius* but don't stop an honest visitor from wasting one of their five daily runs on a typo, and the public showcase shouldn't visibly chew a run on obvious junk.
+
+**Decision (owner).** *Light client heuristics + keep caps* — a conservative front-door filter for obvious garbage, with the existing abuse caps + the agent's graceful "couldn't find this company" as the backstop for plausible-looking junk that slips through. Deliberately NOT a server-side gate or an LLM pre-check: the cost of a false reject (a legit short company name blocked) outweighs the cost of a rare slip-through (which the agent handles honestly).
+
+**Fix.** Tighten the `SimInput.tsx` zod schema for `company` and `role`:
+
+- `.trim()` then `.min(2)` (a single mild tradeoff: a one-character name like "X" must be entered as "X Corp" — acceptable; near-zero legit one-char company/role inputs).
+- A light `.refine` rejecting the two unambiguous garbage shapes: (1) a single character repeated (`"aaaa"`, `"...."`, `"----"`) — `new Set(trimmed.replace(/\s/g,'')).size <= 1`; (2) no letters at all (`"1234"`, `"!!!"`) — `!/\p{L}/u.test(trimmed)`. Both checked on the trimmed value.
+- Errors surface instantly inline via the existing `Field` error slot (already wired for `company`/`role`). The refine carries a friendly message ("Enter a real company name" / "Enter a real role or title").
+
+Heuristics stay conservative — they reject only what is unambiguously not a real name; anything that *could* be a real (if obscure) company passes to the agent. The pure predicate (`looksLikeGarbage(value)`) is extracted so the refine cases are unit-testable without rendering the form.
+
+**Also verify (no-op if already true).** Confirm `research-company` degrades gracefully on a not-found company — an honest "couldn't find this company" rather than a hallucinated profile — so a plausible-looking slip-through still produces a non-embarrassing run. If it hallucinates, that's a separate persona/subagent fix; record the finding either way.
+
+**DoD.** `"asdf"`-class single-char-repeat, no-letter, and `<2`-char inputs are rejected client-side with an inline message before any POST; legit short names (e.g. "IBM", "Box", "X Corp") pass; the abuse caps + agent not-found handling remain the backstop. FE `tsc` + `looksLikeGarbage`/schema unit cases (repeat-char, no-letter, min-length, legit-passes) + prettier `--no-semi` green. The verify-step finding (research-company on not-found) recorded in memory. No `@visual` baseline moves (validation is interaction-time, not at-rest). **Spec deltas:** this §24.104 + the PORTAL §5.3 simulator-input note. Memory: [[todo_backlog]].
+
 ---
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.

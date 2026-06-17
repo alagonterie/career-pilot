@@ -575,7 +575,7 @@ This is also where the visitor learns that the public side of the system is genu
                  No data persists. No DB writes. Cost ~$0.04 per run.
 ```
 
-Form validation: company + role required, JD optional (if empty, we use sensible defaults).
+Form validation: company + role required, JD optional (if empty, we use sensible defaults). **A light garbage-input guard (STRATEGY §24.104)** rejects obvious nonsense (a single repeated character, no letters at all, or `<2` chars) inline before a run is ever spent — conservative by design (legit short names like "IBM"/"Box" pass; the abuse caps + the agent's honest "couldn't find this company" remain the backstop for plausible-looking junk).
 
 A rate limit indicator: "8 of 10 free runs remaining today (per IP)". Limit prevents abuse.
 
