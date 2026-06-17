@@ -21,8 +21,22 @@ export interface CandidateProfileForScoring {
   acceptable_regions: Array<'US' | 'EU' | 'GLOBAL'>;
   acceptable_cities: string[];
   remote_ok: boolean;
+  /** True once the candidate has stated ANY location preference (remote/hybrid
+   *  in `type`, or a `preferred_cities` entry). Gates the off-location demotion:
+   *  with no stated preference we never penalize a location (§24.100). */
+  location_specified: boolean;
   negative_keywords: string[];
 }
+
+// Strong demotion for a lead that is *definitively* off-location — non-remote
+// (is_remote === false) AND not in a preferred city — when the candidate HAS
+// stated a location preference (§24.100, owner: "strong demotion, keep
+// unknowns"). A negative component sinks the lead to the score clamp's floor so
+// it ranks below on-location matches in `read_job_leads` (rules_score DESC), yet
+// an unknown location (is_remote === null) is never penalized — it stays a
+// neutral 0 so a genuinely-remote role the parser couldn't classify isn't
+// false-dropped. Hardcoded with the other v1.0 weights (config-wired in v1.1+).
+const OFF_LOCATION_PENALTY = -30;
 
 export interface RulesScoreResult {
   score: number; // 0-100
@@ -94,21 +108,27 @@ export function computeRulesScore(payload: JobLeadPayload, profile: CandidatePro
   };
   score += compScore;
 
-  // Location.
+  // Location (§24.100). A preferred-city match is checked first so it credits a
+  // Denver hybrid/onsite role regardless of is_remote; a definitively off-location
+  // role (non-remote, not a preferred city) is strongly demoted when a preference
+  // exists; unknown location (is_remote === null) and no stated preference stay a
+  // neutral 0.
   let locScore = 0;
   const locInfo: Record<string, unknown> = { is_remote: payload.is_remote, remote_region: payload.remote_region };
+  const locLower = (payload.location_raw ?? '').toLowerCase();
+  const matchedCity =
+    payload.location_raw && profile.acceptable_cities.length > 0
+      ? profile.acceptable_cities.find((c) => locLower.includes(c.toLowerCase()))
+      : undefined;
   if (payload.is_remote === true && profile.remote_ok) {
-    if (payload.remote_region && profile.acceptable_regions.includes(payload.remote_region)) {
-      locScore = 15;
-    } else {
-      locScore = 8;
-    }
-  } else if (payload.location_raw && profile.acceptable_cities.length > 0) {
-    const locLower = payload.location_raw.toLowerCase();
-    if (profile.acceptable_cities.some((c) => locLower.includes(c.toLowerCase()))) {
-      locScore = 15;
-      locInfo.matched_city = profile.acceptable_cities.find((c) => locLower.includes(c.toLowerCase()));
-    }
+    locScore = payload.remote_region && profile.acceptable_regions.includes(payload.remote_region) ? 15 : 8;
+  } else if (matchedCity) {
+    locScore = 15;
+    locInfo.matched_city = matchedCity;
+  } else if (profile.location_specified && payload.is_remote === false) {
+    // Definitively off-location (non-remote, not a preferred city) — demote.
+    locScore = OFF_LOCATION_PENALTY;
+    locInfo.off_location = true;
   }
   locInfo.score = locScore;
   reasons.location = locInfo;
@@ -148,15 +168,27 @@ export function profileFromRow(row: Record<string, unknown> | null): CandidatePr
       acceptable_regions: ['US', 'GLOBAL'],
       acceptable_cities: [],
       remote_ok: true,
+      location_specified: false, // no profile → no stated preference → never demote
       negative_keywords: defaultNegativeKeywords(),
     };
   }
 
   const target_roles = parseJsonArray(row.target_roles);
   const skills = parseJsonArray(row.skills);
+  // Canonical location_pref schema (§24.100): `{ type: ('remote'|'hybrid'|'onsite')[],
+  // preferred_cities: string[] }`. `type` is the candidate's accepted arrangements;
+  // a `preferred_cities` entry is an acceptable hybrid/onsite metro.
   const locationPref = parseJsonObject(row.location_pref);
-  const remote_ok = typeof locationPref.remote === 'boolean' ? locationPref.remote : true;
-  const acceptable_cities = Array.isArray(locationPref.hybrid_cities) ? locationPref.hybrid_cities : [];
+  const type = Array.isArray(locationPref.type)
+    ? locationPref.type.filter((t): t is string => typeof t === 'string')
+    : [];
+  const acceptable_cities = Array.isArray(locationPref.preferred_cities)
+    ? locationPref.preferred_cities.filter((c): c is string => typeof c === 'string')
+    : [];
+  // remote_ok defaults to permissive only when NO preference is stated at all;
+  // once a preference exists, remote is accepted iff `type` includes 'remote'.
+  const location_specified = type.length > 0 || acceptable_cities.length > 0;
+  const remote_ok = location_specified ? type.includes('remote') : true;
 
   return {
     target_roles,
@@ -165,6 +197,7 @@ export function profileFromRow(row: Record<string, unknown> | null): CandidatePr
     acceptable_regions: ['US', 'GLOBAL'], // v1.0 default; configurable later
     acceptable_cities,
     remote_ok,
+    location_specified,
     negative_keywords: defaultNegativeKeywords(),
   };
 }

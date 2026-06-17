@@ -116,18 +116,9 @@ export function renderPersona(
     sections.push('## Target roles', targetRoles.map((r) => `- ${r}`).join('\n'));
   }
 
-  if (locationPref) {
-    const lines: string[] = ['## Location'];
-    if (typeof locationPref.remote === 'boolean') {
-      lines.push(`- Remote: ${locationPref.remote ? 'yes' : 'no'}`);
-    }
-    if (locationPref.hybrid_cities && locationPref.hybrid_cities.length > 0) {
-      lines.push('- Hybrid cities:');
-      for (const city of locationPref.hybrid_cities) {
-        lines.push(`  - ${city}`);
-      }
-    }
-    sections.push(lines.join('\n'));
+  const locationSection = renderLocationSection(locationPref);
+  if (locationSection) {
+    sections.push(locationSection);
   }
 
   if (profile.comp_floor != null) {
@@ -224,18 +215,9 @@ export function renderSandboxCandidate(profile: CandidateProfile | null): string
     sections.push('## Target roles', targetRoles.map((r) => `- ${r}`).join('\n'));
   }
 
-  if (locationPref) {
-    const lines: string[] = ['## Location'];
-    if (typeof locationPref.remote === 'boolean') {
-      lines.push(`- Remote: ${locationPref.remote ? 'yes' : 'no'}`);
-    }
-    if (locationPref.hybrid_cities && locationPref.hybrid_cities.length > 0) {
-      lines.push('- Hybrid cities:');
-      for (const city of locationPref.hybrid_cities) {
-        lines.push(`  - ${city}`);
-      }
-    }
-    sections.push(lines.join('\n'));
+  const locationSection = renderLocationSection(locationPref);
+  if (locationSection) {
+    sections.push(locationSection);
   }
 
   if (profile.master_resume) {
@@ -298,8 +280,35 @@ function approvedFigures(profile: CandidateProfile): string[] {
 }
 
 interface LocationPref {
-  remote?: boolean;
-  hybrid_cities?: string[];
+  type?: string[];
+  preferred_cities?: string[];
+}
+
+/**
+ * The persona `## Location` block from the canonical `location_pref` schema
+ * (§24.100): `type` (the accepted arrangements — remote/hybrid/onsite) +
+ * `preferred_cities`. Returns null when there's nothing to say, so a bare
+ * `## Location` header never renders (the old `{remote, hybrid_cities}` reader
+ * pushed an empty header when neither key was present — the agent then saw a
+ * heading with no location guidance under it).
+ */
+function renderLocationSection(pref: LocationPref | null): string | null {
+  if (!pref) return null;
+  const lines: string[] = ['## Location'];
+  const types = Array.isArray(pref.type) ? pref.type.filter((t): t is string => typeof t === 'string') : [];
+  const cities = Array.isArray(pref.preferred_cities)
+    ? pref.preferred_cities.filter((c): c is string => typeof c === 'string')
+    : [];
+  if (types.length > 0) {
+    lines.push(`- Open to: ${types.join(', ')}`);
+  }
+  if (cities.length > 0) {
+    lines.push('- Preferred cities:');
+    for (const city of cities) {
+      lines.push(`  - ${city}`);
+    }
+  }
+  return lines.length > 1 ? lines.join('\n') : null;
 }
 
 function parseLocationPref(raw: string | null): LocationPref | null {
