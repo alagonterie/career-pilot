@@ -171,6 +171,16 @@ async function sweep(): Promise<void> {
     await runTelemetryMaintenance();
     // MODULE-HOOK:career-pilot-observability:end
 
+    // 0c. Reap sandbox sessions orphaned by an interrupted run (STRATEGY.md
+    // §24.69 Δ): a public/sim run cut off by a host restart loses its in-memory
+    // accumulator, so finalize → teardown never retires its session and the
+    // sandbox session-topology count grows forever. Best-effort, never throws.
+    // Before the session loop so a reaped session drops out of this same tick.
+    // MODULE-HOOK:career-pilot-sandbox-reap:start
+    const { reapStaleSandboxSessions } = await import('./modules/portal/simulator.js');
+    reapStaleSandboxSessions();
+    // MODULE-HOOK:career-pilot-sandbox-reap:end
+
     const sessions = getActiveSessions();
     for (const session of sessions) {
       await sweepSession(session);
