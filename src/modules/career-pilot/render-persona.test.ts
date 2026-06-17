@@ -52,7 +52,7 @@ describe('renderPersona', () => {
       display_name: 'Jane',
       bio: 'Backend engineer, 8y, infra-leaning.',
       target_roles: JSON.stringify(['Staff Backend Engineer', 'Platform Engineer']),
-      location_pref: JSON.stringify({ remote: true, hybrid_cities: ['NYC', 'SF'] }),
+      location_pref: JSON.stringify({ type: ['remote', 'hybrid'], preferred_cities: ['NYC', 'SF'] }),
       comp_floor: 220000,
       master_resume: '## Experience\n\n- Built things',
       skills: JSON.stringify(['Go', 'Rust', 'PostgreSQL']),
@@ -90,12 +90,19 @@ describe('renderPersona', () => {
       expect(out).toContain('$220,000/year floor');
     });
 
-    it('renders location_pref with remote + hybrid_cities', () => {
+    it('renders location_pref from the canonical {type, preferred_cities} schema (§24.100)', () => {
       const out = renderPersona(fullyPopulated);
       expect(out).toContain('## Location');
-      expect(out).toContain('- Remote: yes');
+      expect(out).toContain('- Open to: remote, hybrid');
       expect(out).toContain('  - NYC');
       expect(out).toContain('  - SF');
+    });
+
+    it('omits the ## Location header entirely when the pref has no type/cities (§24.100)', () => {
+      // The old reader pushed a bare "## Location" header for any non-null object;
+      // an empty/unknown-shape pref must render no section, not an empty heading.
+      const out = renderPersona(profile({ full_name: 'Jane', location_pref: JSON.stringify({}) }));
+      expect(out).not.toContain('## Location');
     });
 
     it('renders links section, omitting null URLs', () => {
@@ -219,7 +226,7 @@ describe('renderSandboxCandidate (§24.54 — public simulator subset)', () => {
     full_name: 'Jane Doe',
     bio: 'Backend engineer, 8y, infra-leaning.',
     target_roles: JSON.stringify(['Staff Backend Engineer']),
-    location_pref: JSON.stringify({ remote: true }),
+    location_pref: JSON.stringify({ type: ['remote'], preferred_cities: ['Denver'] }),
     comp_floor: 220000,
     master_resume: '## Experience\n\n- Built things',
     skills: JSON.stringify(['Go', 'Rust', 'PostgreSQL']),
