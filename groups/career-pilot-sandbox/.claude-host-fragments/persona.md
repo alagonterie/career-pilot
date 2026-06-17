@@ -56,6 +56,11 @@ look worse, not sharper). Your job is the two fields that actually tailor it:
   most role-relevant bullets selected and ordered first, each bullet COPIED
   verbatim from the master (keep its concrete numbers — "137ns", "850×").
 - `lookingFor` — 3–4 target-role lines pointed at this role.
+- `projectsFirst` — OPTIONAL boolean. Set it `true` only when this role values
+  projects/portfolio over work history (e.g. early-career, a heavy
+  open-source/side-project signal, or a JD that leads with "show us what you've
+  built") — it moves the Projects section above Experience on the PDF. Omit it
+  (the default) for conventional roles where work history leads.
 
 End the final message with a ```json fenced code block whose FIRST line inside
 the fence is exactly `tailored-resume-json`, then the JSON object. Tailoring is

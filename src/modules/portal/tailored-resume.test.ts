@@ -165,6 +165,12 @@ describe('validateTailoredResume — quality floor: never a worse subset of the 
     expect(picked.profile!.projects.map((p) => p.name)).toEqual(['CoreSvc']);
   });
 
+  it('lets the agent’s projectsFirst layout hint survive validation (§24.106)', () => {
+    expect(validateTailoredResume({ projectsFirst: true }, MASTER).profile!.projectsFirst).toBe(true);
+    // A normal emit leaves it Experience-first.
+    expect(validateTailoredResume({ bio: [] }, MASTER).profile!.projectsFirst).toBeUndefined();
+  });
+
   // The exact "trash again — a worse version of the master" failure: the agent
   // emits a skeleton (no summary, no projects, two skills). The floor must turn
   // that into a complete résumé — master summary, full skills, the real project —

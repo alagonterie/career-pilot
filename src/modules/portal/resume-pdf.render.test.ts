@@ -190,6 +190,29 @@ describe('rendered résumé — structural guarantees', () => {
     expect(text).toContain('Backend & Data');
   });
 
+  // §24.106: the Projects-before-Experience layout hint. PDF y grows upward, so a
+  // higher-on-page section has the LARGER y. We compare distinctive section
+  // content (an experience company vs a project name) rather than the headings,
+  // which carry letterSpacing and could split in the text layer.
+  it('orders Experience above Projects by default, and flips when projectsFirst is set', async () => {
+    const yOf = (items: PdfInspection['items'], sub: string): number | null =>
+      items.find((i) => i.str.includes(sub))?.y ?? null;
+
+    const def = await inspectPdf(await renderResumePdf(FULL_MASTER, FULL_IDENTITY, masterFooter('')));
+    const expY = yOf(def.items, 'Vertex Systems');
+    const projY = yOf(def.items, 'career-pilot');
+    expect(expY).not.toBeNull();
+    expect(projY).not.toBeNull();
+    expect(expY!).toBeGreaterThan(projY!); // Experience sits above Projects
+
+    const flipped = await inspectPdf(
+      await renderResumePdf({ ...FULL_MASTER, projectsFirst: true }, FULL_IDENTITY, masterFooter('')),
+    );
+    const expY2 = yOf(flipped.items, 'Vertex Systems');
+    const projY2 = yOf(flipped.items, 'career-pilot');
+    expect(projY2!).toBeGreaterThan(expY2!); // Projects now sits above Experience
+  });
+
   // The tailored-PDF one-page fix: a résumé that runs marginally past one page at
   // the normal (master) density still fits one page in compact mode (the tailored
   // caller passes `{ compact: true }`) — the master itself stays normal.
