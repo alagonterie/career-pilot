@@ -26,7 +26,7 @@ test.describe('/about — story + methodology', () => {
     await expect(cast).toContainText('research-company')
     await expect(cast).toContainText('win-confidence-scorer')
 
-    // The #anonymization anchor target (deep-linked from /work + the funnel note).
+    // The #anonymization anchor target (deep-linked from /experience + the funnel note).
     await expect(page.locator('#anonymization')).toBeVisible()
 
     // Tells, doesn't re-draw: it links out to the proof surface + the repo.

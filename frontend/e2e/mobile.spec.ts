@@ -6,19 +6,19 @@ import { expect, test, type Page } from '@playwright/test'
 // The functional + axe tests run in CI; the @visual baselines are skipped there
 // (`--grep-invert @visual`), like the desktop ones — pixel baselines are
 // OS-specific. The phone-primary contract: every page stacks with no horizontal
-// scroll, the nav collapses to a hamburger, /live leads with the trace, the
+// scroll, the nav collapses to a hamburger, /dashboard leads with the trace, the
 // funnel board stacks, and architecture nodes stay tappable.
 
 const ROUTES = [
   '/',
   '/about',
-  '/work',
+  '/experience',
   '/contact',
-  '/simulator',
-  '/simulator/results/det-sim-1',
+  '/watch',
+  '/watch/results/det-sim-1',
   '/pipeline',
   '/architecture',
-  '/live',
+  '/dashboard',
   '/kit?app=ai-infra-a&round=TECH_SCREEN', // §24.65 — chips + redaction bars must reflow
 ]
 
@@ -28,7 +28,7 @@ async function gotoStable(page: Page, path: string): Promise<void> {
   await page.goto(path)
   if (path === '/architecture') {
     await expect(page.getByTestId('arch-node-host-router')).toHaveAttribute('data-status', 'healthy')
-  } else if (path === '/live') {
+  } else if (path === '/dashboard') {
     await expect(page.getByTestId('trace-stream')).toBeVisible()
   } else if (path === '/pipeline') {
     await expect(page.getByTestId('funnel-board')).toBeVisible()
@@ -69,7 +69,7 @@ test('no route scrolls horizontally at a phone width', async ({ page }) => {
 // case the static input-view check above can't catch (§24.31 Δ; found on a
 // real phone). Drives the mock run, then measures with content present.
 test('the mid-run simulator view does not scroll horizontally on mobile', async ({ page }) => {
-  await page.goto('/simulator')
+  await page.goto('/watch')
   await expect(async () => {
     if (await page.getByTestId('sim-activity').isVisible()) return
     await page.getByLabel('Company name').fill('Wayne Enterprises')
@@ -83,7 +83,7 @@ test('the mid-run simulator view does not scroll horizontally on mobile', async 
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   )
-  expect(overflow, 'horizontal overflow on the mid-run /simulator view').toBeLessThanOrEqual(1)
+  expect(overflow, 'horizontal overflow on the mid-run /watch view').toBeLessThanOrEqual(1)
 })
 
 test('the top nav collapses to a working hamburger menu', async ({ page }) => {
@@ -115,8 +115,8 @@ test('the hamburger menu closes on Escape', async ({ page }) => {
   await expect(page.getByTestId('nav-hamburger')).toHaveAttribute('aria-expanded', 'false')
 })
 
-test('/live leads with the trace stream on mobile (not the stat tiles)', async ({ page }) => {
-  await page.goto('/live')
+test('/dashboard leads with the trace stream on mobile (not the stat tiles)', async ({ page }) => {
+  await page.goto('/dashboard')
   await expect(page.getByTestId('trace-stream')).toBeVisible()
   const trace = await page.getByTestId('trace-stream').boundingBox()
   // Anchor on the first stat tile (system status is now an unboxed header strip
@@ -243,7 +243,7 @@ test('key mobile surfaces are axe-clean (incl. the open nav menu)', async ({ pag
   const home = await new AxeBuilder({ page }).analyze()
   expect(home.violations).toEqual([])
 
-  await gotoStable(page, '/live')
+  await gotoStable(page, '/dashboard')
   const live = await new AxeBuilder({ page }).analyze()
   expect(live.violations).toEqual([])
 })
@@ -294,7 +294,7 @@ test('mobile architecture matches visual baseline', { tag: '@visual' }, async ({
 })
 
 test('mobile live matches visual baseline', { tag: '@visual' }, async ({ page }) => {
-  await page.goto('/live')
+  await page.goto('/dashboard')
   await expect(page.getByTestId('trace-stream')).toBeVisible()
   await expect(page.getByTestId('trace-stream').getByText('research-company')).toBeVisible()
   await expect(page.getByTestId('funnel-compact-reveal')).toContainText('Wayne Enterprises')
