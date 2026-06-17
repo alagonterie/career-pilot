@@ -86,6 +86,14 @@ describe('projectWorkProfile', () => {
     expect(p!.projects[0].href).toBeUndefined(); // empty string → omitted
     expect(p!.projects[0].tags).toBeUndefined();
   });
+
+  it('parses the projectsFirst layout hint only when explicitly true (§24.106)', () => {
+    expect(projectWorkProfile(JSON.stringify({ name: 'X', projectsFirst: true }))!.projectsFirst).toBe(true);
+    // Default / falsy / non-boolean → omitted (Experience-first).
+    expect(projectWorkProfile(JSON.stringify({ name: 'X' }))!.projectsFirst).toBeUndefined();
+    expect(projectWorkProfile(JSON.stringify({ name: 'X', projectsFirst: false }))!.projectsFirst).toBeUndefined();
+    expect(projectWorkProfile(JSON.stringify({ name: 'X', projectsFirst: 'yes' }))!.projectsFirst).toBeUndefined();
+  });
 });
 
 const EMPTY_IDENTITY = { email: null, github: null, linkedin: null, x: null, website: null };

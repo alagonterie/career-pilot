@@ -218,6 +218,22 @@ function buildResumeDocument(
   s: Styles,
   footerLinkUrl?: string,
 ) {
+  // Experience + Projects, ordered by the §24.106 layout hint (Projects first
+  // when the tailoring agent flags this role as projects-led; else the default).
+  const experienceSection = section(
+    s,
+    'Experience',
+    profile.experience.map((e, i) => experienceRow(s, e, i)),
+  );
+  const projectsSection = section(
+    s,
+    'Projects',
+    profile.projects.map((p, i) => projectRow(s, p, i)),
+  );
+  const orderedCore = profile.projectsFirst
+    ? [projectsSection, experienceSection]
+    : [experienceSection, projectsSection];
+
   const sections: (ReactElement | null)[] = [
     section(
       s,
@@ -229,16 +245,7 @@ function buildResumeDocument(
       "What I'm looking for",
       profile.lookingFor.length > 0 ? [h(Text, { style: s.body }, profile.lookingFor.join('   ·   '))] : [],
     ),
-    section(
-      s,
-      'Experience',
-      profile.experience.map((e, i) => experienceRow(s, e, i)),
-    ),
-    section(
-      s,
-      'Projects',
-      profile.projects.map((p, i) => projectRow(s, p, i)),
-    ),
+    ...orderedCore,
     section(
       s,
       'Writing & Talks',

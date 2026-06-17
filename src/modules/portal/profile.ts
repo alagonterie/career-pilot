@@ -76,6 +76,10 @@ export interface WorkProfile {
   skillGroups?: SkillGroup[];
   education: string[];
   links: SocialLinks;
+  /** Layout hint (§24.106): when true, the PDF renders Projects ABOVE Experience
+   *  — for roles where projects are the stronger signal. The tailoring agent sets
+   *  it per role; absent → the default Experience-first order. */
+  projectsFirst?: boolean;
 }
 
 /**
@@ -232,6 +236,9 @@ export function projectWorkProfile(raw: string | null): WorkProfile | null {
   };
   const writing = projectWriting(parsed.writing);
   if (writing) profile.writing = writing;
+
+  // Layout hint (§24.106) — Projects above Experience when the agent flags it.
+  if (parsed.projectsFirst === true) profile.projectsFirst = true;
 
   // Grouped skills (optional). When present they're authoritative: the flat
   // `skills` becomes the de-duped union of the group items, so the canonical set
