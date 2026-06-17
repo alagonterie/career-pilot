@@ -8,9 +8,10 @@
  * mapping. Live probes are skipped throughout (exercised on the box).
  */
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createAgentGroup } from '../../db/agent-groups.js';
 import { closeDb, getDb, initTestDb } from '../../db/connection.js';
@@ -148,6 +149,22 @@ function find(report: HealthReport, id: string): HealthFinding | undefined {
 async function run(): Promise<HealthReport> {
   return runHealthChecks({ skipLiveProbes: true, now: NOW });
 }
+
+// Isolate this file's session FS onto its own temp base (§24.77 tail): vitest
+// runs files in parallel workers that all share the cwd-relative
+// data/v2-sessions base (ops-session.test + dev-inspector.test touch it too), and
+// under that contention better-sqlite3 intermittently hit "directory does not
+// exist" mid-test. A unique per-process base removes the shared resource entirely.
+const TEST_SESSIONS_DIR = path.join(os.tmpdir(), `nanoclaw-health-test-${process.pid}`);
+
+beforeAll(() => {
+  process.env.NANOCLAW_SESSIONS_DIR = TEST_SESSIONS_DIR;
+});
+
+afterAll(() => {
+  delete process.env.NANOCLAW_SESSIONS_DIR;
+  fs.rmSync(TEST_SESSIONS_DIR, { recursive: true, force: true });
+});
 
 beforeEach(() => {
   initTestDb();
