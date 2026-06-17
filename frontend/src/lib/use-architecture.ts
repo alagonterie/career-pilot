@@ -13,6 +13,10 @@ export interface ArchitectureData {
     capacity_max: number
     memory_mb_each: number
     runtime: 'up' | 'down'
+    /** §24.110: running containers split by traffic class — the memory bar
+     * segments by this (largest left). Absent on an older backend → the panel
+     * falls back to the single bar. No `host` (the host process has no container). */
+    by_class?: { chat: number; ops: number; sandbox: number }
   }
   /** §24.80 Web-sandbox probe inputs: the kill switch + 24h sandbox spend vs the
    * daily cap. Absent on an older backend → the node falls back to idle (cold). */

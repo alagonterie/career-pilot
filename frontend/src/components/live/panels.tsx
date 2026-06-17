@@ -159,8 +159,24 @@ export function SessionsPanel({ arch, status }: { arch: ArchitectureData | null;
   )
 }
 
+/** Shared traffic-class colors (§24.110) — the single source the LLM-spend legend
+ *  (SPEND_CLASSES) and the container-pool memory bar both draw from, so a class
+ *  reads the same color everywhere. `dot` is the bar/legend fill; `line` the
+ *  chart-line text color. */
+const CLASS_META = {
+  chat: { label: 'chat', dot: 'bg-primary', line: 'text-primary' },
+  ops: { label: 'ops', dot: 'bg-accent-cool', line: 'text-accent-cool' },
+  sandbox: { label: 'sandbox', dot: 'bg-warn', line: 'text-warn' },
+  host: { label: 'host', dot: 'bg-muted-foreground', line: 'text-muted-foreground' },
+} satisfies Record<TrafficClass, { label: string; dot: string; line: string }>
+
+/** Container classes (no `host` — the host process has no container), largest
+ *  segment first, for the §24.110 memory-bar split. */
+const CONTAINER_CLASSES = ['chat', 'ops', 'sandbox'] as const
+
 /** CONTAINER POOL — running / capacity + a memory-utilization readout, reusing
- * 7.2's /api/architecture container shape. */
+ * 7.2's /api/architecture container shape. The memory bar is segmented by traffic
+ * class (§24.110) when the backend supplies `by_class`. */
 export function ContainerPoolPanel({ arch, status }: { arch: ArchitectureData | null; status?: PollStatus }) {
   const c = arch?.containers
   const running = c?.running ?? null
@@ -168,12 +184,22 @@ export function ContainerPoolPanel({ arch, status }: { arch: ArchitectureData | 
   const down = c?.runtime === 'down'
   const pct = c && running != null && cap ? Math.round((running / cap) * 100) : 0
   const memUsed = c && running != null ? running * c.memory_mb_each : null
+  // §24.110: running containers split by traffic class — largest segment first
+  // (leftmost). The segments fill the SAME running/cap width the single bar did,
+  // split by each class's share, so the bar total still equals the headline.
+  const byClass = c?.by_class
+  const segments = byClass
+    ? CONTAINER_CLASSES.map((key) => ({ key, count: byClass[key] }))
+        .filter((s) => s.count > 0)
+        .sort((a, b) => b.count - a.count)
+    : []
+  const segSum = segments.reduce((sum, s) => sum + s.count, 0)
   // Explain-on-tap (§24.95): the on-demand model (0 at rest is healthy) + the
-  // now-enforced concurrency ceiling (§24.92) + the graceful queue. Built from
-  // the live cap/memory when present; generic when the runtime is down/unknown.
+  // now-enforced concurrency ceiling (§24.92) + the graceful queue + the §24.110
+  // per-source color split. Built from the live cap/memory when present.
   const poolInfo =
     cap != null
-      ? `Agent containers spin up on demand and stop when idle — 0 running at rest is normal. Capped at ${cap} concurrent (×${c?.memory_mb_each ?? 512} MB) to protect the host; extra runs queue briefly until a slot frees.`
+      ? `Agent containers spin up on demand and stop when idle — 0 running at rest is normal. Capped at ${cap} concurrent (×${c?.memory_mb_each ?? 512} MB) to protect the host; extra runs queue briefly until a slot frees. The bar is colored by what each container is doing — owner chat, autonomous ops, public sandbox.`
       : 'Agent containers spin up on demand and stop when idle — 0 running at rest is normal. The pool is capped to protect the host; extra runs queue briefly until a slot frees.'
   if (status === 'loading') {
     return (
@@ -198,8 +224,25 @@ export function ContainerPoolPanel({ arch, status }: { arch: ArchitectureData | 
       />
       {c && !down ? (
         <div className="flex flex-col gap-1">
-          <div className="h-1.5 overflow-hidden rounded-full bg-secondary" aria-hidden="true">
-            <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+          <div
+            className="flex h-1.5 overflow-hidden rounded-full bg-secondary"
+            aria-hidden="true"
+            data-testid="pool-mem-bar"
+          >
+            {segSum > 0 ? (
+              segments.map((s) => (
+                <div
+                  key={s.key}
+                  title={`${CLASS_META[s.key].label} · ${s.count} running`}
+                  className={`h-full ${CLASS_META[s.key].dot}`}
+                  style={{ width: `${(s.count / segSum) * pct}%` }}
+                />
+              ))
+            ) : (
+              // No per-class data (older backend) or nothing classified yet → the
+              // honest single bar, same as before.
+              <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+            )}
           </div>
           <span className="font-mono text-[11px] text-muted-foreground">
             {memUsed != null ? `${memUsed} MB` : '—'} used · {c.memory_mb_each} MB each
@@ -284,36 +327,24 @@ export function TelemetryPanel({ view, status }: { view: TelemetryView; status?:
  * only emits utilities it sees verbatim in source, so a derived `'text-'→'bg-'`
  * replace silently dropped the accent-cool dot. None is `destructive` (spend
  * isn't an alarm). */
-const SPEND_CLASSES: { key: TrafficClass; short: string; line: string; dot: string; desc: string }[] = [
-  {
-    key: 'chat',
-    short: 'chat',
-    line: 'text-primary',
-    dot: 'bg-primary',
-    desc: 'Owner chats — model calls from the candidate’s Telegram conversations with the orchestrator.',
-  },
-  {
-    key: 'ops',
-    short: 'ops',
-    line: 'text-accent-cool',
-    dot: 'bg-accent-cool',
-    desc: 'Autonomous ops — the scheduled jobs running on their own (morning briefing, pipeline sweep, job scouting).',
-  },
-  {
-    key: 'sandbox',
-    short: 'sandbox',
-    line: 'text-warn',
-    dot: 'bg-warn',
-    desc: 'Public sandbox — “Watch it work” runs by visitors, each isolated and budget-capped.',
-  },
-  {
-    key: 'host',
-    short: 'host',
-    line: 'text-muted-foreground',
-    dot: 'bg-muted-foreground',
-    desc: 'Host processing — the host’s own model calls (the sanitizer’s semantic pass, win-confidence scoring), not a container.',
-  },
-]
+const SPEND_CLASS_DESCS: Record<TrafficClass, string> = {
+  chat: 'Owner chats — model calls from the candidate’s Telegram conversations with the orchestrator.',
+  ops: 'Autonomous ops — the scheduled jobs running on their own (morning briefing, pipeline sweep, job scouting).',
+  sandbox: 'Public sandbox — “Watch it work” runs by visitors, each isolated and budget-capped.',
+  host: 'Host processing — the host’s own model calls (the sanitizer’s semantic pass, win-confidence scoring), not a container.',
+}
+
+/** The LLM-spend legend classes — colors from the shared CLASS_META (§24.110), in
+ *  display order (host last; it has no container, so the memory bar omits it). */
+const SPEND_CLASSES: { key: TrafficClass; short: string; line: string; dot: string; desc: string }[] = (
+  ['chat', 'ops', 'sandbox', 'host'] as TrafficClass[]
+).map((key) => ({
+  key,
+  short: CLASS_META[key].label,
+  line: CLASS_META[key].line,
+  dot: CLASS_META[key].dot,
+  desc: SPEND_CLASS_DESCS[key],
+}))
 
 /** Format microUSD as dollars — sub-cent figures (most rows) keep 4 decimals so
  * they don't all collapse to "$0.00"; anything ≥ 1¢ shows the familiar 2. */

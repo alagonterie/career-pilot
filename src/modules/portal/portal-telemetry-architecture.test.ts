@@ -226,6 +226,7 @@ describe('GET /api/architecture', () => {
         capacity_max: number;
         memory_mb_each: number;
         runtime: string;
+        by_class: { chat: number; ops: number; sandbox: number };
       };
       backend: string;
     };
@@ -238,6 +239,10 @@ describe('GET /api/architecture', () => {
     // Docker may or may not be present in the test env — both shapes are valid.
     expect(body.containers.running === null || typeof body.containers.running === 'number').toBe(true);
     expect(body.containers.runtime).toBe(body.containers.running === null ? 'down' : 'up');
+    // §24.110: running containers split by class — the per-class counts sum to the
+    // running-session total (the bar's segments fill to the headline).
+    const bc = body.containers.by_class;
+    expect(bc.chat + bc.ops + bc.sandbox).toBe(body.sessions.running);
   });
 
   it('exposes the §24.80 sandbox-budget block (enabled + 24h spend vs daily cap)', async () => {

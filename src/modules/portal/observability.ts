@@ -18,7 +18,7 @@
  */
 import { getAgentGroup } from '../../db/agent-groups.js';
 import { getDb, hasTable } from '../../db/connection.js';
-import { getActiveSessions } from '../../db/sessions.js';
+import { getActiveSessions, getRunningSessions } from '../../db/sessions.js';
 import { getConfig } from '../../get-config.js';
 import type { Session } from '../../types.js';
 import { OWNER_GROUP_FOLDER, isOpsSession } from '../career-pilot/ops-session.js';
@@ -117,15 +117,8 @@ function classifySession(session: Session): TrafficClass {
   return isOpsSession(session) ? 'ops' : 'chat';
 }
 
-function computeSessionTopology(): SessionTopology {
+function tallyByClass(sessions: Session[]): SessionTopology {
   const topo: SessionTopology = { chat: 0, ops: 0, sandbox: 0 };
-  let sessions: Session[] = [];
-  try {
-    sessions = getActiveSessions();
-  } catch {
-    // Bare/pre-migration DB — no sessions to classify.
-    return topo;
-  }
   for (const s of sessions) {
     const cls = classifySession(s);
     if (cls === 'ops') topo.ops++;
@@ -133,6 +126,31 @@ function computeSessionTopology(): SessionTopology {
     else topo.chat++;
   }
   return topo;
+}
+
+function computeSessionTopology(): SessionTopology {
+  try {
+    return tallyByClass(getActiveSessions());
+  } catch {
+    // Bare/pre-migration DB — no sessions to classify.
+    return { chat: 0, ops: 0, sandbox: 0 };
+  }
+}
+
+/**
+ * Running CONTAINERS by traffic class (§24.110) — the per-source split the
+ * /dashboard memory bar segments by. Classifies the host's RUNNING sessions (a
+ * running session owns one container) with the same `classifySession` used for
+ * the active-session topology, so the bar's colors agree with the spend legend.
+ * No `host` class (the host process has no container). Pure read; all-zero on a
+ * bare DB.
+ */
+export function computeRunningTopology(): SessionTopology {
+  try {
+    return tallyByClass(getRunningSessions());
+  } catch {
+    return { chat: 0, ops: 0, sandbox: 0 };
+  }
 }
 
 /**

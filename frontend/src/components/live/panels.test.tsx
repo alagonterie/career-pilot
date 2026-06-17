@@ -115,6 +115,28 @@ describe('SessionsPanel + ContainerPoolPanel', () => {
     )
     expect(screen.getByText('down')).toBeInTheDocument()
   })
+
+  it('segments the memory bar by source, largest left, with class colors (§24.110)', () => {
+    const arch: ArchitectureData = {
+      ...ARCH,
+      containers: { ...ARCH.containers, running: 3, by_class: { chat: 1, ops: 0, sandbox: 2 } },
+    }
+    render(<ContainerPoolPanel arch={arch} />)
+    const bar = screen.getByTestId('pool-mem-bar')
+    const segs = bar.querySelectorAll('div')
+    expect(segs).toHaveLength(2) // chat + sandbox (ops is 0 → omitted)
+    // Largest first (sandbox: 2) → leftmost, orange; then chat (1), green.
+    expect(segs[0].className).toContain('bg-warn')
+    expect(segs[0].getAttribute('title')).toContain('sandbox · 2')
+    expect(segs[1].className).toContain('bg-primary')
+  })
+
+  it('falls back to a single bar when by_class is absent (older backend)', () => {
+    render(<ContainerPoolPanel arch={ARCH} />) // ARCH has no by_class
+    const segs = screen.getByTestId('pool-mem-bar').querySelectorAll('div')
+    expect(segs).toHaveLength(1)
+    expect(segs[0].className).toContain('bg-primary')
+  })
 })
 
 describe('TelemetryPanel', () => {

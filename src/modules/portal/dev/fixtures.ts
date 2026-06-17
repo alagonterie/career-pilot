@@ -887,24 +887,27 @@ export function seedSessions(db: Database.Database): void {
   // a couple of live sessions. Exported for the E2E server (§24.28): the
   // architecture page needs deterministic non-zero session counts so its node
   // badges render "active" rather than "idle" in the visual baseline.
-  db.prepare(`INSERT INTO agent_groups (id, name, folder, created_at) VALUES (?, ?, ?, ?)`).run(
-    'dev-ag-career-pilot',
-    'career-pilot',
-    'career-pilot',
-    isoDaysAgo(30),
-  );
+  // Two groups so the §24.110 container-pool memory bar demos a real per-source
+  // split: an owner (career-pilot) session + a public sandbox session.
+  const insertGroup = db.prepare(`INSERT INTO agent_groups (id, name, folder, created_at) VALUES (?, ?, ?, ?)`);
+  insertGroup.run('dev-ag-career-pilot', 'career-pilot', 'career-pilot', isoDaysAgo(30));
+  insertGroup.run('dev-ag-sandbox', 'career-pilot-sandbox', 'career-pilot-sandbox', isoDaysAgo(30));
   const insertSession = db.prepare(
     `INSERT INTO sessions (id, agent_group_id, status, container_status, last_active, created_at)
-     VALUES (@id, 'dev-ag-career-pilot', 'active', @container_status, @last_active, @created_at)`,
+     VALUES (@id, @agent_group_id, 'active', @container_status, @last_active, @created_at)`,
   );
   insertSession.run({
     id: 'dev-sess-1',
+    agent_group_id: 'dev-ag-career-pilot',
     container_status: 'running',
     last_active: isoDaysAgo(0),
     created_at: isoDaysAgo(0),
   });
+  // A live public-sandbox session → the memory bar shows chat (green) + sandbox
+  // (orange), not one flat color.
   insertSession.run({
     id: 'dev-sess-2',
+    agent_group_id: 'dev-ag-sandbox',
     container_status: 'idle',
     last_active: isoDaysAgo(0),
     created_at: isoDaysAgo(0),
