@@ -137,11 +137,11 @@ describe('TelemetryPanel', () => {
 describe('Panel', () => {
   it('renders a page-supplied header action (the open-link slot — §24.35 Pass A)', () => {
     render(
-      <Panel title="Job Pipeline" action={<a href="/pipeline">open →</a>}>
+      <Panel title="My Job Pipeline" action={<a href="/pipeline">open →</a>}>
         <p>body</p>
       </Panel>,
     )
-    expect(screen.getByRole('heading', { name: 'Job Pipeline' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'My Job Pipeline' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /open/i })).toHaveAttribute('href', '/pipeline')
   })
 })

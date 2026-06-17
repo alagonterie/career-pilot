@@ -14,7 +14,7 @@ import type { TelemetryView } from '~/lib/use-telemetry'
 
 /** Loading twin for a panel body (§24.36 36.1) — a couple of metric-sized
  * skeletons so the panel keeps its shape while its endpoint is polled. Rail
- * panels (`Job Pipeline`, `Recent outcomes`) carry a `min-h` sized to their MAX
+ * panels (`My Job Pipeline`, `Recent outcomes`) carry a `min-h` sized to their MAX
  * loaded footprint, so loading→ok reserves the same height and the trace stream
  * beside them (which is `h-full`, sized by the rail) doesn't collapse — the
  * §24.36 Tier-2 stability standard. */
@@ -133,7 +133,7 @@ export function SessionsPanel({ arch, status }: { arch: ArchitectureData | null;
             <Metric
               value={active != null ? String(active) : '—'}
               label="active"
-              info="Open conversation threads — the owner's chat, scheduled jobs, the public simulator — each an isolated session with its own container and history."
+              info="Open conversation threads — the owner's chat, scheduled jobs, the public sandbox runs — each an isolated session with its own container and history."
             />
           </div>
           <p className="border-t border-border pt-2 font-mono text-[11px] text-muted-foreground">
@@ -249,7 +249,7 @@ export function TelemetryPanel({ view, status }: { view: TelemetryView; status?:
         >
           <span>{local.activity_events_24h} events / 24h</span>
           <span>{local.activity_events_total} total</span>
-          <span>{local.simulator_runs_total} sim runs</span>
+          <span>{local.simulator_runs_total} sandbox runs</span>
         </div>
       ) : null}
     </Panel>
@@ -331,7 +331,7 @@ export function LlmSpendPanel({
               info={
                 <>
                   Every model call&apos;s cost from our own telemetry, summed over the last 24 h and split by who
-                  triggered it — owner chat, the autonomous schedules, public simulator visitors, host processing. This
+                  triggered it — owner chat, the autonomous schedules, public sandbox visitors, host processing. This
                   page costs the candidate roughly {fmtUsd(total)}/day to run — an estimate from list prices, not a
                   bill.
                 </>

@@ -9,7 +9,7 @@ import { seo } from '~/lib/seo'
 import { PERSON_NAME } from '~/lib/site'
 import { usePipeline, type PipelineApplication } from '~/lib/use-pipeline'
 
-// The pipeline race detail (PORTAL §5.4). Visitor-facing name = "Job Pipeline" /
+// The pipeline race detail (PORTAL §5.4). Visitor-facing name = "My Job Pipeline" /
 // the `/pipeline` route (§24.59 — supersedes "Momentum"; `/momentum` redirects
 // here). §24.77 D3 retired the "funnel" naming everywhere visitor-facing (the
 // components are `Pipeline*`, the hook `usePipeline`); only the internal
@@ -24,7 +24,7 @@ export const Route = createFileRoute('/(ops)/pipeline')({
   }),
   head: () =>
     seo({
-      title: `Job Pipeline — ${PERSON_NAME}`,
+      title: `My Job Pipeline — ${PERSON_NAME}`,
       description: 'The job search in motion — every application, obfuscated by default, tracked stage by stage.',
       path: '/pipeline',
     }),
@@ -74,7 +74,7 @@ function PipelinePage() {
     <>
       <main className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-12">
         <header>
-          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Job Pipeline</h1>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">My Job Pipeline</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             The job search in motion — every application moving stage by stage toward an offer, obfuscated by default.
           </p>

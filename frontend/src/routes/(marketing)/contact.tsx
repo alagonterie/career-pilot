@@ -8,7 +8,7 @@ import { workProfile } from '~/lib/work-profile'
 // The conversion sink (PORTAL §5.7 / §2). Marketing register; the shared layout
 // supplies the header (and renders no connective rail here — this IS the rail's
 // destination). Carries context: ?company/role/from prefill the form so a
-// convinced visitor (or a simulator [Talk to me]) converts in one step.
+// convinced visitor (or a [Talk to me] from a Watch-it-work run) converts in one step.
 export const Route = createFileRoute('/(marketing)/contact')({
   component: ContactPage,
   // SSR loader (§24.71 9.4b-3): the candidate's canonical identity drives the

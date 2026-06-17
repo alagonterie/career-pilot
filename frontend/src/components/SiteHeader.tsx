@@ -6,33 +6,37 @@ import { PERSON_NAME } from '~/lib/site'
 
 type NavLink = { to: string; label: string }
 
-// The nav splits into two groups: the SYSTEM SHOWCASE — pages that demonstrate
-// the agent system live — and a PERSONAL tail about the candidate. A subtle
-// divider between them makes the grouping legible without a hard section label.
-const SHOWCASE: NavLink[] = [
-  { to: '/dashboard', label: 'Dashboard' },
-  { to: '/pipeline', label: 'Job Pipeline' },
-  { to: '/architecture', label: 'Architecture' },
-  { to: '/watch', label: 'Watch it work' },
-]
-const PERSONAL: NavLink[] = [
-  { to: '/experience', label: 'Experience' },
-  { to: '/contact', label: 'Contact' },
+// The owner's grouped nav (§24.77 D2): three intent clusters, each split from the
+// next by a subtle vertical divider so the grouping reads without hard labels.
+// Order + labels are the owner's exact ask:
+//   APPLY    — the search in action:   My Job Pipeline · Watch it work
+//   OBSERVE  — the system from inside:  Dashboard · Architecture
+//   PERSONAL — the candidate:          Experience · Contact
+const NAV_GROUPS: NavLink[][] = [
+  [
+    { to: '/pipeline', label: 'My Job Pipeline' },
+    { to: '/watch', label: 'Watch it work' },
+  ],
+  [
+    { to: '/dashboard', label: 'Dashboard' },
+    { to: '/architecture', label: 'Architecture' },
+  ],
+  [
+    { to: '/experience', label: 'Experience' },
+    { to: '/contact', label: 'Contact' },
+  ],
 ]
 
 /**
- * Slim site nav (PORTAL §8.1 / §13), shared by the marketing pages (`/`, `/work`)
- * and the ops pages (`/pipeline`, `/architecture`, `/live`). Two groups with a
- * subtle divider: the SYSTEM SHOWCASE (`Live`, `Job Pipeline`, `Architecture`,
- * `Watch it work` → the "watch me apply to your role" spoke at `/simulator` — all
- * live demos of the agent system) and the PERSONAL tail (`Experience` at `/work`,
- * `Contact`). "Job Pipeline" is the
- * visitor label for the pipeline page (`/pipeline`, §24.59); §24.77 D3 retired the
- * "funnel" naming — only the internal `/api/funnel` URL keeps it. `/about` is a
- * footer link (§8.2), not a header item. Brand
- * wordmark = the candidate's name (not a domain — on a personal hiring portal the
- * candidate IS the brand). Per-deployment build-time env (STRATEGY §24.71 9.4b-3,
- * the planned `VITE_PERSON_NAME`); the committed default is the generic placeholder.
+ * Slim site nav (PORTAL §8.1 / §13), shared by the marketing pages (`/`,
+ * `/experience`) and the ops pages (`/pipeline`, `/dashboard`, `/architecture`,
+ * `/watch`). Three groups split by subtle dividers (§24.77 D2): APPLY (the search
+ * in action), OBSERVE (the system from inside), and the PERSONAL tail. "My Job
+ * Pipeline" is the visitor label for `/pipeline`; `/about` is a footer link
+ * (§8.2), not a header item. Brand wordmark = the candidate's name (not a domain —
+ * on a personal hiring portal the candidate IS the brand). Per-deployment
+ * build-time env (`VITE_PERSON_NAME`, §24.71 9.4b-3); the committed default is the
+ * generic placeholder.
  *
  * Responsive (§13): the horizontal row overflows a phone, so below `sm` it
  * collapses to a hamburger disclosure menu (the full row fits ≥640px, so tablets
@@ -74,18 +78,17 @@ export function SiteHeader() {
         </Link>
 
         {/* Tablet + desktop: the full horizontal row (≥640px, where it fits), the
-            showcase group and the personal group split by a subtle divider. */}
-        <div className="hidden items-center gap-6 text-sm sm:flex">
-          {SHOWCASE.map((l) => (
-            <Link key={l.to} to={l.to} className={linkClass}>
-              {l.label}
-            </Link>
-          ))}
-          <span aria-hidden="true" className="h-4 w-px bg-border" />
-          {PERSONAL.map((l) => (
-            <Link key={l.to} to={l.to} className={linkClass}>
-              {l.label}
-            </Link>
+            three groups each split by a subtle divider. */}
+        <div className="hidden items-center gap-4 text-sm sm:flex">
+          {NAV_GROUPS.map((group, gi) => (
+            <React.Fragment key={gi}>
+              {gi > 0 ? <span aria-hidden="true" className="h-4 w-px bg-border" /> : null}
+              {group.map((l) => (
+                <Link key={l.to} to={l.to} className={linkClass}>
+                  {l.label}
+                </Link>
+              ))}
+            </React.Fragment>
           ))}
         </div>
 
@@ -112,28 +115,21 @@ export function SiteHeader() {
           className="absolute inset-x-0 top-full border-b border-border bg-background shadow-lg sm:hidden"
         >
           <ul className="mx-auto flex max-w-3xl flex-col px-4 py-1">
-            {SHOWCASE.map((l) => (
-              <li key={l.to}>
-                <Link
-                  to={l.to}
-                  onClick={() => setOpen(false)}
-                  className={`block rounded-md px-2 py-3 text-base ${linkClass}`}
-                >
-                  {l.label}
-                </Link>
-              </li>
-            ))}
-            <li aria-hidden="true" className="my-1 border-t border-border" />
-            {PERSONAL.map((l) => (
-              <li key={l.to}>
-                <Link
-                  to={l.to}
-                  onClick={() => setOpen(false)}
-                  className={`block rounded-md px-2 py-3 text-base ${linkClass}`}
-                >
-                  {l.label}
-                </Link>
-              </li>
+            {NAV_GROUPS.map((group, gi) => (
+              <React.Fragment key={gi}>
+                {gi > 0 ? <li aria-hidden="true" className="my-1 border-t border-border" /> : null}
+                {group.map((l) => (
+                  <li key={l.to}>
+                    <Link
+                      to={l.to}
+                      onClick={() => setOpen(false)}
+                      className={`block rounded-md px-2 py-3 text-base ${linkClass}`}
+                    >
+                      {l.label}
+                    </Link>
+                  </li>
+                ))}
+              </React.Fragment>
             ))}
           </ul>
         </div>

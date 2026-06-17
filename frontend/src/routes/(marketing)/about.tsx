@@ -146,9 +146,9 @@ function AboutPage() {
         </p>
         <p className="text-balance leading-relaxed text-foreground/90">
           And rather than describe all of that, I decided to <em>show</em> it. This entire site is the system, running
-          live: the pipeline you can watch, the agents working in real time, a simulator that will tailor my materials
-          to <em>your</em> open role on the spot. The showcase is the product — which is also the most honest portfolio
-          piece I could build, because you can check every claim against the thing actually doing the work.
+          live: the pipeline you can watch, the agents working in real time, and a live run that will tailor my
+          materials to <em>your</em> open role on the spot. The showcase is the product — which is also the most honest
+          portfolio piece I could build, because you can check every claim against the thing actually doing the work.
         </p>
       </section>
 
@@ -329,12 +329,12 @@ function AboutPage() {
           <div className="flex flex-col gap-1">
             <dt className="font-semibold text-foreground">Can I see it work on my role?</dt>
             <dd className="leading-relaxed text-muted-foreground">
-              Yes — the{' '}
+              Yes —{' '}
               <Link
                 to="/watch"
                 className="text-accent-cool underline decoration-accent-cool/40 underline-offset-2 hover:decoration-accent-cool"
               >
-                simulator
+                Watch it work
               </Link>{' '}
               runs the same agent stack on your company and a role you’re hiring for, live.
             </dd>

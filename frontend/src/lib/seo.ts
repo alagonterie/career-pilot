@@ -12,7 +12,7 @@ const DEFAULT_DESCRIPTION =
 const DEFAULT_IMAGE = '/og.png'
 
 interface SeoInput {
-  /** The full document title (each route owns its phrasing, e.g. "Live — Jane Doe"). */
+  /** The full document title (each route owns its phrasing, e.g. "Dashboard — Jane Doe"). */
   title: string
   description?: string
   /** Absolute URL or a site-root path (turned absolute against SITE_URL). */
