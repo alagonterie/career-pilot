@@ -13,6 +13,9 @@ export interface TelemetryLocal {
   simulator_runs_total: number
   activity_events_total: number
   activity_events_24h: number
+  /** ISO ts of the latest non-turn activity event — the SSR seed for the hero
+   *  "last activity X ago" (the home stat sources its live value from the stream). */
+  last_activity_at: string | null
   turns_total: number
   turns_24h: number
   turn_cost_cents_total: number

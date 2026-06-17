@@ -6,7 +6,7 @@ import { Button } from '~/components/ui/button'
 import { Skeleton } from '~/components/ui/skeleton'
 import { getHeroSeed } from '~/lib/hero-seed-loader'
 import { getWorkProfile } from '~/lib/profile-loader'
-import { heroStats } from '~/lib/hero-stats'
+import { heroStats, relativeAgo } from '~/lib/hero-stats'
 import { seo } from '~/lib/seo'
 import { useActivityStream } from '~/lib/use-activity-stream'
 import { useFunnel } from '~/lib/use-funnel'
@@ -17,11 +17,12 @@ export const Route = createFileRoute('/(marketing)/')({
   component: Home,
   // SSR loader (§24.71 / 9.4b-1): the hero name/title + teasers render from the
   // live candidate_profile (placeholder fallback). The polish pass adds the hero
-  // stat SEED — the two count segments rendered into the SSR HTML so they don't
-  // pop in from a skeleton (the live hooks take over after mount).
+  // stat SEED — the whole stat line (the two counts + "last activity X ago")
+  // rendered into the SSR HTML so nothing pops in from a skeleton; the live hooks
+  // take over after mount.
   loader: async () => {
     const [profilePayload, heroSeed] = await Promise.all([getWorkProfile(), getHeroSeed()])
-    return { ...profilePayload, heroSeedStats: heroSeed.stats }
+    return { ...profilePayload, heroSeed }
   },
   head: ({ loaderData }) =>
     seo({ title: `${(loaderData?.profile ?? workProfile).name} — an AI agent runs my job search, live` }),
@@ -36,21 +37,23 @@ function Home() {
   const { data: funnel, status: funnelStatus } = useFunnel(API_BASE)
   const { data: telemetry, status: telemetryStatus } = useTelemetry(API_BASE)
   const apps = funnel?.applications ?? []
-  // Honest hero stat line (PORTAL §5.1 Viewport 1): real numbers from the live
-  // hooks, each omitted when empty. Replaces the spec's cryptic "cache hit rate"
-  // with "agent actions in 24h" (§24.71 hero audit).
-  const stats = heroStats({ apps, events, actionsIn24h: telemetry?.local.activity_events_24h ?? null })
-  // Gate the swap on the two deterministic polls settling, so the line appears
-  // complete in one shot rather than cascading segment-by-segment as each hook
-  // lands (the / polish pass — that incremental fill was the residual shift).
+  // SSR-resolved candidate profile (placeholder fallback) + the hero stat SEED
+  // (the whole line, pre-rendered server-side). De-`Jane Doe`s the hero.
+  const { profile, identity, heroSeed } = Route.useLoaderData()
+  // The hero stat line (PORTAL §5.1 Viewport 1), assembled so it's fully SSR'd and
+  // never shifts on the live takeover:
+  //   - counts: the two SSR-able segments. Show the live values once the polls
+  //     settle, else the SSR'd seed (identical on hydration).
+  //   - last activity: the live stream's latest non-turn event once it arrives,
+  //     else the seed STRING (server-computed, so hydration matches — the client
+  //     doesn't recompute the relative time until the stream supplies the SAME
+  //     event, so the takeover is a no-op width-wise).
   const statsReady = funnelStatus !== 'loading' && telemetryStatus !== 'loading'
-  // SSR-resolved candidate profile (placeholder fallback). De-`Jane Doe`s the hero.
-  const { profile, identity, heroSeedStats } = Route.useLoaderData()
-  // Until the live hooks settle, show the SSR'd seed (the two counts, already in
-  // the server HTML) instead of a skeleton — so the numbers are present on first
-  // paint and don't pop in. The skeleton only shows when the seed is empty (the
-  // backend was unreachable at SSR); the hooks then take over live.
-  const shownStats = statsReady ? stats : heroSeedStats
+  const liveCounts = heroStats({ apps, events: [], actionsIn24h: telemetry?.local.activity_events_24h ?? null })
+  const counts = statsReady ? liveCounts : heroSeed.counts
+  const liveLastActivity = events.length > 0 ? `last activity ${relativeAgo(events[events.length - 1].ts)}` : null
+  const lastActivity = liveLastActivity ?? heroSeed.lastActivity
+  const shownStats = [...counts, lastActivity].filter((s): s is string => Boolean(s))
   const p = profile ?? workProfile
 
   return (
@@ -103,12 +106,12 @@ function Home() {
           </Button>
         </div>
 
-        {/* Honest live stat line (PORTAL §5.1 Viewport 1) — the first-paint "this
-            is real, right now" proof under the CTAs. The two counts are SSR-seeded
-            (present in the server HTML, no pop); a FIXED height (1-line desktop /
-            2-line mobile) holds the slot so the client hooks taking over + the
-            client-only "last activity" appending never move the page. The skeleton
-            shows only when the SSR seed was empty (§24.36 + the / polish pass). */}
+        {/* Honest stat line (PORTAL §5.1 Viewport 1) — the first-paint "this is
+            real, right now" proof under the CTAs. The WHOLE line is SSR-seeded
+            (counts + "last activity X ago"), so nothing pops in; the live hooks
+            take over the same values after mount, so there's no shift. The fixed
+            height (1 line desktop / 2 lines mobile) + the skeleton are only for the
+            rare empty-seed case (backend unreachable at SSR) — §24.36 + the / pass. */}
         <div
           className="mt-6 flex h-9 flex-wrap items-center justify-center gap-x-2 gap-y-1 font-mono text-xs text-muted-foreground sm:h-5"
           aria-live="polite"

@@ -697,6 +697,7 @@ function emptyPayloadFor(path: string): unknown {
           simulator_runs_total: 0,
           activity_events_total: 0,
           activity_events_24h: 0,
+          last_activity_at: null,
           turns_total: 0,
           turns_24h: 0,
           turn_cost_cents_total: 0,

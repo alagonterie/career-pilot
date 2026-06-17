@@ -6,6 +6,7 @@ const LOCAL = {
   simulator_runs_total: 3,
   activity_events_total: 42,
   activity_events_24h: 12,
+  last_activity_at: '2026-06-16T10:00:00.000Z',
   turns_total: 8,
   turns_24h: 5,
   turn_cost_cents_total: 37,

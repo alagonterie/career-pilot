@@ -1,23 +1,27 @@
 import { createServerFn } from '@tanstack/react-start'
 import { env } from 'cloudflare:workers'
 
-import { heroStats } from './hero-stats'
+import { heroStats, relativeAgo } from './hero-stats'
 import type { FunnelApplication } from './use-funnel'
 
 /**
  * SSR seed for the hero stat line (the `/` polish pass). The stat numbers are
  * normally client-only (live hooks), so on first paint they popped in from a
- * skeleton — a visible "glitch". This server function fetches the same backend
- * the live hooks poll (`/api/funnel`, `/api/telemetry`) through the SSR tunnel +
- * Access service-token (mirrors `getWorkProfile`), and returns the two
- * NON-time-relative segments — "N active applications" + "N agent actions in
- * 24h" — pre-rendered into the SSR HTML. The hooks then take over live.
+ * skeleton. This server function fetches the same backend the live hooks poll
+ * (`/api/funnel`, `/api/telemetry`) through the SSR tunnel + Access service-token
+ * (mirrors `getWorkProfile`) and returns the full line, pre-rendered:
  *
- * Deliberately excludes "last activity X ago": that segment is relative time
- * computed against `Date.now()`, which differs server↔client and would cause a
- * hydration mismatch (hero-stats.ts keeps it client-only for exactly this
- * reason). It appends after mount — a single short segment at the end of the
- * line, not a skeleton swap.
+ *   - `counts`       — "N active applications" + "N agent actions in 24h"
+ *   - `lastActivity` — "last activity X ago", computed server-side from
+ *     `telemetry.local.last_activity_at` (the latest NON-turn audit ts — the same
+ *     event the home ticker's stream reports).
+ *
+ * The component renders this seed verbatim until the live hooks settle, so the
+ * whole line is in the SSR HTML and hydrates with the identical string (no
+ * relative-time mismatch — the client uses the seed STRING, it doesn't recompute
+ * until after mount, when the live stream supplies the same event). Because the
+ * seed and the stream point at the same latest event, the live takeover doesn't
+ * shift the line.
  *
  * Any failure (unconfigured/unreachable backend, non-200) resolves to an empty
  * seed; the component then falls back to its skeleton until the hooks land.
@@ -32,10 +36,15 @@ interface FunnelJson {
   applications?: FunnelApplication[]
 }
 interface TelemetryJson {
-  local?: { activity_events_24h?: number | null }
+  local?: { activity_events_24h?: number | null; last_activity_at?: string | null }
 }
 
-export const getHeroSeed = createServerFn({ method: 'GET' }).handler(async (): Promise<{ stats: string[] }> => {
+export interface HeroSeed {
+  counts: string[]
+  lastActivity: string | null
+}
+
+export const getHeroSeed = createServerFn({ method: 'GET' }).handler(async (): Promise<HeroSeed> => {
   const e = env as SeedEnv
   const base = (e.BACKEND_API_BASE ?? 'http://localhost:3001').replace(/\/$/, '')
   const headers: Record<string, string> = {}
@@ -48,12 +57,14 @@ export const getHeroSeed = createServerFn({ method: 'GET' }).handler(async (): P
       fetch(`${base}/api/telemetry`, { headers, redirect: 'manual' }),
     ])
     const apps = funnelRes.ok ? (((await funnelRes.json()) as FunnelJson).applications ?? []) : []
-    const actionsIn24h = telRes.ok
-      ? (((await telRes.json()) as TelemetryJson).local?.activity_events_24h ?? null)
-      : null
-    // events:[] → only the two count segments; "last activity" stays client-only.
-    return { stats: heroStats({ apps, events: [], actionsIn24h }) }
+    const tel = telRes.ok ? ((await telRes.json()) as TelemetryJson).local : undefined
+    // events:[] → heroStats returns only the two count segments; the last-activity
+    // string is computed here from the telemetry ts (it stays out of heroStats so
+    // the client can keep the seed string until the live stream supplies one).
+    const counts = heroStats({ apps, events: [], actionsIn24h: tel?.activity_events_24h ?? null })
+    const lastAt = tel?.last_activity_at ?? null
+    return { counts, lastActivity: lastAt ? `last activity ${relativeAgo(lastAt)}` : null }
   } catch {
-    return { stats: [] }
+    return { counts: [], lastActivity: null }
   }
 })

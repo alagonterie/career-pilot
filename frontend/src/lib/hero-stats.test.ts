@@ -75,7 +75,7 @@ describe('heroStats', () => {
       actionsIn24h: 47,
       now,
     })
-    expect(segs).toEqual(['2 active applications', '47 agent actions in 24h', 'last activity 4m ago'])
+    expect(segs).toEqual(['2 active job applications', '47 agent actions in 24h', 'last activity 4m ago'])
   })
 
   it('omits each segment whose number is empty/null/zero (never faked)', () => {
@@ -85,7 +85,7 @@ describe('heroStats', () => {
 
   it('singularizes counts of one', () => {
     const segs = heroStats({ apps: [app('applied')], events: [], actionsIn24h: 1, now })
-    expect(segs).toEqual(['1 active application', '1 agent action in 24h'])
+    expect(segs).toEqual(['1 active job application', '1 agent action in 24h'])
   })
 
   it('uses the newest event (last in the ascending buffer) for last-activity', () => {
