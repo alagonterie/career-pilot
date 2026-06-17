@@ -113,6 +113,22 @@ describe('GET /api/telemetry', () => {
     expect(body.local.activity_events_24h).toBe(2);
   });
 
+  it('counts only non-turn rows in agent_actions_24h, excluding per-turn cost seals (§24.97-B)', async () => {
+    seedAudit(1, nowIso()); // non-turn, in 24h
+    seedAudit(2, nowIso()); // non-turn, in 24h
+    seedAudit(3, daysAgoIso(2)); // non-turn, outside 24h
+    seedTurn(4, nowIso(), 6); // turn, in 24h — raw event, NOT an "agent action"
+    seedTurn(5, nowIso(), 4); // turn, in 24h
+
+    const body = (await (await fetch(`${base}/api/telemetry`)).json()) as {
+      local: { activity_events_24h: number; agent_actions_24h: number };
+    };
+    // 2 non-turn + 2 turn within 24h = 4 raw events; only the 2 non-turn are "agent
+    // actions" (the hero line; the per-turn seals are the dashboard's raw row).
+    expect(body.local.activity_events_24h).toBe(4);
+    expect(body.local.agent_actions_24h).toBe(2);
+  });
+
   it('derives cache-hit rate, turn p50, and top model from the turn rows (§24.47)', async () => {
     // Two turns: 90% cache (900 read / 1000 prompt) and 50% (100/200) → aggregate
     // 1000/1200 ≈ 0.833; durations 1000 & 3000 → p50 = 1000 (nearest-rank).

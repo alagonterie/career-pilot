@@ -1,3 +1,4 @@
+import { PIPELINE_STAGE_SET } from './pipeline-stages'
 import type { AuditEvent } from './use-activity-stream'
 import type { PipelineApplication } from './use-pipeline'
 
@@ -13,13 +14,17 @@ import type { PipelineApplication } from './use-pipeline'
  * signal, in plain language.
  */
 
-// In-flight = not closed. Mirrors `use-pipeline.ts`'s CLOSED_STAGES; kept local so
-// the two modules don't couple over a private constant.
-const CLOSED_STAGES = new Set(['rejected', 'withdrawn'])
-
-/** Active = applications still in flight (offers included; only closed excluded). */
+/**
+ * Active = an application in one of the five board stages (applied/screening/
+ * tech/final/offer). Counting on the canonical `PIPELINE_STAGE_SET` (the same
+ * source the strip below renders) — NOT a negative "exclude closed" list — is
+ * deliberate (§24.97-A): it drops both the closed `rejected`/`withdrawn` AND the
+ * pre-application `bookmarked` lead (a role the agent found but hasn't applied to,
+ * surfaced off-board), so the headline equals the strip's column sum by
+ * construction and never reads "3 active" over a strip summing to 2.
+ */
 export function activeApplicationCount(apps: PipelineApplication[]): number {
-  return apps.filter((a) => !CLOSED_STAGES.has(a.stage)).length
+  return apps.filter((a) => PIPELINE_STAGE_SET.has(a.stage)).length
 }
 
 /**
@@ -40,7 +45,9 @@ export function relativeAgo(iso: string, now: number = Date.now()): string {
 export interface HeroStatInputs {
   apps: PipelineApplication[]
   events: AuditEvent[]
-  /** `telemetry.local.activity_events_24h`, or null while the poll is in flight. */
+  /** `telemetry.local.agent_actions_24h` (the NON-turn 24h count, §24.97-B), or
+   *  null while the poll is in flight. Must exclude turns so "agent actions in 24h"
+   *  never contradicts the turn-excluding "last activity" on the same line. */
   actionsIn24h: number | null
   now?: number
 }

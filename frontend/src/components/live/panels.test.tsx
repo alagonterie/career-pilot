@@ -44,6 +44,7 @@ const LOCAL = {
   simulator_runs_total: 0,
   activity_events_total: 3,
   activity_events_24h: 1,
+  agent_actions_24h: 1,
   last_activity_at: '2026-06-16T10:00:00.000Z',
   turns_total: 2,
   turns_24h: 1,
