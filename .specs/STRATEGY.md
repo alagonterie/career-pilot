@@ -6037,6 +6037,18 @@ Three `/dashboard` polish items.
 
 **DoD.** Each spend-class legend row has a `title` tooltip; the three terminal outcomes are color-coded (only the word) and active stages stay muted; the #15 decision is recorded (no memory-bar code change). FE `tsc` + `spend-by-class`/panels unit (title present; outcome tone) + `dashboard`/`mobile-dashboard` `@visual` re-blessed if the outcome colors shift a seeded row + prettier green. **Spec deltas:** this §24.109. Memory: [[todo_backlog]].
 
+#### 24.110 /dashboard — container-pool memory bar color-by-source (item #15, the build)
+
+Owner approved building the §24.109 deferral. Make the memory bar's per-source segmentation truthful by adding the missing data, then segment.
+
+**Backend — the truthful per-class count.** Add `containers.by_class: { chat, ops, sandbox }` to `/api/architecture`: a new `computeRunningTopology()` (observability.ts) classifies the host's **running** sessions (`getRunningSessions()`) by the same `classifySession` (folder → sandbox; owner → ops vs chat) that `computeSessionTopology` uses for *active* sessions — but over running ones, so it counts running CONTAINERS by class, the metric the bar actually shows. No `host` class (the host has no container). The empty/quiet fallback returns all-zero.
+
+**FE — segment the bar.** `ContainerPoolPanel` renders a **segmented** bar when `by_class` has any nonzero class: one colored span per class, **largest segment on the left**, colored from a now-shared `CLASS_META` map (extracted from `SPEND_CLASSES` — the second consumer that justifies the extraction, §24.109). The bar still fills to the docker-truth `running/cap` width; segments split that filled width by each class's share of the running total (so the bar total always equals the "running / max" headline — no metric mismatch). A lightweight `title` per segment ("sandbox · 2"). All-zero `by_class` (or a down runtime) → the existing single bar (honest fallback). The §24.95 InfoTip is extended one clause to name the color split.
+
+**Demo seed.** The architecture fixture seeds two owner running sessions (both would read chat); repoint one to a seeded sandbox agent group so the showcase bar shows a real two-color split (chat green + sandbox orange) at the unchanged `running=2`.
+
+**DoD.** `/api/architecture` returns `containers.by_class`; the memory bar segments by source (largest left), colors match the spend legend, segments sum to the headline; all-zero falls back to the single bar. host `tsc` + observability unit (`computeRunningTopology` classifies running sessions) + portal-api unit (by_class present) + FE `tsc` + `ContainerPoolPanel` unit (segments + fallback) + `dashboard`/`mobile-dashboard` `@visual` re-blessed (two-color bar — verified by eye) + prettier green. **Spec deltas:** this §24.110. Memory: [[todo_backlog]].
+
 ---
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
