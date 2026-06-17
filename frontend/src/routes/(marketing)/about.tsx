@@ -176,6 +176,7 @@ function AboutPage() {
           sections={tocSections}
           idPrefix="about"
           navLabel="On this page"
+          stepper
           contentClassName="flex flex-col gap-10"
         >
           <S meta={M.story}>

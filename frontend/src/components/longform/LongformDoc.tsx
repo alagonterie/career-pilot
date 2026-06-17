@@ -116,7 +116,7 @@ export function LongformDoc({
   idPrefix: string
   /** Accessible name for the two TOC nav landmarks (the mobile one appends "(quick nav)"). */
   navLabel: string
-  /** Render the mobile ‹ › steppers that jump between non-sealed sections (kit; off for prose docs). */
+  /** Render the mobile ‹ › steppers that jump between non-sealed sections (every current consumer uses them). */
   stepper?: boolean
   /** Classes for the content column (the consumer owns its inner spacing, e.g. `flex flex-col gap-7`). */
   contentClassName?: string
