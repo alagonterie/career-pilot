@@ -5659,6 +5659,29 @@ The three explainer surfaces, disambiguated: the **pitch** (this §, plain-Engli
 
 ---
 
+#### 24.81 Résumé-download UX parity (backlog T3): one shared, progressively-enhanced download control
+
+**Problem / framing.** Two surfaces hand a visitor a résumé PDF: the `/watch` results page's "Your tailored résumé" gift (`SimResult`'s `ResumeGift`) — a *polished* control that fetches the PDF in JS, shows a "Preparing…" beat for the real server-render delay, honors the server's `Content-Disposition` filename, and falls back to a plain open — and the `/experience` page, whose button is a bare `<a download>` with none of that. The owner asked for three fixes: (1) the Experience button should "work like the fancy one"; (2) neither should resize as its label flips; (3) the results page's download+preview buttons sit awkwardly on desktop (two content-width buttons with dead space to the right).
+
+- **D1 — One shared `ResumeDownload` component** (`frontend/src/components/ResumeDownload.tsx`), the single source of truth for the download interaction (JS fetch → "Preparing…" → filename → `window.open` fallback), used by BOTH the results gift and the Experience page. `ResumeGift` becomes a thin wrapper; the Experience page drops its bare `<a>`.
+- **D2 — Progressive enhancement.** The control is a real `<a href={pdfUrl} download>` so it works JS-disabled (the SSR Experience page requires that — PORTAL §10); with JS, the click is hijacked (`preventDefault`) for the Preparing state + server filename. No-JS → native anchor download. (The results page is JS-only anyway, but the one component serves both honestly.)
+- **D3 — No resize on state change.** Both labels (`Download résumé (PDF) ↓` / `Preparing…`) stack in one CSS-grid cell (`col-start-1 row-start-1`, the idle one toggled `invisible`), so the control's width is the wider idle label's and never jumps when the state flips. This also fixes the results button, which previously shrank to the shorter "Preparing…".
+- **D4 — Results-page desktop layout (owner call).** Download is the primary action and fills the row (`sm:flex-1`); Preview stays compact (`sm:w-auto`) beside it — together they fill the card with a clear primary/secondary hierarchy, no dead space. Mobile stays stacked full-width.
+- **D5 — Experience-page parity scope (owner call).** The upgraded download *behavior* only (loading state, filename, fallback, no resize) — **no** preview modal: the button appears twice on the page and the page already *is* the résumé. It keeps its quiet `outline`/`sm` register (so the at-rest `/experience` render is visually unchanged).
+
+**Decomposition (DD cadence).** Commit 1 — spec (this § + the PORTAL §5.3/§5.6 build notes). Commit 2 — build: the shared component + both call sites + a unit test; re-bless the `simulator-results` `@visual` baseline (the desktop layout moved) and `work` only if its at-rest render shifts. fe `tsc` + prettier `--no-semi`.
+
+**Definition of done.**
+1. Both surfaces render the download through the shared `ResumeDownload`; the results page additionally shows Preview (desktop modal / mobile new tab), the Experience page does not.
+2. The control is an `<a href download>` (no-JS download resolves); with JS the click is hijacked → Preparing state + server `Content-Disposition` filename + `window.open` fallback — unit-tested.
+3. The control does not resize toggling idle↔Preparing (the grid-stack) — asserted structurally.
+4. Results desktop: Download fills (`sm:flex-1`) + Preview compact; mobile stacked. Experience: download-only, `outline`/`sm`.
+5. fe `tsc` + the new unit suite + prettier green; `simulator-results` (+ `work` if it moved) re-blessed; the share-page axe a11y check stays clean.
+
+**Spec deltas.** This §24.81; PORTAL §5.3 (the results gift's shared download control + the desktop fill layout) + §5.6 (the Experience download button gains the shared behavior). Memory: [[todo_backlog]] (T3), [[status_current]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
