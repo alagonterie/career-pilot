@@ -109,6 +109,33 @@ function Lane({ children, title, tone }: { children: React.ReactNode; title: str
   )
 }
 
+/** Px from the bottom within which the stream counts as "stuck" to live. */
+const STUCK_THRESHOLD_PX = 24
+/** How long after an auto-follow `scrollTop` write to treat scroll events as the
+ *  follow's own async echo rather than user intent (B4 / §24.62 Δ). A `scrollTop`
+ *  write dispatches its scroll event asynchronously; during the load backlog
+ *  burst a later chunk grows the list before that event fires, so its
+ *  bottom-distance reads stale (>threshold) and — untreated — wrongly unsticks
+ *  the pin, parking the stream mid-history. */
+const AUTO_FOLLOW_SETTLE_MS = 100
+
+/**
+ * Decide the next "stuck to live" state from a scroll event. Pure so the
+ * unstick race (B4) is unit-testable without a layout engine. Inside the settle
+ * window after an auto-follow, the event is the follow's own echo — keep the
+ * current pin; outside it, stick iff within `STUCK_THRESHOLD_PX` of the bottom.
+ */
+export function nextStuck(args: {
+  prevStuck: boolean
+  msSinceAutoFollow: number
+  scrollHeight: number
+  scrollTop: number
+  clientHeight: number
+}): boolean {
+  if (args.msSinceAutoFollow < AUTO_FOLLOW_SETTLE_MS) return args.prevStuck
+  return args.scrollHeight - args.scrollTop - args.clientHeight < STUCK_THRESHOLD_PX
+}
+
 /**
  * The /live trace-stream centerpiece (PORTAL §5.2): a fuller LogStream over the
  * same SSE feed as the landing ticker. Terminal-style append (newest at the
@@ -140,6 +167,9 @@ export function LogStream({
   const [active, setActive] = React.useState('all')
   const [stuck, setStuck] = React.useState(true)
   const scrollRef = React.useRef<HTMLOListElement>(null)
+  // Timestamp of the last auto-follow scrollTop write — onScroll uses it to tell
+  // the follow's own async echo from a real user scroll (B4).
+  const autoFollowAt = React.useRef(0)
 
   const reduce = useReducedMotion()
   const chip = CHIPS.find((c) => c.id === active) ?? CHIPS[0]
@@ -164,12 +194,24 @@ export function LogStream({
   React.useEffect(() => {
     const el = scrollRef.current
     if (!stuck || !el) return
+    autoFollowAt.current = performance.now()
     el.scrollTop = el.scrollHeight
   }, [newestSeq, stuck])
 
   const onScroll = (e: React.UIEvent<HTMLOListElement>): void => {
     const el = e.currentTarget
-    setStuck(el.scrollHeight - el.scrollTop - el.clientHeight < 24)
+    const msSinceAutoFollow = performance.now() - autoFollowAt.current
+    // Functional update so the in-window "keep current pin" reads the latest
+    // stuck, not a stale closure value.
+    setStuck((prev) =>
+      nextStuck({
+        prevStuck: prev,
+        msSinceAutoFollow,
+        scrollHeight: el.scrollHeight,
+        scrollTop: el.scrollTop,
+        clientHeight: el.clientHeight,
+      }),
+    )
   }
 
   const jumpToLive = (): void => {
