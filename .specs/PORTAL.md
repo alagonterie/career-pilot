@@ -915,7 +915,7 @@ When submitted, the message is relayed to the candidate via Telegram. Sender get
 3. **Meet the cast** — the agent roster via the §8.6 cast registry (`lib/ai-actors.ts` + `AgentRef`); no new content model.
 4. **Anonymization policy** (`#anonymization`) — the rules (see §9).
 5. **The two-tier vault** — credential & data privacy (see "Two-tier vault" below); a credibility move with engineering visitors.
-6. **Visitor privacy** — the first-party visit log, stated plainly (see "Visitor privacy" below; this is the STRATEGY §24.74 D4 disclosure, landing here).
+6. **Visitor privacy** (`#privacy`) — the first-party visit log, stated plainly (see "Visitor privacy" below; this is the STRATEGY §24.74 D4 disclosure, landing here; the footer's "Privacy" link anchors here, §8.2 / §24.76).
 7. **System modes & safety controls** — high-level, linking to §7.
 8. **Cost of running this thing** — live *estimates*, honestly labeled (see the cost note below).
 9. **Why these specific tech choices** — NanoClaw, Claude Agent SDK, Portkey (Model Catalog), OneCLI, TanStack Start.
@@ -1274,19 +1274,21 @@ The wordmark is the persona name, **not a domain** — the deployed site is `hir
 
 ### 8.2 Footer
 
-Identical on every page:
+A single slim, muted band — the **social/legal strip** — sits at the very foot of every page, *below* the §8.4 connective rail (the rail is the directed "what's next"; the footer is the quiet background strip). It carries the persona wordmark, the candidate's socials, the two background links (`/about`, Privacy), and a short "built with" credit:
+
 ```
-  ───────────────────────────────────────────────────────────────────────
-  Jane Doe             ● SYSTEM STATUS: ONLINE          last deploy: a3f4c1
-                         · 91% cache · $0.84/day
-                         
-  GitHub · LinkedIn · X · /about · /privacy
-  ───────────────────────────────────────────────────────────────────────
+  ─────────────────────────────────────────────────────────────────
+  Jane Doe                              (GitHub) (LinkedIn) (Website)
+  Built with NanoClaw · Claude · TanStack          About · Privacy
+  ─────────────────────────────────────────────────────────────────
 ```
 
-The status string is live (single tick per 30s). If degraded or offline, it changes color and adds a brief note.
+- **Socials are SSR'd identity, omit-when-null.** GitHub, LinkedIn, X, and the personal website each render only when its `candidate_profile` field is set (the identity SSR principle, §24.71 9.4b-3 — DB-sourced, never hardcoded; a fork with no X account simply shows no X link). Each is a **themed brand icon** — an inline simple-icons SVG path (CC0) drawn `fill-current` so it inherits the muted→foreground color tokens on hover — **not** lucide (lucide dropped brand marks over trademark; lucide's generic globe is fine for the website link). Email is deliberately **not** in the footer — `/contact` and the rail's "Talk to me" own that path, and a footer `mailto:` invites scraping.
+- **`/about`** is the conventional background slot (the §8.1 header/footer IA rule: header = journey, footer = depth) — the footer is `/about`'s **second framed doorway** (the first is the home beat's "Read the full story →", §5.1).
+- **Privacy → `/about#privacy`** (the "What this site logs about your visit" disclosure, §5.8). There is **no standalone `/privacy` page**: the disclosure already lives on `/about`, so the link anchors there rather than to a near-empty route or a 404. A real privacy page can supersede the anchor later if legal posture warrants.
+- The persona wordmark = the build-time `VITE_PERSON_NAME` (the same brand as the §8.1 header). "Built with" is a short, static credit — headline frameworks only, no live data, no staleness.
 
-> **Build note (STRATEGY §24.35 Pass A — reconciliation).** This metadata footer is not built, and the foot-of-page design is confirmed as **two-tier with the §8.4 connective rail as the primary, unchanged element**: the rail (the directed "what's next") stays the focus, and per-page methodology captions carry page-specific honesty notes. The **status string / deploy hash / cache%** described here are *retired* as redundant — that telemetry already lives on `/live` + the §8.3 live indicator. A **slim, muted social/legal strip** (persona · `GitHub · LinkedIn · X` · `/about` · `/privacy`) is planned to sit *below* the rail, but is **deferred** to the pass that lands `/about` (§24.32) + a `/privacy` page so it never links to a 404 — intentionally absent until those routes exist.
+> **Retired (do not rebuild).** The original §8.2 mock carried a live `SYSTEM STATUS / last-deploy-SHA / cache% / $-per-day` metadata block. That is **retired as redundant** (the §24.35 Pass A call): the status/cache/cost telemetry already lives on `/live` + the §8.3 live indicator, and echoing the same numbers in a sitewide footer is noise without signal. The footer is the slim social/legal strip only. (A repo-linked deploy SHA could return as a small fast-follow if a build-time git-SHA env var is wired — out of scope here.) Built per STRATEGY §24.76.
 
 ### 8.3 Live indicator
 
