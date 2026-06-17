@@ -25,20 +25,28 @@ function profile(overrides: Partial<WorkProfile> = {}): WorkProfile {
 describe('WorkSections', () => {
   it('renders the required section headings + content from the profile', () => {
     render(<WorkSections profile={profile()} />)
-    for (const heading of [
-      'About',
-      "What I'm looking for",
-      'Experience',
-      'Projects',
-      'Skills',
-      'Education',
-      'Elsewhere',
-    ]) {
+    for (const heading of ['About', "What I'm looking for", 'Experience', 'Projects', 'Skills', 'Education']) {
       expect(screen.getByRole('heading', { level: 2, name: heading })).toBeInTheDocument()
     }
     expect(screen.getByText('Shipped a thing')).toBeInTheDocument()
     expect(screen.getByText('TypeScript')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'GitHub' })).toHaveAttribute('href', 'https://github.com/example')
+  })
+
+  it('drives the scaffold TOC from the present sections (§24.83) — one entry per nav + rail', () => {
+    render(<WorkSections profile={profile()} />)
+    // The scaffold renders two navs (mobile chips + desktop rail) → one entry per
+    // section per nav. No "Elsewhere" entry — that section was removed (D4).
+    const entries = screen.getAllByTestId('experience-toc-entry')
+    expect(entries.map((e) => e.textContent)).toContain('Experience')
+    expect(entries.map((e) => e.textContent)).not.toContain('Elsewhere')
+    // Skills present once (skillGroups XOR flat skills), so 6 sections × 2 navs.
+    expect(entries).toHaveLength(6 * 2)
+  })
+
+  it('the removed "Elsewhere" social links no longer render (footer owns socials, §24.83 D4)', () => {
+    render(<WorkSections profile={profile({ links: { github: 'https://github.com/example' } })} />)
+    expect(screen.queryByRole('heading', { level: 2, name: 'Elsewhere' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'GitHub' })).not.toBeInTheDocument()
   })
 
   it('renders the optional Writing section only when present (no invented data)', () => {
@@ -50,16 +58,10 @@ describe('WorkSections', () => {
     expect(screen.getByRole('link', { name: 'A post' })).toBeInTheDocument()
   })
 
-  it('omits optional link entries that are absent', () => {
-    render(<WorkSections profile={profile({ links: { github: 'https://github.com/example' } })} />)
-    expect(screen.getByRole('link', { name: 'GitHub' })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'LinkedIn' })).not.toBeInTheDocument()
-  })
-
-  it('degrades a partial profile — empty sections omit their heading (§24.71 / PORTAL §12)', () => {
-    // A name-only seed: every list is empty, links absent. No empty headings,
-    // and no thrown render.
-    render(
+  it('degrades a partial profile — every section empty → nothing renders (§24.71 / PORTAL §12)', () => {
+    // A name-only seed: every list is empty, links absent. No empty headings, no
+    // TOC, no thrown render — WorkSections renders null when there is nothing.
+    const { container } = render(
       <WorkSections
         profile={profile({
           bio: [],
@@ -72,16 +74,9 @@ describe('WorkSections', () => {
         })}
       />,
     )
-    for (const heading of [
-      'About',
-      "What I'm looking for",
-      'Experience',
-      'Projects',
-      'Skills',
-      'Education',
-      'Elsewhere',
-    ]) {
+    for (const heading of ['About', "What I'm looking for", 'Experience', 'Projects', 'Skills', 'Education']) {
       expect(screen.queryByRole('heading', { level: 2, name: heading })).not.toBeInTheDocument()
     }
+    expect(container).toBeEmptyDOMElement()
   })
 })

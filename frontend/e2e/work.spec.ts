@@ -20,20 +20,24 @@ test.describe('/experience — resume/portfolio shell + shared nav', () => {
     await page.goto('/experience')
 
     await expect(page.getByRole('heading', { level: 1, name: 'Jane Doe' })).toBeVisible()
-    for (const heading of [
-      'About',
-      "What I'm looking for",
-      'Experience',
-      'Projects',
-      'Skills',
-      'Education',
-      'Elsewhere',
-    ]) {
+    for (const heading of ['About', "What I'm looking for", 'Experience', 'Projects', 'Skills', 'Education']) {
       await expect(page.getByRole('heading', { level: 2, name: heading })).toBeVisible()
     }
     // Content renders from the placeholder profile (a project + an external link).
     await expect(page.getByText('career-pilot (this portal)')).toBeVisible()
-    await expect(page.getByRole('link', { name: 'GitHub' })).toBeVisible()
+
+    // The shared long-form scaffold (§24.83): a sticky scroll-spy TOC over the
+    // résumé. Desktop shows the slim left rail (the mobile chip strip is
+    // display:none) — exact name avoids matching the "(quick nav)" one. The
+    // "Elsewhere" social section is gone (D4); the footer owns socials now.
+    const toc = page.getByRole('navigation', { name: 'On this page', exact: true })
+    await expect(toc).toBeVisible()
+    await expect(toc.getByRole('button', { name: 'Experience' })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 2, name: 'Elsewhere' })).toHaveCount(0)
+
+    // Let the scaffold's entrance fade settle before the a11y scan — Axe can catch
+    // a transient sub-threshold contrast mid-fade (the established kit-dossier wait).
+    await expect(page.getByTestId('experience-dossier')).toHaveCSS('opacity', '1')
 
     // Accessibility — recruiter-facing showcase; zero violations on every route.
     const a11y = await new AxeBuilder({ page }).analyze()

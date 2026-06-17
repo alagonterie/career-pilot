@@ -1,6 +1,6 @@
-import { motion } from 'motion/react'
 import * as React from 'react'
 
+import { DocSection, LONGFORM_SCROLL_MT, LongformDoc } from '~/components/longform/LongformDoc'
 import { renderMarkdownish } from '~/lib/markdownish'
 import type { KitPayload, KitSection } from '~/lib/use-kit'
 import { cn } from '~/lib/utils'
@@ -12,6 +12,11 @@ import { cn } from '~/lib/utils'
  * server-side; a `withheld` section arrives as a count + caption with NO text,
  * so the bars here are decoration over an already-safe payload (never a
  * client-side hide).
+ *
+ * The reading scaffold (masthead-less here; the masthead lives on the page) —
+ * the sticky scroll-spy TOC + ‹ › steppers — is the shared `LongformDoc`
+ * (STRATEGY §24.83); this component owns only the kit-specific rendering (part
+ * framing, redaction bars, the Part-2 pocket card) and the sealed semantics.
  */
 
 const PART_HEADERS: Record<number, { title: string; caption: string }> = {
@@ -49,13 +54,10 @@ function SectionBlock({ section }: { section: KitSection }) {
   return (
     <section
       id={`kit-sec-${section.id}`}
-      data-kit-section={section.id}
+      data-longform-section={section.id}
       data-testid={sealed ? `kit-sealed-${section.id}` : `kit-section-${section.id}`}
       aria-labelledby={`kit-h-${section.id}`}
-      // Mobile clears the header (57px) + the sticky chip bar (~43px) — 96px
-      // tucked the first line under the bar (owner phone pass, §24.65 Δ);
-      // desktop has only the header, so the tighter offset returns at lg.
-      className="scroll-mt-28 lg:scroll-mt-24"
+      className={LONGFORM_SCROLL_MT}
     >
       <h3
         id={`kit-h-${section.id}`}
@@ -80,137 +82,15 @@ function SectionBlock({ section }: { section: KitSection }) {
   )
 }
 
-/**
- * Scroll-spy over the rendered sections. The observation band starts at the
- * tap-scroll landing offset (scroll-mt-24 = 96px) so the section a TOC tap
- * scrolls to is the one that lights up — the owner's phone pass caught the
- * old viewport-percentage band skipping short sealed sections and
- * highlighting their neighbor (§24.65 Δ). A tap also sets the highlight
- * explicitly and suppresses the observer while the smooth scroll settles.
- */
-function useScrollSpy(
-  ids: string[],
-  setActive: (id: string | null) => void,
-  suppressUntil: React.MutableRefObject<number>,
-): void {
-  React.useEffect(() => {
-    if (ids.length === 0 || typeof IntersectionObserver === 'undefined') return
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (Date.now() < suppressUntil.current) return
-        // Topmost intersecting section wins; entries arrive unordered.
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
-        if (visible.length > 0) setActive(visible[0].target.getAttribute('data-kit-section'))
-      },
-      { rootMargin: '-96px 0px -55% 0px' },
-    )
-    for (const id of ids) {
-      const el = document.querySelector(`[data-kit-section="${id}"]`)
-      if (el) observer.observe(el)
-    }
-    return () => observer.disconnect()
-  }, [ids, setActive, suppressUntil])
-}
-
-function TocEntry({
-  section,
-  active,
-  onSelect,
-  variant,
-}: {
-  section: KitSection
-  active: boolean
-  onSelect: (id: string) => void
-  variant: 'rail' | 'chip'
-}) {
-  const sealed = section.kind === 'withheld'
-  return (
-    <button
-      type="button"
-      onClick={() => onSelect(section.id)}
-      data-testid="kit-toc-entry"
-      data-section-id={section.id}
-      data-sealed={sealed || undefined}
-      data-active={active || undefined}
-      className={cn(
-        'font-mono text-[11px] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        variant === 'rail' ? 'block w-full truncate py-1 text-left' : 'shrink-0 rounded-full border px-2.5 py-1',
-        active
-          ? variant === 'rail'
-            ? 'text-foreground'
-            : 'border-primary/50 text-foreground'
-          : variant === 'rail'
-            ? 'text-muted-foreground hover:text-foreground'
-            : 'border-border text-muted-foreground hover:text-foreground',
-      )}
-    >
-      {sealed ? <span aria-hidden="true">⊘ </span> : null}
-      {section.title}
-    </button>
-  )
-}
-
 export function KitDossier({ kit }: { kit: KitPayload }) {
   const sections = kit.sections
-  const ids = React.useMemo(() => sections.map((s) => s.id), [sections])
-  const [active, setActive] = React.useState<string | null>(null)
-  // While a tap-initiated smooth scroll settles, the observer stays quiet so
-  // the tapped chip keeps the highlight (it owns it; the spy resumes after).
-  const suppressUntil = React.useRef(0)
-  const stripRef = React.useRef<HTMLDivElement>(null)
-  useScrollSpy(ids, setActive, suppressUntil)
 
-  // Bring a chip into the strip's view, instantly.
-  const revealChip = React.useCallback((id: string): void => {
-    const strip = stripRef.current
-    if (!strip) return
-    const chip = strip.querySelector<HTMLElement>(`[data-section-id="${id}"]`)
-    if (!chip) return
-    const left = chip.offsetLeft - strip.offsetLeft
-    if (left < strip.scrollLeft || left + chip.offsetWidth > strip.scrollLeft + strip.clientWidth) {
-      strip.scrollTo?.({ left: Math.max(0, left - 24), behavior: 'auto' })
-    }
-  }, [])
-
-  // The two scrolls (strip + page) must NEVER overlap in time: Chromium kills
-  // the document's in-flight smooth scroll when ANY programmatic scroll —
-  // even an instant one on a different element — lands (probed: ‹ moved 0px,
-  // long › died mid-flight, exactly when the chip was out of strip view; the
-  // round-2 "make the strip scroll instant" fix wasn't enough, §24.65 Δ).
-  // So: strip first (instant, synchronous), page scroll one frame later, and
-  // the effect below skips jump-driven active changes entirely.
-  const jumpHandledStrip = React.useRef(false)
-  const jump = (id: string): void => {
-    suppressUntil.current = Date.now() + 900
-    jumpHandledStrip.current = true
-    setActive(id)
-    revealChip(id)
-    const el = document.querySelector(`[data-kit-section="${id}"]`)
-    if (typeof requestAnimationFrame === 'function') {
-      requestAnimationFrame(() => el?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }))
-    } else {
-      el?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
-    }
-  }
-
-  // Observer-driven active changes (the user scrolling the page themselves)
-  // still keep the chip visible; a user-driven scroll has no animation to kill.
-  React.useEffect(() => {
-    if (jumpHandledStrip.current) {
-      jumpHandledStrip.current = false
-      return
-    }
-    if (active) revealChip(active)
-  }, [active, revealChip])
-
-  // Prev/next step between sections WITH CONTENT (§24.65 Δ, owner ask): on a
-  // phone the sealed chips dominate the strip, so finding the next readable
-  // section meant scrolling the strip to hunt for an un-⊘ chip.
-  const activeIdx = active ? ids.indexOf(active) : -1
-  const nextContent = sections.find((s, i) => i > activeIdx && s.kind === 'content')
-  const prevContent = [...sections.slice(0, Math.max(0, activeIdx))].reverse().find((s) => s.kind === 'content')
+  // The TOC model the scaffold consumes: sealed = withheld (keeps the section in
+  // the rail with a ⊘ glyph, and the steppers skip it).
+  const docSections: DocSection[] = React.useMemo(
+    () => sections.map((s) => ({ id: s.id, title: s.title, sealed: s.kind === 'withheld' })),
+    [sections],
+  )
 
   // Render in document order, emitting the part framing when the part changes.
   const blocks: React.ReactNode[] = []
@@ -239,59 +119,14 @@ export function KitDossier({ kit }: { kit: KitPayload }) {
   }
 
   return (
-    <motion.div
-      data-testid="kit-dossier"
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25, ease: 'easeOut' }}
-      className="lg:grid lg:grid-cols-[11rem_1fr] lg:gap-8"
+    <LongformDoc
+      sections={docSections}
+      idPrefix="kit"
+      navLabel="Kit sections"
+      stepper
+      contentClassName="flex flex-col gap-7"
     >
-      {/* Mobile: a horizontal chip row pinned under the site header. top-14
-          (56px) tucks 1px under the header's border — top-[57px] left a
-          subpixel sliver of page content visible between them on phones
-          (§24.65 Δ, owner phone pass). */}
-      <nav
-        aria-label="Kit sections (quick nav)"
-        data-testid="kit-toc"
-        className="sticky top-14 z-10 -mx-6 flex items-center gap-1 border-b border-border bg-background/95 px-2 py-2 backdrop-blur lg:hidden"
-      >
-        <button
-          type="button"
-          aria-label="Previous section with content"
-          data-testid="kit-toc-prev"
-          disabled={!prevContent}
-          onClick={() => prevContent && jump(prevContent.id)}
-          className="shrink-0 rounded-full border border-border px-2 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          ‹
-        </button>
-        <div ref={stripRef} className="flex min-w-0 flex-1 gap-2 overflow-x-auto px-1">
-          {sections.map((s) => (
-            <TocEntry key={s.id} section={s} active={active === s.id} onSelect={jump} variant="chip" />
-          ))}
-        </div>
-        <button
-          type="button"
-          aria-label="Next section with content"
-          data-testid="kit-toc-next"
-          disabled={!nextContent}
-          onClick={() => nextContent && jump(nextContent.id)}
-          className="shrink-0 rounded-full border border-border px-2 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          ›
-        </button>
-      </nav>
-
-      {/* Desktop: a slim sticky rail. */}
-      <nav aria-label="Kit sections" className="hidden lg:block">
-        <div className="sticky top-24 flex flex-col border-l border-border pl-3">
-          {sections.map((s) => (
-            <TocEntry key={s.id} section={s} active={active === s.id} onSelect={jump} variant="rail" />
-          ))}
-        </div>
-      </nav>
-
-      <div className="mt-6 flex min-w-0 flex-col gap-7 lg:mt-0">{blocks}</div>
-    </motion.div>
+      {blocks}
+    </LongformDoc>
   )
 }
