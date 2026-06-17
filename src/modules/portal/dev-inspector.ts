@@ -75,6 +75,16 @@ const MODEL_TIER_NOTE =
 const OPS_SPAWN_NOTE =
   'Pushed as container env when the career-pilot ops session spawns — applies on its NEXT spawn, not mid-session. Other sessions keep the upstream rotation defaults.';
 
+const OUTCOME_SPLIT_NOTE =
+  'At an application’s terminal step the outcome is offer-vs-rejection in proportion to these two — only the RATIO matters (offer / (offer + rejection)), not the absolute values. Most apps never reach the terminal step (the screen-pass cull + ghosting close them earlier).';
+
+// gmail_poll_interval_sec / calendar_poll_interval_sec are defined in
+// defaults.json and exposed here, but nothing in src/ or the container reads
+// them — inbound mail is pulled by the pipeline-scribe cron + the on-demand
+// sweep, not a fixed poll loop. The notes say so honestly (§24.105).
+const ORPHAN_POLL_NOTE =
+  'No live consumer today — inbound mail is pulled by the pipeline-scribe cron (funnel_curator_cron) + the on-demand sweep, not a fixed poll loop. Kept as a tunable for a future host poller; changing it currently has no effect.';
+
 /**
  * The curated knob set the dev inspector may write. The `recruiter_sim_*` keys
  * (the sim's own dial) plus the dev-loop pacing keys the owner asked to expose
@@ -83,7 +93,12 @@ const OPS_SPAWN_NOTE =
  */
 export const KNOB_SPECS: Record<string, KnobSpec> = {
   // ── the recruiter-sim dial (SIM_KNOB_KEYS) ──
-  recruiter_sim_enabled: { type: 'boolean', group: 'sim', label: 'Sim enabled' },
+  recruiter_sim_enabled: {
+    type: 'boolean',
+    group: 'sim',
+    label: 'Sim enabled',
+    note: 'Master toggle for the recruiter-sim host loop (seeding + stepping applications). Off → the sim does nothing. Also flipped off automatically by /halt and any session-clearing reset.',
+  },
   recruiter_sim_job_source: {
     type: 'enum',
     group: 'sim',
@@ -105,6 +120,7 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     min: 0,
     max: 100,
     integer: true,
+    note: 'Ceiling on simultaneously-active sim applications. A new application seeds only while the active count is below this; apps that close or ghost free a slot.',
   },
   recruiter_sim_screen_pass_rate: {
     type: 'number',
@@ -114,11 +130,46 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     max: 1,
     note: 'Fraction of applications that advance past the confirmation to a screen; the rest get an early rejection.',
   },
-  recruiter_sim_offer_probability: { type: 'number', group: 'sim', label: 'Offer probability', min: 0, max: 1 },
-  recruiter_sim_rejection_probability: { type: 'number', group: 'sim', label: 'Rejection probability', min: 0, max: 1 },
-  recruiter_sim_ghost_probability: { type: 'number', group: 'sim', label: 'Ghost probability', min: 0, max: 1 },
-  recruiter_sim_noise_ratio: { type: 'number', group: 'sim', label: 'Noise ratio', min: 0, max: 1 },
-  recruiter_sim_daily_budget_usd: { type: 'number', group: 'sim', label: 'Sim daily budget (USD)', min: 0, max: 100 },
+  recruiter_sim_offer_probability: {
+    type: 'number',
+    group: 'sim',
+    label: 'Offer probability',
+    min: 0,
+    max: 1,
+    note: OUTCOME_SPLIT_NOTE,
+  },
+  recruiter_sim_rejection_probability: {
+    type: 'number',
+    group: 'sim',
+    label: 'Rejection probability',
+    min: 0,
+    max: 1,
+    note: OUTCOME_SPLIT_NOTE,
+  },
+  recruiter_sim_ghost_probability: {
+    type: 'number',
+    group: 'sim',
+    label: 'Ghost probability',
+    min: 0,
+    max: 1,
+    note: 'Per-step chance (never on the very first email) that a thread goes quiet instead of advancing — leaves the application hanging to exercise close-detection.',
+  },
+  recruiter_sim_noise_ratio: {
+    type: 'number',
+    group: 'sim',
+    label: 'Noise ratio',
+    min: 0,
+    max: 1,
+    note: 'Per-tick chance of injecting a standalone non-application email (newsletter/digest) — classifier-precision filler the curator should classify as noise.',
+  },
+  recruiter_sim_daily_budget_usd: {
+    type: 'number',
+    group: 'sim',
+    label: 'Sim daily budget (USD)',
+    min: 0,
+    max: 100,
+    note: 'Caps the sim’s OWN host-side LLM spend (the Haiku that writes realistic email prose). Once spent, injected emails fall back to their deterministic templates. Separate from the owner/sandbox agent budgets.',
+  },
   // ── dev-loop pacing (crons) ──
   funnel_curator_cron: { type: 'cron', group: 'pacing', label: 'Funnel curator cron', note: CRON_NOTE },
   funnel_curator_skip_classified_messages: {
@@ -138,6 +189,7 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     label: 'Owner daily LLM budget (USD)',
     min: 0,
     max: 1000,
+    note: 'A SOFT/advisory cap on the owner session’s daily LLM spend — the persona warns past ~80%, but the agent can still run past it. The hard stop is /killswitch (pause + kill containers).',
   },
   sandbox_daily_global_budget_usd: {
     type: 'number',
@@ -145,15 +197,24 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     label: 'Sandbox daily budget (USD)',
     min: 0,
     max: 1000,
+    note: 'The HARD global cap on public-simulator (sandbox) spend — checkSimulatorAllowed refuses new runs once the day’s sandbox spend reaches it. Also the /architecture Web-sandbox "degraded" threshold.',
   },
   // ── poll intervals ──
-  gmail_poll_interval_sec: { type: 'number', group: 'polling', label: 'Gmail poll interval (s)', min: 10, max: 86_400 },
+  gmail_poll_interval_sec: {
+    type: 'number',
+    group: 'polling',
+    label: 'Gmail poll interval (s)',
+    min: 10,
+    max: 86_400,
+    note: `Intended cadence for polling the connected Gmail account. ${ORPHAN_POLL_NOTE}`,
+  },
   calendar_poll_interval_sec: {
     type: 'number',
     group: 'polling',
     label: 'Calendar poll interval (s)',
     min: 10,
     max: 86_400,
+    note: `Intended cadence for polling the connected Google Calendar. ${ORPHAN_POLL_NOTE}`,
   },
   // ── ops-session topology (§24.67) ──
   ops_transcript_rotate_bytes: {
