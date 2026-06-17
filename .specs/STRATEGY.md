@@ -5898,6 +5898,22 @@ The B1 deep dive flagged "~115 restarts / every 10–40 min" as possible runaway
 
 **DoD.** The active desktop-rail entry is obvious at a glance (accent bar + weight + full-strength text) against muted inactive entries; mobile chips unchanged. FE `tsc` + `LongformDoc`/kit unit (testid + active-data contract intact) + `work`/`about`/kit e2e + prettier `--no-semi` green; desktop longform `@visual` baselines re-blessed if the active entry is captured (experience/kit/about). **Spec deltas:** this §24.99. Memory: [[todo_backlog]].
 
+#### 24.100 Honor the location preference (schema pin + strong off-location demotion)
+
+**Problem (item #4, confirmed on the box).** The candidate's `location_pref` is honored nowhere it matters. Two causes:
+
+- **Schema drift.** The persona row stores `{"type":["remote","hybrid"],"preferred_cities":["Denver"]}`, but every reader — the lead scorer (`profileFromRow`) and BOTH persona renderers (`renderPersona` + `renderSandboxCandidate`) — reads `{remote, hybrid_cities}`. Neither key exists in the data, so `acceptable_cities` is always `[]` (Denver never credited) and the persona's `## Location` section renders as a bare header with no content (the agent never learns it wants remote/Denver). The field is free-form JSON with no pinned schema, so what the agent wrote diverged from what the code reads.
+- **Location is a soft nudge, not a gate.** Even with the schema fixed, location contributes only 0–15 of 100; a non-remote California role from a target company (the ATS scrape pulls *all* of a company's openings) still outranks weaker on-location roles on keyword + recency, and the orchestrator reads the top-20 by `rules_score DESC` (no surfacing floor).
+
+**Decisions (owner, 2026-06-17).** (1) **Strong demotion, keep unknowns.** (2) **Canonical schema = `{type: ('remote'|'hybrid'|'onsite')[], preferred_cities: string[]}`** — the data's shape (more expressive; the agent already writes it). No back-compat (dev-only, no prod): readers drop the legacy `{remote, hybrid_cities}` shape entirely.
+
+**Fix.**
+- **Scorer (`lead-rules-score.ts`).** `profileFromRow` reads `type` (→ `remote_ok = type.includes('remote')`) + `preferred_cities` (→ `acceptable_cities`), and sets `location_specified = type.length>0 || preferred_cities.length>0`. The location component: remote-acceptable → +15/+8 (by region); a `preferred_cities` match → +15; **definitively off-location** (`location_specified && is_remote === false`, no city match) → a strong `OFF_LOCATION_PENALTY` (−30, a named constant per the file's v1.0-hardcoded-weights convention) that sinks the lead to the clamp floor; **unknown** (`is_remote === null`, no city) or **no stated preference** → 0 (neutral, never penalized — avoids false-dropping remote roles the parser missed).
+- **Persona (`render-persona.ts`).** A shared `renderLocationSection` reads `{type, preferred_cities}`, renders "Open to: …" + "Preferred cities: …", and returns nothing when there's no content (no empty `## Location` header). Both renderers use it.
+- **Onboarding write-side** (instructing the agent to keep writing `{type, preferred_cities}`) rolls into item #5 (onboarding copy); the live box row already matches, so behavior is fixed now.
+
+**DoD.** Denver-hybrid roles score the city credit; definitively off-location roles are demoted below on-location ones; unknown-location and no-preference cases are unaffected; the persona's `## Location` section is populated (or absent, never empty). host `tsc` + new `lead-rules-score.test` (remote/Denver/off-location/unknown/no-pref) + updated `render-persona.test` + prettier green. Box-verifiable on the next lead-scrape cascade (off-location leads sink in `read_job_leads`). **Spec deltas:** this §24.100. Memory: [[todo_backlog]], [[project_job_leads_heartbeat]].
+
 ---
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
