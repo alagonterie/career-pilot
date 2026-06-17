@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 
 import { AgentMark } from '~/components/AgentMark'
-import { Button } from '~/components/ui/button'
+import { ResumeDownload } from '~/components/ResumeDownload'
 import { WorkSections } from '~/components/work/sections'
 import { getWorkProfile } from '~/lib/profile-loader'
 import { seo } from '~/lib/seo'
@@ -38,12 +38,17 @@ function Work() {
   // Gated on a real composed profile — the backend 404s for a placeholder, so we
   // never offer a download that wouldn't resolve.
   const canDownload = profile != null
+  // §24.81 (T3): the shared, progressively-enhanced download control — the
+  // "Preparing…" state + server filename + fallback + no-resize behavior of the
+  // /watch results gift, in the Experience page's quieter outline/sm register and
+  // WITHOUT the preview modal (the page is the résumé already; the button repeats).
   const downloadBtn = (
-    <Button asChild variant="outline" size="sm">
-      <a href={`${API_BASE}/api/resume.pdf${generatedAt ? `?v=${encodeURIComponent(generatedAt)}` : ''}`} download>
-        Download résumé (PDF) ↓
-      </a>
-    </Button>
+    <ResumeDownload
+      pdfUrl={`${API_BASE}/api/resume.pdf${generatedAt ? `?v=${encodeURIComponent(generatedAt)}` : ''}`}
+      fallbackFilename="resume.pdf"
+      size="sm"
+      variant="outline"
+    />
   )
   return (
     <>
