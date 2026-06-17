@@ -478,6 +478,8 @@ A four-row breakdown of the last 24 h of LLM/API spend by **traffic class** — 
 
 > **Build note (STRATEGY §24.84 — T5).** The merged `LLM SPEND` box now leads with **two equal big-number amounts, bookended**: the 24h spend (left) and the **cache-hit rate** (right) — both the same `text-2xl` `Metric`, each with its label + explain-on-tap InfoTip beneath. The cache lives in this box on purpose (it's a *cost lever*, the reason the spend is low), so it earns equal billing rather than the old small inline `cache NN%` afterthought. They sit on one `justify-between` row beside each other, so the tile adds no height and the four-box stat-row stays uniform; the per-class chart + legend below are unchanged. Cache still renders only when a rate is present (a no-turn state shows just the spend).
 
+> **Build note (STRATEGY §24.85 — T6).** The `InfoTip` ⓘ trigger draws its "i" as a **centered inline SVG** (a dot + rounded stem in a symmetric viewBox, `currentColor`) instead of a text glyph — a flex-centered text "i" centers on its advance box, not its ink, so the sans glyph's side-bearings + baseline left it visibly off-center (worst on the active-sessions tiles + the Mode/Agents chips). One component fix → every InfoTip across `/dashboard`, `/architecture`, `/pipeline`, the trace seal, etc. gets the identical centered glyph. The circle, size, colors, focus ring, and `DisclosureTip` interaction are unchanged.
+
 #### Panel: `RECENT OUTCOMES`
 A log of recent funnel state changes:
 ```
