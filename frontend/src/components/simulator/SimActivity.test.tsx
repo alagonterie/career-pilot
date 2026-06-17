@@ -31,9 +31,19 @@ describe('SimActivity (PORTAL §5.3 trace pane)', () => {
     expect(complete).toHaveTextContent('$0.041')
   })
 
-  it('shows a starting message before any trace arrives', () => {
+  it('shows a warming message + "starting" status before any trace arrives (§24.93)', () => {
     render(<SimActivity trace={[]} status="running" cost_usd={null} />)
-    expect(screen.getByTestId('sim-activity-empty')).toHaveTextContent('starting')
+    // Honest expectation-setting copy — no internal "sandbox session" jargon.
+    expect(screen.getByTestId('sim-activity-empty')).toHaveTextContent('Spinning up a fresh sandbox')
+    // The status claims "starting", not "running" — nothing is running yet.
+    expect(screen.getByTestId('sim-activity-status')).toHaveTextContent('starting')
+  })
+
+  it('flips the status to "running" once the first trace arrives (§24.93)', () => {
+    render(<SimActivity trace={trace} status="running" cost_usd={null} />)
+    const status = screen.getByTestId('sim-activity-status')
+    expect(status).toHaveTextContent('running')
+    expect(status).not.toHaveTextContent('starting')
   })
 
   it('humanizes a raw-JSON input_summary into its salient field (§24.31 Δ)', () => {
