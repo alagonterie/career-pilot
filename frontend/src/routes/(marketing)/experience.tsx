@@ -71,16 +71,21 @@ function Work() {
           <div className="mt-6 flex flex-col gap-2">
             {downloadBtn}
             {/* Tier-2 cross-sell (§24.72): the "watch me apply" spoke produces a
-                role-tailored cut of this résumé, live. */}
+                role-tailored cut of this résumé, live. The CTA half is nowrap so the
+                line breaks between the question and the CTA (never an orphaned →) on
+                mobile — §24.88. */}
             <Link to="/watch" className="font-mono text-xs text-accent-cool hover:underline">
-              Want one aimed at your role? Watch me apply to it →
+              Want one aimed at your role? <span className="whitespace-nowrap">Watch me apply to it →</span>
             </Link>
           </div>
         ) : null}
         <div className="mt-10 w-full">
           <WorkSections profile={p} />
         </div>
-        {canDownload ? <div className="mt-12">{downloadBtn}</div> : null}
+        {/* A deliberate end-of-page download (§24.88): the border-t frames it as an
+            intentional closing affordance once the masthead button has scrolled
+            away, not a bare duplicate. */}
+        {canDownload ? <div className="mt-14 w-full border-t border-border pt-8">{downloadBtn}</div> : null}
       </main>
     </>
   )

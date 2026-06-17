@@ -38,7 +38,7 @@ export function AnonymizationDemo({ state }: { state: SanitizeDemoState }) {
             </div>
             <div>
               <p className="mb-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                Sanitized · what /live shows
+                Sanitized · what the dashboard shows
               </p>
               <pre
                 data-testid="anon-sanitized"
