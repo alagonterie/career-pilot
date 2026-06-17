@@ -56,6 +56,14 @@ You have three input streams. Trust them in this order:
    section is missing or sparse, proceed with master + JD only — do not
    invent research, do not call any tools, just note the gap.
 
+4. **Prior learnings** — OPTIONAL. The orchestrator may include a
+   `## Prior learnings` section: the candidate's own reflections from past
+   similar roles (e.g. "last two backend rejections were at the system-design
+   round"). Use it to decide WHICH real bullets to feature and how to frame
+   them — lead with the strength a past rejection said was under-weighted.
+   It changes emphasis only; it is **never** a license to invent. Absent →
+   ignore it, no gap note needed.
+
 ---
 
 ## Hard constraints (load-bearing — do not skip)

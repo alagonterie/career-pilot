@@ -49,6 +49,7 @@ import {
   handleReadFunnelState,
 } from './funnel-actions.js';
 import { handlePersistInterviewKit } from './interview-kit-actions.js';
+import { handlePersistLearning, handleReadLearnings } from './learnings-actions.js';
 
 /**
  * Every career_pilot action that touches private candidate data is owner-only —
@@ -104,3 +105,5 @@ registerOwnerOnly('career_pilot.load_calendar_fixture', handleLoadCalendarFixtur
 registerOwnerOnly('career_pilot.get_gmail_sync_state', handleGetGmailSyncState);
 registerOwnerOnly('career_pilot.get_calendar_sync_state', handleGetCalendarSyncState);
 registerOwnerOnly('career_pilot.filter_seen_email_events', handleFilterSeenEmailEvents);
+registerOwnerOnly('career_pilot.persist_learning', handlePersistLearning);
+registerOwnerOnly('career_pilot.read_learnings', handleReadLearnings);

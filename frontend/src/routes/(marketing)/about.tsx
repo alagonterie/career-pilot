@@ -224,6 +224,13 @@ function AboutPage() {
                 <span className="font-semibold text-foreground">It builds interview prep.</span> When a process
                 advances, it assembles a prep dossier grounded in the role and my background.
               </li>
+              <li>
+                <span className="font-semibold text-foreground">It learns from outcomes.</span> After a rejection or an
+                interview it talks it through with me, and when a pattern shows up it coaches — “three rejections this
+                month all at the system-design round; worth focusing prep there?” It files what’s worth remembering, so
+                the next time it tailors for a similar role it leads with the strength a past miss left under-weighted.
+                It’s memory, not magic: the system gets sharper because it remembers, not because it retrains itself.
+              </li>
             </ul>
             <p className="text-balance leading-relaxed text-foreground/90">
               Want the technical version? The{' '}
