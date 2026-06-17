@@ -49,7 +49,7 @@ function Home() {
   //     doesn't recompute the relative time until the stream supplies the SAME
   //     event, so the takeover is a no-op width-wise).
   const statsReady = pipelineStatus !== 'loading' && telemetryStatus !== 'loading'
-  const liveCounts = heroStats({ apps, events: [], actionsIn24h: telemetry?.local.activity_events_24h ?? null })
+  const liveCounts = heroStats({ apps, events: [], actionsIn24h: telemetry?.local.agent_actions_24h ?? null })
   const counts = statsReady ? liveCounts : heroSeed.counts
   const liveLastActivity = events.length > 0 ? `last activity ${relativeAgo(events[events.length - 1].ts)}` : null
   const lastActivity = liveLastActivity ?? heroSeed.lastActivity

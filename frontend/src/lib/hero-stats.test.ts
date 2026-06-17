@@ -42,9 +42,22 @@ function event(ts: string): AuditEvent {
 }
 
 describe('activeApplicationCount', () => {
-  it('counts in-flight apps and excludes closed (rejected/withdrawn)', () => {
-    const apps = [app('applied'), app('tech'), app('offer'), app('rejected'), app('withdrawn')]
-    expect(activeApplicationCount(apps)).toBe(3) // applied, tech, offer
+  it('counts the five board stages, excluding closed (rejected/withdrawn) and pre-application bookmarked (§24.97-A)', () => {
+    const apps = [
+      app('applied'),
+      app('tech'),
+      app('offer'),
+      app('rejected'),
+      app('withdrawn'),
+      app('bookmarked'), // a lead the agent found but hasn't applied to — not an "application"
+    ]
+    // applied, tech, offer — the bookmarked lead is invisible in the strip below,
+    // so counting it here would read as "3 active" over a strip summing to 2.
+    expect(activeApplicationCount(apps)).toBe(3)
+  })
+
+  it('excludes a bookmarked lead so the headline equals the strip column sum', () => {
+    expect(activeApplicationCount([app('applied'), app('applied'), app('bookmarked')])).toBe(2)
   })
 
   it('is 0 for an empty pipeline', () => {

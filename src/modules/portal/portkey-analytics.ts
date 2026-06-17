@@ -22,7 +22,14 @@ const DEFAULT_TELEMETRY_CACHE_MS = 30_000;
 export interface TelemetryLocal {
   simulator_runs_total: number;
   activity_events_total: number;
+  /** ALL audit rows in 24h, incl. per-turn cost seals — the dashboard's raw
+   *  "events / 24h" telemetry row. NOT the hero's "agent actions" (see below). */
   activity_events_24h: number;
+  /** NON-turn audit rows in 24h — the hero "N agent actions in 24h" source. It
+   *  must share the population the ticker + `last_activity_at` use (both exclude
+   *  `turn` rows), else the hero line contradicts itself (§24.97-B: "8 actions in
+   *  24h · last activity 2d ago" when the only 24h rows are turns). */
+  agent_actions_24h: number;
   /** ISO ts of the most recent NON-turn activity event — the hero "last activity"
    *  source (matches the home ticker, which excludes `turn` cost-summary rows);
    *  null when there's no activity. Lets `/` SSR a complete, stable stat line. */
@@ -76,6 +83,11 @@ function computeLocal(): TelemetryLocal {
   const evTotal = db.prepare('SELECT COUNT(*) AS n FROM public_audit_trail').get() as { n: number };
   const cutoff = new Date(Date.now() - 86_400_000).toISOString();
   const ev24 = db.prepare('SELECT COUNT(*) AS n FROM public_audit_trail WHERE ts >= ?').get(cutoff) as { n: number };
+  // Non-turn rows in 24h — the hero "agent actions" count. Excludes `turn` cost
+  // seals so it agrees with the ticker + `last_activity_at` (§24.97-B).
+  const act24 = db
+    .prepare(`SELECT COUNT(*) AS n FROM public_audit_trail WHERE category != 'turn' AND ts >= ?`)
+    .get(cutoff) as { n: number };
   // Latest non-turn event ts (the home ticker excludes `turn` rows, so the hero
   // "last activity" must too — else the SSR seed and the live ticker disagree).
   const lastEv = db.prepare(`SELECT MAX(ts) AS ts FROM public_audit_trail WHERE category != 'turn'`).get() as {
@@ -143,6 +155,7 @@ function computeLocal(): TelemetryLocal {
     simulator_runs_total: sim.n,
     activity_events_total: evTotal.n,
     activity_events_24h: ev24.n,
+    agent_actions_24h: act24.n,
     last_activity_at: lastEv.ts ?? null,
     turns_total: turnRows.length,
     turns_24h: turns24,

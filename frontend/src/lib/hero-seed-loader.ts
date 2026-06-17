@@ -36,7 +36,7 @@ interface PipelineJson {
   applications?: PipelineApplication[]
 }
 interface TelemetryJson {
-  local?: { activity_events_24h?: number | null; last_activity_at?: string | null }
+  local?: { agent_actions_24h?: number | null; last_activity_at?: string | null }
 }
 
 export interface HeroSeed {
@@ -61,7 +61,7 @@ export const getHeroSeed = createServerFn({ method: 'GET' }).handler(async (): P
     // events:[] → heroStats returns only the two count segments; the last-activity
     // string is computed here from the telemetry ts (it stays out of heroStats so
     // the client can keep the seed string until the live stream supplies one).
-    const counts = heroStats({ apps, events: [], actionsIn24h: tel?.activity_events_24h ?? null })
+    const counts = heroStats({ apps, events: [], actionsIn24h: tel?.agent_actions_24h ?? null })
     const lastAt = tel?.last_activity_at ?? null
     return { counts, lastActivity: lastAt ? `last activity ${relativeAgo(lastAt)}` : null }
   } catch {

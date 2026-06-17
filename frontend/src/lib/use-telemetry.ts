@@ -12,7 +12,12 @@ import { usePolledJson, type PollStatus } from './use-polled-json'
 export interface TelemetryLocal {
   simulator_runs_total: number
   activity_events_total: number
+  /** ALL audit rows in 24h (incl. per-turn cost seals) — the dashboard's raw
+   *  "events / 24h" row. The hero uses `agent_actions_24h`, not this (§24.97-B). */
   activity_events_24h: number
+  /** Non-turn audit rows in 24h — the hero "N agent actions in 24h" source, so it
+   *  shares the population the ticker + "last activity" use (both exclude turns). */
+  agent_actions_24h: number
   /** ISO ts of the latest non-turn activity event — the SSR seed for the hero
    *  "last activity X ago" (the home stat sources its live value from the stream). */
   last_activity_at: string | null
