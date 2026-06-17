@@ -5722,6 +5722,17 @@ The three explainer surfaces, disambiguated: the **pitch** (this §, plain-Engli
 
 ---
 
+#### 24.85 InfoTip ⓘ glyph centering — a component-wide fix (owner T6)
+
+**Problem.** The `InfoTip` trigger is a 14 px bordered circle whose content is a lowercase text **"i"** (`font-sans text-[9px] leading-none`). A text glyph centered by flexbox is centered on its *advance box*, not its ink: the sans "i" has asymmetric side-bearings (more space on the right), so the ink sits **left of center**, and with `leading-none` the x-height-plus-dot ink isn't vertically centered on the baseline either. Net: the "i" looks off-center (owner saw it most on `/dashboard`'s active-sessions + the mode/agent chips on `/dashboard` + `/architecture`), and the offset varies by surface because it's font-metric-dependent. The InfoTip is the single shared affordance, so this is **one fix, everywhere**.
+
+- **Fix.** Replace the text "i" with a tiny **inline SVG** glyph (a dot + a rounded stem) drawn centered in a symmetric `0 0 16 16` viewBox, `fill="currentColor"` so it still inherits the muted→foreground hover colors. An SVG has no side-bearings or baseline — flex-centering the symmetric viewBox is pixel-perfect and identical on every surface. The bordered-circle look, sizing (`h-3.5 w-3.5`), colors, focus ring, and the whole `DisclosureTip` interaction contract are unchanged; only the glyph rendering changes. Drop the now-unused text classes (`font-sans text-[9px] leading-none`). `align-middle` stays (inline alignment where the tip sits next to text, e.g. the `Metric` label).
+- **Scope.** `InfoTip.tsx` only — every consumer (the §24.84 spend/cache amounts, the `Metric` labels, the `ModeBanner` Mode/Agents chips, the turn seal, board/kit tips) inherits the centered glyph. The `AgentRef` cast chip is a different `DisclosureTip` skin (no "i") and is untouched. No testid/behavior change (tests find the trigger by `info-tip-trigger` / `About: «label»`, never by its "i" text).
+
+**DoD.** The ⓘ glyph is optically centered in its circle on every InfoTip, identically across surfaces; the circle/size/colors/interaction are unchanged. fe `tsc` + FE unit (`InfoTip.test.tsx` green unchanged — testid/aria contract intact) + prettier green; the InfoTip-bearing `@visual` baselines re-blessed (the glyph pixels changed). **Spec deltas:** this §24.85; PORTAL §5.2 build note. Memory: [[todo_backlog]] (T6).
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
