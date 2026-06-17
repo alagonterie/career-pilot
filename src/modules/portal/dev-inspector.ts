@@ -173,6 +173,15 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     label: 'Mirror ops output to chat',
     note: 'Owner-visible ops-session output (daily briefing, killer-match pings) is copied into the chat session as silent context so replies have their referent. Applies to the next delivery.',
   },
+  container_idle_timeout_sec: {
+    type: 'number',
+    group: 'sessions',
+    label: 'Idle container ceiling (s)',
+    min: 60,
+    max: 86_400,
+    integer: true,
+    note: 'How long a warm-but-idle container lives before the host sweep reaps it (default 1800 = 30 min). Idle = local polling only, no LLM spend — the cost is held RAM + one concurrency slot. Lower frees slots/RAM sooner; higher keeps containers warmer (no cold-start on a quick follow-up). Applies live on the next sweep tick.',
+  },
   // ── observability (§24.68) ──
   telemetry_capture: {
     type: 'boolean',

@@ -31,6 +31,8 @@ import fs from 'fs';
 
 import { getActiveSessions } from './db/sessions.js';
 import { getAgentGroup } from './db/agent-groups.js';
+import { getDb } from './db/connection.js';
+import { getConfig } from './get-config.js';
 import { getPauseState, type PauseState } from './modules/portal/system-modes.js';
 import {
   countDueMessages,
@@ -61,10 +63,24 @@ export function parseSqliteUtc(s: string): number {
 }
 
 const SWEEP_INTERVAL_MS = 60_000;
-// Absolute idle ceiling for a running container. If the heartbeat file hasn't
-// been touched in this long, the container is either stuck or doing genuinely
-// nothing — kill and restart on the next inbound.
+// Absolute idle ceiling for a running container — the DEFAULT. If the heartbeat
+// file hasn't been touched in this long, the container is either stuck or doing
+// genuinely nothing — kill and restart on the next inbound. Tunable live via the
+// `container_idle_timeout_sec` preference (/dev, future /admin); this constant is
+// the fallback + the default decideStuckAction uses when no override is passed
+// (§24.96).
 export const ABSOLUTE_CEILING_MS = 30 * 60 * 1000;
+
+/** The configured idle ceiling in ms (preference `container_idle_timeout_sec`,
+ *  default 1800 s = ABSOLUTE_CEILING_MS). Read each sweep tick so a /dev change
+ *  applies live; falls back to the constant on any config/db error. */
+function configuredCeilingMs(): number {
+  try {
+    return getConfig<number>(getDb(), 'container_idle_timeout_sec', ABSOLUTE_CEILING_MS / 1000) * 1000;
+  } catch {
+    return ABSOLUTE_CEILING_MS;
+  }
+}
 // Stuck tolerance window applied per 'processing' claim — "did we see any
 // signs of life since this message was claimed?"
 export const CLAIM_STUCK_MS = 60 * 1000;
@@ -86,8 +102,12 @@ export function decideStuckAction(args: {
   heartbeatMtimeMs: number; // 0 when heartbeat file absent
   containerState: ContainerState | null;
   claims: Array<{ message_id: string; status_changed: string }>;
+  /** Idle ceiling override (§24.96). Defaults to ABSOLUTE_CEILING_MS so the
+   *  decision stays pure + unchanged when callers omit it. */
+  absoluteCeilingMs?: number;
 }): StuckDecision {
   const { now, heartbeatMtimeMs, containerState, claims } = args;
+  const absoluteCeilingMs = args.absoluteCeilingMs ?? ABSOLUTE_CEILING_MS;
   const declaredBashMs = bashTimeoutMs(containerState);
 
   // Ceiling check only applies when we have an actual heartbeat timestamp.
@@ -100,7 +120,7 @@ export function decideStuckAction(args: {
   // claim-stuck check below handles it.
   if (heartbeatMtimeMs !== 0) {
     const heartbeatAge = now - heartbeatMtimeMs;
-    const ceiling = Math.max(ABSOLUTE_CEILING_MS, declaredBashMs ?? 0);
+    const ceiling = Math.max(absoluteCeilingMs, declaredBashMs ?? 0);
     if (heartbeatAge > ceiling) {
       return { action: 'kill-ceiling', heartbeatAgeMs: heartbeatAge, ceilingMs: ceiling };
     }
@@ -325,6 +345,7 @@ function enforceRunningContainerSla(
     heartbeatMtimeMs: heartbeatMtimeMs(agentGroupId, session.id),
     containerState: getContainerState(outDb),
     claims: getProcessingClaims(outDb),
+    absoluteCeilingMs: configuredCeilingMs(),
   });
 
   if (decision.action === 'ok') return;
