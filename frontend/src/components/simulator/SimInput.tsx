@@ -8,9 +8,33 @@ import { Button } from '~/components/ui/button'
 import { useTurnstile } from '~/lib/use-turnstile'
 import type { SimRunInput } from '~/lib/use-simulator-run'
 
+/**
+ * Pure: does this look like garbage rather than a real company/role name
+ * (STRATEGY §24.104)? Conservative — rejects only the two unambiguous shapes so
+ * a real (if obscure) name never trips it: (1) a single character repeated
+ * ("aaaa", "....", "----"), (2) no letters at all ("1234", "!!!"). Exported so
+ * the cases are unit-testable without rendering the form. The §24.70 abuse caps
+ * + the agent's honest "couldn't find this company" remain the backstop for
+ * plausible-looking junk this can't catch.
+ */
+export function looksLikeGarbage(value: string): boolean {
+  const compact = value.trim().replace(/\s/g, '')
+  if (compact.length === 0) return true
+  if (new Set(compact).size <= 1) return true
+  if (!/\p{L}/u.test(compact)) return true
+  return false
+}
+
+const realName = (label: string) =>
+  z
+    .string()
+    .trim()
+    .min(2, `Enter a real ${label}`)
+    .refine((v) => !looksLikeGarbage(v), `Enter a real ${label}`)
+
 const schema = z.object({
-  company: z.string().min(1, 'Company is required'),
-  role: z.string().min(1, 'Role / title is required'),
+  company: realName('company name'),
+  role: realName('role or title'),
   public_url: z.string().optional(),
   jd: z.string().optional(),
 })

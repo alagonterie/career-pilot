@@ -8,8 +8,19 @@ describe('SimInput (PORTAL §5.3 input view)', () => {
     const onRun = vi.fn()
     render(<SimInput onRun={onRun} />)
     fireEvent.click(screen.getByRole('button', { name: /watch me apply/i }))
-    expect(await screen.findByText(/company is required/i)).toBeInTheDocument()
-    expect(screen.getByText(/role \/ title is required/i)).toBeInTheDocument()
+    expect(await screen.findByText(/enter a real company name/i)).toBeInTheDocument()
+    expect(screen.getByText(/enter a real role or title/i)).toBeInTheDocument()
+    expect(onRun).not.toHaveBeenCalled()
+  })
+
+  it('blocks submit on obvious garbage input (single repeated char), inline error (§24.104)', async () => {
+    const onRun = vi.fn()
+    render(<SimInput onRun={onRun} />)
+    fireEvent.change(screen.getByLabelText('Company name'), { target: { value: 'xxxx' } })
+    fireEvent.change(screen.getByLabelText('Role / title'), { target: { value: '....' } })
+    fireEvent.click(screen.getByRole('button', { name: /watch me apply/i }))
+    expect(await screen.findByText(/enter a real company name/i)).toBeInTheDocument()
+    expect(screen.getByText(/enter a real role or title/i)).toBeInTheDocument()
     expect(onRun).not.toHaveBeenCalled()
   })
 
