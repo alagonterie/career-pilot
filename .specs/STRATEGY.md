@@ -5826,6 +5826,16 @@ The B1 deep dive flagged "~115 restarts / every 10–40 min" as possible runaway
 
 ---
 
+#### 24.93 "Watch it work" cold-start affordance — honest expectation-setting for the ~15s container boot
+
+**Problem.** A "watch it work" run flips to the live 2-pane view the instant `POST /api/simulator` returns an id, but the first `research-company` trace doesn't arrive until the sandbox container has cold-started (~15s: docker spawn → agent-runner boot → SDK init → first dispatch). During that window the Activity pane shows a single static line "starting sandbox session…" and the status dot reads **"running"** — so the showcase's grippiest page opens on ~15s of an unchanging, slightly-jargon line that can read as *stuck*, and the dot claims "running" when nothing is yet. (The same `running && trace=[]` state also covers the rare §24.92 queued-5th-visitor wait, just longer — so fixing it covers both.)
+
+- **Fix.** While `running && trace.length === 0` ("warming"): the status label reads **"starting"** (honest — the container is booting), and the empty-pane line sets the expectation instead of naming an internal artifact ("Spinning up a fresh sandbox — the first step appears shortly…"). The pulsing dot + live elapsed ticker already convey aliveness and stay. Once the first trace lands, the label flips to "running" as before. No fabricated progress steps — we observe none between POST and first trace (the honesty rule); just honest framing + the ticker.
+
+**DoD.** During the cold-start/queue window the Activity status reads "starting" and the pane sets an honest expectation (no "running" claim, no "sandbox session" jargon); the label flips to "running" once a trace arrives; the elapsed ticker + pulse persist. fe `tsc` + FE unit (`SimActivity.test` updated) + prettier `--no-semi` + any affected `@visual` baseline re-blessed. **Spec deltas:** this §24.93; PORTAL §5.3 build note. Memory: [[todo_backlog]]. **Separate (owner-gated, own slice):** abandonment teardown — a closed tab today only drops the SSE subscriber; the sandbox container runs to completion (full spend + a held §24.92 slot) since the fetch-stream transport never reconnects.
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
