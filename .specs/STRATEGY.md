@@ -5682,6 +5682,17 @@ The three explainer surfaces, disambiguated: the **pitch** (this §, plain-Engli
 
 ---
 
+#### 24.82 Site-header spacing fix (owner nitpick): the wordmark stops crowding the nav
+
+**Problem.** The site header (`SiteHeader`) put the persona wordmark left and the six-link grouped nav right in a `max-w-3xl` box via `justify-between`. The dense nav (≈560 px) nearly filled the box, so the short placeholder name left only ~105 px of slack — but a real, longer `VITE_PERSON_NAME` (the deployed wordmark) ate almost all of it and pressed up against the first link.
+
+- **Fix.** Widen the nav row `max-w-3xl` → `max-w-4xl` and add a guaranteed `gap-6`, with `shrink-0` on both the wordmark and the link cluster so neither compresses the other — restoring ~100 px of breathing room for a real name (and the placeholder reads as comfortably spaced). Bundled a grouping-legibility tweak (owner invited a header look): each cluster is its own `gap-4` flex with the wider gap reserved for the dividers, so the three groups read as groups, not one long row. Mobile (the hamburger disclosure) is unaffected.
+- **Out (offered, owner's call):** a clearer active-page indicator (today the current link only brightens) and a touch more wordmark identity — discretionary visual-identity choices, not bundled.
+
+**DoD.** Header renders with comfortable wordmark↔nav spacing at the real name length (reasoned from the placeholder slack + the +~100 px real-name width); fe `tsc` + prettier green; the 18 header-bearing desktop `@visual` baselines re-blessed (mobile header = wordmark + hamburger, unaffected). **Spec deltas:** this §24.82; PORTAL §8.1 build note. Memory: [[todo_backlog]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
