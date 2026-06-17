@@ -5808,6 +5808,24 @@ The B1 deep dive flagged "~115 restarts / every 10–40 min" as possible runaway
 
 ---
 
+#### 24.92 Enforce the container concurrency cap (the "/4" the dashboard already shows)
+
+**Problem.** §24.91's owner review surfaced that `container_max_concurrent` (the "/4" in CONTAINER POOL) is **display-only** — read once at `api.ts` for the panel and nowhere else. `getActiveContainerCount()` exists but no spawn path consults it. Every container spawn funnels through `wakeContainer()` (owner inbound via `router.ts`; the public **sandbox/simulator** via the portal adapter → `routeInbound` → `wakeContainer`; plus approvals / agent-to-agent / scheduling / self-mod / container-restart), and none gate on capacity. So under real concurrency — N sim visitors + the cron cascade + owner turns waking at once — the host spawns one container per session with due work, **unbounded**; at 512 MB each on a 4 GB e2-medium, ~6-7 concurrent containers OOMs the box (the documented reason e2-small was rejected). It can't surface at single-user pace — it's the prod-under-load failure the owner intuited.
+
+**Fix.** A capacity gate in `wakeContainer()`, the single chokepoint, placed after the pause gate and after the already-running / already-mid-spawn early-returns (those sessions already hold a slot, so they're never blocked):
+
+- **Count = distinct sessions holding or acquiring a slot** = union of `activeContainers` (running) + `wakePromises` (mid-spawn), deduping the brief handoff window. This — not `activeContainers.size` alone — is what makes the gate **atomic under the single-threaded event loop**: each `wakeContainer` synchronously commits to `wakePromises` before yielding, so N concurrent distinct-session wakes serialize (wake #2 sees #1's reservation) and can't overshoot — the exact sim-visitor-stampede shape.
+- When count ≥ cap (`getConfig('container_max_concurrent')`, default 4; **cap ≤ 0 ⇒ unlimited** so a misconfig can't brick spawning), **refuse: log + return `false`** — the identical "transient failure" contract the pause gate uses. Every caller already tolerates it: the inbound row stays pending and host-sweep's next tick re-wakes when a slot frees (≤ `SWEEP_INTERVAL_MS`). Backpressure, not loss.
+- Pure predicate `atContainerCapacity(committed, cap)` so the boundary is unit-tested without spawning; cap + count read fresh each wake (operator preference change applies live).
+
+**Why this also makes the dashboard honest.** The "/4 · running/max" gauge now reflects an *enforced* ceiling instead of implying one. No panel change needed (§24.91's reconcile already fixed the data; this makes the cap real).
+
+**Scope / non-goals.** The cap is the **OOM backstop** — a soft ceiling, not abuse defense (that's 9.4a's per-IP + budget caps, which shed sandbox load *before* it reaches this gate) and not a fairness queue (deferred wakes retry via host-sweep, no priority). Sustained cap-hits are a scale-the-box signal, not a retry-latency tuning target. A "deferred-at-capacity" counter on /dashboard is a possible future enhancement; logged-only for now.
+
+**DoD.** `wakeContainer` refuses a NEW spawn (returns false, logs `committed`+`cap`) when the committed count ≥ `container_max_concurrent`, while already-running / mid-spawn / under-capacity wakes pass through; the count is the dedup union of running + in-flight; `cap ≤ 0` disables the limit. host `tsc` + host unit (`atContainerCapacity` truth table + a `wakeContainer` at-capacity-refuses test via a count test-seam) + prettier green. **Box (time-gated):** under the realistic-pace sim, `docker ps` never exceeds the cap; a deferred wake resumes within a sweep tick. **Spec deltas:** this §24.92. Memory: [[todo_backlog]]. **Out of scope:** abuse/budget caps (9.4a), priority queue, retry-latency tuning, the dashboard "deferred" counter.
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
