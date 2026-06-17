@@ -27,6 +27,7 @@ vi.mock('@tanstack/react-router', () => ({
 import { PipelineCompact } from './PipelineCompact'
 import {
   ContainerPoolPanel,
+  outcomeToneClass,
   Panel,
   RecentOutcomesPanel,
   SessionsPanel,
@@ -181,6 +182,21 @@ describe('PipelineCompact + RecentOutcomes', () => {
   it('renders each outcome as a deep-link into the /pipeline drawer (§24.57)', () => {
     render(<RecentOutcomesPanel apps={APPS} />)
     expect(screen.getAllByTestId('recent-outcome-link')).toHaveLength(2)
+  })
+
+  it('color-codes only terminal outcomes (§24.109 #12)', () => {
+    // Pure mapping: a win is green, a loss is red, a withdrawal is dimmed,
+    // in-progress stays muted (not an outcome yet).
+    expect(outcomeToneClass('offer')).toBe('text-primary')
+    expect(outcomeToneClass('rejected')).toBe('text-destructive')
+    expect(outcomeToneClass('withdrawn')).toBe('text-muted-foreground/70')
+    expect(outcomeToneClass('screening')).toBe('text-muted-foreground')
+
+    // Rendered: the OFFER word carries the win tone; the company ref does NOT.
+    render(<RecentOutcomesPanel apps={APPS} />)
+    const offer = within(screen.getByTestId('recent-outcomes')).getByText('offer')
+    expect(offer.className).toContain('text-primary')
+    expect(screen.getByText('devtools-b').className).not.toContain('text-primary')
   })
 })
 
