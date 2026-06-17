@@ -147,10 +147,14 @@ describe('Panel', () => {
 })
 
 describe('PipelineCompact + RecentOutcomes', () => {
-  it('counts stages + reveals a public offer', () => {
+  it('counts stages (short labels — §24.79 D2) + reveals a public offer', () => {
     render(<PipelineCompact apps={APPS} />)
-    expect(within(screen.getByTestId('funnel-compact-applied')).getByText('1')).toBeInTheDocument()
+    const applied = within(screen.getByTestId('funnel-compact-applied'))
+    expect(applied.getByText('1')).toBeInTheDocument()
+    // The compact strip links to the board → short stage codes, not long names.
+    expect(applied.getByText('APP')).toBeInTheDocument()
     expect(within(screen.getByTestId('funnel-compact-offer')).getByText('1')).toBeInTheDocument()
+    expect(screen.getByTestId('funnel-compact-offer')).toHaveTextContent('OFFER')
     expect(screen.getByTestId('funnel-compact-reveal')).toHaveTextContent('devtools-b')
   })
 

@@ -1,12 +1,15 @@
 import { motion } from 'motion/react'
 
 import { Skeleton } from '~/components/ui/skeleton'
+import { PIPELINE_LANE_HEIGHT, PIPELINE_STAGE_SET, PIPELINE_STAGES } from '~/lib/pipeline-stages'
 import type { PipelineApplication } from '~/lib/use-pipeline'
 
 import { PipelineCard } from './PipelineCard'
 
-// The displayed pipeline columns, left → right (PORTAL §5.4). `bookmarked` and
-// the terminal `rejected`/`withdrawn` stages are surfaced in a separate strip
+// The board columns are the canonical left→right stages (§24.79 D2 — the single
+// source in `~/lib/pipeline-stages`, shared with the compact strips). The board
+// renders each stage's `long` name (room for the descriptive label); `bookmarked`
+// and the terminal `rejected`/`withdrawn` stages are surfaced in a separate strip
 // rather than dropped — nothing in the pipeline is silently hidden.
 //
 // Naming note (§24.77 D3): the visitor-facing rename to "pipeline" is complete in
@@ -15,14 +18,6 @@ import { PipelineCard } from './PipelineCard'
 // Playwright specs + the named `funnel*.png` visual baselines), so renaming them
 // is pure churn for zero visitor benefit. Same retained-internal boundary as the
 // `/api/funnel` fetch URL.
-const COLUMNS: { stage: string; title: string }[] = [
-  { stage: 'applied', title: 'Applied' },
-  { stage: 'screening', title: 'Screening' },
-  { stage: 'tech', title: 'Tech' },
-  { stage: 'final', title: 'Final' },
-  { stage: 'offer', title: 'Offer' },
-]
-const PIPELINE_STAGES = new Set(COLUMNS.map((c) => c.stage))
 
 /**
  * The horse-race board (PORTAL §5.4). Each card is a `motion` element keyed by
@@ -39,7 +34,7 @@ export function PipelineBoard({
   apps: PipelineApplication[]
   onSelect: (app: PipelineApplication) => void
 }) {
-  const offboard = apps.filter((a) => !PIPELINE_STAGES.has(a.stage))
+  const offboard = apps.filter((a) => !PIPELINE_STAGE_SET.has(a.stage))
 
   return (
     <>
@@ -48,30 +43,31 @@ export function PipelineBoard({
           contributes its full nowrap line — one real-world title blows the
           phone layout out sideways. grid-cols-N = minmax(0,1fr) = the clamp. */}
       <div data-testid="funnel-board" className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        {COLUMNS.map((col) => {
+        {PIPELINE_STAGES.map((col) => {
           const items = apps.filter((a) => a.stage === col.stage)
           return (
             <section
               key={col.stage}
-              aria-label={col.title}
+              aria-label={col.long}
               data-testid={`funnel-col-${col.stage}`}
               className="flex flex-col rounded-lg border border-border bg-background/40 p-2"
             >
               <header className="mb-2 flex items-center justify-between px-1">
                 <h2 className="font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">
-                  {col.title}
+                  {col.long}
                 </h2>
                 <span className="font-mono text-xs tabular-nums text-muted-foreground">{items.length}</span>
               </header>
-              {/* Desktop keeps a fixed-height scrolling lane (uniform lanes, board
-                  stability — §24.35 Pass D). On a phone the board is a vertical
+              {/* Desktop keeps a scrolling lane (uniform lanes, board stability —
+                  §24.35 Pass D) that now scales taller with the viewport (§24.79
+                  D3, `PIPELINE_LANE_HEIGHT`). On a phone the board is a vertical
                   stack, so lanes are content-height and an empty stage collapses
                   to just its header row (no full-height void — §13). */}
               <div
                 className={
                   items.length === 0
-                    ? 'hidden flex-col gap-2 sm:flex sm:h-[16rem] sm:overflow-y-auto'
-                    : 'flex flex-col gap-2 sm:h-[16rem] sm:overflow-y-auto'
+                    ? `hidden flex-col gap-2 sm:flex sm:overflow-y-auto ${PIPELINE_LANE_HEIGHT}`
+                    : `flex flex-col gap-2 sm:overflow-y-auto ${PIPELINE_LANE_HEIGHT}`
                 }
               >
                 {items.map((a) => (
@@ -123,18 +119,18 @@ export function PipelineBoard({
 export function PipelineBoardSkeleton() {
   return (
     <div data-testid="funnel-skeleton" className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 lg:grid-cols-5">
-      {COLUMNS.map((col, i) => (
+      {PIPELINE_STAGES.map((col, i) => (
         <section
           key={col.stage}
-          aria-label={col.title}
+          aria-label={col.long}
           className="flex flex-col rounded-lg border border-border bg-background/40 p-2"
         >
           <header className="mb-2 flex items-center justify-between px-1">
             <h2 className="font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">
-              {col.title}
+              {col.long}
             </h2>
           </header>
-          <div className="flex flex-col gap-2 sm:h-[16rem]">
+          <div className={`flex flex-col gap-2 ${PIPELINE_LANE_HEIGHT}`}>
             {Array.from({ length: ((i * 2) % 3) + 1 }).map((_, j) => (
               <Skeleton key={j} className="h-16 w-full" />
             ))}
