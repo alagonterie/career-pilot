@@ -180,7 +180,7 @@ function Home() {
               track it →
             </Link>
           </div>
-          <PipelineCompact apps={apps} loading={pipelineStatus === 'loading'} />
+          <PipelineCompact apps={apps} loading={pipelineStatus === 'loading'} expandLabels />
           <p className="mt-3 text-[11px] text-muted-foreground">
             Companies are obfuscated until each process closes — a deliberate privacy choice.
           </p>

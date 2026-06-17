@@ -27,7 +27,11 @@ export function InfoTip({ label, children }: { label: string; children: React.Re
           aria-controls={p['aria-controls']}
           aria-label={p['aria-label']}
           onClick={p.onClick}
-          className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border border-muted-foreground/50 align-middle text-muted-foreground transition-colors hover:border-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          // -translate-y-px (§24.86): every InfoTip sits next to UPPERCASE text in
+          // an items-center wrapper, which centers the circle on the text's line
+          // box — but all-caps ink sits high in that box (empty descender space), so
+          // the circle read ~1px low. The nudge optically centers it on the caps.
+          className="inline-flex h-3.5 w-3.5 shrink-0 -translate-y-px items-center justify-center rounded-full border border-muted-foreground/50 align-middle text-muted-foreground transition-colors hover:border-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           {/* The "i" as a centered SVG (§24.85): a flex-centered text glyph
               centers on its advance box, not its ink, so the sans "i"'s
