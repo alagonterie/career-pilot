@@ -6025,6 +6025,18 @@ So the owner's "verify before featuring" gate was correct: featuring it today wo
 
 **DoD.** The diagram shows an edge from the OneCLI gateway to Google Workspace (the write path); the node panel enumerates read (Gmail+Calendar) vs write (Gmail drafts + Drive Docs) and states Calendar is read-only. FE `tsc` + `diagram` unit + architecture `@visual` re-blessed (edge added — verified by eye) + prettier green. **Spec deltas:** this §24.108 + PORTAL §5.5 node note. Memory: [[todo_backlog]].
 
+#### 24.109 /dashboard — spend-class tooltips + outcome colors; the memory-bar decision (items #11, #12, #15)
+
+Three `/dashboard` polish items.
+
+**#11 (build) — LLM-spend traffic-class tooltips.** The LLM-SPEND legend (`SPEND_CLASSES` in `panels.tsx`) shows a colored dot + class name + 24h total, but the class names (CHAT/OPS/SANDBOX/HOST) aren't explained. Owner asked for **lightweight `title`-style hover tooltips, NOT full InfoTips.** Add a `desc` to each `SPEND_CLASSES` entry and a native `title` attribute on each legend row: chat = owner Telegram chats; ops = autonomous scheduled jobs; sandbox = public "Watch it work" visitor runs; host = the host's own model calls (sanitizer semantic pass, win-confidence), not a container.
+
+**#12 (build) — Recent-outcomes color-coding.** The RECENT OUTCOMES rows render the stage word in uniform `text-muted-foreground`. Color **only the outcome word** (never the company ref): `offer` → `text-primary` (green win), `rejected` → `text-destructive` (red), `withdrawn` → dimmed neutral; active stages stay muted (in-progress, not an outcome). A pure `outcomeToneClass(stage)` keyed on the lowercase stage vocabulary.
+
+**#15 (decide) — container-pool memory bar color-by-source.** Owner asked to segment the memory bar by traffic class (sandbox/orange · chat/green · ops/blue, largest left), reusing the spend-class colors, and to "decide if possible/recommended." **Decision: possible, but NOT from current data — deferred to a backend slice (recommended), not faked.** `arch.containers` carries only a total `running` count (a `docker ps` number); there is **no per-class running-container breakdown**. The per-class data that exists — `session_topology` (chat/ops/sandbox) — counts *active sessions*, a DIFFERENT metric from running containers; segmenting a container-memory bar by it would mix two metrics and violate the page's honesty discipline (§24.24/§24.28 — never paint a proportion you don't actually measure). The truthful build is a small backend addition: a `containers.by_class` running breakdown in `/api/architecture` (join each running container → its session's traffic class), then segment the bar + extract a shared class-color/legend primitive (the same one #11 could share). Recommended as a focused follow-up; the shared-component extraction waits for that second consumer (YAGNI until then). The single bar stays for now.
+
+**DoD.** Each spend-class legend row has a `title` tooltip; the three terminal outcomes are color-coded (only the word) and active stages stay muted; the #15 decision is recorded (no memory-bar code change). FE `tsc` + `spend-by-class`/panels unit (title present; outcome tone) + `dashboard`/`mobile-dashboard` `@visual` re-blessed if the outcome colors shift a seeded row + prettier green. **Spec deltas:** this §24.109. Memory: [[todo_backlog]].
+
 ---
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
