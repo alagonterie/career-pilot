@@ -47,23 +47,14 @@ export interface ActivityStreamOptions {
 }
 
 /**
- * Surface-level display aliases for an event's source label (the ticker/trace
- * show `agent_name ?? category`). The backend audit vocabulary stays "funnel"
- * (the internal domain term), and historical rows keep the subagent's
- * pre-§24.59 name; the feed just renders the visitor-facing names so nothing
- * says "funnel" on the public surface (PORTAL §5.2 / §8.1). New rows carry
- * `agent_name='pipeline-scribe'` natively. Extend this map as more internal
- * source ids want friendlier labels.
+ * The visitor-facing source label for an event (the subagent name, else the
+ * category). No mapping layer: the public audit data is natively visitor-facing
+ * — migration 137 (§24.77 D3) rewrote the legacy `'funnel'` category → `'pipeline'`
+ * and the `'funnel-curator'` agent_name → `'pipeline-scribe'`, so a raw row
+ * already reads right and nothing says "funnel" on the public surface.
  */
-const SOURCE_ALIASES: Record<string, string> = {
-  funnel: 'pipeline', // category: stage updates → the Job Pipeline board
-  'funnel-curator': 'pipeline-scribe', // the subagent's pre-rename id on historical rows
-}
-
-/** The visitor-facing source label for an event (agent, else category), aliased. */
 export function eventSourceLabel(e: AuditEvent): string {
-  const raw = e.agent_name ?? e.category
-  return SOURCE_ALIASES[raw] ?? raw
+  return e.agent_name ?? e.category
 }
 
 /**

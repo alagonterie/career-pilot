@@ -22,13 +22,13 @@ describe('withState (§24.36 36.1)', () => {
 
 describe('the per-surface override store', () => {
   it('defaults every surface to normal', () => {
-    expect(effectiveState('funnel')).toBe('normal')
+    expect(effectiveState('pipeline')).toBe('normal')
     expect(effectiveState('activity')).toBe('normal')
   })
 
   it('sets one surface without touching the others', () => {
-    setSurfaceState('funnel', 'empty')
-    expect(effectiveState('funnel')).toBe('empty')
+    setSurfaceState('pipeline', 'empty')
+    expect(effectiveState('pipeline')).toBe('empty')
     expect(effectiveState('architecture')).toBe('normal')
   })
 
@@ -40,10 +40,10 @@ describe('the per-surface override store', () => {
   })
 
   it('resets all overrides', () => {
-    setSurfaceState('funnel', 'loading')
+    setSurfaceState('pipeline', 'loading')
     setSurfaceState('activity', 'error')
     resetSurfaceStates()
-    expect(effectiveState('funnel')).toBe('normal')
+    expect(effectiveState('pipeline')).toBe('normal')
     expect(effectiveState('activity')).toBe('normal')
   })
 })

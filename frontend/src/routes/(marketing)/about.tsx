@@ -15,7 +15,7 @@ import { workProfile } from '~/lib/work-profile'
 // sitewide footer is a separate slice). Marketing register, story-first.
 //
 // Arc (§5.8): story → how-it-works-in-words → meet-the-cast → anonymization
-// (#anonymization, deep-linked from /work + the funnel) → the trust depth (vault,
+// (#anonymization, deep-linked from /work + the pipeline) → the trust depth (vault,
 // visitor privacy, modes, cost, tech, fork, honest limits) → FAQ. Story warm,
 // deepening into precise.
 export const Route = createFileRoute('/(marketing)/about')({

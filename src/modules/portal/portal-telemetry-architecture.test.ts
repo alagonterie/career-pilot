@@ -41,7 +41,7 @@ function seedAudit(seq: number, ts: string): void {
   getDb()
     .prepare(
       `INSERT INTO public_audit_trail (id, seq, ts, category, summary)
-       VALUES (?, ?, ?, 'funnel', 'x')`,
+       VALUES (?, ?, ?, 'pipeline', 'x')`,
     )
     .run(`pat-${seq}`, seq, ts);
 }
@@ -117,7 +117,7 @@ describe('GET /api/telemetry', () => {
   });
 
   it('leaves the derived lanes null when no turn details have been captured (§24.47)', async () => {
-    seedAudit(1, nowIso()); // a funnel row — no turn telemetry
+    seedAudit(1, nowIso()); // a pipeline row — no turn telemetry
     const body = (await (await fetch(`${base}/api/telemetry`)).json()) as {
       local: {
         cache_hit_rate: number | null;
@@ -136,7 +136,7 @@ describe('GET /api/telemetry', () => {
     seedTurn(10, nowIso(), 6);
     seedTurn(11, nowIso(), 4);
     seedTurn(12, daysAgoIso(2), 9); // outside the 24h window
-    seedAudit(13, nowIso()); // a funnel row contributes nothing to turn cost
+    seedAudit(13, nowIso()); // a pipeline row contributes nothing to turn cost
 
     const body = (await (await fetch(`${base}/api/telemetry`)).json()) as {
       local: { turns_total: number; turn_cost_cents_total: number; turn_cost_cents_24h: number };

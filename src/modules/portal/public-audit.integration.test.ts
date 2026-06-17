@@ -111,7 +111,7 @@ describe('mirrorFunnelEvent', () => {
     const rows = readAuditRows();
     expect(rows).toHaveLength(1);
     expect(rows[0].application_ref).toBe('fintech-a');
-    expect(rows[0].category).toBe('funnel');
+    expect(rows[0].category).toBe('pipeline');
     expect(rows[0].summary).toContain('[REDACTED:fintech-a]');
     expect(rows[0].summary).toContain('[EMAIL_REDACTED]');
     expect(rows[0].summary).toContain('[AMOUNT_REDACTED]');

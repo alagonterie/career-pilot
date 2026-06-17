@@ -54,7 +54,7 @@ const KNOBS: DevKnob[] = [
     type: 'cron',
     group: 'pacing',
     value: '30 7 * * *',
-    label: 'Funnel cron',
+    label: 'Pipeline cron',
     note: 'applies next cycle',
   }),
   knob({

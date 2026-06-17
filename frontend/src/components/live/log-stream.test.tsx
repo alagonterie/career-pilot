@@ -32,7 +32,7 @@ import { LogStream, nextStuck } from './LogStream'
 function ev(p: Partial<AuditEvent> & { seq: number }): AuditEvent {
   return {
     ts: '2026-06-02T16:42:00Z',
-    category: 'funnel',
+    category: 'pipeline',
     agent_name: null,
     proactive: 0,
     application_ref: null,
@@ -48,7 +48,7 @@ function ev(p: Partial<AuditEvent> & { seq: number }): AuditEvent {
 }
 
 const EVENTS: AuditEvent[] = [
-  ev({ seq: 1, category: 'funnel', proactive: 0, application_ref: 'fintech-a', summary: 'logged a recruiter reply' }),
+  ev({ seq: 1, category: 'pipeline', proactive: 0, application_ref: 'fintech-a', summary: 'logged a recruiter reply' }),
   ev({
     seq: 2,
     category: 'subagent_progress',
@@ -92,8 +92,8 @@ describe('LogStream', () => {
     expect(screen.getByText('[fintech-a]')).toBeInTheDocument()
     expect(screen.queryByText(/cache \d+%/)).not.toBeInTheDocument()
     expect(screen.queryByTestId('trace-proactive')).not.toBeInTheDocument()
-    // category is the fallback source label when agent_name is null, aliased for
-    // display (the 'funnel' category renders as 'pipeline' — §5.2 / §8.1 / §24.59)
+    // category is the fallback source label when agent_name is null; the audit
+    // data is natively 'pipeline' (§24.77 / migration 137 — no display alias)
     expect(screen.getByText('pipeline')).toBeInTheDocument()
   })
 
@@ -103,18 +103,16 @@ describe('LogStream', () => {
     expect(screen.getAllByTestId('trace-line')).toHaveLength(2) // seq 2 + 3
   })
 
-  it('display-aliases historical agent ids and one chip matches old + new (§24.59)', () => {
-    // The audit trail is append-only: pre-rename rows carry
-    // agent_name='funnel-curator'; new rows carry 'pipeline-scribe'. Both
-    // render as the new name, and the single Scribe chip matches both.
+  it('matches a subagent chip on the native agent_name (§24.77 — legacy alias retired)', () => {
+    // Post-migration the audit data carries the real names; the single Scribe
+    // chip matches 'pipeline-scribe' rows directly (no 'funnel-curator' fan-out).
     const events = [
-      ev({ seq: 1, category: 'subagent_progress', agent_name: 'funnel-curator', summary: 'classified 2 messages' }),
+      ev({ seq: 1, category: 'subagent_progress', agent_name: 'pipeline-scribe', summary: 'classified 2 messages' }),
       ev({ seq: 2, category: 'subagent_progress', agent_name: 'pipeline-scribe', summary: 'persisted state' }),
       ev({ seq: 3, category: 'subagent_progress', agent_name: 'scrape-jobs', summary: 'scanned boards' }),
     ]
     render(<LogStream events={events} status="open" count={3} />)
     expect(screen.getAllByText('pipeline-scribe')).toHaveLength(2)
-    expect(screen.queryByText('funnel-curator')).not.toBeInTheDocument()
     fireEvent.click(screen.getByTestId('trace-chip-pipeline-scribe'))
     expect(screen.getAllByTestId('trace-line')).toHaveLength(2)
   })

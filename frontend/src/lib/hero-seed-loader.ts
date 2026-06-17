@@ -2,7 +2,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { env } from 'cloudflare:workers'
 
 import { heroStats, relativeAgo } from './hero-stats'
-import type { FunnelApplication } from './use-funnel'
+import type { PipelineApplication } from './use-pipeline'
 
 /**
  * SSR seed for the hero stat line (the `/` polish pass). The stat numbers are
@@ -32,8 +32,8 @@ type SeedEnv = {
   CF_ACCESS_CLIENT_SECRET?: string
 }
 
-interface FunnelJson {
-  applications?: FunnelApplication[]
+interface PipelineJson {
+  applications?: PipelineApplication[]
 }
 interface TelemetryJson {
   local?: { activity_events_24h?: number | null; last_activity_at?: string | null }
@@ -52,11 +52,11 @@ export const getHeroSeed = createServerFn({ method: 'GET' }).handler(async (): P
   if (e.CF_ACCESS_CLIENT_SECRET) headers['CF-Access-Client-Secret'] = e.CF_ACCESS_CLIENT_SECRET
 
   try {
-    const [funnelRes, telRes] = await Promise.all([
+    const [pipelineRes, telRes] = await Promise.all([
       fetch(`${base}/api/funnel`, { headers, redirect: 'manual' }),
       fetch(`${base}/api/telemetry`, { headers, redirect: 'manual' }),
     ])
-    const apps = funnelRes.ok ? (((await funnelRes.json()) as FunnelJson).applications ?? []) : []
+    const apps = pipelineRes.ok ? (((await pipelineRes.json()) as PipelineJson).applications ?? []) : []
     const tel = telRes.ok ? ((await telRes.json()) as TelemetryJson).local : undefined
     // events:[] → heroStats returns only the two count segments; the last-activity
     // string is computed here from the telemetry ts (it stays out of heroStats so

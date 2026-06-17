@@ -389,20 +389,20 @@ describe('public_audit_trail.seq', () => {
     seedEvent({ id: 'fe-1', application_id: 'app-1', payload: JSON.stringify({ note: 'one' }) });
     seedEvent({ id: 'fe-2', application_id: 'app-1', payload: JSON.stringify({ note: 'two' }) });
 
-    expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('inserted'); // seq 1 (funnel)
+    expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('inserted'); // seq 1 (pipeline)
     await handleRecordProgress(
       progressContent({ subagent_name: 'research-company', stage: 'start', detail: 'digging in' }),
       FAKE_SESSION,
       inDb,
     ); // seq 2 (subagent_progress)
-    expect(await mirrorFunnelEvent(db, 'fe-2')).toBe('inserted'); // seq 3 (funnel)
+    expect(await mirrorFunnelEvent(db, 'fe-2')).toBe('inserted'); // seq 3 (pipeline)
 
     const rows = db.prepare('SELECT seq, category FROM public_audit_trail ORDER BY seq ASC').all() as Array<{
       seq: number;
       category: string;
     }>;
     expect(rows.map((r) => r.seq)).toEqual([1, 2, 3]);
-    expect(rows.map((r) => r.category)).toEqual(['funnel', 'subagent_progress', 'funnel']);
+    expect(rows.map((r) => r.category)).toEqual(['pipeline', 'subagent_progress', 'pipeline']);
   });
 
   it('re-mirrored rows after resanitize sort after surviving rows (fresh MAX+1 seq)', async () => {
@@ -453,7 +453,7 @@ describe('migration 123 backfill', () => {
         summary   TEXT NOT NULL
       );
     `);
-    const ins = raw.prepare("INSERT INTO public_audit_trail (id, ts, category, summary) VALUES (?, ?, 'funnel', ?)");
+    const ins = raw.prepare("INSERT INTO public_audit_trail (id, ts, category, summary) VALUES (?, ?, 'pipeline', ?)");
     ins.run('c', '2026-01-03T00:00:00Z', 'c');
     ins.run('a', '2026-01-01T00:00:00Z', 'a');
     ins.run('b', '2026-01-02T00:00:00Z', 'b');

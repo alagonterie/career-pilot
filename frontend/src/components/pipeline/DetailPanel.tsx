@@ -5,7 +5,7 @@ import * as React from 'react'
 import { AgentMark } from '~/components/AgentMark'
 import { InfoTip } from '~/components/InfoTip'
 import { useDialog } from '~/lib/use-dialog'
-import type { FunnelApplication } from '~/lib/use-funnel'
+import type { PipelineApplication } from '~/lib/use-pipeline'
 import { kitDate, roundLabel } from '~/lib/use-kit'
 
 function Fact({ label, value }: { label: string; value: string }) {
@@ -26,7 +26,7 @@ function Fact({ label, value }: { label: string; value: string }) {
  * (PORTAL §8.5): labeled, focus-trapped, Escape + backdrop close, focus
  * restored to the trigger card on close, the rest of the page held inert.
  */
-export function DetailPanel({ app, onClose }: { app: FunnelApplication | null; onClose: () => void }) {
+export function DetailPanel({ app, onClose }: { app: PipelineApplication | null; onClose: () => void }) {
   const overlayRef = React.useRef<HTMLDivElement>(null)
   const panelRef = React.useRef<HTMLDivElement>(null)
 

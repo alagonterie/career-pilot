@@ -88,8 +88,6 @@ export const AI_ACTORS: AiActor[] = [
       'Keeps the public pipeline honest — writes the published notes and curates which applications are safe to reveal.',
     access: 'curates the public view',
     kind: 'subagent',
-    // Historical audit rows carry the pre-rename agent_name; resolve it here.
-    aliases: ['funnel-curator'],
   },
   {
     name: 'win-confidence-scorer',

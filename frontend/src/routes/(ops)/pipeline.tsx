@@ -1,23 +1,24 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import * as React from 'react'
 
-import { DetailPanel } from '~/components/funnel/DetailPanel'
-import { FunnelBoard, FunnelBoardSkeleton, FunnelOffboardSkeleton } from '~/components/funnel/FunnelBoard'
-import { StatTiles } from '~/components/funnel/StatTiles'
+import { DetailPanel } from '~/components/pipeline/DetailPanel'
+import { PipelineBoard, PipelineBoardSkeleton, PipelineOffboardSkeleton } from '~/components/pipeline/PipelineBoard'
+import { StatTiles } from '~/components/pipeline/StatTiles'
 import { StateNote } from '~/components/states'
 import { seo } from '~/lib/seo'
 import { PERSON_NAME } from '~/lib/site'
-import { useFunnel, type FunnelApplication } from '~/lib/use-funnel'
+import { usePipeline, type PipelineApplication } from '~/lib/use-pipeline'
 
-// The funnel race detail (PORTAL §5.4). Visitor-facing name = "Job Pipeline" /
+// The pipeline race detail (PORTAL §5.4). Visitor-facing name = "Job Pipeline" /
 // the `/pipeline` route (§24.59 — supersedes "Momentum"; `/momentum` redirects
-// here); everything internal stays "funnel" (the `Funnel*` components,
-// `useFunnel`, `/api/funnel`). `(ops)` is a pathless group → the URL is
-// `/pipeline`.
+// here). §24.77 D3 retired the "funnel" naming everywhere visitor-facing (the
+// components are `Pipeline*`, the hook `usePipeline`); only the internal
+// `/api/funnel` fetch URL keeps its name. `(ops)` is a pathless group → the URL
+// is `/pipeline`.
 export const Route = createFileRoute('/(ops)/pipeline')({
   component: PipelinePage,
   // Drawer deep-link (§24.57): `?app=«application_ref»` opens that card's
-  // DetailPanel once the funnel loads. Anything non-string is dropped.
+  // DetailPanel once the pipeline loads. Anything non-string is dropped.
   validateSearch: (search: Record<string, unknown>): { app?: string } => ({
     app: typeof search.app === 'string' && search.app.length > 0 ? search.app : undefined,
   }),
@@ -32,7 +33,7 @@ export const Route = createFileRoute('/(ops)/pipeline')({
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
 
 function PipelinePage() {
-  const { data, status } = useFunnel(API_BASE)
+  const { data, status } = usePipeline(API_BASE)
   const apps = data?.applications ?? []
   const { app: appParam } = Route.useSearch()
   const navigate = Route.useNavigate()
@@ -43,7 +44,7 @@ function PipelinePage() {
   // deep links work with no extra wiring; back/forward just work — and there is
   // no local-state/param race to guard, which is what the §24.57 consume-once
   // hack existed for).
-  const selected: FunnelApplication | null = React.useMemo(
+  const selected: PipelineApplication | null = React.useMemo(
     () => (appParam ? (apps.find((a) => a.application_ref === appParam) ?? null) : null),
     [apps, appParam],
   )
@@ -53,7 +54,7 @@ function PipelinePage() {
   // `resetScroll: false` on every drawer navigation — the router scrolls to top
   // by default, which threw the visitor back to the top of the board on close.
   const pushedRef = React.useRef(false)
-  const select = (app: FunnelApplication): void => {
+  const select = (app: PipelineApplication): void => {
     pushedRef.current = true
     void navigate({ search: { app: app.application_ref }, resetScroll: false })
   }
@@ -87,8 +88,8 @@ function PipelinePage() {
             as the board lanes — so flipping states never collapses the page. */}
         {status === 'loading' ? (
           <>
-            <FunnelBoardSkeleton />
-            <FunnelOffboardSkeleton />
+            <PipelineBoardSkeleton />
+            <PipelineOffboardSkeleton />
           </>
         ) : status === 'error' ? (
           <div className="flex min-h-[16rem] items-center justify-center">
@@ -103,7 +104,7 @@ function PipelinePage() {
             </StateNote>
           </div>
         ) : (
-          <FunnelBoard apps={apps} onSelect={select} />
+          <PipelineBoard apps={apps} onSelect={select} />
         )}
 
         <footer className="border-t border-border pt-6 text-[11px] leading-relaxed text-muted-foreground">

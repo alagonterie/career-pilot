@@ -5,7 +5,7 @@ import { cn } from '~/lib/utils'
 /**
  * The shared skeleton primitive (§24.36 / Sub-milestone 36.1). A pulsing,
  * content-shaped placeholder for async surfaces whose layout is predictable
- * (funnel cards, ops panels, the stat tiles). Streams (the trace stream, the
+ * (pipeline cards, ops panels, the stat tiles). Streams (the trace stream, the
  * simulator terminal) deliberately use a "connecting…" affordance instead — a
  * skeleton can't predict an indeterminate stream's shape (the modern split).
  *

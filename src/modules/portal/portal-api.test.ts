@@ -84,7 +84,7 @@ function seedAudit(seq: number, summary: string): void {
   getDb()
     .prepare(
       `INSERT INTO public_audit_trail (id, seq, ts, category, application_ref, summary)
-       VALUES (@id, @seq, @ts, 'funnel', 'fintech-a', @summary)`,
+       VALUES (@id, @seq, @ts, 'pipeline', 'fintech-a', @summary)`,
     )
     .run({ id: `pat-${seq}`, seq, ts: `2026-05-2${seq}T00:00:00Z`, summary });
 }

@@ -17,7 +17,7 @@ const DEFAULT_POLL_MS = 4000
  * the effect fetches + re-polls. A transient blip keeps the last-good data
  * rather than flashing an error — only the cold first failure shows `'error'`.
  *
- * The shared polling primitive behind `useFunnel` (§24.27) and `useArchitecture`
+ * The shared polling primitive behind `usePipeline` (§24.27) and `useArchitecture`
  * (§24.28); a `/live` compact panel (7.3) reuses it too.
  */
 export function usePolledJson<T>(url: string, pollMs = DEFAULT_POLL_MS): PolledJson<T> {

@@ -1,7 +1,7 @@
 import { Skeleton } from '~/components/ui/skeleton'
-import type { FunnelApplication } from '~/lib/use-funnel'
+import type { PipelineApplication } from '~/lib/use-pipeline'
 
-// The displayed pipeline, left → right (mirrors the 7.1 FunnelBoard columns).
+// The displayed pipeline, left → right (mirrors the 7.1 PipelineBoard columns).
 const STAGES: { stage: string; label: string }[] = [
   { stage: 'applied', label: 'Applied' },
   { stage: 'screening', label: 'Screening' },
@@ -11,8 +11,8 @@ const STAGES: { stage: string; label: string }[] = [
 ]
 
 /**
- * The compact one-row funnel for /live (PORTAL §5.2) — the designed reuse of the
- * 7.1 funnel data flagged in §24.27. Stage counts as a strip; a public OFFER is
+ * The compact one-row pipeline for /live (PORTAL §5.2) — the designed reuse of the
+ * 7.1 pipeline data flagged in §24.27. Stage counts as a strip; a public OFFER is
  * revealed by name with the ◆ marker (the reveal tier), everything else stays a
  * count. Pure presentation of the already-polled `/api/funnel` rows.
  *
@@ -21,7 +21,7 @@ const STAGES: { stage: string; label: string }[] = [
  * is in flight — the caller can render it from the very first paint instead of
  * popping it into existence once data arrives.
  */
-export function FunnelCompact({ apps, loading = false }: { apps: FunnelApplication[]; loading?: boolean }) {
+export function PipelineCompact({ apps, loading = false }: { apps: PipelineApplication[]; loading?: boolean }) {
   const counts: Record<string, number> = {}
   for (const a of apps) counts[a.stage] = (counts[a.stage] ?? 0) + 1
   const publicOffers = apps.filter((a) => a.stage === 'offer' && a.public_state === 'public')
