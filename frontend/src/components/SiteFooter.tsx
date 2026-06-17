@@ -15,6 +15,18 @@ export interface FooterSocial {
 }
 
 /**
+ * The "Built with" credit line (PORTAL §8.2 / STRATEGY §24.103): the headline
+ * stack, each name a link a recruiter can follow. Static (no live data) — order
+ * is the credit order. Claude points at the product home (recruiter-facing); a
+ * one-line `href` swap retargets it (e.g. the Agent SDK docs) if preferred.
+ */
+export const FOOTER_CREDITS: { label: string; href: string }[] = [
+  { label: 'NanoClaw', href: 'https://github.com/nanocoai/nanoclaw' },
+  { label: 'Claude', href: 'https://claude.com' },
+  { label: 'TanStack Start', href: 'https://tanstack.com/start' },
+]
+
+/**
  * Pure: the candidate's identity → the ordered social links the footer renders,
  * one per non-null field (omit-when-null — the identity SSR principle; a fork with
  * no X account simply shows no X link). Email is deliberately excluded — `/contact`
@@ -55,7 +67,22 @@ export function SiteFooter({ identity, register }: { identity: Identity; registe
     >
       <div className="flex flex-col gap-1">
         <span className="font-mono text-sm font-semibold text-foreground">{PERSON_NAME}</span>
-        <span>Built with NanoClaw · Claude · TanStack Start</span>
+        <span>
+          {'Built with '}
+          {FOOTER_CREDITS.flatMap((c, i) => [
+            ...(i > 0 ? [' · '] : []),
+            <a
+              key={c.label}
+              href={c.href}
+              target="_blank"
+              rel="noreferrer"
+              data-testid={`footer-credit-${c.label.split(' ')[0].toLowerCase()}`}
+              className="transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {c.label}
+            </a>,
+          ])}
+        </span>
       </div>
 
       <nav aria-label="Footer" className="flex flex-wrap items-center gap-x-3 gap-y-2">
