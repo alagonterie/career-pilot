@@ -120,6 +120,37 @@ describe('mirrorFunnelEvent', () => {
     expect(rows[0].summary).not.toContain('$220k');
   });
 
+  it('mirrors the agent summary from a status-change payload, not the raw JSON blob (§24.89)', async () => {
+    seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a' });
+    seedEvent({
+      id: 'fe-1',
+      application_id: 'app-1',
+      kind: 'status_change',
+      from_status: 'APPLIED',
+      to_status: 'REJECTED',
+      // The structured payload the agent writes for a close signal — the human
+      // one-liner lives in `summary`, with machine fields beside it.
+      payload: JSON.stringify({
+        summary:
+          'Rejection email received from Acme Corp — applied 2026-06-12, rejected 2026-06-17 (5 days, early screen cut)',
+        source: 'gmail_signal',
+        confidence: 95,
+      }),
+    });
+
+    await mirrorFunnelEvent(db, 'fe-1');
+
+    const rows = readAuditRows();
+    expect(rows).toHaveLength(1);
+    // The readable sentence is mirrored (company obfuscated) …
+    expect(rows[0].summary).toContain('Rejection email received');
+    expect(rows[0].summary).toContain('[REDACTED:fintech-a]');
+    expect(rows[0].summary).toContain('early screen cut');
+    // … and the machine prefix + raw JSON never reach the public trace.
+    expect(rows[0].summary).not.toContain('Acme Corp');
+    expect(rows[0].summary).not.toMatch(/status_change|"source"|"confidence"|[{}]/);
+  });
+
   it('writes the real company name when public_state=public', async () => {
     seedApp({
       id: 'app-1',
