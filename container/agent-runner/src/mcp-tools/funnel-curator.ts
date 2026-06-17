@@ -426,6 +426,25 @@ export const queryGmailDelta: McpToolDefinition = {
         newHistoryId = profile.historyId ?? null;
       }
 
+      // Deterministic noise-suppression (§24.102): drop message ids already
+      // classified on a prior run (present in email_events) BEFORE fetching their
+      // content, so a full-sync doesn't re-fetch + re-hand the same already-noise
+      // emails to the LLM every run. The host gates this on
+      // funnel_curator_skip_classified_messages. Best-effort: a failed filter
+      // call leaves the list untouched (never drops genuinely-new mail).
+      let skippedClassified = 0;
+      if (messageIds.length > 0) {
+        const filterRes = await sendAction<{ seen: string[] }>('career_pilot.filter_seen_email_events', {
+          gmail_msg_ids: messageIds,
+        });
+        if (filterRes.ok && Array.isArray(filterRes.data.seen) && filterRes.data.seen.length > 0) {
+          const seen = new Set(filterRes.data.seen);
+          const before = messageIds.length;
+          messageIds = messageIds.filter((id) => !seen.has(id));
+          skippedClassified = before - messageIds.length;
+        }
+      }
+
       // Fetch full content for each new message ID. Sequential to keep the
       // request budget predictable; 200-msg cap means at most ~30s worst
       // case at typical Gmail latency. Could be parallelized later.
@@ -443,11 +462,12 @@ export const queryGmailDelta: McpToolDefinition = {
       }
 
       return ok(
-        `query_gmail_delta: ${messages.length} message${messages.length === 1 ? '' : 's'}${fullSyncPerformed ? ' (full sync)' : ''}.`,
+        `query_gmail_delta: ${messages.length} message${messages.length === 1 ? '' : 's'}${fullSyncPerformed ? ' (full sync)' : ''}${skippedClassified > 0 ? `, ${skippedClassified} already-classified skipped` : ''}.`,
         {
           messages,
           history_id: newHistoryId,
           full_sync_performed: fullSyncPerformed,
+          skipped_classified: skippedClassified,
           fixture_mode: false,
         },
       );

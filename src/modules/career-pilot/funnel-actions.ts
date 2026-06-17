@@ -33,6 +33,7 @@ import type Database from 'better-sqlite3';
 
 import { getAgentGroup } from '../../db/agent-groups.js';
 import { getDb } from '../../db/connection.js';
+import { getConfig } from '../../get-config.js';
 import { applyFunnelFromEmailEvents } from './funnel-apply.js';
 import { getActiveKitUrlsByApplication } from './interview-kit-store.js';
 import { reactToStatusTransitions } from './interview-kit-trigger.js';
@@ -265,6 +266,50 @@ export async function handleGetCalendarSyncState(
     });
   } catch (err) {
     log.error('handleGetCalendarSyncState failed', { err });
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
+// ── 2e. handleFilterSeenEmailEvents ────────────────────────────────────────
+//
+// Deterministic noise-suppression for pipeline-scribe (§24.102). Given the
+// candidate gmail_msg_ids the container's query_gmail_delta is about to fetch
+// + return, reports which are ALREADY classified (present in email_events) so
+// the container can drop them BEFORE fetching content — they never re-enter the
+// LLM context. On a full-sync (frequent when the historyId invalidates) this is
+// what stops the same already-noise emails being re-processed every run.
+//
+// Gated by `funnel_curator_skip_classified_messages` (default true); disabled →
+// `seen: []` (no filtering, a full re-classification pass). Empty input →
+// `seen: []`. The container falls back to no-filtering if this errors, so a bad
+// response never drops genuinely-new mail.
+
+export async function handleFilterSeenEmailEvents(
+  content: Record<string, unknown>,
+  session: Session,
+  inDb: Database.Database,
+): Promise<void> {
+  const requestId = reqId(content);
+  if (rejectIfSandbox(inDb, requestId, session, 'filter_seen_email_events')) return;
+  try {
+    const rawIds = payload(content).gmail_msg_ids;
+    const ids = Array.isArray(rawIds) ? rawIds.filter((x): x is string => typeof x === 'string') : [];
+    const enabled = getConfig<boolean>(getDb(), 'funnel_curator_skip_classified_messages');
+    if (!enabled || ids.length === 0) {
+      writeResponse(inDb, requestId, { ok: true, data: { seen: [], enabled } });
+      return;
+    }
+    // Bounded IN-list (the caller's id list is capped at 200 by the full-sync cap).
+    const placeholders = ids.map(() => '?').join(',');
+    const rows = getDb()
+      .prepare(`SELECT gmail_msg_id FROM email_events WHERE gmail_msg_id IN (${placeholders})`)
+      .all(...ids) as Array<{ gmail_msg_id: string }>;
+    writeResponse(inDb, requestId, { ok: true, data: { seen: rows.map((r) => r.gmail_msg_id), enabled } });
+  } catch (err) {
+    log.error('handleFilterSeenEmailEvents failed', { err });
     writeResponse(inDb, requestId, {
       ok: false,
       error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },

@@ -121,6 +121,12 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
   recruiter_sim_daily_budget_usd: { type: 'number', group: 'sim', label: 'Sim daily budget (USD)', min: 0, max: 100 },
   // ── dev-loop pacing (crons) ──
   funnel_curator_cron: { type: 'cron', group: 'pacing', label: 'Funnel curator cron', note: CRON_NOTE },
+  funnel_curator_skip_classified_messages: {
+    type: 'boolean',
+    group: 'pacing',
+    label: 'Curator skips classified mail',
+    note: 'On (default): query_gmail_delta drops emails already classified on a prior run (present in email_events) before sending them to pipeline-scribe, so a full-sync does not re-process old noise every run. Off: a one-time full re-classification pass.',
+  },
   close_detection_cron: { type: 'cron', group: 'pacing', label: 'Close detection cron', note: CRON_NOTE },
   killer_match_cron: { type: 'cron', group: 'pacing', label: 'Killer-match cron', note: CRON_NOTE },
   daily_briefing_time: { type: 'cron', group: 'pacing', label: 'Daily briefing cron', note: CRON_NOTE },
