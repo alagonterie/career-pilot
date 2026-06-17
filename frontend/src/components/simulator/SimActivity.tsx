@@ -33,6 +33,11 @@ export function SimActivity({
 }) {
   const running = status === 'running' || status === 'starting'
   const done = status === 'done'
+  // Cold-start (or the rare §24.92 queued wait): the run is "running" but the
+  // sandbox container is still booting, so no trace has arrived yet. The status
+  // claim is "starting" (not "running" — nothing is running yet); it flips to
+  // "running" the moment the first dispatch lands (§24.93).
+  const warming = running && trace.length === 0
 
   const [stuck, setStuck] = React.useState(true)
   const scrollRef = React.useRef<HTMLOListElement>(null)
@@ -85,7 +90,7 @@ export function SimActivity({
               running ? 'bg-primary cp-live-pulse' : done ? 'bg-primary' : 'bg-muted-foreground',
             )}
           />
-          {running ? 'running' : done ? 'complete' : 'idle'}
+          {warming ? 'starting' : running ? 'running' : done ? 'complete' : 'idle'}
           {running && startedAt != null ? <ElapsedTicker startedAt={startedAt} /> : null}
         </span>
       </header>
@@ -93,7 +98,9 @@ export function SimActivity({
       <div className="relative min-h-0 flex-1">
         {trace.length === 0 ? (
           <p data-testid="sim-activity-empty" className="px-4 py-6 font-mono text-xs text-muted-foreground">
-            {running ? 'starting sandbox session…' : 'The run trace will appear here.'}
+            {running
+              ? 'Spinning up a fresh sandbox — the first step appears shortly…'
+              : 'The run trace will appear here.'}
           </p>
         ) : (
           <ol
