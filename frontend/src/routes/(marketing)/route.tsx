@@ -6,7 +6,7 @@ import { SiteHeader } from '~/components/SiteHeader'
 import { getIdentity } from '~/lib/profile-loader'
 
 // The marketing-register shared layout (PORTAL §3.5 rule 1 / §8.4 / §8.2). Wraps
-// `/`, `/work`, `/about`, `/contact`, and `/simulator` with the shared header, the
+// `/`, `/experience`, `/about`, `/contact`, and `/watch` with the shared header, the
 // connective rail (self-renders nothing on the unmapped surfaces), and the sitewide
 // footer. The footer's socials come from the SSR'd identity, loaded here because the
 // footer lives in the layout, not a page. The `(marketing)` group adds no URL segment.

@@ -22,10 +22,10 @@ import { useObservability } from '~/lib/use-observability'
 import { deriveTelemetryView, useTelemetry } from '~/lib/use-telemetry'
 
 // Third page of the ops register (PORTAL §5.2). `(ops)` is pathless → the URL is
-// still `/live`. The aggregate dashboard: it composes the 7.1 pipeline + 7.2
-// architecture pieces + the SSE trace + the telemetry endpoint — no new backend
-// (§24.29). The `(ops)` shared layout stays deferred (a follow-up now that three
-// ops pages exist).
+// `/dashboard` (§24.77 D1 renamed it from `/live`; `/live` redirects here). The
+// aggregate dashboard: it composes the 7.1 pipeline + 7.2 architecture pieces +
+// the SSE trace + the telemetry endpoint — no new backend (§24.29). The `(ops)`
+// shared layout stays deferred (a follow-up now that three ops pages exist).
 export const Route = createFileRoute('/(ops)/dashboard')({
   component: LivePage,
   // §24.60: `?app=«application_ref»` filters the trace stream to one
@@ -96,7 +96,7 @@ function LivePage() {
           </div>
           <div className="flex flex-col gap-4">
             <Panel
-              title="Job Pipeline"
+              title="My Job Pipeline"
               // min-h reserves the loaded footprint so loading→ok doesn't shift
               // the rail (§24.36 Tier-2; the value is the measured loaded height).
               className="min-h-[152px]"

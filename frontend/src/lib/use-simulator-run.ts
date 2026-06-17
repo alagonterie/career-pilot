@@ -142,9 +142,7 @@ export function useSimulatorRun(): SimRunState {
             .then((d) => (d as { message?: string }).message)
             .catch(() => null)
           setStatus('error')
-          setErrorMessage(
-            msg ?? "You've reached today's simulator limit — try again tomorrow, or use the contact form.",
-          )
+          setErrorMessage(msg ?? "You've reached today's run limit — try again tomorrow, or use the contact form.")
           return
         }
         if (!res.ok) {
@@ -155,14 +153,14 @@ export function useSimulatorRun(): SimRunState {
         const data = (await res.json()) as { simulation_id?: string }
         if (!data.simulation_id) {
           setStatus('error')
-          setErrorMessage('The simulator did not return a run id.')
+          setErrorMessage('The run did not return an id.')
           return
         }
         id = data.simulation_id
       } catch {
         if (ac.signal.aborted) return
         setStatus('error')
-        setErrorMessage('Could not reach the simulator.')
+        setErrorMessage('Could not reach the agent.')
         return
       }
 

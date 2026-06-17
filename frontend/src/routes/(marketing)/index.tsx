@@ -200,9 +200,9 @@ function Home() {
       />
 
       {/* Viewport 4 — the "watch me apply" pitch (PORTAL §5.1): a single high-intent
-          CTA into the grippiest spoke. No form here — the form lives on /simulator. */}
-      <section aria-labelledby="home-sim-heading" className="mt-20 w-full text-center">
-        <h2 id="home-sim-heading" className="text-2xl font-bold tracking-tight">
+          CTA into the grippiest spoke. No form here — the form lives on /watch. */}
+      <section aria-labelledby="home-watch-heading" className="mt-20 w-full text-center">
+        <h2 id="home-watch-heading" className="text-2xl font-bold tracking-tight">
           Watch me apply to your role
         </h2>
         <p className="mx-auto mt-3 max-w-xl text-balance text-sm leading-relaxed text-muted-foreground">

@@ -110,7 +110,7 @@ export const NODES: ArchNode[] = [
     region: 'triggers',
     probe: 'structural',
     description:
-      'The public simulator — a visitor runs a sandboxed, isolated agent session from the portal and watches it stream.',
+      'The public "Watch it work" surface — a visitor runs a sandboxed, isolated agent session from the portal and watches it stream.',
     source: 'src/channels/portal/adapter.ts',
     x: 207,
     y: 122,

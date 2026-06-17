@@ -15,9 +15,9 @@ interface RailCfg {
 }
 
 // Per-surface "what's next" (PORTAL §8.4). The convert path is the constant; the
-// /simulator-pointing pivots landed in 8.2 with that route. /contact (the sink),
-// /simulator (its own results CTAs are the next step), + any unmapped route
-// render no rail.
+// /watch-pointing pivots landed in 8.2 with that route (§24.77: /simulator→/watch).
+// /contact (the sink), /watch (its own results CTAs are the next step), + any
+// unmapped route render no rail.
 const RAIL: Record<Surface, RailCfg> = {
   '/': {
     register: 'marketing',

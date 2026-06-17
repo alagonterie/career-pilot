@@ -122,7 +122,7 @@ function ShareResults() {
             </p>
           </header>
 
-          {/* Gift-first results, shared with the live /simulator done-state (parity). */}
+          {/* Gift-first results, shared with the live /watch done-state (parity). */}
           <div className="mt-8">
             <SimResult
               runId={state.row.id}

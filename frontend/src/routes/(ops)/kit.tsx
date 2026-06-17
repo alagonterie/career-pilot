@@ -57,7 +57,7 @@ function KitPage() {
         data-testid="kit-back-link"
         className="self-start font-mono text-xs text-accent-cool hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        ← Job Pipeline
+        ← My Job Pipeline
       </Link>
 
       {status === 'loading' ? (
