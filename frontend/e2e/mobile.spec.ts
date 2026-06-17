@@ -11,6 +11,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 const ROUTES = [
   '/',
+  '/about',
   '/work',
   '/contact',
   '/simulator',
@@ -247,7 +248,12 @@ test('mobile home matches visual baseline', { tag: '@visual' }, async ({ page })
   await page.goto('/')
   await expect(page.getByTestId('live-ticker')).toContainText('research-company')
   await expect(page.getByText('Wayne Enterprises')).toBeVisible()
-  await expect(page).toHaveScreenshot('mobile-home.png', { animations: 'disabled', fullPage: true })
+  await expect(page).toHaveScreenshot('mobile-home.png', {
+    animations: 'disabled',
+    fullPage: true,
+    // Wall-clock-derived hero stat line (drifts daily) — masked; see the desktop note.
+    mask: [page.getByTestId('hero-stats')],
+  })
 })
 
 test('mobile nav menu (open) matches visual baseline', { tag: '@visual' }, async ({ page }) => {
