@@ -53,7 +53,7 @@ export function heroStats({ apps, events, actionsIn24h, now = Date.now() }: Hero
   const out: string[] = []
 
   const active = activeApplicationCount(apps)
-  if (active > 0) out.push(`${active} active application${active === 1 ? '' : 's'}`)
+  if (active > 0) out.push(`${active} active job application${active === 1 ? '' : 's'}`)
 
   if (actionsIn24h != null && actionsIn24h > 0) {
     out.push(`${actionsIn24h} agent action${actionsIn24h === 1 ? '' : 's'} in 24h`)

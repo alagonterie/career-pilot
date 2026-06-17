@@ -23,6 +23,10 @@ export interface TelemetryLocal {
   simulator_runs_total: number;
   activity_events_total: number;
   activity_events_24h: number;
+  /** ISO ts of the most recent NON-turn activity event — the hero "last activity"
+   *  source (matches the home ticker, which excludes `turn` cost-summary rows);
+   *  null when there's no activity. Lets `/` SSR a complete, stable stat line. */
+  last_activity_at: string | null;
   // Per-turn LLM telemetry (§24.34), aggregated. cost_cents is an SDK estimate
   // (labeled as such in the UI). The derived lanes (cache rate, p50/p95, top
   // model) come from the turn rows' details_json (duration_api_ms + model_usage).
@@ -72,6 +76,11 @@ function computeLocal(): TelemetryLocal {
   const evTotal = db.prepare('SELECT COUNT(*) AS n FROM public_audit_trail').get() as { n: number };
   const cutoff = new Date(Date.now() - 86_400_000).toISOString();
   const ev24 = db.prepare('SELECT COUNT(*) AS n FROM public_audit_trail WHERE ts >= ?').get(cutoff) as { n: number };
+  // Latest non-turn event ts (the home ticker excludes `turn` rows, so the hero
+  // "last activity" must too — else the SSR seed and the live ticker disagree).
+  const lastEv = db.prepare(`SELECT MAX(ts) AS ts FROM public_audit_trail WHERE category != 'turn'`).get() as {
+    ts: string | null;
+  };
   const sim24 = db
     .prepare('SELECT COALESCE(SUM(total_cost_cents), 0) AS cents FROM simulator_runs WHERE ts >= ?')
     .get(cutoff) as { cents: number };
@@ -134,6 +143,7 @@ function computeLocal(): TelemetryLocal {
     simulator_runs_total: sim.n,
     activity_events_total: evTotal.n,
     activity_events_24h: ev24.n,
+    last_activity_at: lastEv.ts ?? null,
     turns_total: turnRows.length,
     turns_24h: turns24,
     turn_cost_cents_total: costTotal,
