@@ -31,6 +31,7 @@ export {
   getSessionsByAgentGroup,
   getActiveSessions,
   getRunningSessions,
+  resetAllContainerStatusesToStopped,
   updateSession,
   deleteSession,
   createPendingQuestion,
