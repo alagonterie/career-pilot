@@ -47,7 +47,7 @@ const RAIL: Record<Surface, RailCfg> = {
     register: 'ops',
     items: [
       { label: 'Talk to me', kind: 'convert', to: '/contact' },
-      { label: 'Watch it live', kind: 'deepen', to: '/dashboard' },
+      { label: 'See it run', kind: 'deepen', to: '/dashboard' },
     ],
   },
   '/experience': {
