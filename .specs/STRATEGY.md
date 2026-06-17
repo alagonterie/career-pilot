@@ -5991,6 +5991,28 @@ Heuristics stay conservative — they reject only what is unambiguously not a re
 
 **DoD.** A tailored emit with `projectsFirst:true` renders Projects above Experience in the PDF; without it (and the master) renders Experience-first; the flag survives `validateTailoredResume`. host `tsc` + `resume-pdf.render` (order both ways) + `profile` (parses the flag) + `tailored-resume` (flag survives validation) unit + prettier green. 8b applied on the box; 8c/8d are no-ops with rationale recorded. **Spec deltas:** this §24.106 + the sandbox persona résumé-block line (runtime artifact). Memory: [[todo_backlog]].
 
+#### 24.107 Rejection-as-fuel — wire the learnings loop (capture + fuel), then feature it (item #9)
+
+**Verify finding (item #9b).** The `/about` story omits two things the owner flagged. **Coaching (9a) works** — the persona actively coaches (surfaces rejection patterns, prompts reflection warmly, suggests prep focus). **Rejection-as-fuel (9b) does NOT work end-to-end.** Three stages, only one wired:
+
+- *Prompt* (works) — the persona has a "Reflection prompting" section.
+- *Capture* (NOT wired) — the persona itself states "the `learnings` table is ready but the write tool isn't wired yet"; the `add_learning` tool is a Phase-2 TODO. No `INSERT INTO learnings` exists anywhere.
+- *Fuel* (NOT wired) — nothing reads `FROM learnings` to feed future `research-company`/`tailor-resume`. The migration-103 comment names the intent; no code realizes it.
+- *Publish* (works, but dead) — `public-funnel-view.ts` surfaces `reflection_published=1` learnings to the `/pipeline` detail, but since nothing writes a learning, nothing ever publishes.
+
+So the owner's "verify before featuring" gate was correct: featuring it today would claim something untrue. Owner chose **build the loop, then feature it.**
+
+**Why this is real and not a gimmick.** A job search is a learning problem: the same candidate applies to many similar roles, and without memory the agent repeats the same misframes. The fuel loop gives the agent persistent, cross-session memory so tailoring/research/prep improve with each outcome. **Honesty guardrails (load-bearing):** (1) the fuel must *demonstrably reach and shape* a later run — a stored row that never re-enters a brief is theater; (2) describe it as *retrieval-augmented memory*, never "the AI retrains itself" — overclaiming is the gimmick; (3) thin at low volume but compounds, and even one concrete lesson is real fuel.
+
+**Build.**
+- **Capture** — new host module `learnings-actions.ts` (mirrors `interview-kit-actions.ts`): `handlePersistLearning` validates `{ application_id?, kind, role_category, reflections (JSON or text), publish? }`, INSERTs a `learnings` row (`reflection_published` from `publish`), owner-only. Container MCP tool `persist_learning`.
+- **Fuel** — `handleReadLearnings({ role_category, limit? })` returns the candidate's prior reflections for that category (most-recent first). Container MCP tool `read_learnings`. The orchestrator calls it before dispatching `research-company`/`tailor-resume` for a NEW role and injects the result under a `## Prior learnings` heading in the subagent brief (the subagents already "recognize liberally" any heading-shaped context block; `tailor-resume`'s input contract gains an explicit "Prior learnings (optional)" line).
+- **Persona** — replace the "isn't wired yet" paragraph with the real two-tool flow (persist after a reflection; read+inject before a same-category research/tailor run; the `publish` opt-in).
+- **Publish** — already wired; `persist_learning`'s `publish` flag sets `reflection_published=1`.
+- **`/about`** — add coaching (it works) and the now-real fuel loop to "How it works", worded honestly (the agent *remembers and applies* past lessons; not self-training).
+
+**DoD.** A reflection persists to `learnings`; `read_learnings(category)` returns it; the sandbox group is FORBIDDEN from both; `publish:true` sets `reflection_published=1` and the learning surfaces on `/pipeline`; the persona instructs persist-then-fuel; `/about` features coaching + fuel honestly. host `tsc` + container `tsc` + new `learnings-actions` host tests (persist, read-by-category, sandbox-reject, publish flag) + FE `about` unit/e2e + prettier green. **Spec deltas:** this §24.107 + the persona + `tailor-resume` subagent (runtime artifacts) + `/about` copy. Memory: [[todo_backlog]], [[project_job_leads_heartbeat]].
+
 ---
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
