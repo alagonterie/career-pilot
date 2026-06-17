@@ -912,6 +912,42 @@ export function seedSessions(db: Database.Database): void {
   });
 }
 
+/**
+ * Seed only the candidate's contact/social IDENTITY columns (the candidate_profile
+ * single row), leaving `work_profile_json` NULL so the composed page stays null
+ * (the projection requires a name). `GET /api/profile` reads the identity columns
+ * independently of the composed blob, so a realistic identity is served for the
+ * identity-driven surfaces — the §8.2 footer's themed social icons, the `/contact`
+ * "reach me directly" block, the home email teaser (all omit-when-null).
+ *
+ * Note these render only when the frontend's SSR is pointed at this backend (the
+ * `.dev.vars` `BACKEND_API_BASE` local-verification path). The default Playwright
+ * preview leaves the SSR server-fns un-backed (only the *client* hooks read
+ * `VITE_API_BASE`), so the committed visual baselines render the empty-identity /
+ * placeholder state — same as the hero name + `/work`. Generic placeholder values
+ * only — the repo is public.
+ */
+export function seedCandidateProfileIdentity(db: Database.Database): void {
+  db.prepare(
+    `INSERT INTO candidate_profile (id, public_email, github_url, linkedin_url, x_url, website_url, updated_at)
+     VALUES (1, @email, @github, @linkedin, @x, @website, @updated_at)
+     ON CONFLICT(id) DO UPDATE SET
+       public_email = excluded.public_email,
+       github_url   = excluded.github_url,
+       linkedin_url = excluded.linkedin_url,
+       x_url        = excluded.x_url,
+       website_url  = excluded.website_url,
+       updated_at   = excluded.updated_at`,
+  ).run({
+    email: 'jane@example.com',
+    github: 'https://github.com/janedoe',
+    linkedin: 'https://www.linkedin.com/in/janedoe',
+    x: 'https://x.com/janedoe',
+    website: 'https://janedoe.example.com',
+    updated_at: '2026-01-01T00:00:00.000Z',
+  });
+}
+
 /** The fat dev seed — every dynamic surface populated. */
 export function seedRichFixture(db: Database.Database): void {
   seedMode(db, 'live_mode', 'true');

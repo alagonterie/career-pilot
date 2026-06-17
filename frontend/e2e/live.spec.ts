@@ -166,7 +166,7 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
 
     await nav.getByRole('link', { name: 'Jane Doe' }).click()
     await expect(page).toHaveURL('/')
-    await expect(page.getByTestId('live-indicator')).toBeVisible()
+    await expect(page.getByTestId('hero-status')).toBeVisible()
   })
 
   test('the landing hero CTA crosses into /live', async ({ page }) => {

@@ -230,7 +230,7 @@ function AboutPage() {
         </p>
       </section>
 
-      <section className="flex flex-col gap-3">
+      <section id="privacy" className="flex scroll-mt-24 flex-col gap-3">
         <Heading>What this site logs about your visit</Heading>
         <p className="text-balance leading-relaxed text-foreground/90">
           This site keeps a <strong className="font-semibold text-foreground">first-party</strong> log of visits — no

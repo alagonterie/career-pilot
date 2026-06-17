@@ -31,6 +31,7 @@ import { runMigrations } from '../src/db/migrations/index.js';
 import {
   insertAuditRow,
   nextAuditSeq,
+  seedCandidateProfileIdentity,
   seedDeterministicBacklog,
   seedDeterministicFunnel,
   seedDeterministicKits,
@@ -105,6 +106,7 @@ async function main(): Promise<void> {
   seedDeterministicSimulatorRun(db);
   seedSessions(db);
   seedRequestTelemetry(db);
+  seedCandidateProfileIdentity(db);
 
   const { port } = await startPortalApi({ host: '127.0.0.1', port: PORT });
   const control = startControlServer();

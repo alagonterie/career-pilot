@@ -49,7 +49,13 @@ async function openMenu(page: Page): Promise<void> {
   }).toPass({ timeout: 15_000 })
 }
 
+// Ten full-reload navigations in one test. Each SSR pass now runs the register
+// layout's identity loader, whose fetch to the (intentionally unreachable in the
+// harness) backend slow-fails on Windows-localhost at ~4s/nav — fast on Linux CI,
+// but locally 10 × ~4s overruns the 30s default. The work is real, not stuck, so
+// give the budget room rather than mask it.
 test('no route scrolls horizontally at a phone width', async ({ page }) => {
+  test.setTimeout(90_000)
   for (const path of ROUTES) {
     await gotoStable(page, path)
     const overflow = await page.evaluate(
