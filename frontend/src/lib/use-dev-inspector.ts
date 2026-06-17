@@ -89,7 +89,7 @@ export interface DevProfile {
   linkedin_url: string | null
   x_url: string | null
   website_url: string | null
-  why_this_exists: string | null
+  search_goals: string | null
   gmail_account: string | null
   updated_at: string
 }
@@ -308,7 +308,7 @@ export function fieldLabel(field: string): string {
     location_pref: 'Location preference',
     master_resume: 'Master resume',
     bio: 'Bio',
-    why_this_exists: 'Why this exists',
+    search_goals: 'My goals',
   }
   return map[field] ?? field
 }

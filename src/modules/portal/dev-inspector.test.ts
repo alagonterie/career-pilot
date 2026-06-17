@@ -64,7 +64,7 @@ function makeProfile(overrides: Partial<CandidateProfile> = {}): CandidateProfil
     linkedin_url: null,
     x_url: null,
     website_url: null,
-    why_this_exists: null,
+    search_goals: null,
     headshot_path: null,
     brand_color_hsl: null,
     gmail_account: null,
@@ -448,7 +448,7 @@ describe('computeOnboardingProgress', () => {
         location_pref: '{"remote":true,"cities":["NYC"]}',
         master_resume: 'resume text',
         bio: 'bio text',
-        why_this_exists: 'because',
+        search_goals: 'because',
       }),
     );
     expect(p.complete).toBe(true);

@@ -79,7 +79,7 @@ export function PersonaPanel({ persona }: PersonaPanelProps) {
         )}
 
         {profile?.bio ? <LongField label="Bio" value={profile.bio} /> : null}
-        {profile?.why_this_exists ? <LongField label="Why this exists" value={profile.why_this_exists} /> : null}
+        {profile?.search_goals ? <LongField label="My goals" value={profile.search_goals} /> : null}
         {profile?.master_resume ? <LongField label="Master resume" value={profile.master_resume} mono /> : null}
 
         <div className="flex flex-col gap-1">

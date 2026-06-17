@@ -138,7 +138,7 @@ describe('resetKnob / resetAllKnobs', () => {
 describe('pure view helpers', () => {
   it('fieldLabel maps onboarding keys to friendly labels', () => {
     expect(fieldLabel('full_name')).toBe('Full name')
-    expect(fieldLabel('why_this_exists')).toBe('Why this exists')
+    expect(fieldLabel('search_goals')).toBe('My goals')
     expect(fieldLabel('unknown_key')).toBe('unknown_key')
   })
 

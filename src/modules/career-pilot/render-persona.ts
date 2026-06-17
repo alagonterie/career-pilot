@@ -40,7 +40,7 @@ export interface CandidateProfile {
   linkedin_url: string | null;
   x_url: string | null;
   website_url: string | null;
-  why_this_exists: string | null; // excluded from agent context (portal-only)
+  search_goals: string | null; // the candidate's job-search goals (§24.101) — rendered into the owner persona's ## Goals
   headshot_path: string | null; // excluded (portal styling)
   brand_color_hsl: string | null; // excluded (portal styling)
   gmail_account: string | null; // Phase 2.3 (migration 108) — owner's Gmail address; OAuth refresh token lives in OneCLI vault
@@ -61,7 +61,7 @@ const ONBOARDING_SENTINEL = [
   '`value=<their answer>`. Then move on to the next field next turn.',
   '',
   'Onboarding order (one field per turn): full_name → target_roles → comp_floor →',
-  'master_resume (paste) → bio → why_this_exists',
+  'location_pref → master_resume (paste) → bio → search_goals',
   '',
   'Example first turn: "Hey — let\'s set you up. What\'s your full name?"',
   '',
@@ -119,6 +119,13 @@ export function renderPersona(
   const locationSection = renderLocationSection(locationPref);
   if (locationSection) {
     sections.push(locationSection);
+  }
+
+  // The candidate's job-search goals (§24.101) — agent-facing so the owner agent
+  // prioritizes toward them. Owner persona only; the public sandbox candidate
+  // (renderSandboxCandidate) omits it — private goals don't belong in the demo.
+  if (profile.search_goals) {
+    sections.push('## Goals', profile.search_goals.trim());
   }
 
   if (profile.comp_floor != null) {
