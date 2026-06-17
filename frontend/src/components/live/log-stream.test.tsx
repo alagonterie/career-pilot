@@ -27,7 +27,7 @@ vi.mock('@tanstack/react-router', () => ({
   ),
 }))
 
-import { LogStream } from './LogStream'
+import { LogStream, nextStuck } from './LogStream'
 
 function ev(p: Partial<AuditEvent> & { seq: number }): AuditEvent {
   return {
@@ -266,5 +266,28 @@ describe('LogStream', () => {
     expect(within(seal).getByTestId('info-tip-trigger')).toBeInTheDocument()
     // the turn row is the seal — NOT one of the action lines
     expect(screen.getAllByTestId('trace-line')).toHaveLength(1)
+  })
+})
+
+describe('nextStuck — the auto-follow unstick guard (B4 / §24.62 Δ)', () => {
+  const atBottom = { scrollHeight: 1000, scrollTop: 980, clientHeight: 20 } // distance 0
+  const scrolledUp = { scrollHeight: 1000, scrollTop: 500, clientHeight: 20 } // distance 480
+
+  it('keeps the current pin for the follow’s own echo scroll (inside the settle window)', () => {
+    // A backlog chunk grew the list, so this stale event reads "scrolled up" just
+    // after an auto-follow — it must NOT unstick the pin (the B4 bug).
+    expect(nextStuck({ prevStuck: true, msSinceAutoFollow: 10, ...scrolledUp })).toBe(true)
+  })
+
+  it('honors a genuine user scroll-up outside the settle window', () => {
+    expect(nextStuck({ prevStuck: true, msSinceAutoFollow: 500, ...scrolledUp })).toBe(false)
+  })
+
+  it('re-sticks when the user scrolls back to the bottom (outside the window)', () => {
+    expect(nextStuck({ prevStuck: false, msSinceAutoFollow: 500, ...atBottom })).toBe(true)
+  })
+
+  it('still pins at the bottom even inside the window (echo at bottom is a no-op)', () => {
+    expect(nextStuck({ prevStuck: true, msSinceAutoFollow: 10, ...atBottom })).toBe(true)
   })
 })
