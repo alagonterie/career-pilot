@@ -34,6 +34,7 @@ import { ensureMasterPdfLink, recordVisit, resolveLink } from '../../attribution
 import { getDb } from '../../db/connection.js';
 import { countRunningContainers } from '../../container-runtime.js';
 import { getActiveSessions, getRunningSessions } from '../../db/sessions.js';
+import { getLastSweepAtMs } from '../../host-sweep.js';
 import { getConfig } from '../../get-config.js';
 import { log } from '../../log.js';
 import { runHealthChecks } from '../career-pilot/health.js';
@@ -52,7 +53,7 @@ import {
   buildDevState,
   isDevEnv,
 } from './dev-inspector.js';
-import { emptyObservability, getObservability } from './observability.js';
+import { emptyObservability, getObservability, sandboxSpend24hUsd } from './observability.js';
 import { getTelemetry } from './portkey-analytics.js';
 import { getPublicProfile, type WorkProfile } from './profile.js';
 import { masterFooter, renderResumePdf, tailoredFooter } from './resume-pdf.js';
@@ -438,12 +439,27 @@ function handleArchitecture(res: http.ServerResponse, cors: Record<string, strin
 
   let capacityMax = 4;
   let memoryMbEach = 512;
+  // §24.80 probe inputs (host-tier config; FE folds them into node status).
+  let simulatorEnabled = true;
+  let sandboxBudgetUsd = 5;
+  let sweepStaleSec = 180;
   try {
-    capacityMax = getConfig<number>(getDb(), 'container_max_concurrent', 4);
-    memoryMbEach = getConfig<number>(getDb(), 'container_memory_mb', 512);
+    const db = getDb();
+    capacityMax = getConfig<number>(db, 'container_max_concurrent', 4);
+    memoryMbEach = getConfig<number>(db, 'container_memory_mb', 512);
+    simulatorEnabled = getConfig<boolean>(db, 'simulator_enabled', true);
+    sandboxBudgetUsd = getConfig<number>(db, 'sandbox_daily_global_budget_usd', 5);
+    sweepStaleSec = getConfig<number>(db, 'arch_sweep_stale_sec', 180);
   } catch {
     // defaults
   }
+
+  // §24.80 Web-sandbox probe: kill switch + 24 h sandbox spend vs the daily cap.
+  const sandboxSpendUsd = sandboxSpend24hUsd();
+  // §24.80 Cron-sweep probe: age of the last completed sweep tick; `fresh` keeps
+  // the (host-tier) staleness threshold backend-side, so the FE just renders.
+  const lastSweepAt = getLastSweepAtMs();
+  const sweepAgeSec = lastSweepAt === null ? null : Math.max(0, Math.floor((Date.now() - lastSweepAt) / 1000));
 
   json(
     res,
@@ -455,6 +471,15 @@ function handleArchitecture(res: http.ServerResponse, cors: Record<string, strin
         capacity_max: capacityMax,
         memory_mb_each: memoryMbEach,
         runtime: containerCount === null ? 'down' : 'up',
+      },
+      sandbox: {
+        enabled: simulatorEnabled,
+        spend_24h_usd: sandboxSpendUsd,
+        daily_budget_usd: sandboxBudgetUsd,
+      },
+      sweep: {
+        last_run_age_sec: sweepAgeSec,
+        fresh: sweepAgeSec !== null && sweepAgeSec <= sweepStaleSec,
       },
       backend: 'online',
     },
@@ -685,6 +710,9 @@ function emptyPayloadFor(path: string): unknown {
       return {
         sessions: { active: 0, running: 0 },
         containers: { running: 0, capacity_max: 0, memory_mb_each: 0, runtime: 'up' },
+        // §24.80: a bare/quiet system — sandbox enabled but unused, sweep not yet ticked.
+        sandbox: { enabled: true, spend_24h_usd: 0, daily_budget_usd: 0 },
+        sweep: { last_run_age_sec: null, fresh: false },
         backend: 'online',
       };
     case '/api/system-status':

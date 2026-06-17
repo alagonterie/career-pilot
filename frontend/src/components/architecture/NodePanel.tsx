@@ -98,6 +98,24 @@ function nodeFacts(
       if (p50s.length) facts.push({ label: 'p50 latency', value: fmtMs(Math.max(...p50s)) })
       return facts
     }
+    case 'sandbox': {
+      // §24.80: the public-demo kill switch + the day's spend against its budget.
+      if (!arch?.sandbox) return []
+      const s = arch.sandbox
+      return [
+        { label: 'Demo', value: s.enabled ? 'enabled' : 'disabled' },
+        { label: 'Spend 24h', value: `$${s.spend_24h_usd.toFixed(2)} / $${s.daily_budget_usd.toFixed(2)}` },
+      ]
+    }
+    case 'sweep':
+      // §24.80: how long since the host sweep loop last completed a tick.
+      if (!arch?.sweep) return []
+      return [
+        {
+          label: 'Last sweep',
+          value: arch.sweep.last_run_age_sec == null ? '—' : fmtAge(arch.sweep.last_run_age_sec),
+        },
+      ]
     default:
       return []
   }
@@ -136,6 +154,10 @@ export function NodePanel({
 
   const meta = STATUS_META[status]
   const structural = status === 'structural'
+  // §24.80 D4: `idle` is the honest resting state (on-demand node with nothing
+  // running, or a quiet probe), not a fault — say so in the modal so the grey
+  // dot doesn't read like a warning.
+  const idle = status === 'idle'
   const facts = nodeFacts(node, arch, mode, obs)
 
   return (
@@ -246,6 +268,12 @@ export function NodePanel({
               Drawn as structure — this node has no live health probe. The integration nodes we can observe (Portkey,
               the job API, Google Workspace, the gateway) now light up from request telemetry; the rest (the model API
               behind the gateway, per-subagent activity, edge reachability) stay honest structure with no health claim.
+            </p>
+          ) : null}
+
+          {idle && !node.actor ? (
+            <p data-testid="arch-idle-note" className="text-[11px] leading-relaxed text-muted-foreground">
+              Idle means at rest right now — nothing running, not a fault. This node wakes on demand.
             </p>
           ) : null}
 

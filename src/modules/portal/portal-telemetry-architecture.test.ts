@@ -10,6 +10,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { closeDb, getDb, initTestDb } from '../../db/connection.js';
 import { runMigrations } from '../../db/migrations/index.js';
 
+import { _setLastSweepAtForTesting } from '../../host-sweep.js';
+
 import { startPortalApi, stopPortalApi } from './api.js';
 import { _resetTelemetryCache } from './portkey-analytics.js';
 
@@ -29,7 +31,18 @@ afterEach(async () => {
   await stopPortalApi();
   closeDb();
   _resetTelemetryCache();
+  _setLastSweepAtForTesting(null); // reset the §24.80 sweep stamp between tests
 });
+
+/** Seed a sandbox-class telemetry row carrying `microusd` of spend (§24.80). */
+function seedSandboxSpend(id: string, microusd: number, ts?: string): void {
+  getDb()
+    .prepare(
+      `INSERT INTO request_telemetry (id, ts, provider, surface, traffic_class, cost_microusd, latency_ms, ok)
+       VALUES (?, ?, 'portkey', 'agent-turn', 'sandbox', ?, 100, 1)`,
+    )
+    .run(id, ts ?? new Date().toISOString(), microusd);
+}
 
 function seedSimRun(id: string, costCents?: number, ts?: string): void {
   getDb()
@@ -209,5 +222,37 @@ describe('GET /api/architecture', () => {
     // Docker may or may not be present in the test env — both shapes are valid.
     expect(body.containers.running === null || typeof body.containers.running === 'number').toBe(true);
     expect(body.containers.runtime).toBe(body.containers.running === null ? 'down' : 'up');
+  });
+
+  it('exposes the §24.80 sandbox-budget block (enabled + 24h spend vs daily cap)', async () => {
+    seedSandboxSpend('rt-1', 1_500_000); // $1.50
+    seedSandboxSpend('rt-2', 500_000); // $0.50  → $2.00 total
+    seedSandboxSpend('rt-old', 9_000_000, daysAgoIso(2)); // outside the 24h window
+
+    const body = (await (await fetch(`${base}/api/architecture`)).json()) as {
+      sandbox: { enabled: boolean; spend_24h_usd: number; daily_budget_usd: number };
+    };
+    expect(body.sandbox.enabled).toBe(true); // simulator_enabled default
+    expect(body.sandbox.spend_24h_usd).toBeCloseTo(2.0, 5); // the 2-day-old row excluded
+    expect(body.sandbox.daily_budget_usd).toBe(5); // sandbox_daily_global_budget_usd default
+  });
+
+  it('exposes the §24.80 sweep freshness (recent tick → fresh; no tick → idle/null)', async () => {
+    // A tick 30s ago is well within the 180s default staleness threshold.
+    _setLastSweepAtForTesting(Date.now() - 30_000);
+    const fresh = (await (await fetch(`${base}/api/architecture`)).json()) as {
+      sweep: { last_run_age_sec: number | null; fresh: boolean };
+    };
+    expect(fresh.sweep.last_run_age_sec).toBeGreaterThanOrEqual(30);
+    expect(fresh.sweep.last_run_age_sec).toBeLessThan(60);
+    expect(fresh.sweep.fresh).toBe(true);
+
+    // No tick recorded → null age, not fresh (the cold/idle shape).
+    _setLastSweepAtForTesting(null);
+    const cold = (await (await fetch(`${base}/api/architecture`)).json()) as {
+      sweep: { last_run_age_sec: number | null; fresh: boolean };
+    };
+    expect(cold.sweep.last_run_age_sec).toBeNull();
+    expect(cold.sweep.fresh).toBe(false);
   });
 });

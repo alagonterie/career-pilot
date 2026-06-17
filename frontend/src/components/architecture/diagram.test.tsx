@@ -109,6 +109,38 @@ describe('deriveNodeStatus (the honesty core)', () => {
     ).toBe('down')
   })
 
+  it('lights the Web-sandbox node from the budget probe (§24.80)', () => {
+    const sb = node('sandbox')
+    // Absent block (cold / older backend) → idle, no claim.
+    expect(deriveNodeStatus(sb, ARCH, MODE, OBS)).toBe('idle')
+    // Kill switch off → down.
+    expect(
+      deriveNodeStatus(sb, { ...ARCH, sandbox: { enabled: false, spend_24h_usd: 0, daily_budget_usd: 5 } }, MODE, OBS),
+    ).toBe('down')
+    // Enabled, no spend → idle (nobody ran it — honest rest).
+    expect(
+      deriveNodeStatus(sb, { ...ARCH, sandbox: { enabled: true, spend_24h_usd: 0, daily_budget_usd: 5 } }, MODE, OBS),
+    ).toBe('idle')
+    // Enabled, under budget → healthy.
+    expect(
+      deriveNodeStatus(sb, { ...ARCH, sandbox: { enabled: true, spend_24h_usd: 1.5, daily_budget_usd: 5 } }, MODE, OBS),
+    ).toBe('healthy')
+    // Spend reached the daily cap → degraded (the owner's "spend limit" view).
+    expect(
+      deriveNodeStatus(sb, { ...ARCH, sandbox: { enabled: true, spend_24h_usd: 5, daily_budget_usd: 5 } }, MODE, OBS),
+    ).toBe('degraded')
+  })
+
+  it('lights the Cron-sweep node from loop freshness (§24.80)', () => {
+    const sw = node('sweep')
+    // Absent / null age (cold, before the first tick) → idle.
+    expect(deriveNodeStatus(sw, ARCH, MODE, OBS)).toBe('idle')
+    expect(deriveNodeStatus(sw, { ...ARCH, sweep: { last_run_age_sec: null, fresh: false } }, MODE, OBS)).toBe('idle')
+    // A fresh tick → healthy; a stale one (loop gone silent) → down.
+    expect(deriveNodeStatus(sw, { ...ARCH, sweep: { last_run_age_sec: 30, fresh: true } }, MODE, OBS)).toBe('healthy')
+    expect(deriveNodeStatus(sw, { ...ARCH, sweep: { last_run_age_sec: 600, fresh: false } }, MODE, OBS)).toBe('down')
+  })
+
   it('gateway-folds the OneCLI node: down only when EVERY provider is down', () => {
     const gw = providerNode(['gmail', 'portkey'], 'gateway')
     // One down, one healthy → the gateway is up but impaired → degraded.
@@ -268,6 +300,25 @@ describe('NodePanel', () => {
     )
     expect(screen.getByText(/no live health probe/i)).toBeInTheDocument()
     expect(screen.getByText(/stay honest structure/i)).toBeInTheDocument()
+  })
+
+  it('shows sandbox budget facts + the idle-is-rest note (§24.80)', () => {
+    const arch: ArchitectureData = { ...ARCH, sandbox: { enabled: true, spend_24h_usd: 0.05, daily_budget_usd: 5 } }
+    render(<NodePanel node={byId('trig-web')} status="idle" arch={arch} mode={MODE} obs={OBS} onClose={() => {}} />)
+    expect(screen.getByText('Demo')).toBeInTheDocument()
+    expect(screen.getByText('enabled')).toBeInTheDocument()
+    expect(screen.getByText('Spend 24h')).toBeInTheDocument()
+    expect(screen.getByText('$0.05 / $5.00')).toBeInTheDocument()
+    // §24.80 D4: idle is clarified as the resting state, not a fault.
+    expect(screen.getByTestId('arch-idle-note')).toHaveTextContent(/at rest right now/i)
+  })
+
+  it('shows the cron-sweep last-run fact, no idle note when healthy (§24.80)', () => {
+    const arch: ArchitectureData = { ...ARCH, sweep: { last_run_age_sec: 30, fresh: true } }
+    render(<NodePanel node={byId('trig-cron')} status="healthy" arch={arch} mode={MODE} obs={OBS} onClose={() => {}} />)
+    expect(screen.getByText('Last sweep')).toBeInTheDocument()
+    expect(screen.getByText('just now')).toBeInTheDocument()
+    expect(screen.queryByTestId('arch-idle-note')).not.toBeInTheDocument()
   })
 
   it('shows aggregate provider facts for a lit integration node (§24.69)', () => {

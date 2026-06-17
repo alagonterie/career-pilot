@@ -14,6 +14,20 @@ export interface ArchitectureData {
     memory_mb_each: number
     runtime: 'up' | 'down'
   }
+  /** §24.80 Web-sandbox probe inputs: the kill switch + 24h sandbox spend vs the
+   * daily cap. Absent on an older backend → the node falls back to idle (cold). */
+  sandbox?: {
+    enabled: boolean
+    spend_24h_usd: number
+    daily_budget_usd: number
+  }
+  /** §24.80 Cron-sweep freshness: age of the last completed host-sweep tick
+   * (`null` before the first), and `fresh` = within the host-tier staleness
+   * threshold (kept backend-side). Absent on an older backend → idle (cold). */
+  sweep?: {
+    last_run_age_sec: number | null
+    fresh: boolean
+  }
   backend: string
 }
 

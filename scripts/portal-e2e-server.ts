@@ -40,6 +40,7 @@ import {
   seedSessions,
   type AuditSeed,
 } from '../src/modules/portal/dev/fixtures.js';
+import { _setLastSweepAtForTesting } from '../src/host-sweep.js';
 import { startPortalApi, stopPortalApi } from '../src/modules/portal/api.js';
 
 const PORT = Number(process.env.PORTAL_E2E_PORT ?? 3099);
@@ -107,6 +108,10 @@ async function main(): Promise<void> {
   seedSessions(db);
   seedRequestTelemetry(db);
   seedCandidateProfileIdentity(db);
+  // §24.80: the host sweep loop isn't running in this API-only harness, so stamp
+  // a recent tick → the Cron-sweep node reads healthy (matching the fixtures'
+  // "arch nodes read healthy" intent), not idle.
+  _setLastSweepAtForTesting(Date.now());
 
   const { port } = await startPortalApi({ host: '127.0.0.1', port: PORT });
   const control = startControlServer();
