@@ -1,8 +1,7 @@
-import { Loader2 } from 'lucide-react'
 import * as React from 'react'
 
 import { AgentMark } from '~/components/AgentMark'
-import { Button } from '~/components/ui/button'
+import { ResumeDownload } from '~/components/ResumeDownload'
 import { renderMarkdownish } from '~/lib/markdownish'
 import { parseOutreach } from '~/lib/parse-outreach'
 import type { SimTraceEvent } from '~/lib/use-simulator-run'
@@ -32,43 +31,10 @@ interface SimResultProps {
   hasTailoredResume: boolean
 }
 
-/** GIFT 1 — the tailored résumé: download + an in-modal PDF preview (native
- *  <dialog>: focus-trap + Escape + backdrop for free, no deps). */
+/** GIFT 1 — the tailored résumé: the shared download control (§24.81) with the
+ *  in-modal PDF preview, plus the gift framing + agent signature. */
 function ResumeGift({ runId, company, role }: { runId: string; company: string | null; role: string | null }) {
   const pdfUrl = `${API_BASE}/api/simulator/results/${encodeURIComponent(runId)}/resume.pdf`
-  const dialogRef = React.useRef<HTMLDialogElement>(null)
-  const [downloading, setDownloading] = React.useState(false)
-
-  // The PDF is rendered server-side per request (no cache, by design), so there's
-  // a real beat between tap and save. Fetch it in JS so the button can show a
-  // "Preparing…" state for exactly that long (self-adjusts to connection speed),
-  // then trigger the save — reusing the server's Content-Disposition filename.
-  async function downloadPdf() {
-    if (downloading) return
-    setDownloading(true)
-    try {
-      const res = await fetch(pdfUrl)
-      if (!res.ok) throw new Error(`status ${res.status}`)
-      const blob = await res.blob()
-      const cd = res.headers.get('content-disposition') ?? ''
-      const m = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i)
-      const filename = m ? decodeURIComponent(m[1]) : 'tailored-resume.pdf'
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(url)
-    } catch {
-      // Network/headers issue (e.g. cross-origin local dev) — let the browser handle it.
-      window.open(pdfUrl, '_blank', 'noopener')
-    } finally {
-      setDownloading(false)
-    }
-  }
-
   return (
     <div data-testid="sim-gift" className="rounded-xl border border-accent-cool/40 bg-accent-cool/5 px-6 py-5">
       <p className="font-mono text-xs uppercase tracking-widest text-accent-cool">Your tailored résumé</p>
@@ -79,64 +45,15 @@ function ResumeGift({ runId, company, role }: { runId: string; company: string |
       <p className="mt-1 text-sm text-muted-foreground">
         Auto-tailored from my real experience for this exact role — yours to download and forward.
       </p>
-      {/* Full-width + stacked on mobile (no awkward half-width wrap), side-by-side
-          from sm up. */}
-      <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-        <Button
-          size="lg"
-          className="w-full sm:w-auto"
-          onClick={downloadPdf}
-          disabled={downloading}
-          aria-busy={downloading}
-          data-testid="sim-download-resume"
-        >
-          {downloading ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-              Preparing…
-            </>
-          ) : (
-            'Download résumé (PDF) ↓'
-          )}
-        </Button>
-        {/* Desktop: inline modal preview (browsers render the PDF in the iframe). */}
-        <Button
-          variant="outline"
-          size="lg"
-          className="hidden w-full sm:inline-flex sm:w-auto"
-          data-testid="sim-resume-preview-open"
-          onClick={() => dialogRef.current?.showModal()}
-        >
-          Preview
-        </Button>
-        {/* Mobile: mobile browsers won't render a PDF inside an iframe (they show a
-            dead-end "open" affordance), so open it directly in a new tab — one tap. */}
-        <Button asChild variant="outline" size="lg" className="w-full sm:hidden">
-          <a href={pdfUrl} target="_blank" rel="noopener noreferrer">
-            Preview
-          </a>
-        </Button>
-      </div>
-      <dialog
-        ref={dialogRef}
-        data-testid="sim-resume-preview"
-        className="m-auto w-[92vw] max-w-3xl rounded-xl border border-border bg-background p-0 shadow-xl backdrop:bg-black/60"
-      >
-        <div className="flex items-center justify-between border-b border-border px-4 py-2">
-          <span className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-            Tailored résumé preview
-          </span>
-          <button
-            type="button"
-            aria-label="Close preview"
-            onClick={() => dialogRef.current?.close()}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
-          >
-            ✕
-          </button>
-        </div>
-        <iframe src={pdfUrl} title="Tailored résumé preview" className="h-[78vh] w-full" />
-      </dialog>
+      <ResumeDownload
+        pdfUrl={pdfUrl}
+        fallbackFilename="tailored-resume.pdf"
+        preview
+        previewTitle="Tailored résumé preview"
+        size="lg"
+        downloadTestId="sim-download-resume"
+        className="mt-4"
+      />
       {/* The agent's signature sits at the foot of the card (§24.73) — provenance
           reads like a signature, so it goes at the bottom, consistent across gifts. */}
       <AgentMark actor="tailor-resume" lead="Tailored by" className="mt-4" />
