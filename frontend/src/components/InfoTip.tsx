@@ -27,9 +27,16 @@ export function InfoTip({ label, children }: { label: string; children: React.Re
           aria-controls={p['aria-controls']}
           aria-label={p['aria-label']}
           onClick={p.onClick}
-          className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border border-muted-foreground/50 align-middle font-sans text-[9px] leading-none text-muted-foreground transition-colors hover:border-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border border-muted-foreground/50 align-middle text-muted-foreground transition-colors hover:border-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          i
+          {/* The "i" as a centered SVG (§24.85): a flex-centered text glyph
+              centers on its advance box, not its ink, so the sans "i"'s
+              side-bearings + baseline left it visibly off-center. A symmetric
+              viewBox has neither — the dot + stem are pixel-centered everywhere. */}
+          <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3 w-3" fill="currentColor">
+            <circle cx="8" cy="4" r="1.5" />
+            <rect x="6.7" y="6.5" width="2.6" height="7" rx="1.3" />
+          </svg>
         </button>
       )}
     >
