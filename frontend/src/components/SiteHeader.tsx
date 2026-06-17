@@ -72,22 +72,29 @@ export function SiteHeader() {
 
   return (
     <header data-site-header className="sticky top-0 z-20 w-full border-b border-border bg-background/80 backdrop-blur">
-      <nav aria-label="Primary" className="mx-auto flex h-14 max-w-3xl items-center justify-between px-6">
-        <Link to="/" className="font-mono text-sm font-semibold tracking-tight text-foreground">
+      {/* max-w-4xl (not 3xl) + a guaranteed gap so the wordmark and the dense
+          6-link nav never crowd — a long real name (VITE_PERSON_NAME) overflowed
+          the narrower box and pressed up against the first link. shrink-0 on both
+          ends keeps either from compressing the other. */}
+      <nav aria-label="Primary" className="mx-auto flex h-14 max-w-4xl items-center justify-between gap-6 px-6">
+        <Link to="/" className="shrink-0 font-mono text-sm font-semibold tracking-tight text-foreground">
           {PERSON_NAME}
         </Link>
 
-        {/* Tablet + desktop: the full horizontal row (≥640px, where it fits), the
-            three groups each split by a subtle divider. */}
-        <div className="hidden items-center gap-4 text-sm sm:flex">
+        {/* Tablet + desktop: the full horizontal row (≥640px, where it fits). Each
+            group is its own tight cluster (gap-4); the larger gap-6 around the
+            dividers makes the three clusters read as clusters, not one long row. */}
+        <div className="hidden shrink-0 items-center gap-6 text-sm sm:flex">
           {NAV_GROUPS.map((group, gi) => (
             <React.Fragment key={gi}>
-              {gi > 0 ? <span aria-hidden="true" className="h-4 w-px bg-border" /> : null}
-              {group.map((l) => (
-                <Link key={l.to} to={l.to} className={linkClass}>
-                  {l.label}
-                </Link>
-              ))}
+              {gi > 0 ? <span aria-hidden="true" className="h-4 w-px shrink-0 bg-border" /> : null}
+              <div className="flex items-center gap-4">
+                {group.map((l) => (
+                  <Link key={l.to} to={l.to} className={linkClass}>
+                    {l.label}
+                  </Link>
+                ))}
+              </div>
             </React.Fragment>
           ))}
         </div>

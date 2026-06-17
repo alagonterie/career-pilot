@@ -1280,6 +1280,8 @@ The wordmark is the persona name, **not a domain** — the deployed site is `hir
 
 **Header vs footer (the IA rule):** the header carries the *journey* — the surfaces a visitor should actively explore (kept to ~6 items). Secondary/background links live in the footer (§8.2): socials, legal/privacy, and **`/about`** (background/story, not a primary destination) — so `/about` is **not** a header item.
 
+> **Build note (STRATEGY §24.82 — header spacing fix).** The nav row widened from `max-w-3xl` → `max-w-4xl` with a guaranteed gap (and `shrink-0` on both the wordmark and the link cluster): the dense six-link grouped nav nearly filled the old box, so a real (longer) `VITE_PERSON_NAME` wordmark pressed up against the first link. The wider box restores ~100px of breathing room for a real name. Same change tightens the grouping — each cluster is its own `gap-4` flex, the larger gap around the dividers makes the three groups (Pipeline·Watch · | · Dashboard·Architecture · | · Experience·Contact) read as groups. Mobile (hamburger) is unaffected.
+
 ### 8.2 Footer
 
 A single slim, muted band — the **social/legal strip** — sits at the very foot of every page, *below* the §8.4 connective rail (the rail is the directed "what's next"; the footer is the quiet background strip). It carries the persona wordmark, the candidate's socials, the two background links (`/about`, Privacy), and a short "built with" credit:
