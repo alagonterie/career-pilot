@@ -59,13 +59,17 @@ describe('LlmSpendPanel', () => {
     }
   })
 
-  it('shows the cache rate (a cost lever) only when passed, with its InfoTip', () => {
+  it('shows the cache rate as an equal-sized amount (a cost lever) only when passed, with its InfoTip', () => {
     const { rerender } = render(<LlmSpendPanel data={obs({ chat: 1_000_000 })} status="ok" />)
-    expect(screen.queryByText('cache')).toBeNull() // no rate → no line
+    expect(screen.queryByText('cache')).toBeNull() // no rate → no amount
     rerender(<LlmSpendPanel data={obs({ chat: 1_000_000 })} cacheHitRate={0.9} status="ok" />)
     expect(screen.getByText('cache')).toBeTruthy()
-    expect(screen.getByText('90%')).toBeTruthy()
-    expect(screen.getByLabelText('About: cache rate')).toBeTruthy()
+    // §24.84: cache is now a full Metric, the SAME big-number size as the 24h spend.
+    const cache = screen.getByTestId('llm-cache-rate')
+    expect(cache.textContent).toBe('90%')
+    expect(cache.className).toContain('text-2xl')
+    expect(screen.getByTestId('llm-spend-total').className).toContain('text-2xl')
+    expect(screen.getByLabelText('About: cache')).toBeTruthy()
   })
 })
 
