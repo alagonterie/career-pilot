@@ -5848,6 +5848,16 @@ The B1 deep dive flagged "~115 restarts / every 10–40 min" as possible runaway
 
 ---
 
+#### 24.95 "Container pool" explain-on-tap — the on-demand model + the enforced cap
+
+**Problem.** The §24.62 explain-on-tap treatment reached every `/dashboard` stat tile EXCEPT the `Container pool` "running / max" gauge — the one panel making a claim ("0 / 4") with no InfoTip. A visitor (or the owner) reads "0 running" as possibly-broken (the exact confusion that kicked off the §24.91–§24.94 container work), and post-§24.92 the "/ max" is now a real *enforced* ceiling that deserves a word. The sibling `Active sessions` panel already explains the ephemeral model.
+
+- **Fix.** Add the `Metric info=` InfoTip to `ContainerPoolPanel`, copy built from the live `capacity_max` + `memory_mb_each`: "Agent containers spin up on demand and stop when idle — 0 running at rest is normal. Capped at N concurrent (×512 MB) to protect the host; extra runs queue briefly until a slot frees." Falls back to generic wording when the runtime is down/unknown (cap null). One honest tip lands all three ideas: the ephemeral model (0 = healthy), the §24.92 OOM cap, and the graceful queue (§24.92's deferred-wake behavior).
+
+**DoD.** The `Container pool` "running / max" metric carries an explain-on-tap InfoTip stating the on-demand model + the enforced cap; copy uses the live cap/memory when present, generic when down. fe `tsc` + FE unit (`panels.test` asserts the tip) + prettier `--no-semi` + the dashboard `@visual` baseline re-blessed if the glyph shifts layout. **Spec deltas:** this §24.95; PORTAL §10 build note. Memory: [[todo_backlog]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
