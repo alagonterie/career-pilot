@@ -46,7 +46,12 @@ const NAV_GROUPS: NavLink[][] = [
  */
 export function SiteHeader() {
   const [open, setOpen] = React.useState(false)
-  const linkClass = 'text-muted-foreground transition-colors hover:text-foreground [&.active]:text-foreground'
+  // Active page (§24.82): the current link brightens to foreground AND gets an
+  // accent underline so "you are here" reads at a glance across six items. The
+  // underline is text-decoration (not a border), so inactive links reserve no
+  // space and nothing shifts when the active link changes.
+  const linkClass =
+    'text-muted-foreground transition-colors hover:text-foreground [&.active]:text-foreground [&.active]:underline [&.active]:decoration-accent-cool [&.active]:decoration-2 [&.active]:underline-offset-[6px]'
 
   // Close the menu on Escape or an outside click while it's open. The outside
   // click listener is attached on the NEXT tick (setTimeout 0) so the very click
