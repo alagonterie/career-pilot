@@ -228,6 +228,28 @@ const simulatorClients = new Map<string, Set<http.ServerResponse>>();
 let simKeepaliveTimer: NodeJS.Timeout | null = null;
 
 /**
+ * Viewer-change hook (§24.94): fired whenever a run's live SSE viewer count
+ * changes via a client connect/disconnect, with the new count. The simulator
+ * registers a handler to tear an ABANDONED run down (last viewer left and the
+ * fetch-stream transport never reconnects). Decoupled like setSimulatorOutputSink
+ * so the broadcaster never imports the simulator module (no cycle). Only the
+ * client-driven transitions notify — a server-initiated close (endSimulatorRun)
+ * does not, since that path is already finalizing.
+ */
+type SimulatorViewerHandler = (runId: string, viewers: number) => void;
+let simulatorViewerHandler: SimulatorViewerHandler | null = null;
+export function setSimulatorViewerHandler(fn: SimulatorViewerHandler | null): void {
+  simulatorViewerHandler = fn;
+}
+function notifyViewerChange(runId: string, viewers: number): void {
+  try {
+    simulatorViewerHandler?.(runId, viewers);
+  } catch (err) {
+    log.warn('simulator viewer handler threw', { runId, err });
+  }
+}
+
+/**
  * Keepalive for simulator streams (§24.21 Δ): the push-based topic has no tail
  * timer, so a silent generation phase (no tool calls → no trace events) would
  * idle past the Worker/Tunnel ~100 s timeout and drop the stream mid-run.
@@ -286,6 +308,7 @@ export function addSimulatorClient(runId: string, res: http.ServerResponse): voi
     set.delete(res);
   }
   maybeStartSimKeepalive();
+  notifyViewerChange(runId, set.size);
 }
 
 /**
@@ -311,8 +334,10 @@ export function removeSimulatorClient(runId: string, res: http.ServerResponse): 
   const set = simulatorClients.get(runId);
   if (!set) return;
   set.delete(res);
-  if (set.size === 0) simulatorClients.delete(runId);
+  const remaining = set.size;
+  if (remaining === 0) simulatorClients.delete(runId);
   maybeStopSimKeepalive();
+  notifyViewerChange(runId, remaining);
 }
 
 /**
