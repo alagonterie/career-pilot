@@ -45,10 +45,9 @@ test.describe('/dashboard — aggregate ops dashboard, frontend <-> backend', ()
     await expect(page.getByText('2 / 4')).toBeVisible()
 
     // Telemetry is local-sourced from the seeded turn row (§24.47): the LLM
-    // telemetry panel shows the top model + the cache rate (moved here from the
-    // retired Cost & cache box — §24.69; its InfoTip trigger is unique to the panel).
+    // telemetry panel shows the top model. (The cache rate lives in the LLM SPEND
+    // box — it's a cost lever — and is asserted there, below.)
     await expect(page.getByText('top model:')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'About: cache rate' })).toBeVisible()
 
     // The trace stream replays the seeded backlog over SSE.
     const trace = page.getByTestId('trace-stream')
@@ -69,12 +68,15 @@ test.describe('/dashboard — aggregate ops dashboard, frontend <-> backend', ()
     // §24.55: the seal's cache lane is quantitative (share of prompt tokens
     // served from cache), never a boolean badge.
     await expect(trace.getByTestId('trace-turn')).toContainText('cache 90%')
-    // LLM SPEND (§24.69) — the consolidated cost tile, per-class 24h from the
-    // seeded request_telemetry rows; exact clean totals (3×$0.07 chat, 2×$0.025
-    // sandbox) + a total headline.
+    // LLM SPEND (§24.69 / §24.84) — the consolidated cost tile: per-class 24h from
+    // the seeded request_telemetry rows (exact clean totals — 3×$0.07 chat, 2×$0.025
+    // sandbox), plus the two equal headline amounts (24h spend + cache rate, each
+    // with its InfoTip).
     const spend = page.getByTestId('spend-by-class')
     await expect(spend).toBeVisible()
     await expect(page.getByTestId('llm-spend-total')).toBeVisible()
+    await expect(page.getByTestId('llm-cache-rate')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'About: cache' })).toBeVisible()
     await expect(page.getByTestId('spend-chat')).toHaveText('$0.21')
     await expect(page.getByTestId('spend-sandbox')).toHaveText('$0.05')
 

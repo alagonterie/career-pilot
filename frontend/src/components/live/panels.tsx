@@ -65,9 +65,23 @@ export function Panel({
  * the §24.57 explain-on-tap affordance for metric jargon. The label never
  * wraps (§24.62): in a narrow grid column the ⓘ pushed "turn p50" onto two
  * lines — a label that can't fit its column gets a shorter label, not a wrap. */
-function Metric({ value, label, testId, info }: { value: string; label: string; testId?: string; info?: ReactNode }) {
+function Metric({
+  value,
+  label,
+  testId,
+  info,
+  align = 'left',
+}: {
+  value: string
+  label: string
+  testId?: string
+  info?: ReactNode
+  // `right` mirrors the tile to the box's right edge (the §24.84 two-amount
+  // bookend); every existing call omits it and stays left-aligned.
+  align?: 'left' | 'right'
+}) {
   return (
-    <div className="flex flex-col">
+    <div className={align === 'right' ? 'flex flex-col items-end text-right' : 'flex flex-col'}>
       <span data-testid={testId} className="font-mono text-2xl font-semibold tabular-nums text-foreground">
         {value}
       </span>
@@ -321,9 +335,11 @@ export function LlmSpendPanel({
         </p>
       ) : (
         <div data-testid="spend-by-class" className="flex flex-col gap-2">
-          {/* Total + cache on one baseline row (cache is a cost lever) — keeps the
-              tile within the stat-row 196px floor so all four boxes stay uniform. */}
-          <div className="flex items-baseline justify-between gap-2">
+          {/* Two equally-styled amounts, bookended (§24.84): 24h spend (left) +
+              cache rate (right; a cost lever, so it lives with cost). Same big-number
+              Metric, side by side on one row — the cache adds no height, so the tile
+              still fits the stat-row 196px floor and the four boxes stay uniform. */}
+          <div className="flex items-start justify-between gap-2">
             <Metric
               testId="llm-spend-total"
               value={fmtUsd(total)}
@@ -338,14 +354,19 @@ export function LlmSpendPanel({
               }
             />
             {cacheHitRate != null ? (
-              <span className="inline-flex shrink-0 items-center gap-1 font-mono text-[11px] text-muted-foreground">
-                cache <span className="text-foreground">{Math.round(cacheHitRate * 100)}%</span>
-                <InfoTip label="cache rate">
-                  Prompt caching re-serves unchanged context (the agent&apos;s instructions, tools, history) instead of
-                  reprocessing it — cached tokens cost about a tenth of fresh ones. It&apos;s why the spend is as low as
-                  it is; higher is cheaper.
-                </InfoTip>
-              </span>
+              <Metric
+                testId="llm-cache-rate"
+                align="right"
+                value={`${Math.round(cacheHitRate * 100)}%`}
+                label="cache"
+                info={
+                  <>
+                    Prompt caching re-serves unchanged context (the agent&apos;s instructions, tools, history) instead
+                    of reprocessing it — cached tokens cost about a tenth of fresh ones. It&apos;s why the spend is as
+                    low as it is; higher is cheaper.
+                  </>
+                }
+              />
             ) : null}
           </div>
           <div data-testid="spend-chart">
