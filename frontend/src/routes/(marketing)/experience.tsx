@@ -52,7 +52,7 @@ function Work() {
   )
   return (
     <>
-      <main className="mx-auto flex max-w-3xl flex-col items-start px-6 py-16">
+      <main className="mx-auto flex max-w-4xl flex-col items-start px-6 py-16">
         <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{p.name}</h1>
         <p className="mt-2 text-lg text-muted-foreground">{p.title}</p>
         {/* Provenance (§24.71 D4 / §24.73): honest only when the agent actually

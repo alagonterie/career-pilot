@@ -29,8 +29,9 @@ export const Route = createFileRoute('/(marketing)/contact')({
 
 function ContactPage() {
   const { company, role, from } = Route.useSearch()
-  const { identity } = Route.useLoaderData()
-  const hasDirect = Boolean(identity.email || identity.linkedin || identity.github)
+  // No "reach me directly" block (§24.83 D4/D5): the form IS the email relay, and
+  // the sitewide footer carries the socials — a per-page social list duplicated it
+  // and the plain-text email was a scraping leak the footer deliberately avoids.
   return (
     <main className="mx-auto flex w-full max-w-xl flex-col px-6 py-16">
       <header>
@@ -43,31 +44,6 @@ function ContactPage() {
       </header>
 
       <ContactForm company={company} role={role} from={from} />
-
-      {hasDirect ? (
-        <section aria-labelledby="direct-heading" className="mt-12 border-t border-border pt-6">
-          <h2 id="direct-heading" className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-            Or reach me directly
-          </h2>
-          <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm">
-            {identity.email ? (
-              <a href={`mailto:${identity.email}`} className="text-accent-cool hover:underline">
-                {identity.email}
-              </a>
-            ) : null}
-            {identity.linkedin ? (
-              <a href={identity.linkedin} target="_blank" rel="noreferrer" className="text-accent-cool hover:underline">
-                LinkedIn ↗
-              </a>
-            ) : null}
-            {identity.github ? (
-              <a href={identity.github} target="_blank" rel="noreferrer" className="text-accent-cool hover:underline">
-                GitHub ↗
-              </a>
-            ) : null}
-          </div>
-        </section>
-      ) : null}
     </main>
   )
 }

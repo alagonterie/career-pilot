@@ -29,12 +29,23 @@ test.describe('/about — story + methodology', () => {
     // The #anonymization anchor target (deep-linked from /experience + the funnel note).
     await expect(page.locator('#anonymization')).toBeVisible()
 
+    // The shared long-form scaffold (§24.83): a sticky scroll-spy TOC over the
+    // prose. On desktop the slim left rail is the one in the a11y tree (the mobile
+    // chip strip is display:none) — exact name avoids matching the "(quick nav)" one.
+    const toc = page.getByRole('navigation', { name: 'On this page', exact: true })
+    await expect(toc).toBeVisible()
+    await expect(toc.getByRole('button', { name: 'The story' })).toBeVisible()
+
     // Tells, doesn't re-draw: it links out to the proof surface + the repo.
     await expect(page.getByRole('link', { name: /live system map/i })).toBeVisible()
 
     // Not a dead-end: the connective rail's convert path is present.
     const rail = page.getByTestId('connective-rail')
     await expect(rail.getByTestId('rail-convert')).toBeVisible()
+
+    // Let the scaffold's entrance fade settle before the a11y scan (same reason as
+    // /experience — Axe can catch a transient sub-threshold contrast mid-fade).
+    await expect(page.getByTestId('about-dossier')).toHaveCSS('opacity', '1')
 
     // Accessibility — recruiter-facing showcase; zero violations.
     const a11y = await new AxeBuilder({ page }).analyze()

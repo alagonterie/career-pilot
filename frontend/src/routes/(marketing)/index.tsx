@@ -39,7 +39,7 @@ function Home() {
   const apps = pipeline?.applications ?? []
   // SSR-resolved candidate profile (placeholder fallback) + the hero stat SEED
   // (the whole line, pre-rendered server-side). De-`Jane Doe`s the hero.
-  const { profile, identity, heroSeed } = Route.useLoaderData()
+  const { profile, heroSeed } = Route.useLoaderData()
   // The hero stat line (PORTAL §5.1 Viewport 1), assembled so it's fully SSR'd and
   // never shifts on the live takeover:
   //   - counts: the two SSR-able segments. Show the live values once the polls
@@ -245,14 +245,11 @@ function Home() {
         </div>
         <div className="flex flex-col gap-2">
           <h3 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Talk to me</h3>
+          {/* Contact form only — no plain-text email (§24.83 D5): the form is the
+              relay, and a public mailto invites scraping (matches the footer). */}
           <Link to="/contact" search={{ from: 'home' }} className="text-sm text-accent-cool hover:underline">
             Contact form →
           </Link>
-          {identity.email ? (
-            <a href={`mailto:${identity.email}`} className="text-sm text-accent-cool hover:underline">
-              {identity.email}
-            </a>
-          ) : null}
         </div>
       </section>
     </main>
