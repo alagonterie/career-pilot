@@ -476,6 +476,8 @@ A four-row breakdown of the last 24 h of LLM/API spend by **traffic class** — 
 
 > **Build note (per STRATEGY §24.69 — Deep Dive 3).** Sourced from `request_telemetry` (the §24.68 per-request table — every owned choke point, every class) via a new `GET /api/observability` aggregate endpoint. The portal reads an **aggregate-only** projection (per-class hourly cost sums — no error text, session ids, or per-request rows; §9's public/private boundary held by a structurally PII-free query + a regression test). The sparkline is a static inline SVG (no chart lib; deterministic for visual baselines).
 
+> **Build note (STRATEGY §24.84 — T5).** The merged `LLM SPEND` box now leads with **two equal big-number amounts, bookended**: the 24h spend (left) and the **cache-hit rate** (right) — both the same `text-2xl` `Metric`, each with its label + explain-on-tap InfoTip beneath. The cache lives in this box on purpose (it's a *cost lever*, the reason the spend is low), so it earns equal billing rather than the old small inline `cache NN%` afterthought. They sit on one `justify-between` row beside each other, so the tile adds no height and the four-box stat-row stays uniform; the per-class chart + legend below are unchanged. Cache still renders only when a rate is present (a no-turn state shows just the spend).
+
 #### Panel: `RECENT OUTCOMES`
 A log of recent funnel state changes:
 ```
