@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 
-import { FunnelCompact } from '~/components/live/FunnelCompact'
+import { PipelineCompact } from '~/components/live/PipelineCompact'
 import { LogStream } from '~/components/live/LogStream'
 import {
   ContainerPoolPanel,
@@ -17,12 +17,12 @@ import { seo } from '~/lib/seo'
 import { PERSON_NAME } from '~/lib/site'
 import { useActivityStream } from '~/lib/use-activity-stream'
 import { useArchitecture } from '~/lib/use-architecture'
-import { useFunnel } from '~/lib/use-funnel'
+import { usePipeline } from '~/lib/use-pipeline'
 import { useObservability } from '~/lib/use-observability'
 import { deriveTelemetryView, useTelemetry } from '~/lib/use-telemetry'
 
 // Third page of the ops register (PORTAL §5.2). `(ops)` is pathless → the URL is
-// still `/live`. The aggregate dashboard: it composes the 7.1 funnel + 7.2
+// still `/live`. The aggregate dashboard: it composes the 7.1 pipeline + 7.2
 // architecture pieces + the SSE trace + the telemetry endpoint — no new backend
 // (§24.29). The `(ops)` shared layout stays deferred (a follow-up now that three
 // ops pages exist).
@@ -47,7 +47,7 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
 
 function LivePage() {
   const { arch, mode, status: archStatus } = useArchitecture(API_BASE)
-  const { data: funnel, status: funnelStatus } = useFunnel(API_BASE)
+  const { data: pipeline, status: pipelineStatus } = usePipeline(API_BASE)
   const { events, status, count } = useActivityStream(API_BASE, { limit: 60 })
   const { data: telemetry, status: telemetryStatus } = useTelemetry(API_BASE)
   const { data: observability, status: observabilityStatus } = useObservability(API_BASE)
@@ -60,7 +60,7 @@ function LivePage() {
   }
 
   const view = deriveTelemetryView(telemetry)
-  const apps = funnel?.applications ?? []
+  const apps = pipeline?.applications ?? []
 
   return (
     <>
@@ -106,17 +106,17 @@ function LivePage() {
                 </Link>
               }
             >
-              {funnelStatus === 'loading' ? (
+              {pipelineStatus === 'loading' ? (
                 <Skeleton className="h-20 w-full" />
-              ) : funnelStatus === 'error' ? (
+              ) : pipelineStatus === 'error' ? (
                 <StateNote tone="error" className="text-xs">
                   Offline — retrying…
                 </StateNote>
               ) : (
-                <FunnelCompact apps={apps} />
+                <PipelineCompact apps={apps} />
               )}
             </Panel>
-            <RecentOutcomesPanel apps={apps} status={funnelStatus} />
+            <RecentOutcomesPanel apps={apps} status={pipelineStatus} />
           </div>
         </div>
 

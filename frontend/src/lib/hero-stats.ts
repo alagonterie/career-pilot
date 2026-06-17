@@ -1,5 +1,5 @@
 import type { AuditEvent } from './use-activity-stream'
-import type { FunnelApplication } from './use-funnel'
+import type { PipelineApplication } from './use-pipeline'
 
 /**
  * The honest live stat line under the hero CTAs (PORTAL §5.1 Viewport 1) — the
@@ -13,12 +13,12 @@ import type { FunnelApplication } from './use-funnel'
  * signal, in plain language.
  */
 
-// In-flight = not closed. Mirrors `use-funnel.ts`'s CLOSED_STAGES; kept local so
+// In-flight = not closed. Mirrors `use-pipeline.ts`'s CLOSED_STAGES; kept local so
 // the two modules don't couple over a private constant.
 const CLOSED_STAGES = new Set(['rejected', 'withdrawn'])
 
 /** Active = applications still in flight (offers included; only closed excluded). */
-export function activeApplicationCount(apps: FunnelApplication[]): number {
+export function activeApplicationCount(apps: PipelineApplication[]): number {
   return apps.filter((a) => !CLOSED_STAGES.has(a.stage)).length
 }
 
@@ -38,7 +38,7 @@ export function relativeAgo(iso: string, now: number = Date.now()): string {
 }
 
 export interface HeroStatInputs {
-  apps: FunnelApplication[]
+  apps: PipelineApplication[]
   events: AuditEvent[]
   /** `telemetry.local.activity_events_24h`, or null while the poll is in flight. */
   actionsIn24h: number | null

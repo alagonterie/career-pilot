@@ -1,13 +1,20 @@
 import { motion } from 'motion/react'
 
 import { Skeleton } from '~/components/ui/skeleton'
-import type { FunnelApplication } from '~/lib/use-funnel'
+import type { PipelineApplication } from '~/lib/use-pipeline'
 
-import { FunnelCard } from './FunnelCard'
+import { PipelineCard } from './PipelineCard'
 
 // The displayed pipeline columns, left → right (PORTAL §5.4). `bookmarked` and
 // the terminal `rejected`/`withdrawn` stages are surfaced in a separate strip
-// rather than dropped — nothing in the funnel is silently hidden.
+// rather than dropped — nothing in the pipeline is silently hidden.
+//
+// Naming note (§24.77 D3): the visitor-facing rename to "pipeline" is complete in
+// component/hook/type names, but the `data-testid="funnel-*"` selectors keep the
+// old prefix on purpose — they're an internal component↔test contract (the
+// Playwright specs + the named `funnel*.png` visual baselines), so renaming them
+// is pure churn for zero visitor benefit. Same retained-internal boundary as the
+// `/api/funnel` fetch URL.
 const COLUMNS: { stage: string; title: string }[] = [
   { stage: 'applied', title: 'Applied' },
   { stage: 'screening', title: 'Screening' },
@@ -25,12 +32,12 @@ const PIPELINE_STAGES = new Set(COLUMNS.map((c) => c.stage))
  * `MotionConfig reducedMotion="user"` (src/routes/__root.tsx — §24.36 36.4),
  * which also keeps the Playwright visual baselines deterministic.
  */
-export function FunnelBoard({
+export function PipelineBoard({
   apps,
   onSelect,
 }: {
-  apps: FunnelApplication[]
-  onSelect: (app: FunnelApplication) => void
+  apps: PipelineApplication[]
+  onSelect: (app: PipelineApplication) => void
 }) {
   const offboard = apps.filter((a) => !PIPELINE_STAGES.has(a.stage))
 
@@ -69,7 +76,7 @@ export function FunnelBoard({
               >
                 {items.map((a) => (
                   <motion.div key={a.application_id} layout layoutId={a.application_id}>
-                    <FunnelCard app={a} onSelect={() => onSelect(a)} />
+                    <PipelineCard app={a} onSelect={() => onSelect(a)} />
                   </motion.div>
                 ))}
                 {items.length === 0 ? (
@@ -83,7 +90,7 @@ export function FunnelBoard({
 
       {/* Always rendered (§24.62): the strip popping in/out between loading and
           loaded shifted everything below it. Empty gets an honest line instead
-          of disappearing — nothing in the funnel is silently hidden either way. */}
+          of disappearing — nothing in the pipeline is silently hidden either way. */}
       <section aria-label="Bookmarked and closed" data-testid="funnel-offboard" className="mt-4">
         <h2 className="mb-2 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">
           Bookmarked &amp; closed
@@ -92,12 +99,12 @@ export function FunnelBoard({
           <div className="flex flex-wrap gap-2 opacity-70">
             {offboard.map((a) => (
               <div key={a.application_id} className="min-w-[10rem] flex-1 sm:max-w-[14rem]">
-                <FunnelCard app={a} onSelect={() => onSelect(a)} />
+                <PipelineCard app={a} onSelect={() => onSelect(a)} />
               </div>
             ))}
           </div>
         ) : (
-          // min-h = one card row (114px, the measured FunnelCard footprint), so
+          // min-h = one card row (114px, the measured PipelineCard footprint), so
           // loading→empty holds the same ground as loading→cards (§24.62).
           <div className="flex min-h-[114px] items-center">
             <p data-testid="funnel-offboard-empty" className="font-mono text-xs text-muted-foreground">
@@ -111,9 +118,9 @@ export function FunnelBoard({
 }
 
 /** The loading-state twin of the board (§24.36 36.1): the same 5-column grid with
- * skeleton cards, so the funnel keeps its shape (no layout shift) while the poll
+ * skeleton cards, so the pipeline keeps its shape (no layout shift) while the poll
  * is in flight. Static markup — no motion, no data. */
-export function FunnelBoardSkeleton() {
+export function PipelineBoardSkeleton() {
   return (
     <div data-testid="funnel-skeleton" className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 lg:grid-cols-5">
       {COLUMNS.map((col, i) => (
@@ -141,8 +148,8 @@ export function FunnelBoardSkeleton() {
 /** The loading twin of the always-rendered Bookmarked & closed strip (§24.62):
  * without it the strip pops in under the board on load and shifts everything
  * below. Header + one card-height row, with the skeletons sized to the real
- * FunnelCard footprint (114px measured) so loading→loaded doesn't resize. */
-export function FunnelOffboardSkeleton() {
+ * PipelineCard footprint (114px measured) so loading→loaded doesn't resize. */
+export function PipelineOffboardSkeleton() {
   return (
     <section aria-label="Bookmarked and closed" data-testid="funnel-offboard-skeleton" className="mt-4">
       <h2 className="mb-2 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">

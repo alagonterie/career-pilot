@@ -754,7 +754,7 @@ describe('handleRecordFunnelEvent', () => {
       | undefined;
     expect(publicRow).toBeDefined();
     expect(publicRow!.application_ref).toBe('fintech-a');
-    expect(publicRow!.category).toBe('funnel');
+    expect(publicRow!.category).toBe('pipeline');
     expect(publicRow!.summary).toContain('[REDACTED:fintech-a]');
     expect(publicRow!.summary).toContain('[EMAIL_REDACTED]');
     expect(publicRow!.summary).toContain('[AMOUNT_REDACTED]');
@@ -793,7 +793,7 @@ describe('proactive trace-capture (§24.24)', () => {
       proactive: number;
     };
     expect(fe.proactive).toBe(1);
-    const pub = getDb().prepare(`SELECT proactive FROM public_audit_trail WHERE category = 'funnel'`).get() as {
+    const pub = getDb().prepare(`SELECT proactive FROM public_audit_trail WHERE category = 'pipeline'`).get() as {
       proactive: number;
     };
     expect(pub.proactive).toBe(1);

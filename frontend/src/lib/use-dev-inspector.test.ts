@@ -13,7 +13,7 @@ import {
   type DevStateResponse,
 } from './use-dev-inspector'
 
-/** Minimal fetch Response stand-in (mirrors the use-funnel test helper). */
+/** Minimal fetch Response stand-in (mirrors the use-pipeline test helper). */
 function res(body: unknown, ok = true, status = 200): Response {
   return { ok, status, json: async () => body } as Response
 }

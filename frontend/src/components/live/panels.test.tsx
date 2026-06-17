@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { ArchitectureData, SystemMode } from '~/lib/use-architecture'
-import type { FunnelApplication } from '~/lib/use-funnel'
+import type { PipelineApplication } from '~/lib/use-pipeline'
 import type { TelemetryView } from '~/lib/use-telemetry'
 
 // Isolate from the router — RecentOutcomesPanel rows are <Link>s (the §24.57
@@ -24,7 +24,7 @@ vi.mock('@tanstack/react-router', () => ({
   ),
 }))
 
-import { FunnelCompact } from './FunnelCompact'
+import { PipelineCompact } from './PipelineCompact'
 import {
   ContainerPoolPanel,
   Panel,
@@ -57,7 +57,7 @@ const LOCAL = {
   top_model: 'claude-haiku-4-5',
 }
 
-function app(p: Partial<FunnelApplication> & { application_ref: string; stage: string }): FunnelApplication {
+function app(p: Partial<PipelineApplication> & { application_ref: string; stage: string }): PipelineApplication {
   return {
     application_id: p.application_ref,
     public_state: 'obfuscated',
@@ -75,7 +75,7 @@ function app(p: Partial<FunnelApplication> & { application_ref: string; stage: s
   }
 }
 
-const APPS: FunnelApplication[] = [
+const APPS: PipelineApplication[] = [
   app({ application_ref: 'fintech-a', stage: 'applied', last_activity_at: '2026-05-14T09:00:00Z' }),
   app({
     application_ref: 'devtools-b',
@@ -146,16 +146,16 @@ describe('Panel', () => {
   })
 })
 
-describe('FunnelCompact + RecentOutcomes', () => {
+describe('PipelineCompact + RecentOutcomes', () => {
   it('counts stages + reveals a public offer', () => {
-    render(<FunnelCompact apps={APPS} />)
+    render(<PipelineCompact apps={APPS} />)
     expect(within(screen.getByTestId('funnel-compact-applied')).getByText('1')).toBeInTheDocument()
     expect(within(screen.getByTestId('funnel-compact-offer')).getByText('1')).toBeInTheDocument()
     expect(screen.getByTestId('funnel-compact-reveal')).toHaveTextContent('devtools-b')
   })
 
   it('holds its shape with skeletons while loading (no counts, no reveal)', () => {
-    render(<FunnelCompact apps={[]} loading />)
+    render(<PipelineCompact apps={[]} loading />)
     // all 5 stage cells still render (the strip keeps its shape) …
     expect(screen.getByTestId('funnel-compact-applied')).toBeInTheDocument()
     expect(screen.getByTestId('funnel-compact-offer')).toBeInTheDocument()

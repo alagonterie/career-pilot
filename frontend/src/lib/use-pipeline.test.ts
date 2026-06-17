@@ -1,9 +1,9 @@
 import { renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { deriveStatTiles, useFunnel, type FunnelApplication, type FunnelResponse } from './use-funnel'
+import { deriveStatTiles, usePipeline, type PipelineApplication, type PipelineResponse } from './use-pipeline'
 
-function app(p: Partial<FunnelApplication> = {}): FunnelApplication {
+function app(p: Partial<PipelineApplication> = {}): PipelineApplication {
   return {
     application_id: 'acme',
     application_ref: 'acme',
@@ -55,7 +55,7 @@ describe('deriveStatTiles', () => {
     expect(byLabel['Avg days active']).toBe('15') // (20 + 10) / 2; closed c excluded
   })
 
-  it('returns zeroed tiles for an empty funnel (no crash)', () => {
+  it('returns zeroed tiles for an empty pipeline (no crash)', () => {
     const byLabel = Object.fromEntries(deriveStatTiles([]).map((t) => [t.label, t.value]))
     expect(byLabel['Offers']).toBe('0')
     expect(byLabel['Avg days active']).toBe('0')
@@ -71,15 +71,15 @@ describe('deriveStatTiles', () => {
   })
 })
 
-describe('useFunnel', () => {
-  it('fetches and exposes the funnel snapshot', async () => {
-    const body: FunnelResponse = { applications: [app()], stage_counts: { applied: 1 } }
+describe('usePipeline', () => {
+  it('fetches and exposes the pipeline snapshot', async () => {
+    const body: PipelineResponse = { applications: [app()], stage_counts: { applied: 1 } }
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => res(body)),
     )
 
-    const { result, unmount } = renderHook(() => useFunnel('http://x', 10_000))
+    const { result, unmount } = renderHook(() => usePipeline('http://x', 10_000))
     await waitFor(() => expect(result.current.status).toBe('ok'))
     expect(result.current.data?.applications).toHaveLength(1)
     unmount()
@@ -93,7 +93,7 @@ describe('useFunnel', () => {
       }),
     )
 
-    const { result, unmount } = renderHook(() => useFunnel('http://x', 10_000))
+    const { result, unmount } = renderHook(() => usePipeline('http://x', 10_000))
     await waitFor(() => expect(result.current.status).toBe('error'))
     expect(result.current.data).toBeNull()
     unmount()
@@ -103,12 +103,12 @@ describe('useFunnel', () => {
     // First poll → 'applied'; every later poll → 'screening'. We assert the
     // durable outcome (a re-poll replaced the data) rather than the transient
     // first state, which a fast poll can overwrite before the assertion runs.
-    const first: FunnelResponse = { applications: [app({ stage: 'applied' })], stage_counts: { applied: 1 } }
-    const second: FunnelResponse = { applications: [app({ stage: 'screening' })], stage_counts: { screening: 1 } }
+    const first: PipelineResponse = { applications: [app({ stage: 'applied' })], stage_counts: { applied: 1 } }
+    const second: PipelineResponse = { applications: [app({ stage: 'screening' })], stage_counts: { screening: 1 } }
     const fetchMock = vi.fn().mockResolvedValueOnce(res(first)).mockResolvedValue(res(second))
     vi.stubGlobal('fetch', fetchMock)
 
-    const { result, unmount } = renderHook(() => useFunnel('http://x', 20))
+    const { result, unmount } = renderHook(() => usePipeline('http://x', 20))
     await waitFor(() => expect(result.current.data?.applications[0].stage).toBe('screening'))
     expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2)
     unmount()

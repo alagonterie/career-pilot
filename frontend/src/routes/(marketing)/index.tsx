@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 
-import { FunnelCompact } from '~/components/live/FunnelCompact'
+import { PipelineCompact } from '~/components/live/PipelineCompact'
 import { LiveTicker } from '~/components/LiveTicker'
 import { Button } from '~/components/ui/button'
 import { Skeleton } from '~/components/ui/skeleton'
@@ -9,7 +9,7 @@ import { getWorkProfile } from '~/lib/profile-loader'
 import { heroStats, relativeAgo } from '~/lib/hero-stats'
 import { seo } from '~/lib/seo'
 import { useActivityStream } from '~/lib/use-activity-stream'
-import { useFunnel } from '~/lib/use-funnel'
+import { usePipeline } from '~/lib/use-pipeline'
 import { useTelemetry } from '~/lib/use-telemetry'
 import { workProfile } from '~/lib/work-profile'
 
@@ -34,9 +34,9 @@ function Home() {
   // Exclude turns: this 5-row teaser shows actions, not the per-turn cost seals
   // (those are the /live story) — so a stretch of turns can't blank the ticker.
   const { events, status, count } = useActivityStream(API_BASE, { exclude: ['turn'] })
-  const { data: funnel, status: funnelStatus } = useFunnel(API_BASE)
+  const { data: pipeline, status: pipelineStatus } = usePipeline(API_BASE)
   const { data: telemetry, status: telemetryStatus } = useTelemetry(API_BASE)
-  const apps = funnel?.applications ?? []
+  const apps = pipeline?.applications ?? []
   // SSR-resolved candidate profile (placeholder fallback) + the hero stat SEED
   // (the whole line, pre-rendered server-side). De-`Jane Doe`s the hero.
   const { profile, identity, heroSeed } = Route.useLoaderData()
@@ -48,7 +48,7 @@ function Home() {
   //     else the seed STRING (server-computed, so hydration matches — the client
   //     doesn't recompute the relative time until the stream supplies the SAME
   //     event, so the takeover is a no-op width-wise).
-  const statsReady = funnelStatus !== 'loading' && telemetryStatus !== 'loading'
+  const statsReady = pipelineStatus !== 'loading' && telemetryStatus !== 'loading'
   const liveCounts = heroStats({ apps, events: [], actionsIn24h: telemetry?.local.activity_events_24h ?? null })
   const counts = statsReady ? liveCounts : heroSeed.counts
   const liveLastActivity = events.length > 0 ? `last activity ${relativeAgo(events[events.length - 1].ts)}` : null
@@ -165,22 +165,22 @@ function Home() {
         </Link>
       </section>
 
-      {/* Viewport 2 — funnel strip (PORTAL §5.1): the search as a live pipeline,
-          reusing the compact funnel; clicking through opens /pipeline. Rendered
+      {/* Viewport 2 — pipeline strip (PORTAL §5.1): the search as a live pipeline,
+          reusing the compact pipeline; clicking through opens /pipeline. Rendered
           from first paint (skeleton while the first poll lands) so it holds its
           space instead of popping in — there's essentially always live data here.
           A cold backend error is the one case it collapses (no stranded skeleton). */}
-      {funnelStatus !== 'error' ? (
-        <section aria-labelledby="home-funnel-heading" className="mt-20 w-full">
+      {pipelineStatus !== 'error' ? (
+        <section aria-labelledby="home-pipeline-heading" className="mt-20 w-full">
           <div className="mb-3 flex items-center justify-between">
-            <h2 id="home-funnel-heading" className="text-sm font-semibold text-muted-foreground">
+            <h2 id="home-pipeline-heading" className="text-sm font-semibold text-muted-foreground">
               My job search, live
             </h2>
             <Link to="/pipeline" className="font-mono text-xs text-accent-cool hover:underline">
               track it →
             </Link>
           </div>
-          <FunnelCompact apps={apps} loading={funnelStatus === 'loading'} />
+          <PipelineCompact apps={apps} loading={pipelineStatus === 'loading'} />
           <p className="mt-3 text-[11px] text-muted-foreground">
             Companies are obfuscated until each process closes — a deliberate privacy choice.
           </p>

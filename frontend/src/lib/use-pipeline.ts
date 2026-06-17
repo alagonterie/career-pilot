@@ -2,14 +2,16 @@ import { useSurfaceState, withState } from './dev-state'
 import { usePolledJson, type PollStatus } from './use-polled-json'
 
 /**
- * A row of the public funnel read-model as delivered by `GET /api/funnel`
+ * A row of the public pipeline read-model as delivered by `GET /api/funnel`
  * (src/modules/portal/api.ts → public_funnel_view + read-time day counts).
+ * Naming boundary (§24.77 D3): the visitor-facing concept is the "pipeline"; the
+ * internal fetch URL + read-model keep their `funnel` names (unrenamed plumbing).
  * `application_ref` is the obfuscated label, or the real company name when
  * `public_state === 'public'` (the reveal tier, PORTAL §5.4).
  */
 /**
  * Per-kit existence metadata (§24.65) — enums + timestamps only; kit CONTENT
- * never rides the polled funnel payload (the /kit page fetches `/api/kit`).
+ * never rides the polled pipeline payload (the /kit page fetches `/api/kit`).
  */
 export interface KitMeta {
   round: string
@@ -20,7 +22,7 @@ export interface KitMeta {
   has_content: boolean
 }
 
-export interface FunnelApplication {
+export interface PipelineApplication {
   /** Opaque, unique per-application id — the stable React key + motion layoutId.
    * (`application_ref` is the obfuscated label and is shared across a company's
    * multiple applications, so it must NOT be used as a key.) */
@@ -43,16 +45,16 @@ export interface FunnelApplication {
   interview_kits?: KitMeta[]
 }
 
-export interface FunnelResponse {
-  applications: FunnelApplication[]
+export interface PipelineResponse {
+  applications: PipelineApplication[]
   stage_counts: Record<string, number>
 }
 
-export type FunnelStatus = PollStatus
+export type PipelineStatus = PollStatus
 
-export interface FunnelState {
-  data: FunnelResponse | null
-  status: FunnelStatus
+export interface PipelineState {
+  data: PipelineResponse | null
+  status: PipelineStatus
 }
 
 /**
@@ -63,9 +65,9 @@ export interface FunnelState {
  * shared `usePolledJson` primitive (client-only; keeps last-good data on a
  * transient blip; only a cold first failure shows `'error'`).
  */
-export function useFunnel(baseUrl: string, pollMs?: number): FunnelState {
-  const forced = useSurfaceState('funnel')
-  return usePolledJson<FunnelResponse>(withState(`${baseUrl}/api/funnel`, forced), pollMs)
+export function usePipeline(baseUrl: string, pollMs?: number): PipelineState {
+  const forced = useSurfaceState('pipeline')
+  return usePolledJson<PipelineResponse>(withState(`${baseUrl}/api/funnel`, forced), pollMs)
 }
 
 export interface StatTile {
@@ -80,11 +82,11 @@ const INTERVIEW_STAGES = new Set(['screening', 'tech', 'final'])
 const CLOSED_STAGES = new Set(['rejected', 'withdrawn'])
 
 /**
- * The four PORTAL §5.4 stat tiles, derived purely from the funnel rows (no new
+ * The four PORTAL §5.4 stat tiles, derived purely from the pipeline rows (no new
  * endpoint). Date-windowed counts are honest heuristics over the placeholder
- * data; `Avg days in funnel` is labeled low-rigor. Pure + testable.
+ * data; `Avg days active` is labeled low-rigor. Pure + testable.
  */
-export function deriveStatTiles(apps: FunnelApplication[]): StatTile[] {
+export function deriveStatTiles(apps: PipelineApplication[]): StatTile[] {
   const now = new Date()
   const year = now.getUTCFullYear()
   const month = now.getUTCMonth()

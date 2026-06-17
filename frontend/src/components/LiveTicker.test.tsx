@@ -32,7 +32,7 @@ import { LiveTicker } from './LiveTicker'
 function ev(partial: Partial<AuditEvent> & { seq: number }): AuditEvent {
   return {
     ts: '2026-06-02T16:42:00Z',
-    category: 'funnel',
+    category: 'pipeline',
     agent_name: null,
     proactive: 0,
     application_ref: null,
@@ -103,13 +103,13 @@ describe('LiveTicker', () => {
     render(
       <LiveTicker
         status="open"
-        events={[ev({ seq: 1, category: 'funnel', application_ref: 'fintech-a', summary: 'advanced to screening' })]}
+        events={[ev({ seq: 1, category: 'pipeline', application_ref: 'fintech-a', summary: 'advanced to screening' })]}
       />,
     )
     expect(screen.getByText('[fintech-a]')).toBeInTheDocument()
     expect(screen.queryByTestId('proactive-marker')).not.toBeInTheDocument()
-    // category is the fallback source label when agent_name is null, aliased for
-    // display (the 'funnel' category renders as 'pipeline' — §5.2 / §8.1 / §24.59)
+    // category is the fallback source label when agent_name is null; the audit
+    // data is natively 'pipeline' (§24.77 / migration 137 — no display alias)
     expect(screen.getByText('pipeline')).toBeInTheDocument()
   })
 
@@ -117,7 +117,7 @@ describe('LiveTicker', () => {
     render(
       <LiveTicker
         status="open"
-        events={[ev({ seq: 1, category: 'funnel', application_ref: 'fintech-a', summary: 'advanced' })]}
+        events={[ev({ seq: 1, category: 'pipeline', application_ref: 'fintech-a', summary: 'advanced' })]}
       />,
     )
     const link = screen.getByTestId('ticker-ref-link')
@@ -137,7 +137,7 @@ describe('LiveTicker', () => {
       <LiveTicker
         status="open"
         events={[
-          ev({ seq: 1, category: 'funnel', summary: 'advanced to screening' }),
+          ev({ seq: 1, category: 'pipeline', summary: 'advanced to screening' }),
           ev({ seq: 2, category: 'turn', summary: 'turn complete', model_used: 'opus-4-8' }),
         ]}
       />,

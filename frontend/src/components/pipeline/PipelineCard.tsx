@@ -1,15 +1,15 @@
-import type { FunnelApplication } from '~/lib/use-funnel'
+import type { PipelineApplication } from '~/lib/use-pipeline'
 import { cn } from '~/lib/utils'
 
 /**
- * One application on the funnel board (PORTAL §5.4). Obfuscated label by
+ * One application on the pipeline board (PORTAL §5.4). Obfuscated label by
  * default; the real company name + a `◆ public` marker when the reveal tier is
  * set. A `<button>` so it's keyboard-operable and axe-clean. The day-count
  * carries `data-testid="funnel-card-age"` so the visual baseline can mask it
  * (it drifts with wall-clock; the semantic E2E asserts the time-independent
  * stage/label instead).
  */
-export function FunnelCard({ app, onSelect }: { app: FunnelApplication; onSelect: () => void }) {
+export function PipelineCard({ app, onSelect }: { app: PipelineApplication; onSelect: () => void }) {
   const isPublic = app.public_state === 'public'
   // The bar shows win_confidence (a low-rigor heuristic) rather than restating
   // the stage the card is already filed under (§24.35 Pass D, #8).

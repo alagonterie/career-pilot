@@ -1,17 +1,17 @@
 import { InfoTip } from '~/components/InfoTip'
 import { Skeleton } from '~/components/ui/skeleton'
-import { deriveStatTiles, type FunnelApplication } from '~/lib/use-funnel'
+import { deriveStatTiles, type PipelineApplication } from '~/lib/use-pipeline'
 
 /**
  * The four PORTAL §5.4 stat tiles above the board, derived client-side from the
- * funnel rows (no new endpoint). Values carry `data-testid="stat-value"` so the
+ * pipeline rows (no new endpoint). Values carry `data-testid="stat-value"` so the
  * visual baseline can mask the date-windowed numbers (they drift); the labels
  * are stable. `loading` swaps the values for skeletons (§24.36 36.1) so the row
- * keeps its shape while the funnel poll is in flight. Each label carries an
+ * keeps its shape while the pipeline poll is in flight. Each label carries an
  * InfoTip with the tile's honest derivation (§24.60) — the copy lives with the
  * math in `deriveStatTiles`.
  */
-export function StatTiles({ apps, loading = false }: { apps: FunnelApplication[]; loading?: boolean }) {
+export function StatTiles({ apps, loading = false }: { apps: PipelineApplication[]; loading?: boolean }) {
   const tiles = deriveStatTiles(apps)
   return (
     <div data-testid="funnel-stats" className="grid grid-cols-2 gap-3 sm:grid-cols-4">

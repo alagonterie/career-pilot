@@ -101,7 +101,7 @@ export function seedDeterministicBacklog(db: Database.Database): void {
   insertAuditRow(db, {
     seq: 1,
     ts: '2026-06-02T16:30:00Z',
-    category: 'funnel',
+    category: 'pipeline',
     proactive: 1,
     application_ref: 'fintech-a',
     summary: 'advanced to tech screen',
@@ -117,13 +117,13 @@ export function seedDeterministicBacklog(db: Database.Database): void {
   insertAuditRow(db, {
     seq: 3,
     ts: '2026-06-02T16:42:00Z',
-    category: 'funnel',
+    category: 'pipeline',
     proactive: 0,
     application_ref: 'ai-infra-b',
     summary: 'logged a recruiter reply',
   });
   // A per-turn telemetry row (§24.34). The LLM economics live HERE — on a
-  // category='turn' summary row — never on the funnel/progress rows above
+  // category='turn' summary row — never on the pipeline/progress rows above
   // (those carry no per-event cost; the SDK resolves cost only per turn).
   // This is the seeded row the ticker + /live LogStream light their
   // model/tokens/cost/cache/latency lanes from.
@@ -691,9 +691,9 @@ function seedApplicationsAndFunnel(db: Database.Database): void {
   }
 }
 
-// Current subagent ids + one deliberate legacy id: real audit history contains
-// 'funnel-curator' rows from before the §24.59 rename, and the frontend
-// display-aliases them — seeding one keeps that alias path exercised in e2e.
+// Current subagent ids. Post-§24.77 the public audit data is natively new
+// (migration 137 rewrote historical 'funnel-curator' → 'pipeline-scribe'), so
+// the FE display-alias layer is gone — fixtures seed only the real names.
 const AGENTS = [
   'research-company',
   'tailor-resume',
@@ -701,7 +701,6 @@ const AGENTS = [
   'build-interview-kit',
   'scrape-jobs',
   'pipeline-scribe',
-  'funnel-curator',
 ];
 const MODELS = ['opus-4-8', 'sonnet-4-6', 'haiku-4-5'];
 
@@ -738,7 +737,7 @@ function seedAuditBacklog(db: Database.Database): void {
     insertAuditRow(db, {
       seq,
       ts,
-      category: isSubagent ? 'subagent_progress' : 'funnel',
+      category: isSubagent ? 'subagent_progress' : 'pipeline',
       agent_name: isSubagent ? AGENTS[i % AGENTS.length] : null,
       proactive: i % 4 === 0 ? 0 : 1,
       application_ref: labels[i % labels.length],
@@ -978,7 +977,7 @@ export function newGeneratorState(): GeneratorState {
 export function buildSyntheticEvent(state: GeneratorState): Omit<AuditSeed, 'seq' | 'ts'> {
   const t = state.tick;
   // Every 5th tick emits a per-turn telemetry row (§24.34) carrying the LLM
-  // lanes; all other ticks are funnel/progress rows with the lanes NULL — the
+  // lanes; all other ticks are pipeline/progress rows with the lanes NULL — the
   // real shape (cost is a per-turn fact, never a per-event one).
   if (t % 5 === 0) {
     return {
@@ -997,7 +996,7 @@ export function buildSyntheticEvent(state: GeneratorState): Omit<AuditSeed, 'seq
   }
   const isSubagent = t % 3 !== 0;
   return {
-    category: isSubagent ? 'subagent_progress' : 'funnel',
+    category: isSubagent ? 'subagent_progress' : 'pipeline',
     agent_name: isSubagent ? AGENTS[t % AGENTS.length] : null,
     proactive: t % 4 === 0 ? 0 : 1,
     application_ref: state.labels[t % state.labels.length],

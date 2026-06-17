@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import * as React from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { FunnelApplication } from '~/lib/use-funnel'
+import type { PipelineApplication } from '~/lib/use-pipeline'
 
 // Isolate from the router — DetailPanel's "Live activity →" is a <Link>
 // (§24.60), which would need a RouterProvider. The anchor stand-in builds the
@@ -34,11 +34,11 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 import { DetailPanel } from './DetailPanel'
-import { FunnelBoard } from './FunnelBoard'
-import { FunnelCard } from './FunnelCard'
+import { PipelineBoard } from './PipelineBoard'
+import { PipelineCard } from './PipelineCard'
 import { StatTiles } from './StatTiles'
 
-function app(p: Partial<FunnelApplication> & { application_ref: string }): FunnelApplication {
+function app(p: Partial<PipelineApplication> & { application_ref: string }): PipelineApplication {
   return {
     application_id: p.application_ref, // tests use unique refs; an explicit application_id in `p` overrides
     public_state: 'obfuscated',
@@ -57,7 +57,7 @@ function app(p: Partial<FunnelApplication> & { application_ref: string }): Funne
   }
 }
 
-const APPS: FunnelApplication[] = [
+const APPS: PipelineApplication[] = [
   app({ application_ref: 'fintech-a', stage: 'applied' }),
   app({ application_ref: 'fintech-b', stage: 'screening' }),
   app({ application_ref: 'ai-infra-a', stage: 'tech' }),
@@ -66,9 +66,9 @@ const APPS: FunnelApplication[] = [
   app({ application_ref: 'saas-b', stage: 'rejected' }),
 ]
 
-describe('FunnelBoard', () => {
+describe('PipelineBoard', () => {
   it('renders a column per pipeline stage with the cards in them', () => {
-    render(<FunnelBoard apps={APPS} onSelect={() => {}} />)
+    render(<PipelineBoard apps={APPS} onSelect={() => {}} />)
     for (const title of ['Applied', 'Screening', 'Tech', 'Final', 'Offer']) {
       expect(screen.getByRole('region', { name: title })).toBeInTheDocument()
     }
@@ -80,7 +80,7 @@ describe('FunnelBoard', () => {
     // Keying by application_id (not the ref) keeps both cards; the old
     // ref-keyed version collided and glitched the motion layout animation.
     render(
-      <FunnelBoard
+      <PipelineBoard
         apps={[
           app({ application_id: 'id-1', application_ref: 'series-b-ai', stage: 'screening' }),
           app({ application_id: 'id-2', application_ref: 'series-b-ai', stage: 'screening' }),
@@ -93,7 +93,7 @@ describe('FunnelBoard', () => {
   })
 
   it('obfuscates by default but reveals the public application with its real name', () => {
-    render(<FunnelBoard apps={APPS} onSelect={() => {}} />)
+    render(<PipelineBoard apps={APPS} onSelect={() => {}} />)
     // Obfuscated → bracketed label, no real name leaked.
     expect(screen.getByText('[fintech-b]')).toBeInTheDocument()
     // Public reveal → real company name + the ◆ public marker.
@@ -102,21 +102,21 @@ describe('FunnelBoard', () => {
   })
 
   it('surfaces closed/non-pipeline applications rather than dropping them', () => {
-    render(<FunnelBoard apps={APPS} onSelect={() => {}} />)
+    render(<PipelineBoard apps={APPS} onSelect={() => {}} />)
     expect(screen.getByTestId('funnel-offboard')).toBeInTheDocument()
     expect(screen.getByText('[saas-b]')).toBeInTheDocument()
   })
 
   it('keeps the Bookmarked & closed strip with an honest note when nothing is closed (§24.62)', () => {
     const pipelineOnly = APPS.filter((a) => a.stage !== 'rejected')
-    render(<FunnelBoard apps={pipelineOnly} onSelect={() => {}} />)
+    render(<PipelineBoard apps={pipelineOnly} onSelect={() => {}} />)
     expect(screen.getByTestId('funnel-offboard')).toBeInTheDocument()
     expect(screen.getByTestId('funnel-offboard-empty')).toHaveTextContent('Nothing bookmarked or closed yet.')
   })
 
   it('calls onSelect with the clicked application', () => {
     const onSelect = vi.fn()
-    render(<FunnelBoard apps={APPS} onSelect={onSelect} />)
+    render(<PipelineBoard apps={APPS} onSelect={onSelect} />)
     fireEvent.click(screen.getByText('[fintech-a]'))
     expect(onSelect).toHaveBeenCalledTimes(1)
     expect(onSelect.mock.calls[0][0].application_ref).toBe('fintech-a')
@@ -126,7 +126,7 @@ describe('FunnelBoard', () => {
     // Only an offer card; applied/screening/tech/final are empty. On a phone the
     // board stacks vertically, so an empty stage's "—" body is `hidden sm:flex`
     // (the section collapses to its header row — no full-height void).
-    render(<FunnelBoard apps={[app({ application_ref: 'x', stage: 'offer' })]} onSelect={() => {}} />)
+    render(<PipelineBoard apps={[app({ application_ref: 'x', stage: 'offer' })]} onSelect={() => {}} />)
     const dash = within(screen.getByTestId('funnel-col-applied')).getByText('—')
     expect(dash.parentElement?.className).toContain('hidden')
     // A populated stage keeps its card (not collapsed).
@@ -134,23 +134,23 @@ describe('FunnelBoard', () => {
   })
 })
 
-describe('FunnelCard win-confidence bar (§24.35 Pass D)', () => {
+describe('PipelineCard win-confidence bar (§24.35 Pass D)', () => {
   it('shows the ~N% win-confidence bar when present (not the stage position)', () => {
     render(
-      <FunnelCard app={app({ application_ref: 'x', stage: 'screening', win_confidence: 64 })} onSelect={() => {}} />,
+      <PipelineCard app={app({ application_ref: 'x', stage: 'screening', win_confidence: 64 })} onSelect={() => {}} />,
     )
     expect(screen.getByText('~64%')).toBeInTheDocument()
   })
 
   it('shows no bar when win_confidence is null', () => {
     const { container } = render(
-      <FunnelCard app={app({ application_ref: 'y', win_confidence: null })} onSelect={() => {}} />,
+      <PipelineCard app={app({ application_ref: 'y', win_confidence: null })} onSelect={() => {}} />,
     )
     expect(container.querySelector('[title*="win confidence"]')).toBeNull()
   })
 })
 
-describe('FunnelCard kit chip (§24.65)', () => {
+describe('PipelineCard kit chip (§24.65)', () => {
   const kit = (round: string, status = 'active') => ({
     round,
     interview_type: 'technical_screen',
@@ -161,11 +161,13 @@ describe('FunnelCard kit chip (§24.65)', () => {
   })
 
   it('shows the ▤ chip when kits exist (count when several)', () => {
-    render(<FunnelCard app={app({ application_ref: 'x', interview_kits: [kit('TECH_SCREEN')] })} onSelect={() => {}} />)
+    render(
+      <PipelineCard app={app({ application_ref: 'x', interview_kits: [kit('TECH_SCREEN')] })} onSelect={() => {}} />,
+    )
     expect(screen.getByTestId('funnel-card-kit')).toHaveTextContent('▤ kit')
 
     render(
-      <FunnelCard
+      <PipelineCard
         app={app({ application_ref: 'y', interview_kits: [kit('SCREENING', 'archived'), kit('TECH_SCREEN')] })}
         onSelect={() => {}}
       />,
@@ -174,7 +176,7 @@ describe('FunnelCard kit chip (§24.65)', () => {
   })
 
   it('shows no chip without kits', () => {
-    render(<FunnelCard app={app({ application_ref: 'z' })} onSelect={() => {}} />)
+    render(<PipelineCard app={app({ application_ref: 'z' })} onSelect={() => {}} />)
     expect(screen.queryByTestId('funnel-card-kit')).not.toBeInTheDocument()
   })
 })
@@ -301,10 +303,10 @@ describe('DetailPanel', () => {
 
 describe('card click opens the detail panel (composed)', () => {
   function Harness() {
-    const [selected, setSelected] = React.useState<FunnelApplication | null>(null)
+    const [selected, setSelected] = React.useState<PipelineApplication | null>(null)
     return (
       <>
-        <FunnelBoard apps={APPS} onSelect={setSelected} />
+        <PipelineBoard apps={APPS} onSelect={setSelected} />
         <DetailPanel app={selected} onClose={() => setSelected(null)} />
       </>
     )

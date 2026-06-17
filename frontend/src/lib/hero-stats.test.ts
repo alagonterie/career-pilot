@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import { activeApplicationCount, heroStats, relativeAgo } from './hero-stats'
 import type { AuditEvent } from './use-activity-stream'
-import type { FunnelApplication } from './use-funnel'
+import type { PipelineApplication } from './use-pipeline'
 
-function app(stage: string): FunnelApplication {
+function app(stage: string): PipelineApplication {
   return {
     application_id: `id-${stage}-${Math.random()}`,
     application_ref: 'Series-B fintech',

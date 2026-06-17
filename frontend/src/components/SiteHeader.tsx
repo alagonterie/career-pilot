@@ -27,8 +27,9 @@ const PERSONAL: NavLink[] = [
  * `Watch it work` → the "watch me apply to your role" spoke at `/simulator` — all
  * live demos of the agent system) and the PERSONAL tail (`Experience` at `/work`,
  * `Contact`). "Job Pipeline" is the
- * visitor label for the funnel page (`/pipeline`, §24.59); the internal naming
- * stays "funnel". `/about` is a footer link (§8.2), not a header item. Brand
+ * visitor label for the pipeline page (`/pipeline`, §24.59); §24.77 D3 retired the
+ * "funnel" naming — only the internal `/api/funnel` URL keeps it. `/about` is a
+ * footer link (§8.2), not a header item. Brand
  * wordmark = the candidate's name (not a domain — on a personal hiring portal the
  * candidate IS the brand). Per-deployment build-time env (STRATEGY §24.71 9.4b-3,
  * the planned `VITE_PERSON_NAME`); the committed default is the generic placeholder.

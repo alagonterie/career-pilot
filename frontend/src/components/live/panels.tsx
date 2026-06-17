@@ -7,7 +7,7 @@ import { ModeBanner } from '~/components/architecture/ModeBanner'
 import { StateNote } from '~/components/states'
 import { Skeleton } from '~/components/ui/skeleton'
 import type { ArchitectureData, SystemMode } from '~/lib/use-architecture'
-import type { FunnelApplication } from '~/lib/use-funnel'
+import type { PipelineApplication } from '~/lib/use-pipeline'
 import type { Observability, TrafficClass } from '~/lib/use-observability'
 import type { PollStatus } from '~/lib/use-polled-json'
 import type { TelemetryView } from '~/lib/use-telemetry'
@@ -374,12 +374,12 @@ export function LlmSpendPanel({
 }
 
 /** RECENT OUTCOMES — the most-recently-active applications with current stage +
- * the ◆ public marker, from the already-polled funnel rows. An honest
+ * the ◆ public marker, from the already-polled pipeline rows. An honest
  * current-state snapshot; true transition arrows need the deferred
  * funnel_events history (§24.29). `flex-1` lets it grow to fill the rail down to
  * the trace-stream height beside it (§24.69 follow-up) — the list earns the room
  * by showing more of the real recent activity, rather than leaving a dead gap. */
-export function RecentOutcomesPanel({ apps, status }: { apps: FunnelApplication[]; status?: PollStatus }) {
+export function RecentOutcomesPanel({ apps, status }: { apps: PipelineApplication[]; status?: PollStatus }) {
   const recent = apps
     .filter((a) => a.last_activity_at != null)
     .slice()

@@ -27,8 +27,11 @@ describe('ai-actors registry (§24.73)', () => {
 
   it('resolves by exact name, then alias, then substring; null for the unknown', () => {
     expect(resolveActor('tailor-resume')?.name).toBe('tailor-resume')
-    // The pre-rename wire/audit name resolves to pipeline-scribe (display alias).
-    expect(resolveActor('funnel-curator')?.name).toBe('pipeline-scribe')
+    // Alias path is still used by the host/system actors (the orchestrator label).
+    expect(resolveActor('orchestrator')?.name).toBe('my agent system')
+    // The pre-rename 'funnel-curator' alias is RETIRED (§24.77 / migration 137 made
+    // the audit data native) — the legacy name no longer resolves to an actor.
+    expect(resolveActor('funnel-curator')).toBeNull()
     // A dispatch label that carries extra decoration still resolves by substring.
     expect(resolveActor('Agent(research-company)')?.name).toBe('research-company')
     expect(resolveActor('totally-unknown-tool')).toBeNull()

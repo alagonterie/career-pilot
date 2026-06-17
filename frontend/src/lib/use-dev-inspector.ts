@@ -238,9 +238,11 @@ export interface ResetScopeMeta {
 
 export const RESET_SCOPES: ResetScopeMeta[] = [
   {
+    // `scope` is the wire value the backend reset endpoint matches on — kept
+    // `funnel-data` (internal plumbing, §24.77 D3); the visitor copy is "pipeline".
     scope: 'funnel-data',
-    label: 'Funnel data',
-    clears: 'Applications, funnel, leads, email events. Keeps your profile + chat.',
+    label: 'Pipeline data',
+    clears: 'Applications, pipeline, leads, email events. Keeps your profile + chat.',
     halts: false,
   },
   {
@@ -252,13 +254,13 @@ export const RESET_SCOPES: ResetScopeMeta[] = [
   {
     scope: 'profile',
     label: 'Profile',
-    clears: 'Wipes the candidate profile → onboarding restarts. Keeps funnel + chat.',
+    clears: 'Wipes the candidate profile → onboarding restarts. Keeps pipeline + chat.',
     halts: false,
   },
   {
     scope: 'everything',
     label: 'Everything',
-    clears: 'Funnel + profile + conversation — a true pre-bootstrap clean slate. Halts the agent.',
+    clears: 'Pipeline + profile + conversation — a true pre-bootstrap clean slate. Halts the agent.',
     halts: true,
   },
 ]

@@ -104,7 +104,7 @@ function nodeFacts(
 }
 
 /**
- * The node click-through modal (PORTAL §5.5), sharing the funnel drawer's
+ * The node click-through modal (PORTAL §5.5), sharing the pipeline drawer's
  * accessible-dialog contract via `useDialog` (PORTAL §8.5): labeled +
  * described, focus-trapped, Escape + backdrop close, focus restored to the
  * triggering node on close, the rest of the page held inert. Renders the node's

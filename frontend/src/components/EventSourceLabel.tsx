@@ -7,9 +7,9 @@ import { type AuditEvent, eventSourceLabel } from '~/lib/use-activity-stream'
  * cast (a subagent / the orchestrator) it renders as an explainable AgentRef —
  * the same chip the simulator trace uses, so the live feeds speak the one
  * AI-authorship language. Category-derived labels that aren't agents ("pipeline"
- * = the board, "system") stay in the plain link register. The alias resolution
- * (`funnel-curator`→`pipeline-scribe`, `funnel`→`pipeline`) happens in
- * `eventSourceLabel` first, so `resolveActor` sees the display name.
+ * = the board, "system") stay in the plain link register. The audit data is
+ * natively visitor-facing (§24.77 D3 / migration 137) — no alias step; the row's
+ * own `agent_name`/`category` is what `resolveActor` sees.
  */
 export function EventSourceLabel({ event }: { event: AuditEvent }) {
   const label = eventSourceLabel(event)

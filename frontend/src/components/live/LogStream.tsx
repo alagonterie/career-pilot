@@ -52,16 +52,16 @@ interface Chip {
 
 // Data-driven filter chips (PORTAL §5.2). Reactive/Proactive read the real
 // `proactive` flag; the per-subagent + System chips read `agent_name`/`category`.
-// Each chip matches an id LIST (§24.59): the audit trail is append-only, so
-// historical rows keep pre-rename agent ids ('funnel-curator' → pipeline-scribe,
-// 'prep-interview' → build-interview-kit) and one chip covers old + new.
-const AGENT_CHIPS: { id: string; agents: string[]; label: string }[] = [
-  { id: 'research-company', agents: ['research-company'], label: 'Research' },
-  { id: 'tailor-resume', agents: ['tailor-resume'], label: 'Tailor' },
-  { id: 'draft-outreach', agents: ['draft-outreach'], label: 'Outreach' },
-  { id: 'build-interview-kit', agents: ['build-interview-kit', 'prep-interview'], label: 'Prep' },
-  { id: 'scrape-jobs', agents: ['scrape-jobs'], label: 'Scrape' },
-  { id: 'pipeline-scribe', agents: ['pipeline-scribe', 'funnel-curator'], label: 'Scribe' },
+// One chip per subagent, matched on the native `agent_name`: post-§24.77
+// (migration 137) the audit data carries the real names, so a chip is a single
+// id — no legacy-alias fan-out ('funnel-curator'/'prep-interview' are migrated).
+const AGENT_CHIPS: { id: string; label: string }[] = [
+  { id: 'research-company', label: 'Research' },
+  { id: 'tailor-resume', label: 'Tailor' },
+  { id: 'draft-outreach', label: 'Outreach' },
+  { id: 'build-interview-kit', label: 'Prep' },
+  { id: 'scrape-jobs', label: 'Scrape' },
+  { id: 'pipeline-scribe', label: 'Scribe' },
 ]
 
 const CHIPS: Chip[] = [
@@ -71,7 +71,7 @@ const CHIPS: Chip[] = [
   ...AGENT_CHIPS.map((c) => ({
     id: c.id,
     label: c.label,
-    match: (e: AuditEvent) => e.agent_name != null && c.agents.includes(e.agent_name),
+    match: (e: AuditEvent) => e.agent_name === c.id,
   })),
   { id: 'system', label: 'System', match: (e) => e.agent_name == null },
 ]

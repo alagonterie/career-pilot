@@ -12,7 +12,10 @@
  * best-effort. The private write is already committed by the time the
  * mirror runs.
  *
- * Categories beyond 'funnel' are deferred to Sub-milestone 4.2+.
+ * Naming boundary (§24.77 D3): the PRIVATE source is still `funnel_events`
+ * (the internal domain term — table unrenamed), but the PUBLIC projection
+ * uses the visitor-facing 'pipeline' category. The mirror is exactly where
+ * that internal→public rename happens.
  *
  * Sub-milestone 4.3 adds `resanitizeApplicationAuditTrail` (below): when an
  * application's obfuscation policy changes (public_state flip, or an edit to
@@ -216,7 +219,8 @@ export async function mirrorFunnelEvent(db: Database.Database, eventId: string):
     ).run({
       id: generateId(),
       ts: new Date().toISOString(),
-      category: 'funnel',
+      // Public-facing category (§24.77 D3) — the private source is funnel_events.
+      category: 'pipeline',
       proactive: row.proactive ? 1 : 0,
       application_ref: applicationRef,
       summary,
@@ -276,7 +280,7 @@ export async function resanitizeApplicationAuditTrail(
     const del = db
       .prepare(
         `DELETE FROM public_audit_trail
-          WHERE category = 'funnel'
+          WHERE category = 'pipeline'
             AND source_funnel_event_id IN (
               SELECT id FROM funnel_events WHERE application_id = ?
             )`,

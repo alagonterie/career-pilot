@@ -14,10 +14,10 @@ import * as React from 'react'
  * tree-shaken from the production bundle (`import.meta.env.DEV`).
  */
 export type SurfaceState = 'normal' | 'loading' | 'empty' | 'error'
-export type Surface = 'funnel' | 'activity' | 'architecture' | 'telemetry' | 'observability'
+export type Surface = 'pipeline' | 'activity' | 'architecture' | 'telemetry' | 'observability'
 
 export const SURFACES: { id: Surface; label: string }[] = [
-  { id: 'funnel', label: 'Funnel' },
+  { id: 'pipeline', label: 'Pipeline' },
   { id: 'activity', label: 'Activity' },
   { id: 'architecture', label: 'Architecture' },
   { id: 'telemetry', label: 'Telemetry' },
