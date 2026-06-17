@@ -5633,6 +5633,32 @@ The three explainer surfaces, disambiguated: the **pitch** (this §, plain-Engli
 
 ---
 
+#### 24.80 `/architecture` node-health promotions (backlog T2): Web sandbox + Cron sweep get real probes; Anthropic stays structural; Idle clarified
+
+**Problem / framing.** The `/architecture` diagram's honesty core (§24.24 / §24.28) paints a node's health badge **only** from a real probe; a node we don't probe is `structural` and carries *no* claim. The owner asked to promote three `structural` nodes we *can* honestly probe — `trig-web` (Web sandbox), `trig-cron` (Cron sweep), and "maybe" `cont-anthropic` (Anthropic API) — and to audit the `idle` status ("not sure what the intention was there"). The signals already exist host-side: the §24.69 `request_telemetry` 24 h aggregates (incl. the `sandbox` traffic class), the `simulator_enabled` kill switch + `sandbox_daily_global_budget_usd` cap, and the 60 s host sweep loop. The constraint is the honesty core: promote only where there's a *real* signal, never a color we don't probe.
+
+- **D1 — Web sandbox → a `sandbox` probe.** Folds three signals the host owns: the `simulator_enabled` kill switch, the 24 h sandbox spend (`request_telemetry` `traffic_class='sandbox'`, already aggregated by observability), and the `sandbox_daily_global_budget_usd` cap. Status: `down` when disabled (kill switch); `degraded` when 24 h sandbox spend ≥ the daily cap (the owner's "reached our daily spend limit"); `idle` when enabled but **no** sandbox spend in the window (nobody ran it — honest rest); else `healthy`.
+- **D2 — Cron sweep → a `sweep` probe (freshness).** The host sweep loop (`src/host-sweep.ts`, 60 s) records an **in-process** last-run timestamp (module-level — the architecture handler runs in the same process; no per-tick DB write); the architecture endpoint exposes its age. Status: `healthy` when the last sweep is within `arch_sweep_stale_sec` (a small multiple of the interval); `down` when the loop has gone silent past it (stalled). **By-design skips stay healthy (owner call):** quiet-hours-deferred work is not a fault — the node modal says the sweep is alive and that some work is intentionally deferred. Deep "missed a job" detection stays the `pnpm health` queue-starvation finding (the runbook), linked from the modal, **not** a public badge color — the badge claims only what it probes (is the loop alive), not what it can't cleanly distinguish (intentional vs. dropped).
+- **D3 — Anthropic API stays `structural` (owner call).** Every model call is telemetered as the `portkey` gateway slug — there is **no** Anthropic-specific probe. A badge derived from Portkey's rows would merely mirror the Portkey node and could misattribute a gateway failure to Anthropic, violating the honesty core. The Portkey gateway node already carries the real LLM-path health; Anthropic keeps its no-claim `structural` badge (its modal already frames it "external — every reasoning turn is a call here").
+- **D4 — `idle` kept, clarified (owner call).** `idle` stays the honest word for a node with nothing running *right now* (the ops container spins on-demand → `running=0` is the normal resting state, not a fault) and for a provider/sandbox with no rows in the window. **No new status.** The audit's finding: every current `idle` use is honest (cold-load transient, on-demand rest, or a quiet provider) — the gap was *copy*, not semantics. `NodePanel` gains a one-line clarification that idle = at rest, not broken.
+
+**Backend.** Extend `ArchitectureData` (`/api/architecture` → `handleArchitecture`) with `sandbox: { enabled, spend_24h_usd, daily_budget_usd }` (spend reuses the cached observability `sandbox` aggregate) and `sweep: { last_run_age_sec }` (reads the host-sweep last-run stamp; `null` before the first tick). New config `arch_sweep_stale_sec` (default 180 = 3 sweep intervals). Zero magic numbers.
+
+**Frontend.** Two new `ProbeKind`s (`sandbox`, `sweep`) + their `deriveNodeStatus` cases; `trig-web`/`trig-cron` flip from `structural`; `NodePanel` idle-clarifying copy + the cron by-design note. No node geometry change (the diagram viewBox/coordinates are untouched → only badge pixels move).
+
+**Decomposition (DD cadence).** Commit 1 — spec (this § + PORTAL §5.5 build note; no deploy-relevant code). Commit 2 — build: host-sweep last-run stamp + the architecture-endpoint fields + the `arch_sweep_stale_sec` config + the two FE probes + the NodePanel copy; tests (backend `handleArchitecture` shape + the sandbox/sweep derivations; FE `nodes`/`diagram` status cases); architecture `@visual` re-bless. Host + frontend `tsc` + prettier.
+
+**Definition of done.**
+1. Web sandbox badge: `down` when `simulator_enabled=false`; `degraded` when 24 h sandbox spend ≥ the cap; `idle` when enabled with no spend; `healthy` otherwise — unit-tested against the derivation.
+2. Cron sweep badge: `healthy` when the sweep ran within `arch_sweep_stale_sec`; `down` when stale past it; a by-design quiet-hours skip does **not** degrade it — unit-tested.
+3. Anthropic API stays `structural` (no badge claim) — asserted.
+4. No new status value; the `idle` copy clarifies the resting state; the audit's "all current idle uses are honest" conclusion recorded.
+5. Host + frontend `tsc` + prettier green; backend + FE unit suites green; the architecture `@visual` baselines re-blessed (no node-geometry / baseline-filename churn).
+
+**Spec deltas.** This §24.80; PORTAL §5.5 (T2 build note — the three promotions + the idle-copy clarification). Memory: [[todo_backlog]] (T2), [[status_current]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
