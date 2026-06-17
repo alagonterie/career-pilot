@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { footerSocials } from './SiteFooter'
+import { FOOTER_CREDITS, footerSocials } from './SiteFooter'
 import type { Identity } from '~/lib/profile-loader'
 
 const full: Identity = {
@@ -30,5 +30,17 @@ describe('footerSocials', () => {
     expect(footerSocials({ email: 'jane@example.com', github: null, linkedin: null, x: null, website: null })).toEqual(
       [],
     )
+  })
+})
+
+describe('FOOTER_CREDITS', () => {
+  it('credits the headline stack in order, each with an absolute https href', () => {
+    expect(FOOTER_CREDITS.map((c) => c.label)).toEqual(['NanoClaw', 'Claude', 'TanStack Start'])
+    expect(FOOTER_CREDITS.map((c) => c.href)).toEqual([
+      'https://github.com/nanocoai/nanoclaw',
+      'https://claude.com',
+      'https://tanstack.com/start',
+    ])
+    for (const c of FOOTER_CREDITS) expect(c.href).toMatch(/^https:\/\//)
   })
 })
