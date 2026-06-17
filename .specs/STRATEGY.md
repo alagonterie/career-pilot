@@ -5711,6 +5711,17 @@ The three explainer surfaces, disambiguated: the **pitch** (this §, plain-Engli
 
 ---
 
+#### 24.84 `/dashboard` LLM-spend panel: two equal amounts — 24h spend (left) + cache (right) (owner T5)
+
+**Problem.** The `LlmSpendPanel` (§24.69) leads with the 24h-spend total as a big-number `Metric`, but the cache-hit rate — which lives in this box deliberately, because it's a *cost lever*, not a perf metric — was a small inline `cache NN%` span squeezed to the right of the total. It read as an afterthought next to the headline, when it's the thing that explains *why* the spend is low.
+
+- **Fix.** Promote the cache to a second, equally-styled `Metric` so the box leads with **two big numbers, bookended**: 24h spend on the left (label "24h · est"), cache on the right (label "cache"), each with its own explain-on-tap InfoTip underneath. Same `text-2xl` big-number register for both; the cache `Metric` is right-aligned (`align="right"`) so the pair reads as deliberate left/right bookends. The two sit on one row beside each other (`justify-between`), so the tile adds **no height** — it still fits the four-box stat-row's 196 px floor (the chart + per-class legend below are unchanged). Cache still renders only when `cacheHitRate != null` (a name-only/no-turn state shows just the spend).
+- **Mechanism.** Add an optional `align?: 'left' | 'right'` to the shared `Metric` helper (default `left` — every existing call is byte-identical); `right` adds `items-end text-right`. New value testid `llm-cache-rate` mirrors `llm-spend-total`. The InfoTip aria-label follows the visible label ("cache") — the unit assertion updates `About: cache rate` → `About: cache`.
+
+**DoD.** `/dashboard`'s LLM-spend box shows two equal `text-2xl` amounts (spend left, cache right), each with a label + InfoTip beneath; the cache amount matches the spend's size; the panel height is unchanged (stat-row stays uniform). fe `tsc` + FE unit (`spend-by-class.test.tsx` asserts both amounts are `text-2xl` + the renamed InfoTip) + prettier green; the `live` + `mobile-live` `@visual` baselines re-blessed. **Spec deltas:** this §24.84; PORTAL §5.2 build note. Memory: [[todo_backlog]] (T5).
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
