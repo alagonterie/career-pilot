@@ -872,6 +872,8 @@ A `Download PDF` button at top + bottom — generated server-side from the struc
 
 > **Build note (STRATEGY §24.81 — T3).** The Download-PDF button now shares the `/watch` results page's polished download behavior via the one `ResumeDownload` component — the "Preparing…" state, the server filename, the graceful fallback, and the no-resize grid-stack — while keeping its quiet `outline`/`sm` register and **no** preview modal (the page already *is* the résumé, and the button appears twice). Still a real `<a href download>`, so it works JS-disabled.
 
+> **Build note (STRATEGY §24.83 — T4).** Two changes. (1) The résumé sections adopt the shared `LongformDoc` scaffold (§5.9 build note) — a sticky scroll-spy TOC (desktop rail / mobile chip strip) over the existing masthead — so a long résumé navigates like the kit; `WorkSections` computes the list of *present* sections (omit-when-empty already), so a partial profile shows a shorter rail. (2) The **"Where else to find me / Elsewhere"** social-links section is **removed** — the sitewide footer (§8.2 / §24.76) is now the single socials strip, and repeating GitHub/LinkedIn per-page is redundant. Item 8 above is retired by this note.
+
 ---
 
 ### 5.7 `/contact` — Recruiter contact
@@ -904,6 +906,8 @@ Below the form, the "reach me directly" paths:
 
 > **Build note (STRATEGY §24.71 / 9.4b-3).** These paths are **SSR-driven from the candidate's canonical `identity`** (`GET /api/profile`, read from `candidate_profile` columns — `public_email`, `linkedin_url`, `github_url`), each rendered only when set; the whole section is omitted when none are. No hardcoded placeholder links. **Telegram is dropped** (owner-only admin channel, locked strict — the form is the visitor path; owner call 2026-06-14), superseding the original "public bot deep link" path here and the §12 "Public Telegram bot username" row.
 
+> **Build note (STRATEGY §24.83 — T4): the "reach me directly" section is removed.** The plain-text **email** there was a scraping leak that contradicted the footer's deliberate email exclusion (§8.2 / §24.76), and the **LinkedIn/GitHub** links duplicated the now-sitewide footer socials strip. So the whole "Or reach me directly" block is dropped: `/contact` = the relay form, and the footer (on this page too) carries the socials. Email reaches the candidate only through the form. (The same `mailto:` leak in the home "Talk to me" block is removed in the same pass.)
+
 When submitted, the message is relayed to the candidate via Telegram. Sender gets a confirmation: *"Sent. the candidate typically replies within 24 hours."*
 
 **Spam control:** Cloudflare Turnstile captcha (invisible by default) + a per-IP burst rate-limit, both enforced **at the Worker edge** before the submission crosses the tunnel (STRATEGY §24.70 / 9.4a — the BFF proxy is the only thing that sees a raw visitor request under the §24.39 D12 topology). The original "5/IP/hr" framing is approximated by a 60 s Workers-RL burst (Workers RL only does 10 s/60 s windows); an hourly Durable-Object cap is deferred for `/contact` (it spends no money — just relays — so Turnstile + the burst is sufficient; the DO $-budget/per-IP machinery is spent on the simulator, which does).
@@ -932,6 +936,8 @@ When submitted, the message is relayed to the candidate via Telegram. Sender get
 12. **FAQ** — common recruiter questions.
 
 Marketing register throughout (calm, `max-w-prose`), opening warm/narrative and deepening into precise/technical — a normal long-form arc. The connective rail's existing `/about` row (§8.4) applies.
+
+> **Build note (STRATEGY §24.83 — adopt the `/kit` reading model).** This is a wall of ~12 sections with no nav aid, so it adopts the shared `LongformDoc` scaffold (§5.9 build note): a document masthead + the sticky scroll-spy TOC (desktop rail / mobile chip strip), no `⊘`/stepper (no sealed sections). Sections carry a short TOC `nav` label distinct from the full section `heading` so the rail stays scannable while headings stay sentence-length; the `#anonymization` + `#privacy` deep-link targets remain section ids. The warm-story register and the live cost/cast content are unchanged — only the navigation is added.
 
 > **Cost note (STRATEGY §24.75 — reuse, don't rebuild).** The cost section renders from the **existing public** `GET /api/telemetry` — `turn_cost_cents_total` + `sim_cost_cents_total` (the combined headline) and `cache_hit_rate` — the same data `/live`'s "Cost & cache" panel already shows. No new endpoint, and no "should real $ be public" decision: the number is *already* public on `/live`. The earlier wording here — "live numbers, **not** estimates" — is reconciled to the honest reality: the Agent SDK resolves **estimates** only (exact per-call figures need Portkey's Enterprise admin key, STRATEGY §24.47), so the figures render **labeled `est`**, exactly as on `/live`. "Live estimates, honestly labeled" — the honesty rule wins over the aspiration.
 
@@ -1035,6 +1041,8 @@ This page exists so a curious visitor never has to wonder "is any of this for re
 **States (§10 discipline):** loading skeleton (masthead + a few bars); unknown ref/round or no kit → an honest empty state with a link back to `/pipeline`; a kit whose content predates markdown capture (§24.65 backfill miss) → metadata masthead + "content not captured for kits built before this feature."
 
 **Load behavior:** `/api/kit` is fetched once on page open — a kit is static once built; no polling. Realistic kits are 1–3k words (~10–30 KB JSON) — plain render, no virtualization.
+
+> **Build note (STRATEGY §24.83 — the shared long-form scaffold).** The reading model above (document masthead + sticky scroll-spy TOC: desktop rail / mobile chip strip + ‹ › steppers, all the §24.65-hardened jump/scroll-spy behavior) is extracted out of `KitDossier` into a single reusable `LongformDoc` so the site's other "walls of text" — `/about` (§5.8) and `/experience` (§5.6) — get the **same** navigation. `KitDossier` keeps its kit-specific rendering (parts, redaction bars, pocket card, sealed `⊘` chips) and becomes a *consumer* of the scaffold (`stepper` on; sealed = withheld). The scaffold is content-agnostic: it takes a `{ id, title, sealed? }[]` section list + an `idPrefix` for test-ids, owns the nav + active-section tracking, and renders each consumer's section blocks as children (marked `data-longform-section`). Kit's unit tests + visual baselines are the regression guard for the faithful extraction.
 
 ---
 
@@ -1299,6 +1307,8 @@ A single slim, muted band — the **social/legal strip** — sits at the very fo
 - The persona wordmark = the build-time `VITE_PERSON_NAME` (the same brand as the §8.1 header). "Built with" is a short, static credit — headline frameworks only, no live data, no staleness.
 
 > **Retired (do not rebuild).** The original §8.2 mock carried a live `SYSTEM STATUS / last-deploy-SHA / cache% / $-per-day` metadata block. That is **retired as redundant** (the §24.35 Pass A call): the status/cache/cost telemetry already lives on `/live` + the §8.3 live indicator, and echoing the same numbers in a sitewide footer is noise without signal. The footer is the slim social/legal strip only. (A repo-linked deploy SHA could return as a small fast-follow if a build-time git-SHA env var is wired — out of scope here.) Built per STRATEGY §24.76.
+
+> **Build note (STRATEGY §24.83 — the email exclusion is sitewide, and the socials strip is canonical).** The "email deliberately not shown / `mailto:` invites scraping" decision above is now enforced *everywhere*, not just the footer: the residual plain-text `mailto:` leaks on `/contact` ("Or reach me directly") and the home "Talk to me" block are removed — the contact form is the only email path. And because the footer is now the single sitewide socials strip, the per-page social-link lists that duplicated it (`/experience` "Elsewhere", `/contact` "Or reach me directly") are removed (§5.6 / §5.7 build notes). Reaching the candidate: socials via the footer (every page), email via the relay form.
 
 ### 8.3 Live indicator
 
