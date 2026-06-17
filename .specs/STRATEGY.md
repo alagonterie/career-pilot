@@ -5977,6 +5977,20 @@ Heuristics stay conservative — they reject only what is unambiguously not a re
 
 **DoD.** Every `KNOB_SPECS` entry has a `note`; each new note matches its code path; the two orphaned poll knobs are labelled honestly. host `tsc` + dev-inspector host unit (unchanged — no test asserts note text) + FE dev-panel unit + prettier green. **Spec deltas:** this §24.105. Memory: [[todo_backlog]].
 
+#### 24.106 Résumé — Projects-before-Experience option + the 8b/8c/8d calls
+
+**Item #8** is four résumé sub-parts. Owner decisions (AskUserQuestion, 2026-06-17) + a verify:
+
+**8a (build) — Projects-before-Experience, agent-decided.** The PDF section order is hardcoded in `resume-pdf.ts` `buildResumeDocument` (Summary → What I'm looking for → Experience → Projects → …). For roles where projects are the stronger signal, the order should flip. Decision: **the tailoring agent decides per role** (the same automatic judgment it already applies to bullet selection/ordering — not an owner toggle). Build: an optional `projectsFirst?: boolean` on the server `WorkProfile` (`profile.ts`), parsed by `projectWorkProfile` (true only when the emitted JSON sets it; defaults to Experience-first). `buildResumeDocument` swaps the Experience/Projects section order when set. It rides through `validateTailoredResume` for free (it re-projects the emitted block) — a pure layout hint, no fabrication surface, so the guardrail passes it untouched. The sandbox persona's résumé-block instructions gain an optional `projectsFirst` line (set it when the role values projects over work history). Scope: the **tailored** (simulator-emit) path — the master/`/work` page keeps Experience-first (it isn't per-role).
+
+**8b (decide) — the seeded "(this portal) … You are looking at it right now" wording.** Not in committed server code — it's transient dev-box `candidate_profile` seed data (only the public Jane-Doe FE placeholder + test fixtures carry the phrase in git, and that placeholder never feeds a PDF). Owner chose **fix the seeded wording now**: a targeted update of the box's `work_profile_json` project description to a PDF-safe form (drop the portal-context-coupled "You are looking at it right now"). Box-data op (no commit); the orchestrator's onboarding/bootstrap compose still owns the durable version.
+
+**8c (decide) — GitHub/LinkedIn link display on the PDF.** Today the contact line shows the handle (`github.com/you`) via `cleanUrl`. Owner chose **keep the handle** — résumé convention; a recruiter reading a printed/forwarded PDF sees and can type the destination, and it's still a clickable link. No change.
+
+**8d (verify) — is tailoring generative?** Confirmed **yes** for the downloadable tailored résumé: `emit_tailored_resume`/`validateTailoredResume` take a free-prose, role-specific `bio` (summary) from the agent — honesty-floored (falls back to the master summary when empty/stub or when it cites a number absent from the master) — plus an agent-generated `lookingFor` list (simpler than the bio, floored to master when empty). The bullets-only `tailor-resume` subagent is a separate per-application helper by design; the summary tailoring lives in the emit path. No code change.
+
+**DoD.** A tailored emit with `projectsFirst:true` renders Projects above Experience in the PDF; without it (and the master) renders Experience-first; the flag survives `validateTailoredResume`. host `tsc` + `resume-pdf.render` (order both ways) + `profile` (parses the flag) + `tailored-resume` (flag survives validation) unit + prettier green. 8b applied on the box; 8c/8d are no-ops with rationale recorded. **Spec deltas:** this §24.106 + the sandbox persona résumé-block line (runtime artifact). Memory: [[todo_backlog]].
+
 ---
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
