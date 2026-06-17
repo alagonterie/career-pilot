@@ -212,4 +212,12 @@ describe('§24.62 layout-stability polish', () => {
     render(<SessionsPanel arch={ARCH} />)
     expect(screen.getByText('1 session = 1 conversation in its own container')).toBeInTheDocument()
   })
+
+  it('ContainerPoolPanel explains the on-demand model + the enforced cap (§24.95)', () => {
+    render(<ContainerPoolPanel arch={ARCH} />)
+    fireEvent.click(screen.getByRole('button', { name: 'About: running / max' }))
+    const panel = screen.getByTestId('info-tip-panel')
+    expect(panel).toHaveTextContent(/spin up on demand/i)
+    expect(panel).toHaveTextContent(/Capped at 4 concurrent/i) // the live cap from ARCH
+  })
 })

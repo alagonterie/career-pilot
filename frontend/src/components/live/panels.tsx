@@ -168,6 +168,13 @@ export function ContainerPoolPanel({ arch, status }: { arch: ArchitectureData | 
   const down = c?.runtime === 'down'
   const pct = c && running != null && cap ? Math.round((running / cap) * 100) : 0
   const memUsed = c && running != null ? running * c.memory_mb_each : null
+  // Explain-on-tap (§24.95): the on-demand model (0 at rest is healthy) + the
+  // now-enforced concurrency ceiling (§24.92) + the graceful queue. Built from
+  // the live cap/memory when present; generic when the runtime is down/unknown.
+  const poolInfo =
+    cap != null
+      ? `Agent containers spin up on demand and stop when idle — 0 running at rest is normal. Capped at ${cap} concurrent (×${c?.memory_mb_each ?? 512} MB) to protect the host; extra runs queue briefly until a slot frees.`
+      : 'Agent containers spin up on demand and stop when idle — 0 running at rest is normal. The pool is capped to protect the host; extra runs queue briefly until a slot frees.'
   if (status === 'loading') {
     return (
       <Panel title="Container pool">
@@ -187,6 +194,7 @@ export function ContainerPoolPanel({ arch, status }: { arch: ArchitectureData | 
       <Metric
         value={!down && running != null && cap != null ? `${running} / ${cap}` : down ? 'down' : '—'}
         label="running / max"
+        info={poolInfo}
       />
       {c && !down ? (
         <div className="flex flex-col gap-1">
