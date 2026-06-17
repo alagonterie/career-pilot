@@ -880,6 +880,8 @@ A `Download PDF` button at top + bottom — generated server-side from the struc
 
 > **Build note (STRATEGY §24.83 — T4).** Two changes. (1) The résumé sections adopt the shared `LongformDoc` scaffold (§5.9 build note) — a sticky scroll-spy TOC (desktop rail / mobile chip strip) over the existing masthead — so a long résumé navigates like the kit; `WorkSections` computes the list of *present* sections (omit-when-empty already), so a partial profile shows a shorter rail. (2) The **"Where else to find me / Elsewhere"** social-links section is **removed** — the sitewide footer (§8.2 / §24.76) is now the single socials strip, and repeating GitHub/LinkedIn per-page is redundant. Item 8 above is retired by this note.
 
+> **Build note (STRATEGY §24.88 — owner polish).** Two foot-of-page nits. (1) The **second** "Download résumé (PDF)" button read as a bare duplicate; it's reframed as a deliberate end-of-page affordance with a `border-t` separator (kept, not removed — a download once the masthead one has scrolled away is a real convenience; the framing was the fix). (2) The **mobile cross-sell** "Want one aimed at your role? Watch me apply to it →" orphaned its arrow onto its own line; the CTA half is wrapped `whitespace-nowrap` so the line breaks between the question and the CTA — two clean lines on mobile, one on desktop.
+
 ---
 
 ### 5.7 `/contact` — Recruiter contact
@@ -1327,6 +1329,8 @@ As of Sub-milestone 6.1 (STRATEGY.md §24.24) the indicator + ticker run on the 
 ### 8.4 Connective rail
 
 The directed "what's next" affordance that makes the journey (§2) physical: **no deep surface is a dead-end.** A slim band at the foot of the page content (distinct from §8.2's metadata footer) presents the contextual next steps for *this* surface — always including the convert path to `/contact`, plus 1-2 deepen/pivot options. Where the top nav (§8.1) lets a visitor jump anywhere, the rail *pulls them forward* along the path their current interest implies — the fix for the "one-shot dead-end" failure mode named in §2.
+
+> **Build note (STRATEGY §24.77 / §24.88).** The route names in the table below predate the §24.77 rename (`/live`→`/dashboard`, `/simulator`→`/watch`); the live `ConnectiveRail.tsx` config uses the new routes. §24.88 also reworded the `/pipeline` *deepen* label **"Watch it live" → "See it run"** — it name-dropped the dead `/live` page and risked confusion with the `/watch` "Watch it work" route; "See it run" matches the other →`/dashboard` deepen labels.
 
 A single `ConnectiveRail` component fed a per-route config, hosted by the register layouts (the `(ops)` shared layout — finally earning its place — and the marketing layout) rather than hand-placed per page. The convert option is the constant; the rest is per-surface:
 
