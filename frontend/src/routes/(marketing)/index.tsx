@@ -113,6 +113,7 @@ function Home() {
             height (1 line desktop / 2 lines mobile) + the skeleton are only for the
             rare empty-seed case (backend unreachable at SSR) — §24.36 + the / pass. */}
         <div
+          data-testid="hero-stats"
           className="mt-6 flex h-9 flex-wrap items-center justify-center gap-x-2 gap-y-1 font-mono text-xs text-muted-foreground sm:h-5"
           aria-live="polite"
         >

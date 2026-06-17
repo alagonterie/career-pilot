@@ -17,7 +17,19 @@ test('home page matches visual baseline', { tag: '@visual' }, async ({ page }) =
   await expect(page).toHaveScreenshot('home.png', {
     animations: 'disabled',
     fullPage: true,
+    // The hero stat line is wall-clock-derived ("N agent actions in 24h",
+    // "last activity X ago") and drifts daily; mask it (its values are covered by
+    // the hero-stats unit tests + the SSR-seed check). The layout is the guard.
+    mask: [page.getByTestId('hero-stats')],
   })
+})
+
+test('about page matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  await page.goto('/about')
+  await expect(page.getByRole('heading', { name: /why i built this/i, level: 1 })).toBeVisible()
+  // Wait for the registry-backed cast roster to render (the page's richest block).
+  await expect(page.getByTestId('about-cast')).toContainText('research-company')
+  await expect(page).toHaveScreenshot('about.png', { animations: 'disabled', fullPage: true })
 })
 
 test('work page matches visual baseline', { tag: '@visual' }, async ({ page }) => {
