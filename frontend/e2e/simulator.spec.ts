@@ -125,7 +125,7 @@ test.describe('/simulator — the recruiter simulator, frontend <-> backend', ()
     await page.goto('/')
     await page
       .getByRole('main')
-      .getByRole('link', { name: /watch me apply to your role/i })
+      .getByRole('link', { name: /run it on your role/i })
       .click()
     await expect(page).toHaveURL('/simulator')
   })

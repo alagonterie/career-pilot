@@ -51,11 +51,17 @@ type ProfileEnv = {
 
 const EMPTY: ProfilePayload = { profile: null, identity: EMPTY_IDENTITY, source: null, generatedAt: null }
 
-export const getWorkProfile = createServerFn({ method: 'GET' }).handler(async (): Promise<ProfilePayload> => {
+/**
+ * Server-only fetch of the backend's `GET /api/profile`. Shared by `getWorkProfile`
+ * (the full payload, for `/work` + the hero) and `getIdentity` (the contact/social
+ * identity alone, for the §8.2 footer). Deployed Worker → the Access-gated tunnel
+ * host + the service token (the path the BFF proxy uses); local dev (no
+ * `BACKEND_API_BASE`) → the loopback backend, no token. Any failure degrades to the
+ * empty/placeholder payload, never throws. Referenced only from the server-fn
+ * handlers below, so it's stripped from the client bundle with them.
+ */
+async function fetchProfilePayload(): Promise<ProfilePayload> {
   const e = env as ProfileEnv
-  // Deployed Worker → the Access-gated tunnel host + the service token (the path
-  // the BFF proxy uses). Local dev (no BACKEND_API_BASE) → the loopback backend,
-  // no token. Either way a failure degrades to the placeholder, never throws.
   const base = (e.BACKEND_API_BASE ?? 'http://localhost:3001').replace(/\/$/, '')
   const headers: Record<string, string> = {}
   if (e.CF_ACCESS_CLIENT_ID) headers['CF-Access-Client-Id'] = e.CF_ACCESS_CLIENT_ID
@@ -79,4 +85,18 @@ export const getWorkProfile = createServerFn({ method: 'GET' }).handler(async ()
   } catch {
     return EMPTY
   }
+}
+
+export const getWorkProfile = createServerFn({ method: 'GET' }).handler((): Promise<ProfilePayload> => {
+  return fetchProfilePayload()
+})
+
+/**
+ * The candidate's canonical contact/social identity alone (§24.71 9.4b-3 / §24.76).
+ * The §8.2 footer lives in the register layouts (which have no page loader), so the
+ * layouts load identity through this lighter server fn rather than the full
+ * `getWorkProfile` — on ops pages it serializes only the small identity object.
+ */
+export const getIdentity = createServerFn({ method: 'GET' }).handler(async (): Promise<Identity> => {
+  return (await fetchProfilePayload()).identity
 })
