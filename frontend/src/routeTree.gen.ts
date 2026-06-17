@@ -19,13 +19,17 @@ import { Route as opsMomentumRouteImport } from './routes/(ops)/momentum'
 import { Route as opsLiveRouteImport } from './routes/(ops)/live'
 import { Route as opsKitRouteImport } from './routes/(ops)/kit'
 import { Route as opsDevRouteImport } from './routes/(ops)/dev'
+import { Route as opsDashboardRouteImport } from './routes/(ops)/dashboard'
 import { Route as opsCrashRouteImport } from './routes/(ops)/crash'
 import { Route as opsArchitectureRouteImport } from './routes/(ops)/architecture'
 import { Route as opsAdminRouteImport } from './routes/(ops)/admin'
 import { Route as marketingWorkRouteImport } from './routes/(marketing)/work'
+import { Route as marketingExperienceRouteImport } from './routes/(marketing)/experience'
 import { Route as marketingContactRouteImport } from './routes/(marketing)/contact'
 import { Route as marketingAboutRouteImport } from './routes/(marketing)/about'
+import { Route as marketingWatchIndexRouteImport } from './routes/(marketing)/watch.index'
 import { Route as marketingSimulatorIndexRouteImport } from './routes/(marketing)/simulator.index'
+import { Route as marketingWatchResultsIdRouteImport } from './routes/(marketing)/watch.results.$id'
 import { Route as marketingSimulatorResultsIdRouteImport } from './routes/(marketing)/simulator.results.$id'
 
 const opsRouteRoute = opsRouteRouteImport.update({
@@ -76,6 +80,11 @@ const opsDevRoute = opsDevRouteImport.update({
   path: '/dev',
   getParentRoute: () => opsRouteRoute,
 } as any)
+const opsDashboardRoute = opsDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => opsRouteRoute,
+} as any)
 const opsCrashRoute = opsCrashRouteImport.update({
   id: '/crash',
   path: '/crash',
@@ -96,6 +105,11 @@ const marketingWorkRoute = marketingWorkRouteImport.update({
   path: '/work',
   getParentRoute: () => marketingRouteRoute,
 } as any)
+const marketingExperienceRoute = marketingExperienceRouteImport.update({
+  id: '/experience',
+  path: '/experience',
+  getParentRoute: () => marketingRouteRoute,
+} as any)
 const marketingContactRoute = marketingContactRouteImport.update({
   id: '/contact',
   path: '/contact',
@@ -106,9 +120,19 @@ const marketingAboutRoute = marketingAboutRouteImport.update({
   path: '/about',
   getParentRoute: () => marketingRouteRoute,
 } as any)
+const marketingWatchIndexRoute = marketingWatchIndexRouteImport.update({
+  id: '/watch/',
+  path: '/watch/',
+  getParentRoute: () => marketingRouteRoute,
+} as any)
 const marketingSimulatorIndexRoute = marketingSimulatorIndexRouteImport.update({
   id: '/simulator/',
   path: '/simulator/',
+  getParentRoute: () => marketingRouteRoute,
+} as any)
+const marketingWatchResultsIdRoute = marketingWatchResultsIdRouteImport.update({
+  id: '/watch/results/$id',
+  path: '/watch/results/$id',
   getParentRoute: () => marketingRouteRoute,
 } as any)
 const marketingSimulatorResultsIdRoute =
@@ -121,10 +145,12 @@ const marketingSimulatorResultsIdRoute =
 export interface FileRoutesByFullPath {
   '/about': typeof marketingAboutRoute
   '/contact': typeof marketingContactRoute
+  '/experience': typeof marketingExperienceRoute
   '/work': typeof marketingWorkRoute
   '/admin': typeof opsAdminRoute
   '/architecture': typeof opsArchitectureRoute
   '/crash': typeof opsCrashRoute
+  '/dashboard': typeof opsDashboardRoute
   '/dev': typeof opsDevRoute
   '/kit': typeof opsKitRoute
   '/live': typeof opsLiveRoute
@@ -134,15 +160,19 @@ export interface FileRoutesByFullPath {
   '/r/$': typeof RSplatRoute
   '/': typeof marketingIndexRoute
   '/simulator/': typeof marketingSimulatorIndexRoute
+  '/watch/': typeof marketingWatchIndexRoute
   '/simulator/results/$id': typeof marketingSimulatorResultsIdRoute
+  '/watch/results/$id': typeof marketingWatchResultsIdRoute
 }
 export interface FileRoutesByTo {
   '/about': typeof marketingAboutRoute
   '/contact': typeof marketingContactRoute
+  '/experience': typeof marketingExperienceRoute
   '/work': typeof marketingWorkRoute
   '/admin': typeof opsAdminRoute
   '/architecture': typeof opsArchitectureRoute
   '/crash': typeof opsCrashRoute
+  '/dashboard': typeof opsDashboardRoute
   '/dev': typeof opsDevRoute
   '/kit': typeof opsKitRoute
   '/live': typeof opsLiveRoute
@@ -152,7 +182,9 @@ export interface FileRoutesByTo {
   '/r/$': typeof RSplatRoute
   '/': typeof marketingIndexRoute
   '/simulator': typeof marketingSimulatorIndexRoute
+  '/watch': typeof marketingWatchIndexRoute
   '/simulator/results/$id': typeof marketingSimulatorResultsIdRoute
+  '/watch/results/$id': typeof marketingWatchResultsIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -160,10 +192,12 @@ export interface FileRoutesById {
   '/(ops)': typeof opsRouteRouteWithChildren
   '/(marketing)/about': typeof marketingAboutRoute
   '/(marketing)/contact': typeof marketingContactRoute
+  '/(marketing)/experience': typeof marketingExperienceRoute
   '/(marketing)/work': typeof marketingWorkRoute
   '/(ops)/admin': typeof opsAdminRoute
   '/(ops)/architecture': typeof opsArchitectureRoute
   '/(ops)/crash': typeof opsCrashRoute
+  '/(ops)/dashboard': typeof opsDashboardRoute
   '/(ops)/dev': typeof opsDevRoute
   '/(ops)/kit': typeof opsKitRoute
   '/(ops)/live': typeof opsLiveRoute
@@ -173,17 +207,21 @@ export interface FileRoutesById {
   '/r/$': typeof RSplatRoute
   '/(marketing)/': typeof marketingIndexRoute
   '/(marketing)/simulator/': typeof marketingSimulatorIndexRoute
+  '/(marketing)/watch/': typeof marketingWatchIndexRoute
   '/(marketing)/simulator/results/$id': typeof marketingSimulatorResultsIdRoute
+  '/(marketing)/watch/results/$id': typeof marketingWatchResultsIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/about'
     | '/contact'
+    | '/experience'
     | '/work'
     | '/admin'
     | '/architecture'
     | '/crash'
+    | '/dashboard'
     | '/dev'
     | '/kit'
     | '/live'
@@ -193,15 +231,19 @@ export interface FileRouteTypes {
     | '/r/$'
     | '/'
     | '/simulator/'
+    | '/watch/'
     | '/simulator/results/$id'
+    | '/watch/results/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/about'
     | '/contact'
+    | '/experience'
     | '/work'
     | '/admin'
     | '/architecture'
     | '/crash'
+    | '/dashboard'
     | '/dev'
     | '/kit'
     | '/live'
@@ -211,17 +253,21 @@ export interface FileRouteTypes {
     | '/r/$'
     | '/'
     | '/simulator'
+    | '/watch'
     | '/simulator/results/$id'
+    | '/watch/results/$id'
   id:
     | '__root__'
     | '/(marketing)'
     | '/(ops)'
     | '/(marketing)/about'
     | '/(marketing)/contact'
+    | '/(marketing)/experience'
     | '/(marketing)/work'
     | '/(ops)/admin'
     | '/(ops)/architecture'
     | '/(ops)/crash'
+    | '/(ops)/dashboard'
     | '/(ops)/dev'
     | '/(ops)/kit'
     | '/(ops)/live'
@@ -231,7 +277,9 @@ export interface FileRouteTypes {
     | '/r/$'
     | '/(marketing)/'
     | '/(marketing)/simulator/'
+    | '/(marketing)/watch/'
     | '/(marketing)/simulator/results/$id'
+    | '/(marketing)/watch/results/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -313,6 +361,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof opsDevRouteImport
       parentRoute: typeof opsRouteRoute
     }
+    '/(ops)/dashboard': {
+      id: '/(ops)/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof opsDashboardRouteImport
+      parentRoute: typeof opsRouteRoute
+    }
     '/(ops)/crash': {
       id: '/(ops)/crash'
       path: '/crash'
@@ -341,6 +396,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof marketingWorkRouteImport
       parentRoute: typeof marketingRouteRoute
     }
+    '/(marketing)/experience': {
+      id: '/(marketing)/experience'
+      path: '/experience'
+      fullPath: '/experience'
+      preLoaderRoute: typeof marketingExperienceRouteImport
+      parentRoute: typeof marketingRouteRoute
+    }
     '/(marketing)/contact': {
       id: '/(marketing)/contact'
       path: '/contact'
@@ -355,11 +417,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof marketingAboutRouteImport
       parentRoute: typeof marketingRouteRoute
     }
+    '/(marketing)/watch/': {
+      id: '/(marketing)/watch/'
+      path: '/watch'
+      fullPath: '/watch/'
+      preLoaderRoute: typeof marketingWatchIndexRouteImport
+      parentRoute: typeof marketingRouteRoute
+    }
     '/(marketing)/simulator/': {
       id: '/(marketing)/simulator/'
       path: '/simulator'
       fullPath: '/simulator/'
       preLoaderRoute: typeof marketingSimulatorIndexRouteImport
+      parentRoute: typeof marketingRouteRoute
+    }
+    '/(marketing)/watch/results/$id': {
+      id: '/(marketing)/watch/results/$id'
+      path: '/watch/results/$id'
+      fullPath: '/watch/results/$id'
+      preLoaderRoute: typeof marketingWatchResultsIdRouteImport
       parentRoute: typeof marketingRouteRoute
     }
     '/(marketing)/simulator/results/$id': {
@@ -375,19 +451,25 @@ declare module '@tanstack/react-router' {
 interface marketingRouteRouteChildren {
   marketingAboutRoute: typeof marketingAboutRoute
   marketingContactRoute: typeof marketingContactRoute
+  marketingExperienceRoute: typeof marketingExperienceRoute
   marketingWorkRoute: typeof marketingWorkRoute
   marketingIndexRoute: typeof marketingIndexRoute
   marketingSimulatorIndexRoute: typeof marketingSimulatorIndexRoute
+  marketingWatchIndexRoute: typeof marketingWatchIndexRoute
   marketingSimulatorResultsIdRoute: typeof marketingSimulatorResultsIdRoute
+  marketingWatchResultsIdRoute: typeof marketingWatchResultsIdRoute
 }
 
 const marketingRouteRouteChildren: marketingRouteRouteChildren = {
   marketingAboutRoute: marketingAboutRoute,
   marketingContactRoute: marketingContactRoute,
+  marketingExperienceRoute: marketingExperienceRoute,
   marketingWorkRoute: marketingWorkRoute,
   marketingIndexRoute: marketingIndexRoute,
   marketingSimulatorIndexRoute: marketingSimulatorIndexRoute,
+  marketingWatchIndexRoute: marketingWatchIndexRoute,
   marketingSimulatorResultsIdRoute: marketingSimulatorResultsIdRoute,
+  marketingWatchResultsIdRoute: marketingWatchResultsIdRoute,
 }
 
 const marketingRouteRouteWithChildren = marketingRouteRoute._addFileChildren(
@@ -398,6 +480,7 @@ interface opsRouteRouteChildren {
   opsAdminRoute: typeof opsAdminRoute
   opsArchitectureRoute: typeof opsArchitectureRoute
   opsCrashRoute: typeof opsCrashRoute
+  opsDashboardRoute: typeof opsDashboardRoute
   opsDevRoute: typeof opsDevRoute
   opsKitRoute: typeof opsKitRoute
   opsLiveRoute: typeof opsLiveRoute
@@ -409,6 +492,7 @@ const opsRouteRouteChildren: opsRouteRouteChildren = {
   opsAdminRoute: opsAdminRoute,
   opsArchitectureRoute: opsArchitectureRoute,
   opsCrashRoute: opsCrashRoute,
+  opsDashboardRoute: opsDashboardRoute,
   opsDevRoute: opsDevRoute,
   opsKitRoute: opsKitRoute,
   opsLiveRoute: opsLiveRoute,

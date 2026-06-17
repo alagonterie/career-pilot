@@ -331,7 +331,7 @@ function AboutPage() {
             <dd className="leading-relaxed text-muted-foreground">
               Yes — the{' '}
               <Link
-                to="/simulator"
+                to="/watch"
                 className="text-accent-cool underline decoration-accent-cool/40 underline-offset-2 hover:decoration-accent-cool"
               >
                 simulator

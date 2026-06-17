@@ -10,13 +10,13 @@ type NavLink = { to: string; label: string }
 // the agent system live — and a PERSONAL tail about the candidate. A subtle
 // divider between them makes the grouping legible without a hard section label.
 const SHOWCASE: NavLink[] = [
-  { to: '/live', label: 'Live' },
+  { to: '/dashboard', label: 'Dashboard' },
   { to: '/pipeline', label: 'Job Pipeline' },
   { to: '/architecture', label: 'Architecture' },
-  { to: '/simulator', label: 'Watch it work' },
+  { to: '/watch', label: 'Watch it work' },
 ]
 const PERSONAL: NavLink[] = [
-  { to: '/work', label: 'Experience' },
+  { to: '/experience', label: 'Experience' },
   { to: '/contact', label: 'Contact' },
 ]
 

@@ -72,7 +72,7 @@ export function SimFallback({
           <ul data-testid="sim-recent" className="mt-2 flex flex-col gap-1.5 text-sm">
             {recent.map((r) => (
               <li key={r.id}>
-                <Link to="/simulator/results/$id" params={{ id: r.id }} className="text-accent-cool hover:underline">
+                <Link to="/watch/results/$id" params={{ id: r.id }} className="text-accent-cool hover:underline">
                   {r.visitor_role ?? 'Role'} @ {r.visitor_company ?? 'a company'} →
                 </Link>
               </li>

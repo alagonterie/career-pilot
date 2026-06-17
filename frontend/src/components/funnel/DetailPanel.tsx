@@ -93,7 +93,7 @@ export function DetailPanel({ app, onClose }: { app: FunnelApplication | null; o
             — the honest version of a "related artifacts" view. The reverse of the
             trace-line [ref] links, so /pipeline ↔ /live cross-navigate per app. */}
         <Link
-          to="/live"
+          to="/dashboard"
           search={{ app: app.application_ref }}
           data-testid="detail-live-link"
           className="self-start font-mono text-xs text-accent-cool hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
