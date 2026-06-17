@@ -138,6 +138,22 @@ export function shouldSuppressColdWake(pauseState: PauseState, dueReactiveCount:
 
 let running = false;
 
+// Last-run stamp for the §24.80 architecture `sweep` freshness probe. In-process
+// (the /api/architecture handler runs in the same host process) — no per-tick DB
+// write. `null` until the first sweep completes; a silent loop lets the age grow,
+// which the endpoint turns into a `down` badge.
+let lastSweepAtMs: number | null = null;
+
+/** Ms-epoch of the last completed sweep tick, or `null` before the first. */
+export function getLastSweepAtMs(): number | null {
+  return lastSweepAtMs;
+}
+
+/** Test seam — set/clear the last-sweep stamp without running the loop. */
+export function _setLastSweepAtForTesting(ms: number | null): void {
+  lastSweepAtMs = ms;
+}
+
 export function startHostSweep(): void {
   if (running) return;
   running = true;
@@ -189,6 +205,10 @@ async function sweep(): Promise<void> {
     log.error('Host sweep error', { err });
   }
 
+  // Stamp AFTER the work (incl. an error path): "time since the loop last
+  // completed a tick" is the honest freshness signal — a wedged iteration that
+  // never reaches here lets the age grow, which is exactly the `down` we want.
+  lastSweepAtMs = Date.now();
   setTimeout(sweep, SWEEP_INTERVAL_MS);
 }
 

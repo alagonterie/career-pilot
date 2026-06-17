@@ -11,8 +11,10 @@ export type Region = 'owner' | 'triggers' | 'host' | 'container' | 'public'
 
 /** What real signal (if any) backs a node's status badge. `structural` nodes get
  * no health claim — we never paint a color we don't actually probe (§24.24).
- * `provider` reads per-provider health from request_telemetry (§24.69). */
-export type ProbeKind = 'structural' | 'pause' | 'backend' | 'container' | 'sessions' | 'provider'
+ * `provider` reads per-provider health from request_telemetry (§24.69).
+ * `sandbox`/`sweep` are the §24.80 promotions: the public-demo kill switch + 24h
+ * spend-vs-cap, and the host sweep loop's freshness. */
+export type ProbeKind = 'structural' | 'pause' | 'backend' | 'container' | 'sessions' | 'provider' | 'sandbox' | 'sweep'
 
 export type NodeStatus = 'healthy' | 'degraded' | 'down' | 'idle' | 'structural'
 
@@ -108,9 +110,9 @@ export const NODES: ArchNode[] = [
     id: 'trig-web',
     label: 'Web sandbox',
     region: 'triggers',
-    probe: 'structural',
+    probe: 'sandbox',
     description:
-      'The public "Watch it work" surface — a visitor runs a sandboxed, isolated agent session from the portal and watches it stream.',
+      'The public "Watch it work" surface — a visitor runs a sandboxed, isolated agent session from the portal and watches it stream. Status tracks the kill switch and the day’s sandbox spend against its daily budget: degraded once the cap is reached, idle when nobody’s run it.',
     source: 'src/channels/portal/adapter.ts',
     x: 207,
     y: 122,
@@ -137,9 +139,9 @@ export const NODES: ArchNode[] = [
     id: 'trig-cron',
     label: 'Cron sweep',
     region: 'triggers',
-    probe: 'structural',
+    probe: 'sweep',
     description:
-      'Periodic host sweep — delivers due scheduled work (the morning briefing, the pipeline sweep), advances recurring tasks, and recovers stuck containers.',
+      'Periodic host sweep (every 60s) — delivers due scheduled work (the morning briefing, the pipeline sweep), advances recurring tasks, and recovers stuck containers. Healthy when the loop is ticking; some work is deferred by design (quiet hours), which is not a fault — the deep "did a job get missed" check lives in the operator health runbook.',
     source: 'src/host-sweep.ts',
     x: 571,
     y: 122,
@@ -423,6 +425,25 @@ export function deriveNodeStatus(
       return (arch?.sessions.running ?? 0) > 0 ? 'healthy' : 'idle'
     case 'provider':
       return deriveProviderStatus(node, obs)
+    case 'sandbox': {
+      // §24.80: the public-demo health. `down` when the kill switch is off;
+      // `degraded` once the day's sandbox spend reaches its budget; `idle` when
+      // it's enabled but nobody has run it (no spend) — the honest resting state.
+      const s = arch?.sandbox
+      if (s == null) return 'idle'
+      if (!s.enabled) return 'down'
+      if (s.daily_budget_usd > 0 && s.spend_24h_usd >= s.daily_budget_usd) return 'degraded'
+      if (s.spend_24h_usd <= 0) return 'idle'
+      return 'healthy'
+    }
+    case 'sweep': {
+      // §24.80: the host sweep loop's freshness. `idle` before the first tick
+      // (cold) or on an older backend; `healthy` while the loop is ticking;
+      // `down` once it's gone silent past the staleness threshold (`fresh`).
+      const w = arch?.sweep
+      if (w == null || w.last_run_age_sec == null) return 'idle'
+      return w.fresh ? 'healthy' : 'down'
+    }
   }
 }
 
