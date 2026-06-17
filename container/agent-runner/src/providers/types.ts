@@ -147,6 +147,14 @@ export interface TurnTelemetry {
   latency_ms: number;
   /** record_* tool_use dispatches this turn (the portal-worthy gate). */
   record_calls: number;
+  /**
+   * §24.78: the `subagent_type`s the orchestrator dispatched this turn (`Agent`/
+   * `Task` blocks), deduped. PII-safe — the subagent NAME only, never its prompt.
+   * The host emits a deterministic `subagent_progress` lifecycle row per name so
+   * the owner-path public stream never goes silent when a subagent ran (the model
+   * skipping `record_progress` no longer blanks the trace). Empty for most turns.
+   */
+  subagent_dispatches?: string[];
   /** Extra context persisted into the audit row's details_json. */
   details: {
     num_turns: number;

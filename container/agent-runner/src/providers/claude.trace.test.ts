@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'bun:test';
 
-import { sdkMessageToTraceEvents } from './claude.js';
+import { sdkMessageToTraceEvents, subagentDispatchesFromMessage } from './claude.js';
 
 // §24.20: sdkMessageToTraceEvents is the pure translation from one SDK message
 // to simulator trace events. Owner path (emitTrace=false) must yield nothing.
@@ -63,5 +63,39 @@ describe('sdkMessageToTraceEvents', () => {
     expect(sdkMessageToTraceEvents({ type: 'system', subtype: 'init' }, true)).toEqual([]);
     expect(sdkMessageToTraceEvents({ type: 'user' }, true)).toEqual([]);
     expect(sdkMessageToTraceEvents(null, true)).toEqual([]);
+  });
+});
+
+// §24.78: subagentDispatchesFromMessage feeds the deterministic owner-path
+// lifecycle trace. It must read ONLY subagent_type (PII-safe), never emitTrace-gated.
+describe('subagentDispatchesFromMessage (§24.78)', () => {
+  it('returns the subagent_type of an Agent dispatch', () => {
+    const msg = assistant([{ type: 'tool_use', name: 'Agent', input: { subagent_type: 'scrape-jobs', prompt: 'go' } }]);
+    expect(subagentDispatchesFromMessage(msg)).toEqual(['scrape-jobs']);
+  });
+
+  it('handles the Task alias and multiple dispatches in one message', () => {
+    const msg = assistant([
+      { type: 'tool_use', name: 'Task', input: { subagent_type: 'funnel-curator', prompt: 'sweep' } },
+      { type: 'text', text: 'and also' },
+      { type: 'tool_use', name: 'Agent', input: { subagent_type: 'research-company', prompt: 'x' } },
+    ]);
+    expect(subagentDispatchesFromMessage(msg)).toEqual(['funnel-curator', 'research-company']);
+  });
+
+  it('reads ONLY subagent_type — never the prompt/input (the PII-safety guarantee)', () => {
+    const msg = assistant([
+      { type: 'tool_use', name: 'Agent', input: { subagent_type: 'scrape-jobs', prompt: 'scan Acme + Stripe boards' } },
+    ]);
+    // The result is the agent name alone; no part of the prompt leaks through.
+    expect(subagentDispatchesFromMessage(msg)).toEqual(['scrape-jobs']);
+  });
+
+  it('ignores non-delegation tool_use, and non-assistant / empty messages', () => {
+    expect(subagentDispatchesFromMessage(assistant([{ type: 'tool_use', name: 'WebSearch', input: { query: 'x' } }]))).toEqual([]);
+    expect(subagentDispatchesFromMessage(assistant([{ type: 'tool_use', name: 'Agent', input: {} }]))).toEqual([]);
+    expect(subagentDispatchesFromMessage({ type: 'result', total_cost_usd: 0.04 })).toEqual([]);
+    expect(subagentDispatchesFromMessage({ type: 'user' })).toEqual([]);
+    expect(subagentDispatchesFromMessage(null)).toEqual([]);
   });
 });

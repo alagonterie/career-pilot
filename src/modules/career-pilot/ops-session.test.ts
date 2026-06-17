@@ -289,7 +289,7 @@ describe('applyOpsSpawnEnv', () => {
   });
 });
 
-describe('applyOpsSpawnEnv — ops haiku floor (§24.68 Δ B1)', () => {
+describe('applyOpsSpawnEnv — no model floor (§24.78: the §24.68 Δ B1 haiku floor was removed)', () => {
   const ownerGroup: AgentGroup = {
     id: GROUP_ID,
     name: 'Career Pilot',
@@ -325,36 +325,23 @@ describe('applyOpsSpawnEnv — ops haiku floor (§24.68 Δ B1)', () => {
       .run(tier);
   }
 
-  it('clamps the ops session back to Sonnet under dev + haiku (Haiku alias kept)', () => {
+  it('honors the configured tier under dev + haiku — NO floor (the model was a red herring, §24.78)', () => {
     process.env.ENVIRONMENT = 'dev';
     setTier('haiku');
     const out = applyOpsSpawnEnv(haikuConfig, fakeSession({ thread_id: OPS_THREAD_ID }), ownerGroup);
-    expect(out.env).toMatchObject({
-      ANTHROPIC_DEFAULT_OPUS_MODEL: 'claude-sonnet-4-6',
-      ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-sonnet-4-6',
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'claude-haiku-4-5', // kept — WebFetch/WebSearch summarization
-    });
-    expect(out.model).toBe('claude-sonnet-4-6');
-    expect(haikuConfig.model).toBe('claude-haiku-4-5'); // input not mutated
-  });
-
-  it('does not add a floor when the tier is not haiku (default/sonnet pass through)', () => {
-    process.env.ENVIRONMENT = 'dev';
-    setTier('sonnet');
-    const out = applyOpsSpawnEnv(haikuConfig, fakeSession({ thread_id: OPS_THREAD_ID }), ownerGroup);
-    expect(out.model).toBe('claude-haiku-4-5'); // no floor added here (sonnet tier handled upstream)
-    expect(out.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-haiku-4-5');
-  });
-
-  it('does not floor outside dev (prod keeps its real models, never downshifted)', () => {
-    delete process.env.ENVIRONMENT;
-    setTier('haiku');
-    const out = applyOpsSpawnEnv(haikuConfig, fakeSession({ thread_id: OPS_THREAD_ID }), ownerGroup);
+    // Model + every alias pass through unchanged — the ops cascade now runs at the
+    // configured tier like any other session (no clamp to Sonnet).
     expect(out.model).toBe('claude-haiku-4-5');
-    expect(out.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-haiku-4-5');
+    expect(out.env).toMatchObject({
+      ANTHROPIC_DEFAULT_OPUS_MODEL: 'claude-haiku-4-5',
+      ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-haiku-4-5',
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'claude-haiku-4-5',
+    });
+    // The transcript-rotation env is still merged in for the ops session.
+    expect(out.env?.NANOCLAW_CONVERSATIONS_DIR).toBe('/workspace/agent/conversations/ops');
   });
 
-  it('never floors a non-ops session, even under dev + haiku', () => {
+  it('never touches a non-ops session, even under dev + haiku', () => {
     process.env.ENVIRONMENT = 'dev';
     setTier('haiku');
     const out = applyOpsSpawnEnv(haikuConfig, fakeSession({ thread_id: null }), ownerGroup);

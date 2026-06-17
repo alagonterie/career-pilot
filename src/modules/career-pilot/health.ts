@@ -227,12 +227,17 @@ function checkOpsSeries(handles: SessionHandle[], now: number, findings: HealthF
 
 /**
  * The §24.68-Δ silent-cascade detector (B1): a trace-emitting ops series fired
- * but recorded no `subagent_progress` trace. The June-16 shape — the orchestrator
- * woke, the durable work even landed (leads written, curator output materialized),
- * but on a too-weak model (`dev_model_tier=haiku`) it skipped `record_progress`
- * and shipped no digest, while every scheduler-level check stayed green. Anchored
- * on a COMPLETED occurrence whose due time is in-window, so it never fires on a
- * fresh or paused install (nothing fired ⇒ nothing to be silent about).
+ * but recorded no `subagent_progress` trace. The June-16/17 shape — the
+ * orchestrator woke, the durable work even landed (leads written, curator output
+ * materialized), yet no trace reached the public stream. Root cause (§24.78):
+ * owner-path traces depended on the subagent voluntarily calling `record_progress`,
+ * which the model frequently skips — NOT a model-tier problem (it failed under both
+ * Haiku and Sonnet, and worked under Haiku the days before). §24.78 added a
+ * deterministic host-emitted lifecycle trace per dispatched subagent, so post-fix
+ * this finding firing means the emit is disabled OR no subagent was dispatched (the
+ * orchestrator inlined the work / the turn no-op'd) — a sharper signal. Anchored on
+ * a COMPLETED occurrence whose due time is in-window, so it never fires on a fresh
+ * or paused install (nothing fired ⇒ nothing to be silent about).
  */
 const TRACE_EMITTING_SERIES = ['job-scrape', 'funnel-curator'] as const;
 
@@ -281,8 +286,8 @@ function checkCascadeSilent(handles: SessionHandle[], now: number, findings: Hea
       id: 'cascade-silent',
       severity: 'warn',
       title: `The cascade fired but recorded no subagent-progress traces in ${windowHours}h`,
-      detail: `Series '${fired.series_id}' completed an occurrence due ${fired.process_after}, but public_audit_trail has zero 'subagent_progress' rows in the window. The scrape-jobs/pipeline-scribe subagents may have done their durable work (leads/curator state can still land) yet skipped record_progress, or were never dispatched — the weak-orchestrator-model signature (the June-16 incident traced to dev_model_tier=haiku).`,
-      next_step: `${Q_TS} data/v2.db "SELECT value, updated_at FROM preferences WHERE key='dev_model_tier'" (a non-default tier downshifts the orchestrator); then ${Q_TS} data/v2.db "SELECT substr(ts,1,16) AS t, category, agent_name FROM public_audit_trail WHERE ts >= '${cutoff}' ORDER BY ts DESC LIMIT 20" and tail the host log for the ops turn (sessionId="${opsHandle.session.id}").`,
+      detail: `Series '${fired.series_id}' completed an occurrence due ${fired.process_after}, but public_audit_trail has zero 'subagent_progress' rows in the window. Since §24.78 every dispatched subagent emits a deterministic lifecycle trace host-side — so this means EITHER the deterministic emit is off (owner_subagent_trace_emit_enabled=false) OR the series completed without dispatching a subagent (the orchestrator inlined the work, or the turn no-op'd). It is NOT a model-tier issue — that was the disproven June-16 hypothesis (§24.78).`,
+      next_step: `${Q_TS} data/v2.db "SELECT value FROM preferences WHERE key='owner_subagent_trace_emit_enabled'" (NULL or 1 = on); confirm the subagent actually ran — ${Q_TS} data/v2.db "SELECT substr(first_seen_at,1,10) d, count(*) FROM job_leads WHERE first_seen_at >= '${cutoff}' GROUP BY 1" and ${Q_TS} data/v2.db "SELECT run_at FROM funnel_curator_output WHERE run_at >= '${cutoff}'"; then ${Q_TS} data/v2.db "SELECT substr(ts,1,16) AS t, category, agent_name FROM public_audit_trail WHERE ts >= '${cutoff}' ORDER BY ts DESC LIMIT 20" and tail the host log for the ops turn (sessionId="${opsHandle.session.id}").`,
     });
     return;
   }

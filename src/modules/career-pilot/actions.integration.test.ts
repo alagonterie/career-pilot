@@ -1222,6 +1222,93 @@ describe('handleRecordTurnTelemetry', () => {
     ).n;
     expect(n).toBe(0);
   });
+
+  // ── §24.78 deterministic owner-path subagent-lifecycle traces ──────────────
+
+  function progressRows(): Array<{ agent_name: string; summary: string; seq: number; details_json: string }> {
+    return getDb()
+      .prepare(
+        `SELECT agent_name, summary, seq, details_json FROM public_audit_trail
+          WHERE category = 'subagent_progress' ORDER BY seq ASC`,
+      )
+      .all() as Array<{ agent_name: string; summary: string; seq: number; details_json: string }>;
+  }
+
+  it('§24.78: emits a deterministic subagent_progress row per dispatch — even with record_calls=0 (the bug case)', async () => {
+    const c = actionContent('career_pilot.record_turn_telemetry', {
+      model_used: 'claude-haiku-4-5',
+      tokens: 100,
+      cost_cents: 1,
+      cache_hit: 0,
+      latency_ms: 50,
+      record_calls: 0, // the model called record_progress ZERO times — the silent-cascade case
+      subagent_dispatches: ['scrape-jobs'],
+    });
+    await handleRecordTurnTelemetry(c, OWNER_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+
+    const rows = progressRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].agent_name).toBe('scrape-jobs');
+    expect(rows[0].summary).toBe('Dispatched by the orchestrator.'); // fixed, PII-free
+    expect(JSON.parse(rows[0].details_json).stage).toBe('dispatched');
+    // Ordered before the turn row it belongs to (the batch seal, §24.35).
+    const turnSeq = (
+      getDb().prepare(`SELECT seq FROM public_audit_trail WHERE category = 'turn'`).get() as { seq: number }
+    ).seq;
+    expect(rows[0].seq).toBeLessThan(turnSeq);
+  });
+
+  it('§24.78: normalizes the renamed subagents (funnel-curator → pipeline-scribe, prep-interview → build-interview-kit) and dedups', async () => {
+    const c = actionContent('career_pilot.record_turn_telemetry', {
+      model_used: 'claude-haiku-4-5',
+      tokens: 100,
+      cost_cents: 1,
+      cache_hit: 0,
+      latency_ms: 50,
+      record_calls: 0,
+      subagent_dispatches: ['funnel-curator', 'prep-interview', 'funnel-curator'], // dupe collapses
+    });
+    await handleRecordTurnTelemetry(c, OWNER_SESSION, inDb);
+    expect(progressRows().map((r) => r.agent_name)).toEqual(['pipeline-scribe', 'build-interview-kit']);
+  });
+
+  it('§24.78: the flag off suppresses the lifecycle rows (the turn row still lands)', async () => {
+    getDb()
+      .prepare(
+        `INSERT INTO preferences (key, value, updated_at) VALUES ('owner_subagent_trace_emit_enabled', 'false', datetime('now'))`,
+      )
+      .run();
+    const c = actionContent('career_pilot.record_turn_telemetry', {
+      model_used: 'claude-haiku-4-5',
+      tokens: 100,
+      cost_cents: 1,
+      cache_hit: 0,
+      latency_ms: 50,
+      record_calls: 0,
+      subagent_dispatches: ['scrape-jobs'],
+    });
+    await handleRecordTurnTelemetry(c, OWNER_SESSION, inDb);
+    expect(progressRows()).toHaveLength(0);
+    const turns = (
+      getDb().prepare(`SELECT COUNT(*) AS n FROM public_audit_trail WHERE category = 'turn'`).get() as { n: number }
+    ).n;
+    expect(turns).toBe(1);
+  });
+
+  it('§24.78: a sandbox emission never lands the lifecycle rows (the perimeter invariant)', async () => {
+    const c = actionContent('career_pilot.record_turn_telemetry', {
+      model_used: 'claude-haiku-4-5',
+      tokens: 100,
+      cost_cents: 1,
+      cache_hit: 0,
+      latency_ms: 50,
+      record_calls: 0,
+      subagent_dispatches: ['scrape-jobs', 'research-company'],
+    });
+    await handleRecordTurnTelemetry(c, SANDBOX_SESSION, inDb);
+    expect(progressRows()).toHaveLength(0);
+  });
 });
 
 // ── record_request_telemetry (§24.68) ───────────────────────────────────────

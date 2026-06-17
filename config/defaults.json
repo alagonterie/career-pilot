@@ -112,6 +112,7 @@
     "ops_mirror_to_chat": true,
     "ops_bootstrap_min_interval_sec": 600,
     "telemetry_capture": true,
+    "owner_subagent_trace_emit_enabled": true,
     "request_telemetry_retention_days": 30,
     "request_telemetry_prune_interval_sec": 3600,
     "visit_telemetry_retention_days": 90,
