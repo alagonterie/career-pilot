@@ -82,10 +82,10 @@ function Work() {
         <div className="mt-10 w-full">
           <WorkSections profile={p} />
         </div>
-        {/* A deliberate end-of-page download (§24.88): the border-t frames it as an
-            intentional closing affordance once the masthead button has scrolled
-            away, not a bare duplicate. */}
-        {canDownload ? <div className="mt-14 w-full border-t border-border pt-8">{downloadBtn}</div> : null}
+        {/* No second, end-of-page download (§24.98, reverses §24.88): the bottom
+            button under a border-t read as a bare duplicate that mimicked the
+            per-section dividers. The masthead download above is the single
+            affordance — the page body already *is* the résumé. */}
       </main>
     </>
   )
