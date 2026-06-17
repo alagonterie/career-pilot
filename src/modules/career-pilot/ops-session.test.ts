@@ -289,6 +289,79 @@ describe('applyOpsSpawnEnv', () => {
   });
 });
 
+describe('applyOpsSpawnEnv — ops haiku floor (§24.68 Δ B1)', () => {
+  const ownerGroup: AgentGroup = {
+    id: GROUP_ID,
+    name: 'Career Pilot',
+    folder: 'career-pilot',
+    agent_provider: null,
+    created_at: '2026-06-12T00:00:00Z',
+  };
+  // Simulates the post-materializeContainerJson state when dev_model_tier=haiku
+  // downshifted the spawn (orchestrator + every alias → Haiku).
+  const haikuConfig = {
+    model: 'claude-haiku-4-5',
+    env: {
+      ANTHROPIC_DEFAULT_OPUS_MODEL: 'claude-haiku-4-5',
+      ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-haiku-4-5',
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'claude-haiku-4-5',
+    },
+  } as unknown as ContainerConfig;
+
+  let priorEnv: string | undefined;
+  beforeEach(() => {
+    priorEnv = process.env.ENVIRONMENT;
+  });
+  afterEach(() => {
+    if (priorEnv === undefined) delete process.env.ENVIRONMENT;
+    else process.env.ENVIRONMENT = priorEnv;
+  });
+
+  function setTier(tier: string): void {
+    getDb()
+      .prepare(
+        "INSERT OR REPLACE INTO preferences (key, value, updated_at) VALUES ('dev_model_tier', ?, datetime('now'))",
+      )
+      .run(tier);
+  }
+
+  it('clamps the ops session back to Sonnet under dev + haiku (Haiku alias kept)', () => {
+    process.env.ENVIRONMENT = 'dev';
+    setTier('haiku');
+    const out = applyOpsSpawnEnv(haikuConfig, fakeSession({ thread_id: OPS_THREAD_ID }), ownerGroup);
+    expect(out.env).toMatchObject({
+      ANTHROPIC_DEFAULT_OPUS_MODEL: 'claude-sonnet-4-6',
+      ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-sonnet-4-6',
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'claude-haiku-4-5', // kept — WebFetch/WebSearch summarization
+    });
+    expect(out.model).toBe('claude-sonnet-4-6');
+    expect(haikuConfig.model).toBe('claude-haiku-4-5'); // input not mutated
+  });
+
+  it('does not add a floor when the tier is not haiku (default/sonnet pass through)', () => {
+    process.env.ENVIRONMENT = 'dev';
+    setTier('sonnet');
+    const out = applyOpsSpawnEnv(haikuConfig, fakeSession({ thread_id: OPS_THREAD_ID }), ownerGroup);
+    expect(out.model).toBe('claude-haiku-4-5'); // no floor added here (sonnet tier handled upstream)
+    expect(out.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-haiku-4-5');
+  });
+
+  it('does not floor outside dev (prod keeps its real models, never downshifted)', () => {
+    delete process.env.ENVIRONMENT;
+    setTier('haiku');
+    const out = applyOpsSpawnEnv(haikuConfig, fakeSession({ thread_id: OPS_THREAD_ID }), ownerGroup);
+    expect(out.model).toBe('claude-haiku-4-5');
+    expect(out.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-haiku-4-5');
+  });
+
+  it('never floors a non-ops session, even under dev + haiku', () => {
+    process.env.ENVIRONMENT = 'dev';
+    setTier('haiku');
+    const out = applyOpsSpawnEnv(haikuConfig, fakeSession({ thread_id: null }), ownerGroup);
+    expect(out).toBe(haikuConfig); // early return — unchanged reference
+  });
+});
+
 describe('mirrorOpsDeliveryToChat', () => {
   function deliveredMsg(text = 'Daily briefing: 3 leads worth a look.') {
     return { id: 'msg-1', kind: 'chat', content: JSON.stringify({ text }) };
