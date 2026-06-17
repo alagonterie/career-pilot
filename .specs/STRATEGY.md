@@ -5965,6 +5965,18 @@ Heuristics stay conservative — they reject only what is unambiguously not a re
 
 **DoD.** `"asdf"`-class single-char-repeat, no-letter, and `<2`-char inputs are rejected client-side with an inline message before any POST; legit short names (e.g. "IBM", "Box", "X Corp") pass; the abuse caps + agent not-found handling remain the backstop. FE `tsc` + `looksLikeGarbage`/schema unit cases (repeat-char, no-letter, min-length, legit-passes) + prettier `--no-semi` green. The verify-step finding (research-company on not-found) recorded in memory. No `@visual` baseline moves (validation is interaction-time, not at-rest). **Spec deltas:** this §24.104 + the PORTAL §5.3 simulator-input note. Memory: [[todo_backlog]].
 
+#### 24.105 dev-inspector knob notes — audit + fill the gaps
+
+**Problem (item #6).** The `/dev` inspector renders each writable knob's `note` as its on-page explanation. Most `KNOB_SPECS` carry one, but eleven non-obvious knobs shipped without — the owner can't tell, from the page alone, what `Noise ratio`, `Offer probability`, or the two poll intervals actually do.
+
+**Fix.** Add concise `note`s to the eleven knobs missing them, grounded in the actual code path (not the label):
+
+- **Sim dial** — `recruiter_sim_enabled` (master loop toggle; also flipped off by `/halt` + session-clearing resets), `recruiter_sim_max_concurrent` (seed ceiling — a new app seeds only while active count is below it; closed/ghosted apps free a slot), `recruiter_sim_offer_probability` + `recruiter_sim_rejection_probability` (terminal-step outcome split — only the *ratio* matters, `offer/(offer+rejection)`; most apps never reach terminal), `recruiter_sim_ghost_probability` (per-step quiet-thread chance, never on the first email — exercises close-detection), `recruiter_sim_noise_ratio` (per-tick standalone non-application email — classifier-precision filler), `recruiter_sim_daily_budget_usd` (caps the sim's OWN Haiku prose-enrichment spend; exhausted → injected emails fall back to deterministic templates).
+- **Budgets** — `owner_daily_llm_budget_usd` (a *soft/advisory* cap — the persona warns at 80%, but the agent can run past it; the hard stop is `/killswitch`), `sandbox_daily_global_budget_usd` (the *hard* global cap for public-simulator spend — `checkSimulatorAllowed` refuses runs past it; also the `/architecture` Web-sandbox "degraded" threshold).
+- **Poll intervals** — `gmail_poll_interval_sec` / `calendar_poll_interval_sec`: **audit finding — these two are orphaned.** They're defined in `defaults.json` and exposed as knobs but have **zero consumers** in `src/` or the container; inbound mail is actually pulled by the pipeline-scribe cron (`funnel_curator_cron`) + the on-demand sweep, not a fixed host poll loop. Their notes say so honestly (no live consumer today; kept as a tunable for a future host poller) rather than implying an effect they don't have. **Decision:** keep them (harmless, defaults exist, a future poller may adopt them) — removal is a separate call if the owner prefers a leaner knob set.
+
+**DoD.** Every `KNOB_SPECS` entry has a `note`; each new note matches its code path; the two orphaned poll knobs are labelled honestly. host `tsc` + dev-inspector host unit (unchanged — no test asserts note text) + FE dev-panel unit + prettier green. **Spec deltas:** this §24.105. Memory: [[todo_backlog]].
+
 ---
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
