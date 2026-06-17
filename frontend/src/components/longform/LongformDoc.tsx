@@ -77,6 +77,7 @@ function TocEntry({
   idPrefix: string
 }) {
   const sealed = section.sealed
+  const railActive = variant === 'rail' && active
   return (
     <button
       type="button"
@@ -87,16 +88,25 @@ function TocEntry({
       data-active={active || undefined}
       className={cn(
         'font-mono text-[11px] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        variant === 'rail' ? 'block w-full truncate py-1 text-left' : 'shrink-0 rounded-full border px-2.5 py-1',
+        variant === 'rail'
+          ? 'relative block w-full truncate py-1 text-left'
+          : 'shrink-0 rounded-full border px-2.5 py-1',
         active
           ? variant === 'rail'
-            ? 'text-foreground'
+            ? 'font-medium text-foreground'
             : 'border-primary/50 text-foreground'
           : variant === 'rail'
             ? 'text-muted-foreground hover:text-foreground'
             : 'border-border text-muted-foreground hover:text-foreground',
       )}
     >
+      {/* "You are here" on the desktop rail (§24.99): a 2px accent bar pinned to
+          the rail's left edge (overlaying the container's grey border-l), the
+          classic scroll-spy indicator. Overlay-only → no layout shift; brightness
+          alone (foreground vs muted) read as too subtle at 11px. */}
+      {railActive ? (
+        <span aria-hidden="true" className="absolute -left-3 top-1 bottom-1 w-0.5 rounded-full bg-primary" />
+      ) : null}
       {sealed ? <span aria-hidden="true">⊘ </span> : null}
       {section.title}
     </button>
