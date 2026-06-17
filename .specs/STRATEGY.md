@@ -5935,6 +5935,18 @@ The B1 deep dive flagged "~115 restarts / every 10–40 min" as possible runaway
 
 **DoD.** A full-sync no longer re-fetches/re-sends already-classified messages; the delta payload shrinks to genuinely-new mail; the skip count surfaces in the tool's result text. Toggle off → no filtering. host `tsc` + new host action test (seen-filtering + toggle-off + empty-input) + prettier green. Box-verifiable on the next cascade (curator trace shows "N already-classified skipped"; LLM email count drops to new mail only). **Spec deltas:** this §24.102 + the `funnel_curator_skip_classified_messages` default. Memory: [[todo_backlog]], [[project_job_leads_heartbeat]].
 
+#### 24.103 Footer "Built with …" credits become links
+
+**Problem (item #7).** The sitewide footer (§24.76, `SiteFooter.tsx`) carries a static `Built with NanoClaw · Claude · TanStack Start` credit as a plain `<span>`. A recruiter reading the showcase can't follow the stack names to learn what they are — the credit names the tech but dead-ends. The footer's social links right beside it ARE clickable, so the static credit reads as an oversight.
+
+**Fix.** Replace the static span with three `<a target="_blank" rel="noreferrer">` credit links separated by the existing `·`, styled to match the footer's other links (muted `text-muted-foreground` → `hover:text-foreground`, same focus-ring affordance). The credits are a small `FOOTER_CREDITS` ordered array (`{ label, href }`) rendered with interposed separators — additive, no behavioral change to the socials/legal nav. Targets:
+
+- **NanoClaw** → `https://github.com/nanocoai/nanoclaw` (the upstream framework repo).
+- **Claude** → `https://claude.com` (the recognizable product home, recruiter-facing). The owner was unsure whether this should point at the product or the Agent SDK; the product home is the safe recruiter-facing default and is a one-line `href` swap if the owner later prefers the SDK docs.
+- **TanStack Start** → `https://tanstack.com/start` (the framework home).
+
+**DoD.** The three credits render as links opening in a new tab, muted with a `hover:text-foreground` transition matching the sibling footer links; the `·` separators are preserved; non-link footer behavior (socials, About/Privacy) is byte-stable. FE `tsc` + a small `FOOTER_CREDITS` unit assertion (ordered labels + hrefs) + prettier `--no-semi` green. Re-bless any footer-bearing `@visual` baseline only if the rendered text metrics shift (link styling is color/hover-only — same glyphs, so no diff expected). **Spec deltas:** this §24.103 + the PORTAL §8.2 footer note. Memory: [[todo_backlog]].
+
 ---
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
