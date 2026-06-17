@@ -45,6 +45,11 @@ with a sources/citations section? Does it have ≥3 entries? Does ≥1 URL
 point at the company's own domain? If any answer is no, fix before
 returning.
 
+**The one exception is a company you could not identify at all** (see
+*When the company can't be identified* below): there, an honest
+can't-identify note replaces these citation requirements. Never invent a
+domain or citations to satisfy this rule.
+
 ---
 
 ## Content categories the digest must cover
@@ -104,6 +109,26 @@ and move on — don't waste budget retrying.
 | Page returns no useful content (boilerplate, redirect loop) | Skip; don't refetch |
 | Two sources contradict on a load-bearing claim | Cite both; mark `[contradictory]`; don't pick a winner unless one source is clearly authoritative |
 | Source older than 12 months for a "recent activity" claim | Don't cite as recent; either find a fresher source or drop the bullet |
+| The company itself can't be found (no real web presence — likely a typo, a fake name, or too-new/too-obscure to have one) | STOP researching; return the honest can't-identify digest below — do NOT fabricate a profile, domain, or citations |
+
+---
+
+## When the company can't be identified
+
+Sometimes the "company" in your brief isn't real — a typo, a placeholder,
+random characters, or a name with no findable web presence. (The public
+simulator lets anyone type a company name, so you WILL occasionally get
+junk.) If 2-3 targeted `WebSearch` queries surface nothing that plausibly
+matches a real company, **stop**. Don't keep burning budget, and do **not**
+manufacture a plausible-sounding profile or invent a domain/citations to
+satisfy the citation rule.
+
+Return a short, honest digest instead: one line stating you could not
+identify a company by that name, what you searched, and — if you have a
+reasonable guess — a "did you mean…?" suggestion. No fabricated sections,
+no fake citations. The orchestrator would rather tell the candidate (or the
+simulator visitor) "I couldn't find that company" than hand them confident
+fiction.
 
 ---
 
