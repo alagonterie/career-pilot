@@ -5,6 +5,7 @@ import { AgentRef } from '~/components/AgentRef'
 import { KitDossier } from '~/components/kit/KitDossier'
 import { StateNote } from '~/components/states'
 import { seo } from '~/lib/seo'
+import { PERSON_NAME } from '~/lib/site'
 import { kitDate, roundLabel, useKit } from '~/lib/use-kit'
 
 // The interview-kit dossier (PORTAL §5.9 / STRATEGY §24.65). Reached from the
@@ -20,7 +21,7 @@ export const Route = createFileRoute('/(ops)/kit')({
   }),
   head: () =>
     seo({
-      title: 'Interview kit — Jane Doe',
+      title: `Interview kit — ${PERSON_NAME}`,
       description:
         'A real mock-interview kit built by the agent — sections that would identify the company stay sealed while the process is live.',
       path: '/kit',

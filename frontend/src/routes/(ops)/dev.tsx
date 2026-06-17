@@ -9,6 +9,7 @@ import { SimStatePanel } from '~/components/dev/SimStatePanel'
 import { StateNote } from '~/components/states'
 import { Skeleton } from '~/components/ui/skeleton'
 import { seo } from '~/lib/seo'
+import { PERSON_NAME } from '~/lib/site'
 import {
   postDevControl,
   postDevReset,
@@ -33,7 +34,7 @@ export const Route = createFileRoute('/(ops)/dev')({
   component: DevInspectorPage,
   head: () => {
     const base = seo({
-      title: 'Dev inspector — Jane Doe',
+      title: `Dev inspector — ${PERSON_NAME}`,
       description: 'Dev-only inspector + sim controls. Owner-gated; served only on the dev stack.',
       path: '/dev',
     })

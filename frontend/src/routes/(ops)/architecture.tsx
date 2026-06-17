@@ -9,7 +9,7 @@ import { deriveNodeStatus, NODES, type ArchNode } from '~/components/architectur
 import { StateNote } from '~/components/states'
 import { Skeleton } from '~/components/ui/skeleton'
 import { seo } from '~/lib/seo'
-import { REPO_URL, repoBlob } from '~/lib/site'
+import { PERSON_NAME, REPO_URL, repoBlob } from '~/lib/site'
 import { useArchitecture } from '~/lib/use-architecture'
 import { useObservability } from '~/lib/use-observability'
 
@@ -20,7 +20,7 @@ export const Route = createFileRoute('/(ops)/architecture')({
   component: ArchitecturePage,
   head: () =>
     seo({
-      title: 'Architecture — Jane Doe',
+      title: `Architecture — ${PERSON_NAME}`,
       description: 'Live system map of the agent — host, container, and the sanitized public path, with real status.',
       path: '/architecture',
     }),

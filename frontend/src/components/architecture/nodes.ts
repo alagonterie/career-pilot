@@ -1,4 +1,4 @@
-import { REPO_URL } from '~/lib/site'
+import { PERSON_NAME, REPO_URL } from '~/lib/site'
 import type { ArchitectureData, SystemMode } from '~/lib/use-architecture'
 import type { Observability } from '~/lib/use-observability'
 
@@ -77,7 +77,7 @@ export const NODES: ArchNode[] = [
   // OWNER — the human in the loop. An actor, not a probed component → no badge.
   {
     id: 'owner',
-    label: 'Jane Doe',
+    label: PERSON_NAME,
     region: 'owner',
     probe: 'structural',
     actor: true,
