@@ -82,6 +82,31 @@ interface JoinedRow {
 export type MirrorOutcome = 'inserted' | 'dropped' | 'skipped' | 'error' | 'withheld';
 
 /**
+ * The human-readable text to mirror publicly for a funnel event (§24.89). Funnel
+ * payloads are often structured JSON carrying the agent's own one-line prose — a
+ * status-change ships `{ summary, source, confidence }`, where `summary` already
+ * describes the transition ("Rejection email received from … — applied X,
+ * rejected Y"). Use that verbatim; only fall back to the literal
+ * `kind from→to {payload}` form for plain-text / summary-less payloads. Without
+ * this, the raw JSON blob reached the public trace ("status_change APPLIED→REJECTED
+ * {…}") — the unreadable rows the owner caught. Either branch is sanitized
+ * downstream (this only chooses the source text, never the trust boundary).
+ */
+export function funnelEventPublicText(row: Pick<JoinedRow, 'kind' | 'from_status' | 'to_status' | 'payload'>): string {
+  if (row.payload) {
+    try {
+      const parsed = JSON.parse(row.payload) as { summary?: unknown };
+      if (typeof parsed?.summary === 'string' && parsed.summary.trim().length > 0) {
+        return parsed.summary.trim();
+      }
+    } catch {
+      // payload isn't JSON — use the literal form below.
+    }
+  }
+  return `${row.kind} ${row.from_status ?? ''}→${row.to_status ?? ''} ${row.payload}`.trim();
+}
+
+/**
  * The public-safe display ref for an application — the real company name when
  * revealed, else the obfuscated label (the same rule mirrorFunnelEvent applies
  * inline from its join). §24.61: this is the HOST-side derivation that lets a
@@ -135,7 +160,7 @@ export async function mirrorFunnelEvent(db: Database.Database, eventId: string):
     return 'skipped';
   }
 
-  const payloadText = `${row.kind} ${row.from_status ?? ''}→${row.to_status ?? ''} ${row.payload}`;
+  const payloadText = funnelEventPublicText(row);
   const { text: sanitized, ok } = await sanitizeForPublic(payloadText, {
     application_id: row.application_id,
     db,
