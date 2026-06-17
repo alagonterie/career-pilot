@@ -4,10 +4,7 @@ import type { ComponentType } from 'react'
 
 import { GitHubIcon, LinkedInIcon, XIcon } from '~/components/brand-icons'
 import type { Identity } from '~/lib/profile-loader'
-
-/** Brand wordmark — the candidate's name, baked at build time (placeholder default),
- *  the same source as the §8.1 header brand. */
-const BRAND_NAME = (import.meta.env.VITE_PERSON_NAME as string | undefined) ?? 'Jane Doe'
+import { PERSON_NAME } from '~/lib/site'
 
 type IconComponent = ComponentType<{ className?: string }>
 
@@ -57,7 +54,7 @@ export function SiteFooter({ identity, register }: { identity: Identity; registe
       ].join(' ')}
     >
       <div className="flex flex-col gap-1">
-        <span className="font-mono text-sm font-semibold text-foreground">{BRAND_NAME}</span>
+        <span className="font-mono text-sm font-semibold text-foreground">{PERSON_NAME}</span>
         <span>Built with NanoClaw · Claude · TanStack Start</span>
       </div>
 

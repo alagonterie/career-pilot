@@ -14,6 +14,7 @@ import {
 import { StateNote } from '~/components/states'
 import { Skeleton } from '~/components/ui/skeleton'
 import { seo } from '~/lib/seo'
+import { PERSON_NAME } from '~/lib/site'
 import { useActivityStream } from '~/lib/use-activity-stream'
 import { useArchitecture } from '~/lib/use-architecture'
 import { useFunnel } from '~/lib/use-funnel'
@@ -35,7 +36,7 @@ export const Route = createFileRoute('/(ops)/live')({
   }),
   head: () =>
     seo({
-      title: 'Live — Jane Doe',
+      title: `Live — ${PERSON_NAME}`,
       description:
         'Real-time ops dashboard — the agent system running the job search, live: sessions, containers, cost, and the agent trace stream.',
       path: '/live',

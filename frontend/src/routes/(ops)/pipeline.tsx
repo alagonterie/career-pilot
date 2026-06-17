@@ -6,6 +6,7 @@ import { FunnelBoard, FunnelBoardSkeleton, FunnelOffboardSkeleton } from '~/comp
 import { StatTiles } from '~/components/funnel/StatTiles'
 import { StateNote } from '~/components/states'
 import { seo } from '~/lib/seo'
+import { PERSON_NAME } from '~/lib/site'
 import { useFunnel, type FunnelApplication } from '~/lib/use-funnel'
 
 // The funnel race detail (PORTAL §5.4). Visitor-facing name = "Job Pipeline" /
@@ -22,7 +23,7 @@ export const Route = createFileRoute('/(ops)/pipeline')({
   }),
   head: () =>
     seo({
-      title: 'Job Pipeline — Jane Doe',
+      title: `Job Pipeline — ${PERSON_NAME}`,
       description: 'The job search in motion — every application, obfuscated by default, tracked stage by stage.',
       path: '/pipeline',
     }),

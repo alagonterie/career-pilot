@@ -2,8 +2,7 @@ import { Link } from '@tanstack/react-router'
 import { Menu, X } from 'lucide-react'
 import * as React from 'react'
 
-/** Brand wordmark — the candidate's name, baked at build time (placeholder default). */
-const BRAND_NAME = (import.meta.env.VITE_PERSON_NAME as string | undefined) ?? 'Jane Doe'
+import { PERSON_NAME } from '~/lib/site'
 
 type NavLink = { to: string; label: string }
 
@@ -70,7 +69,7 @@ export function SiteHeader() {
     <header data-site-header className="sticky top-0 z-20 w-full border-b border-border bg-background/80 backdrop-blur">
       <nav aria-label="Primary" className="mx-auto flex h-14 max-w-3xl items-center justify-between px-6">
         <Link to="/" className="font-mono text-sm font-semibold tracking-tight text-foreground">
-          {BRAND_NAME}
+          {PERSON_NAME}
         </Link>
 
         {/* Tablet + desktop: the full horizontal row (≥640px, where it fits), the
