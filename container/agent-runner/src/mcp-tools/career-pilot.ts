@@ -55,7 +55,7 @@ const PROFILE_FIELDS = [
   'x_url',
   'website_url',
   'public_email',
-  'why_this_exists',
+  'search_goals',
   'headshot_path',
   'brand_color_hsl',
   'gmail_account',

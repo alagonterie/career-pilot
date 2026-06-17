@@ -17,7 +17,7 @@ function profile(overrides: Partial<CandidateProfile> = {}): CandidateProfile {
     linkedin_url: null,
     x_url: null,
     website_url: null,
-    why_this_exists: null,
+    search_goals: null,
     headshot_path: null,
     brand_color_hsl: null,
     gmail_account: null,
@@ -33,15 +33,13 @@ describe('renderPersona', () => {
       expect(out).toContain('# Onboarding mode');
       expect(out).toContain('full_name');
       expect(out).toContain('comp_floor');
-      expect(out).toContain('why_this_exists');
+      expect(out).toContain('search_goals');
     });
 
-    it('returns sentinel when every agent-relevant field is null', () => {
-      // why_this_exists / headshot_path / brand_color_hsl are not
-      // agent-relevant — populating them alone still triggers onboarding.
-      const out = renderPersona(
-        profile({ why_this_exists: 'portal copy', headshot_path: '/x.png', brand_color_hsl: '180 50% 40%' }),
-      );
+    it('returns sentinel when only non-core (portal-styling) fields are set', () => {
+      // headshot_path / brand_color_hsl don't satisfy the onboarding-completeness
+      // gate (hasAnyContent), so populating them alone still triggers onboarding.
+      const out = renderPersona(profile({ headshot_path: '/x.png', brand_color_hsl: '180 50% 40%' }));
       expect(out).toContain('# Onboarding mode');
     });
   });
@@ -114,18 +112,22 @@ describe('renderPersona', () => {
       expect(out).not.toContain('[X]');
     });
 
-    it('excludes portal-only fields (why_this_exists, headshot_path, brand_color_hsl)', () => {
+    it('excludes portal-styling fields (headshot_path, brand_color_hsl)', () => {
       const out = renderPersona(
         profile({
           ...fullyPopulated,
-          why_this_exists: 'sob story for /about',
           headshot_path: '/jane.png',
           brand_color_hsl: '180 50% 40%',
         }),
       );
-      expect(out).not.toContain('sob story');
       expect(out).not.toContain('jane.png');
       expect(out).not.toContain('brand_color_hsl');
+    });
+
+    it('renders search_goals as an agent-facing ## Goals section (§24.101)', () => {
+      const out = renderPersona(profile({ ...fullyPopulated, search_goals: 'Land a staff platform role by Q3.' }));
+      expect(out).toContain('## Goals');
+      expect(out).toContain('Land a staff platform role by Q3.');
     });
 
     it('is byte-deterministic for identical input', () => {
@@ -231,6 +233,7 @@ describe('renderSandboxCandidate (§24.54 — public simulator subset)', () => {
     master_resume: '## Experience\n\n- Built things',
     skills: JSON.stringify(['Go', 'Rust', 'PostgreSQL']),
     github_url: 'https://github.com/jane',
+    search_goals: 'leave my current job for a staff role',
   });
 
   it('includes the resume-grade public subset', () => {
@@ -243,11 +246,14 @@ describe('renderSandboxCandidate (§24.54 — public simulator subset)', () => {
     expect(out).toContain('## Links');
   });
 
-  it('excludes comp floor and quiet hours by design', () => {
+  it('excludes comp floor, quiet hours, and private search goals by design', () => {
     const out = renderSandboxCandidate(populated);
     expect(out).not.toContain('## Comp');
     expect(out).not.toContain('220,000');
     expect(out).not.toContain('## Quiet hours');
+    // The candidate's private goals don't belong in the public demo (§24.101).
+    expect(out).not.toContain('## Goals');
+    expect(out).not.toContain('leave my current job');
   });
 
   it('injects an Approved-figures honesty allow-list from the real résumé numbers (§24.72)', () => {

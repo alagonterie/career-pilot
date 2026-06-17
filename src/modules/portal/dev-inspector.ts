@@ -705,7 +705,7 @@ export const ONBOARDING_FIELD_ORDER = [
   'location_pref',
   'master_resume',
   'bio',
-  'why_this_exists',
+  'search_goals',
 ] as const;
 
 function jsonArrayNonEmpty(raw: string | null): boolean {

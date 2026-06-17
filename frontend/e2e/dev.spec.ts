@@ -96,7 +96,7 @@ const PERSONA = {
       { field: 'location_pref', filled: false },
       { field: 'master_resume', filled: false },
       { field: 'bio', filled: false },
-      { field: 'why_this_exists', filled: false },
+      { field: 'search_goals', filled: false },
     ],
     filledCount: 0,
     totalCount: 7,

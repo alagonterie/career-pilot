@@ -261,7 +261,7 @@ describe('PersonaPanel', () => {
           { field: 'location_pref', filled: false },
           { field: 'master_resume', filled: false },
           { field: 'bio', filled: false },
-          { field: 'why_this_exists', filled: false },
+          { field: 'search_goals', filled: false },
         ],
         filledCount: 0,
         totalCount: 7,
@@ -290,7 +290,7 @@ describe('PersonaPanel', () => {
         linkedin_url: null,
         x_url: null,
         website_url: null,
-        why_this_exists: 'because',
+        search_goals: 'because',
         gmail_account: 'candidate.dev@gmail.com',
         updated_at: '2026-06-05T00:00:00Z',
       },
@@ -303,7 +303,7 @@ describe('PersonaPanel', () => {
           { field: 'location_pref', filled: true },
           { field: 'master_resume', filled: true },
           { field: 'bio', filled: true },
-          { field: 'why_this_exists', filled: true },
+          { field: 'search_goals', filled: true },
         ],
         filledCount: 7,
         totalCount: 7,
@@ -358,15 +358,7 @@ describe('ResetControl (§24.48)', () => {
   const okReset = async () => ({ ok: true as const, status: 200, cleared: {}, halted: false })
 
   function personaWith(filled: Record<string, boolean>): DevPersonaResponse {
-    const order = [
-      'full_name',
-      'target_roles',
-      'comp_floor',
-      'location_pref',
-      'master_resume',
-      'bio',
-      'why_this_exists',
-    ]
+    const order = ['full_name', 'target_roles', 'comp_floor', 'location_pref', 'master_resume', 'bio', 'search_goals']
     return {
       profile: null,
       candidateMd: '# Jane Doe',
