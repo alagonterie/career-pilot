@@ -26,6 +26,7 @@ import { CONTAINER_RUNTIME_BIN, hostGatewayArgs, readonlyMountArgs, stopContaine
 import { composeGroupClaudeMd, composeSubagentDefinitions } from './claude-md-compose.js';
 import { getAgentGroup } from './db/agent-groups.js';
 import { getDb, hasTable } from './db/connection.js';
+import { getConfig } from './get-config.js';
 import { initGroupFilesystem } from './group-init.js';
 import { renderPersonaForGroup, renderSandboxCandidateForGroup } from './modules/career-pilot/render-persona.js';
 import { getPauseState, type PauseState } from './modules/portal/system-modes.js';
@@ -66,6 +67,51 @@ const wakePromises = new Map<string, Promise<boolean>>();
 
 export function getActiveContainerCount(): number {
   return activeContainers.size;
+}
+
+// Test seam for the concurrency-cap gate — see getCommittedContainerCount.
+let committedCountOverrideForTesting: number | null = null;
+
+/** Test seam: force the committed-slot count the concurrency cap gates on. */
+export function _setCommittedContainerCountForTesting(n: number | null): void {
+  committedCountOverrideForTesting = n;
+}
+
+/**
+ * Distinct sessions currently holding (running) or acquiring (mid-spawn) a
+ * container slot — the union of `activeContainers` and `wakePromises`, deduped
+ * across the brief handoff window where a session is transiently in both. This,
+ * not `activeContainers.size` alone, is the count the concurrency cap gates on:
+ * each `wakeContainer` synchronously commits to `wakePromises` before yielding,
+ * so a burst of concurrent wakes for distinct sessions serializes against this
+ * number and can't overshoot the cap (STRATEGY.md §24.92).
+ */
+export function getCommittedContainerCount(): number {
+  if (committedCountOverrideForTesting !== null) return committedCountOverrideForTesting;
+  const ids = new Set<string>(activeContainers.keys());
+  for (const id of wakePromises.keys()) ids.add(id);
+  return ids.size;
+}
+
+/**
+ * The container concurrency ceiling (config `container_max_concurrent`, default
+ * 4). A value ≤ 0 disables the cap (unlimited) so a misconfig can't brick
+ * spawning. Read fresh each wake so an operator preference change applies live.
+ */
+export function containerCapacityLimit(): number {
+  try {
+    return getConfig<number>(getDb(), 'container_max_concurrent', 4);
+  } catch {
+    return 4;
+  }
+}
+
+/**
+ * Pure capacity predicate (unit-tested without spawning): refuse a NEW slot when
+ * the committed count is at or above the cap. cap ≤ 0 ⇒ unlimited.
+ */
+export function atContainerCapacity(committed: number, cap: number): boolean {
+  return cap > 0 && committed >= cap;
 }
 
 export function isContainerRunning(sessionId: string): boolean {
@@ -114,6 +160,18 @@ export function wakeContainer(session: Session): Promise<boolean> {
   if (existing) {
     log.debug('Container wake already in-flight — joining existing promise', { sessionId: session.id });
     return existing;
+  }
+  // Concurrency cap (STRATEGY.md §24.92): refuse a NEW container slot when the
+  // host is already at capacity, so a load burst (sim visitors + crons + owner)
+  // can't spawn past container_max_concurrent and OOM the box. Same "transient
+  // failure" contract as the pause gate — return false, leave the inbound row
+  // pending, host-sweep re-wakes when a slot frees. Checked after the
+  // already-running / mid-spawn returns above (those already hold a slot).
+  const cap = containerCapacityLimit();
+  const committed = getCommittedContainerCount();
+  if (atContainerCapacity(committed, cap)) {
+    log.info('Refusing to spawn — at container concurrency cap', { sessionId: session.id, committed, cap });
+    return Promise.resolve(false);
   }
   const promise = spawnContainer(session)
     .then(() => true)
