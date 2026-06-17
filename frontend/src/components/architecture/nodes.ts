@@ -126,7 +126,7 @@ export const NODES: ArchNode[] = [
     probe: 'provider',
     providers: ['gmail', 'calendar', 'drive'],
     description:
-      'Recruiter replies (Gmail) and interview events (Calendar) wake the system — a polling close-detection loop, not webhooks. The agent writes back too: reversible Gmail drafts, and interview-prep kit Docs in the candidate’s own Drive.',
+      'The agent’s Google Workspace reach, both directions. It READS to wake the pipeline — recruiter replies (Gmail) and interview events (Calendar), via a polling close-detection loop, not webhooks. It WRITES back through the OneCLI gateway (which injects the Google OAuth token): reversible Gmail drafts it composes for the candidate to review and send (never auto-sent), and interview-prep kit Docs in the candidate’s own Drive. Calendar is read-only — it never creates or moves events.',
     source: 'src/modules/career-pilot/close-detection-bootstrap.ts',
     link: 'https://developers.google.com/workspace',
     linkLabel: 'Google Workspace APIs',
@@ -344,6 +344,10 @@ export const EDGES: ArchEdge[] = [
   { from: 'trig-telegram', to: 'host-router', bidirectional: true },
   { from: 'trig-web', to: 'host-router', bidirectional: true },
   { from: 'trig-google', to: 'host-router' },
+  // Outbound write-reach: container calls egress through OneCLI (Google OAuth
+  // injected) into Workspace — Gmail drafts + interview-kit Drive Docs. With the
+  // inbound edge above, Google Workspace reads as the duplex service it is.
+  { from: 'host-onecli', to: 'trig-google' },
   { from: 'trig-cron', to: 'host-router' },
   { from: 'host-router', to: 'host-db', bidirectional: true },
   { from: 'host-router', to: 'cont-runtime' },
