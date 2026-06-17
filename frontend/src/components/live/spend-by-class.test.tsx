@@ -57,6 +57,11 @@ describe('LlmSpendPanel', () => {
     for (const dot of ['bg-primary', 'bg-accent-cool', 'bg-warn', 'bg-muted-foreground']) {
       expect(container.querySelector(`.${dot}`)).toBeTruthy()
     }
+    // §24.109 #11: each legend row carries a lightweight title-style tooltip
+    // explaining its traffic class (one per class).
+    const tipped = container.querySelectorAll('li[title]')
+    expect(tipped).toHaveLength(4)
+    expect(Array.from(tipped).some((li) => /owner chats/i.test(li.getAttribute('title') ?? ''))).toBe(true)
   })
 
   it('shows the cache rate as an equal-sized amount (a cost lever) only when passed, with its InfoTip', () => {

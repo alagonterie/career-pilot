@@ -284,11 +284,35 @@ export function TelemetryPanel({ view, status }: { view: TelemetryView; status?:
  * only emits utilities it sees verbatim in source, so a derived `'text-'→'bg-'`
  * replace silently dropped the accent-cool dot. None is `destructive` (spend
  * isn't an alarm). */
-const SPEND_CLASSES: { key: TrafficClass; short: string; line: string; dot: string }[] = [
-  { key: 'chat', short: 'chat', line: 'text-primary', dot: 'bg-primary' },
-  { key: 'ops', short: 'ops', line: 'text-accent-cool', dot: 'bg-accent-cool' },
-  { key: 'sandbox', short: 'sandbox', line: 'text-warn', dot: 'bg-warn' },
-  { key: 'host', short: 'host', line: 'text-muted-foreground', dot: 'bg-muted-foreground' },
+const SPEND_CLASSES: { key: TrafficClass; short: string; line: string; dot: string; desc: string }[] = [
+  {
+    key: 'chat',
+    short: 'chat',
+    line: 'text-primary',
+    dot: 'bg-primary',
+    desc: 'Owner chats — model calls from the candidate’s Telegram conversations with the orchestrator.',
+  },
+  {
+    key: 'ops',
+    short: 'ops',
+    line: 'text-accent-cool',
+    dot: 'bg-accent-cool',
+    desc: 'Autonomous ops — the scheduled jobs running on their own (morning briefing, pipeline sweep, job scouting).',
+  },
+  {
+    key: 'sandbox',
+    short: 'sandbox',
+    line: 'text-warn',
+    dot: 'bg-warn',
+    desc: 'Public sandbox — “Watch it work” runs by visitors, each isolated and budget-capped.',
+  },
+  {
+    key: 'host',
+    short: 'host',
+    line: 'text-muted-foreground',
+    dot: 'bg-muted-foreground',
+    desc: 'Host processing — the host’s own model calls (the sanitizer’s semantic pass, win-confidence scoring), not a container.',
+  },
 ]
 
 /** Format microUSD as dollars — sub-cent figures (most rows) keep 4 decimals so
@@ -387,7 +411,11 @@ export function LlmSpendPanel({
               fits the stat-row floor; the total's InfoTip spells out the classes. */}
           <ul className="grid grid-cols-2 gap-x-4 gap-y-1">
             {SPEND_CLASSES.map((c) => (
-              <li key={c.key} className="inline-flex items-center gap-1.5 font-mono text-[10px]">
+              <li
+                key={c.key}
+                title={c.desc}
+                className="inline-flex cursor-help items-center gap-1.5 font-mono text-[10px]"
+              >
                 <span aria-hidden="true" className={`inline-block h-2 w-2 shrink-0 rounded-full ${c.dot}`} />
                 <span className="uppercase tracking-widest text-muted-foreground">{c.short}</span>
                 <span data-testid={`spend-${c.key}`} className="ml-auto tabular-nums text-foreground">
@@ -408,6 +436,23 @@ export function LlmSpendPanel({
  * funnel_events history (§24.29). `flex-1` lets it grow to fill the rail down to
  * the trace-stream height beside it (§24.69 follow-up) — the list earns the room
  * by showing more of the real recent activity, rather than leaving a dead gap. */
+/** Color ONLY the outcome word (§24.109 #12), never the company ref: a win and a
+ *  loss should be scannable at a glance. Terminal outcomes get tone; in-progress
+ *  stages stay muted (they're not an outcome yet). Pure + keyed on the lowercase
+ *  stage vocabulary (use-pipeline). */
+export function outcomeToneClass(stage: string): string {
+  switch (stage.toLowerCase()) {
+    case 'offer':
+      return 'text-primary'
+    case 'rejected':
+      return 'text-destructive'
+    case 'withdrawn':
+      return 'text-muted-foreground/70'
+    default:
+      return 'text-muted-foreground'
+  }
+}
+
 export function RecentOutcomesPanel({ apps, status }: { apps: PipelineApplication[]; status?: PollStatus }) {
   const recent = apps
     .filter((a) => a.last_activity_at != null)
@@ -453,7 +498,7 @@ export function RecentOutcomesPanel({ apps, status }: { apps: PipelineApplicatio
                     {isPublic ? a.application_ref : `[${a.application_ref}]`}
                   </span>
                   <span className="flex items-center gap-2">
-                    <span className="uppercase tracking-wider text-muted-foreground">{a.stage}</span>
+                    <span className={`uppercase tracking-wider ${outcomeToneClass(a.stage)}`}>{a.stage}</span>
                     {isPublic ? <span className="text-primary">◆</span> : null}
                   </span>
                 </Link>
