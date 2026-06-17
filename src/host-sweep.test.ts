@@ -49,6 +49,34 @@ describe('decideStuckAction', () => {
     expect(res.heartbeatAgeMs).toBeGreaterThan(ABSOLUTE_CEILING_MS);
   });
 
+  it('honors a lowered absoluteCeilingMs override — kills a container fresh against the default (§24.96)', () => {
+    const customCeiling = 10 * 60 * 1000; // 10 min
+    const heartbeatMtimeMs = BASE - customCeiling - 1_000; // stale past the custom ceiling…
+    // …yet fresh against the 30-min default, so ONLY the override triggers the kill.
+    expect(heartbeatMtimeMs).toBeGreaterThan(BASE - ABSOLUTE_CEILING_MS);
+    const res = decideStuckAction({
+      now: BASE,
+      heartbeatMtimeMs,
+      containerState: null,
+      claims: [],
+      absoluteCeilingMs: customCeiling,
+    });
+    expect(res.action).toBe('kill-ceiling');
+    if (res.action !== 'kill-ceiling') return;
+    expect(res.ceilingMs).toBe(customCeiling);
+  });
+
+  it('does not kill within a lowered ceiling when the heartbeat is fresher than it (§24.96)', () => {
+    const res = decideStuckAction({
+      now: BASE,
+      heartbeatMtimeMs: BASE - 5 * 60 * 1000, // 5 min old, under the 10-min override
+      containerState: null,
+      claims: [],
+      absoluteCeilingMs: 10 * 60 * 1000,
+    });
+    expect(res.action).toBe('ok');
+  });
+
   it('skips the ceiling check when no heartbeat file exists (fresh container not yet ticked)', () => {
     // A freshly-spawned container hasn't produced any SDK events yet, so no
     // heartbeat. Prior behavior treated this as infinitely stale and killed
