@@ -5880,6 +5880,15 @@ The B1 deep dive flagged "~115 restarts / every 10–40 min" as possible runaway
 
 **DoD.** Headline "active job applications" equals the strip's column sum (bookmarked excluded); "agent actions in 24h" counts only non-turn audit rows and never disagrees with "last activity". `agent_actions_24h` present in `/api/telemetry` (+ the unconfigured fallback) and typed on the FE. host `tsc` + FE `tsc` + host unit (telemetry shape) + FE unit (`hero-stats` bookmarked-excluded case) + prettier green. Box-verifiable on next deploy (the dev DB already carries the bookmarked lead + a turn-only 24h). **Spec deltas:** this §24.97 + PORTAL §5.1 (corrected stat definitions). Memory: [[todo_backlog]].
 
+#### 24.98 Experience page — drop the awkward end-of-page résumé download (reverses §24.88)
+
+**Problem.** `/experience` rendered the résumé-download control twice: once in the masthead (with the `/watch` cross-sell) and again at the very bottom inside a `border-t … pt-8` block. §24.88 framed that second copy as "a deliberate end-of-page closing affordance." In practice it reads as a bare duplicate under a horizontal rule that mimics the per-section `border-t` dividers (`WorkSections`' `Section` wrapper) — so it looks like the start of another, empty section rather than an intentional CTA.
+
+- **Fix.** Remove the bottom block. The masthead download stays — it's above the fold, the first control after the name/title (where a recruiter looks for the PDF), and the page body *is* the résumé, so a second download adds little.
+- **Deferred option (recorded, not built).** If post-scroll download reachability proves valuable, the clean home for it is a persistent control anchored to the bottom of the desktop `LongformDoc` rail (an optional `railFooter` slot — additive; `/kit` + `/about` unaffected), NOT a bottom-of-page button. Build on evidence, not speculation.
+
+**DoD.** `/experience` shows exactly one résumé-download affordance (the masthead). FE `tsc` + `work.spec` (unchanged — never asserted the second button) + prettier `--no-semi` green. No `@visual` re-bless (download buttons are absent in the no-profile harness render → `canDownload=false`). **Spec deltas:** this §24.98 (reverses the §24.88 end-of-page-affordance decision). Memory: [[todo_backlog]].
+
 ---
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
