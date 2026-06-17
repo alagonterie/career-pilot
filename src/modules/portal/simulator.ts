@@ -22,7 +22,7 @@ import { findSessionForAgent, updateSession } from '../../db/sessions.js';
 import { getConfig } from '../../get-config.js';
 import { log } from '../../log.js';
 import { getPublicProfile } from './profile.js';
-import { endSimulatorRun, pushSimulatorEvent } from './sse-broadcaster.js';
+import { endSimulatorRun, pushSimulatorEvent, setSimulatorViewerHandler } from './sse-broadcaster.js';
 import { extractTailoredResumeBlock, stripTailoredResumeBlock, validateTailoredResume } from './tailored-resume.js';
 
 /** Sandbox group folder — also a literal in container-config.ts + init-sandbox-group.ts. */
@@ -243,6 +243,7 @@ export function startSimulatorRun(input: SimulatorInput, ip?: string | null): Si
     output: [],
     trace: [],
     hardWall: null,
+    hadViewer: false,
   };
   acc.hardWall = setTimeout(() => finalizeSimulatorRun(simulationId, 'hard-wall'), hardWallMs());
   if (typeof acc.hardWall.unref === 'function') acc.hardWall.unref();
@@ -291,6 +292,9 @@ interface RunAccumulator {
    * for the share page's expandable activity (§24.31 Δ). Capped. */
   trace: unknown[];
   hardWall: NodeJS.Timeout | null;
+  /** Whether an SSE viewer has ever connected to this run (§24.94). Gates the
+   * abandonment teardown so the POST→first-connect gap never trips it. */
+  hadViewer: boolean;
 }
 
 /** Cap on persisted dispatch-trace steps per run (keeps trace_json bounded). */
@@ -317,10 +321,74 @@ export interface SimulatorRunRow {
 
 const runs = new Map<string, RunAccumulator>();
 
-/** Test seam — clear the in-flight run registry (and its hard-wall timers). */
+/** Pending abandonment-teardown timers, keyed by run id (§24.94). */
+const abandonTimers = new Map<string, NodeJS.Timeout>();
+const DEFAULT_ABANDON_GRACE_MS = 5000;
+
+/** Test seam — clear the in-flight run registry (and its hard-wall + abandon timers). */
 export function _resetSimulatorRuns(): void {
   for (const acc of runs.values()) if (acc.hardWall) clearTimeout(acc.hardWall);
+  for (const t of abandonTimers.values()) clearTimeout(t);
+  abandonTimers.clear();
   runs.clear();
+}
+
+/** Test seam — whether a run is still in-flight (not yet finalized). */
+export function _runIsInFlight(runId: string): boolean {
+  return runs.has(runId);
+}
+
+function abandonGraceMs(): number {
+  try {
+    return getConfig<number>(getDb(), 'simulator_abandon_grace_ms', DEFAULT_ABANDON_GRACE_MS);
+  } catch {
+    return DEFAULT_ABANDON_GRACE_MS;
+  }
+}
+
+function clearAbandonTimer(runId: string): void {
+  const t = abandonTimers.get(runId);
+  if (t) {
+    clearTimeout(t);
+    abandonTimers.delete(runId);
+  }
+}
+
+/**
+ * React to a run's live SSE viewer count changing (§24.94). A viewer connecting
+ * marks the run `hadViewer` and cancels any pending teardown. The last viewer
+ * leaving — only for a run that HAD a viewer, so the POST→first-connect gap is
+ * never mistaken for abandonment — schedules a grace timer; if no viewer
+ * reconnects (the fetch-stream transport doesn't, so this is the common case)
+ * and the run is still in-flight at expiry, the run is finalized 'abandoned'
+ * (discard the partial + tear down the container). Registered with the
+ * broadcaster at module load; never throws into the broadcaster.
+ */
+export function handleSimulatorViewerChange(runId: string, viewers: number): void {
+  const acc = runs.get(runId);
+  if (!acc) {
+    // Unknown or already-finalized run — drop any stale timer and stop.
+    clearAbandonTimer(runId);
+    return;
+  }
+  if (viewers > 0) {
+    acc.hadViewer = true;
+    clearAbandonTimer(runId);
+    return;
+  }
+  // Zero viewers. Only a run that was actually being watched can be "abandoned";
+  // a run still waiting for its first connect (cold-start window) is left alone.
+  if (!acc.hadViewer || abandonTimers.has(runId)) return;
+  const t = setTimeout(() => {
+    abandonTimers.delete(runId);
+    // Still in-flight (not completed during the grace) → the visitor is gone.
+    if (runs.has(runId)) {
+      log.info('Simulator run abandoned — visitor left; discarding partial + tearing down', { runId });
+      finalizeSimulatorRun(runId, 'abandoned');
+    }
+  }, abandonGraceMs());
+  if (typeof t.unref === 'function') t.unref();
+  abandonTimers.set(runId, t);
 }
 
 function hardWallMs(): number {
@@ -379,6 +447,27 @@ export function finalizeSimulatorRun(runId: string, reason: string): void {
   if (!acc) return;
   runs.delete(runId); // claim once
   if (acc.hardWall) clearTimeout(acc.hardWall);
+  clearAbandonTimer(runId);
+
+  // Abandoned (§24.94): the visitor left and the stream transport doesn't
+  // reconnect, so DISCARD the partial — persisting an incomplete run would only
+  // litter the recent-runs feed, and nobody is coming back for it. Close the
+  // (already viewer-less) stream topic and tear down the sandbox to stop spend +
+  // free the §24.92 slot. The complete/hard-wall paths below still persist+share.
+  if (reason === 'abandoned') {
+    try {
+      endSimulatorRun(runId);
+    } catch {
+      /* no viewers anyway */
+    }
+    try {
+      teardownSimulatorSession(runId, reason);
+    } catch (err) {
+      log.warn('finalizeSimulatorRun: abandoned teardown failed', { runId, err });
+    }
+    log.info('Simulator run finalized', { runId, reason, costCents: acc.costCents, discarded: true });
+    return;
+  }
 
   // Persist FIRST (writing the row + the validated tailored résumé), so the
   // terminal `end` can tell the browser whether the tailored résumé — the gift —
@@ -576,3 +665,7 @@ export function reapStaleSandboxSessions(now: number = Date.now()): number {
 // import this module) so there is no import cycle. Runs at module load; api.ts
 // imports this module at startup, so the sink is registered before any run.
 setSimulatorOutputSink(recordSimulatorOutput);
+
+// Wire the abandonment teardown to the broadcaster's viewer-change hook (§24.94)
+// — same decoupling as the sink, registered before any run can stream.
+setSimulatorViewerHandler(handleSimulatorViewerChange);

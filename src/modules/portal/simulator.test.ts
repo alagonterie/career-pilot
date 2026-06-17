@@ -25,8 +25,11 @@ import { getConfig } from '../../get-config.js';
 
 import {
   _resetSimulatorRuns,
+  _runIsInFlight,
   buildSimulatorPrompt,
   checkSimulatorAllowed,
+  finalizeSimulatorRun,
+  handleSimulatorViewerChange,
   reapStaleSandboxSessions,
   startSimulatorRun,
 } from './simulator.js';
@@ -42,6 +45,10 @@ function seedRun(ip: string | null, costCents: number, ts: string = new Date().t
     .prepare(`INSERT INTO simulator_runs (id, ts, total_cost_cents, client_ip) VALUES (?, ?, ?, ?)`)
     .run(`sb-seed-${Math.random().toString(36).slice(2, 10)}`, ts, costCents, ip);
 }
+
+/** Count persisted simulator_runs rows (the abandonment tests assert discard). */
+const runRowCount = (): number =>
+  (getDb().prepare('SELECT COUNT(*) AS n FROM simulator_runs').get() as { n: number }).n;
 
 beforeEach(() => {
   closeDb();
@@ -161,6 +168,52 @@ describe('startSimulatorRun', () => {
     }
     // The next is blocked purely by the in-flight count — nothing is persisted yet.
     expect(startSimulatorRun({ company: 'Acme', role: 'SWE' }, '5.5.5.5').error?.code).toBe('RATE_LIMITED');
+  });
+});
+
+describe('abandonment teardown (§24.94)', () => {
+  const GRACE = 5000; // simulator_abandon_grace_ms default (defaults.json)
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  function startRun(ip = '4.4.4.4'): string {
+    const r = startSimulatorRun({ company: 'Acme', role: 'SWE' }, ip);
+    expect(r.ok).toBe(true);
+    return r.simulation_id as string;
+  }
+
+  it('discards the partial on an abandoned finalize — no simulator_runs row written', () => {
+    const id = startRun();
+    finalizeSimulatorRun(id, 'abandoned');
+    expect(_runIsInFlight(id)).toBe(false);
+    expect(runRowCount()).toBe(0); // discarded, not persisted
+  });
+
+  it('tears the run down after the grace once its last viewer leaves', () => {
+    const id = startRun();
+    handleSimulatorViewerChange(id, 1); // viewer connects
+    handleSimulatorViewerChange(id, 0); // visitor closes the tab
+    expect(_runIsInFlight(id)).toBe(true); // still in-flight during the grace
+    vi.advanceTimersByTime(GRACE + 1);
+    expect(_runIsInFlight(id)).toBe(false); // abandoned + torn down
+    expect(runRowCount()).toBe(0); // discarded
+  });
+
+  it('leaves a run that never had a viewer alone (the POST→first-connect gap)', () => {
+    const id = startRun();
+    handleSimulatorViewerChange(id, 0); // zero viewers, but none ever connected
+    vi.advanceTimersByTime(GRACE + 1);
+    expect(_runIsInFlight(id)).toBe(true); // never scheduled a teardown
+  });
+
+  it('cancels the teardown when a viewer reconnects within the grace', () => {
+    const id = startRun();
+    handleSimulatorViewerChange(id, 1);
+    handleSimulatorViewerChange(id, 0); // schedules teardown
+    handleSimulatorViewerChange(id, 1); // reconnect cancels it
+    vi.advanceTimersByTime(GRACE + 1);
+    expect(_runIsInFlight(id)).toBe(true);
   });
 });
 

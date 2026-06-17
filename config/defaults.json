@@ -136,6 +136,7 @@
     "simulator_max_budget_usd": 0.1,
     "simulator_idle_timeout_ms": 30000,
     "simulator_hard_wall_ms": 300000,
+    "simulator_abandon_grace_ms": 5000,
     "simulator_results_ttl_days": 30,
     "simulator_recent_limit": 10,
     "sandbox_session_reap_idle_sec": 900,
