@@ -18,7 +18,7 @@ import { killContainer } from '../../container-runner.js';
 import { getAgentGroupByFolder } from '../../db/agent-groups.js';
 import { getDb } from '../../db/connection.js';
 import { getMessagingGroupByPlatform } from '../../db/messaging-groups.js';
-import { findSessionForAgent } from '../../db/sessions.js';
+import { findSessionForAgent, updateSession } from '../../db/sessions.js';
 import { getConfig } from '../../get-config.js';
 import { log } from '../../log.js';
 import { getPublicProfile } from './profile.js';
@@ -31,6 +31,9 @@ const SANDBOX_PLATFORM = 'sandbox';
 const DEFAULT_HARD_WALL_MS = 300_000;
 const DEFAULT_TTL_DAYS = 30;
 const DEFAULT_RECENT_LIMIT = 10;
+/** Idle age past which an 'active' sandbox session is reaped — 3× the 5-min
+ *  run ceiling, so a live run is never touched (B2). */
+const DEFAULT_SANDBOX_REAP_IDLE_SEC = 900;
 const JD_EXCERPT_MAX = 500;
 
 export interface SimulatorInput {
@@ -527,7 +530,45 @@ function teardownSimulatorSession(runId: string, reason: string): void {
   const mg = getMessagingGroupByPlatform('portal', SANDBOX_PLATFORM);
   if (!ag || !mg) return;
   const session = findSessionForAgent(ag.id, mg.id, runId);
-  if (session) killContainer(session.id, `simulator-${reason}`);
+  if (!session) return;
+  killContainer(session.id, `simulator-${reason}`);
+  // Retire the session ROW too (B2). killContainer only stops the container; an
+  // un-retired session lingers 'active' forever and inflates the sandbox
+  // session-topology count on /architecture + /live. Update directly rather than
+  // via killContainer's onExit — that callback never fires when the container
+  // entry is already gone (e.g. a prior restart orphan-stopped it).
+  updateSession(session.id, { status: 'closed' });
+}
+
+/**
+ * Reap sandbox sessions left 'active' after their run ended without a clean
+ * finalize — chiefly runs cut off by a host restart, where the in-memory `runs`
+ * accumulator is lost so finalizeSimulatorRun → teardownSimulatorSession never
+ * runs (B2). Closes every sandbox-group active session once its created/
+ * last-active age exceeds the threshold (well past the 5-min run ceiling, so a
+ * live run is never touched). The host-sweep calls this each tick; best-effort,
+ * never throws. Returns the number reaped.
+ */
+export function reapStaleSandboxSessions(now: number = Date.now()): number {
+  try {
+    const ag = getAgentGroupByFolder(SANDBOX_FOLDER);
+    if (!ag) return 0;
+    const idleSec = getConfig<number>(getDb(), 'sandbox_session_reap_idle_sec', DEFAULT_SANDBOX_REAP_IDLE_SEC);
+    const cutoff = new Date(now - idleSec * 1000).toISOString();
+    const stale = getDb()
+      .prepare(
+        `SELECT id FROM sessions
+          WHERE agent_group_id = ? AND status = 'active'
+            AND COALESCE(last_active, created_at) <= ?`,
+      )
+      .all(ag.id, cutoff) as Array<{ id: string }>;
+    for (const s of stale) updateSession(s.id, { status: 'closed' });
+    if (stale.length > 0) log.info('reaped stale sandbox sessions', { count: stale.length });
+    return stale.length;
+  } catch (err) {
+    log.warn('reapStaleSandboxSessions failed', { err });
+    return 0;
+  }
 }
 
 // Wire the accumulator to the portal channel adapter's outbound path. The

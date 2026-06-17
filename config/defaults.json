@@ -136,6 +136,7 @@
     "simulator_hard_wall_ms": 300000,
     "simulator_results_ttl_days": 30,
     "simulator_recent_limit": 10,
+    "sandbox_session_reap_idle_sec": 900,
     "portal_public_url": "",
     "contact_message_max_chars": 4000,
     "origin_jwt_validation_enabled": false

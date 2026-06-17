@@ -18,10 +18,18 @@ vi.mock('../../channels/portal/adapter.js', () => ({
 
 import { submitSimulatorRun } from '../../channels/portal/adapter.js';
 
+import { createAgentGroup } from '../../db/agent-groups.js';
 import { getDb } from '../../db/connection.js';
+import { createMessagingGroup } from '../../db/messaging-groups.js';
 import { getConfig } from '../../get-config.js';
 
-import { _resetSimulatorRuns, buildSimulatorPrompt, checkSimulatorAllowed, startSimulatorRun } from './simulator.js';
+import {
+  _resetSimulatorRuns,
+  buildSimulatorPrompt,
+  checkSimulatorAllowed,
+  reapStaleSandboxSessions,
+  startSimulatorRun,
+} from './simulator.js';
 
 const submitMock = vi.mocked(submitSimulatorRun);
 
@@ -153,5 +161,90 @@ describe('startSimulatorRun', () => {
     }
     // The next is blocked purely by the in-flight count — nothing is persisted yet.
     expect(startSimulatorRun({ company: 'Acme', role: 'SWE' }, '5.5.5.5').error?.code).toBe('RATE_LIMITED');
+  });
+});
+
+describe('reapStaleSandboxSessions (B2 — sandbox session leak)', () => {
+  const NOW = Date.parse('2026-06-17T12:00:00Z');
+  const SANDBOX_GID = 'ag-sandbox-test';
+  const OWNER_GID = 'ag-owner-test';
+  const MG_ID = 'mg-sim-test';
+
+  function seedGroups(): void {
+    createAgentGroup({
+      id: SANDBOX_GID,
+      name: 'Sandbox',
+      folder: 'career-pilot-sandbox',
+      agent_provider: null,
+      created_at: '2026-06-12T00:00:00Z',
+    });
+    createAgentGroup({
+      id: OWNER_GID,
+      name: 'Career Pilot',
+      folder: 'career-pilot',
+      agent_provider: null,
+      created_at: '2026-06-12T00:00:00Z',
+    });
+    createMessagingGroup({
+      id: MG_ID,
+      channel_type: 'portal',
+      platform_id: 'portal:sandbox',
+      name: 'Sandbox',
+      is_group: 0,
+      unknown_sender_policy: 'strict',
+      created_at: '2026-06-12T00:00:00Z',
+    } as never);
+  }
+
+  function seedSession(
+    id: string,
+    gid: string,
+    opts: { status?: string; createdAt?: string; lastActive?: string | null; threadId?: string | null } = {},
+  ): void {
+    getDb()
+      .prepare(
+        `INSERT INTO sessions (id, agent_group_id, messaging_group_id, thread_id, agent_provider, status, container_status, last_active, created_at)
+         VALUES (?, ?, ?, ?, NULL, ?, 'stopped', ?, ?)`,
+      )
+      .run(
+        id,
+        gid,
+        MG_ID,
+        opts.threadId ?? `run-${id}`,
+        opts.status ?? 'active',
+        opts.lastActive ?? null,
+        opts.createdAt ?? new Date(NOW).toISOString(),
+      );
+  }
+
+  const status = (id: string): string =>
+    (getDb().prepare('SELECT status FROM sessions WHERE id = ?').get(id) as { status: string }).status;
+
+  it('reaps stale sandbox sessions, sparing fresh sandbox + owner sessions', () => {
+    seedGroups();
+    seedSession('sb-stale-1', SANDBOX_GID, { createdAt: new Date(NOW - 30 * 60_000).toISOString() }); // 30m > 900s
+    seedSession('sb-stale-2', SANDBOX_GID, { createdAt: new Date(NOW - 60 * 60_000).toISOString() });
+    seedSession('sb-fresh', SANDBOX_GID, { createdAt: new Date(NOW - 2 * 60_000).toISOString() }); // mid-run
+    seedSession('owner-old', OWNER_GID, { createdAt: new Date(NOW - 60 * 60_000).toISOString(), threadId: null });
+
+    expect(reapStaleSandboxSessions(NOW)).toBe(2);
+    expect(status('sb-stale-1')).toBe('closed');
+    expect(status('sb-stale-2')).toBe('closed');
+    expect(status('sb-fresh')).toBe('active');
+    expect(status('owner-old')).toBe('active'); // a different group is never touched
+  });
+
+  it('uses last_active over created_at — a recently-active old session is spared', () => {
+    seedGroups();
+    seedSession('sb-recent', SANDBOX_GID, {
+      createdAt: new Date(NOW - 60 * 60_000).toISOString(), // created an hour ago…
+      lastActive: new Date(NOW - 60_000).toISOString(), // …but active a minute ago
+    });
+    expect(reapStaleSandboxSessions(NOW)).toBe(0);
+    expect(status('sb-recent')).toBe('active');
+  });
+
+  it('is a no-op (returns 0, never throws) when the sandbox group is absent', () => {
+    expect(reapStaleSandboxSessions(NOW)).toBe(0);
   });
 });
