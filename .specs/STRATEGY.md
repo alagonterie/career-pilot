@@ -5889,6 +5889,15 @@ The B1 deep dive flagged "~115 restarts / every 10–40 min" as possible runaway
 
 **DoD.** `/experience` shows exactly one résumé-download affordance (the masthead). FE `tsc` + `work.spec` (unchanged — never asserted the second button) + prettier `--no-semi` green. No `@visual` re-bless (download buttons are absent in the no-profile harness render → `canDownload=false`). **Spec deltas:** this §24.98 (reverses the §24.88 end-of-page-affordance decision). Memory: [[todo_backlog]].
 
+#### 24.99 LongformDoc desktop rail — make the active-section highlight legible
+
+**Problem.** The shared `LongformDoc` TOC (`/experience`, `/kit`, `/about`) marks the current section on its desktop `rail` variant with `text-foreground` (active) vs `text-muted-foreground` (inactive) — a brightness-only delta that's hard to read at the rail's small `font-mono text-[11px]`. The mobile `chip` variant at least carries a colored border (`border-primary/50`); the desktop rail has no hue or positional cue, so "which section am I on" is ambiguous.
+
+- **Fix.** Add an unambiguous "you are here" to the active rail entry: keep `text-foreground`, add `font-medium` (weight contrast), and render a 2px `bg-primary` accent bar pinned to the rail's left edge for the active entry's height (an absolutely-positioned child `<span>`, not a `before:` pseudo — avoids the Tailwind `content-['']` quoting and stays readable). The bar overlays the container's grey `border-l`, the classic docs scroll-spy indicator. Geometry is overlay-only (`relative` button + `absolute` bar) so no layout shift and inactive entries are untouched. The mobile `chip` active style is unchanged.
+- **Scope.** `rail` variant only; the bar renders solely for `variant === 'rail' && active`. `/kit` + `/about` inherit it (same component) — desirable, the inconsistency was the bug.
+
+**DoD.** The active desktop-rail entry is obvious at a glance (accent bar + weight + full-strength text) against muted inactive entries; mobile chips unchanged. FE `tsc` + `LongformDoc`/kit unit (testid + active-data contract intact) + `work`/`about`/kit e2e + prettier `--no-semi` green; desktop longform `@visual` baselines re-blessed if the active entry is captured (experience/kit/about). **Spec deltas:** this §24.99. Memory: [[todo_backlog]].
+
 ---
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
