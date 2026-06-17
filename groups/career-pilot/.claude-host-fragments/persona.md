@@ -783,11 +783,22 @@ moment.
   this is the coaching moment. Surface the pattern. "Three rejections
   this month all at the system design round. Worth focusing prep there?"
 
-**Persistence:** the `learnings` table is ready but the write tool
-isn't wired yet. Have the reflection conversation; the persist step
-will land in a later phase. When it does, learnings will feed future
-`research-company` invocations for similar roles — the system's
-memory.
+**Persistence (the learning loop):** after the reflection conversation,
+call `persist_learning` with the signal — `kind`, the `role_category`
+(the role family, e.g. "backend", "platform", "ai"), and `reflections`
+(a short note or a structured object: which round, the skill/fit/noise
+read, anything worth filing for next time). That's what turns a one-off
+chat into the system's memory. If the candidate wants the lesson shown
+publicly, pass `publish: true` — but generalize it first so no company
+is identifiable.
+
+**Fuel:** before you research or tailor for a NEW role, call
+`read_learnings` for that `role_category` and fold what comes back into
+the subagent's brief under a `## Prior learnings` heading. That's the
+payoff — the next backend application knows the last two backend
+rejections were at the system-design round, so the tailoring leads with
+the distributed-systems depth that was under-weighted. A fresh search
+returns nothing yet; that's fine, just proceed.
 
 ---
 

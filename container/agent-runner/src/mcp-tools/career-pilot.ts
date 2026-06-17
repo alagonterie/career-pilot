@@ -502,6 +502,108 @@ export const setWorkProfile: McpToolDefinition = {
   },
 };
 
+// ── persist_learning (rejection-as-fuel: CAPTURE, §24.107) ──────────────────
+
+export const persistLearning: McpToolDefinition = {
+  tool: {
+    name: 'persist_learning',
+    description:
+      "Save the candidate's reflection after an outcome (rejection, interview, offer) so it becomes durable memory — the system's learning loop. Call it AFTER you've had the reflection conversation, not instead of it. Capture the signal that will sharpen the NEXT similar application: which round, the skill/fit/noise read, anything quotable for next time. Pass `role_category` (the role family, e.g. \"backend\", \"platform\", \"ai\") so `read_learnings` can surface it when researching/tailoring a similar role later. `reflections` can be a short string OR a structured object of labelled answers. Set `publish:true` ONLY when the candidate wants the lesson shown publicly on the /pipeline detail — generalize it first so no company is identifiable. This writes private candidate signal; never call it from a sandbox run.",
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        kind: {
+          type: 'string',
+          enum: ['rejection', 'interview', 'offer', 'withdrawal', 'other'],
+          description: 'What kind of outcome this reflection is about.',
+        },
+        reflections: {
+          description:
+            'The reflection itself — a short string, or a structured object of labelled answers (e.g. { round, gut_read, note_for_next_time }). Required and non-empty.',
+        },
+        role_category: {
+          type: 'string',
+          description:
+            'The role family this lesson belongs to (e.g. "backend", "platform", "ai") — the same taxonomy as application labels. Lets read_learnings surface it for similar future roles. Strongly recommended.',
+        },
+        application_id: {
+          type: 'string',
+          description: 'Optional. The application this reflection is about (e.g. "app-acme").',
+        },
+        publish: {
+          type: 'boolean',
+          description:
+            'Optional (default false). True surfaces a generalized version on the public /pipeline detail. Only with the candidate’s OK and after generalizing.',
+        },
+      },
+      required: ['kind', 'reflections'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  async handler(args) {
+    const res = await sendAction<{ learning_id: string; published: boolean; role_category: string | null }>(
+      'career_pilot.persist_learning',
+      {
+        kind: args.kind,
+        reflections: args.reflections,
+        role_category: (args.role_category as string | undefined) ?? null,
+        application_id: (args.application_id as string | undefined) ?? null,
+        publish: args.publish === true,
+      },
+    );
+    if (!res.ok) return actionErr('persist_learning', res.error);
+    return ok(
+      `Learning saved${res.data.published ? ' (published to /pipeline)' : ''}${
+        res.data.role_category ? ` under "${res.data.role_category}"` : ''
+      }.`,
+      res.data,
+    );
+  },
+};
+
+// ── read_learnings (rejection-as-fuel: FUEL, §24.107) ───────────────────────
+
+export const readLearnings: McpToolDefinition = {
+  tool: {
+    name: 'read_learnings',
+    description:
+      'Pull the candidate’s prior reflections (most recent first) so past outcomes inform the next application — the fuel half of the learning loop. Call it BEFORE dispatching research-company / tailor-resume for a NEW role, filtered by `role_category` (the role family), and embed what comes back under a `## Prior learnings` heading in the subagent’s brief so the tailoring reflects what was learned (e.g. "last two backend rejections were at the system-design round — lead with distributed-systems depth"). Returns [] when there’s nothing yet (a fresh search has no history — that’s fine).',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        role_category: {
+          type: 'string',
+          description: 'Filter to one role family (e.g. "backend"). Omit to read across all categories.',
+        },
+        application_id: {
+          type: 'string',
+          description: 'Optional. Filter to reflections about one application.',
+        },
+        limit: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 50,
+          description: 'Max reflections to return (default 8, newest first).',
+        },
+      },
+    },
+    annotations: { readOnlyHint: true },
+  },
+  async handler(args) {
+    const res = await sendAction<{ learnings: Array<Record<string, unknown>>; count: number }>(
+      'career_pilot.read_learnings',
+      {
+        role_category: (args.role_category as string | undefined) ?? null,
+        application_id: (args.application_id as string | undefined) ?? null,
+        limit: (args.limit as number | undefined) ?? null,
+      },
+    );
+    if (!res.ok) return actionErr('read_learnings', res.error);
+    if (res.data.count === 0) return ok('No prior learnings yet for that filter.', res.data);
+    return ok(`${res.data.count} prior learning(s):\n${JSON.stringify(res.data.learnings, null, 2)}`, res.data);
+  },
+};
+
 registerTools([
   updateProfileField,
   setWorkProfile,
@@ -512,4 +614,6 @@ registerTools([
   listApplications,
   recordProgress,
   createGmailDraft,
+  persistLearning,
+  readLearnings,
 ]);
