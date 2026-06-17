@@ -38,6 +38,7 @@ import {
 } from './job-lead-actions.js';
 import {
   handleCalendarQueryDelta,
+  handleFilterSeenEmailEvents,
   handleGetCalendarSyncState,
   handleGetGmailSyncState,
   handleGmailQueryDelta,
@@ -102,3 +103,4 @@ registerOwnerOnly('career_pilot.load_gmail_fixture', handleLoadGmailFixture);
 registerOwnerOnly('career_pilot.load_calendar_fixture', handleLoadCalendarFixture);
 registerOwnerOnly('career_pilot.get_gmail_sync_state', handleGetGmailSyncState);
 registerOwnerOnly('career_pilot.get_calendar_sync_state', handleGetCalendarSyncState);
+registerOwnerOnly('career_pilot.filter_seen_email_events', handleFilterSeenEmailEvents);

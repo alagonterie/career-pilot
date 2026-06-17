@@ -32,6 +32,7 @@ import type { Session } from '../../types.js';
 
 import {
   handleCalendarQueryDelta,
+  handleFilterSeenEmailEvents,
   handleGetCalendarSyncState,
   handleGetGmailSyncState,
   handleGmailQueryDelta,
@@ -680,6 +681,73 @@ describe('handleReadEmailEvents', () => {
   it('refuses with FORBIDDEN for sandbox sessions', async () => {
     const c = actionContent('career_pilot.read_email_events', {});
     await handleReadEmailEvents(c, SANDBOX_SESSION, inDb);
+    const res = readResponse(c.requestId);
+    expect(res.frame.ok).toBe(false);
+    if (res.frame.ok) throw new Error('unreachable');
+    expect(res.frame.error.code).toBe('FORBIDDEN');
+  });
+});
+
+// ── handleFilterSeenEmailEvents (§24.102) ─────────────────────────────────
+
+describe('handleFilterSeenEmailEvents', () => {
+  async function seedClassified(gmailMsgId: string): Promise<void> {
+    await handlePersistFunnelState(
+      actionContent(
+        'career_pilot.persist_funnel_state',
+        makeValidPayload({
+          new_email_events: [
+            { gmail_msg_id: gmailMsgId, thread_id: `thread-${gmailMsgId}`, classification: 'noise', confidence: 0.3 },
+          ],
+        }),
+      ),
+      OWNER_SESSION,
+      inDb,
+    );
+  }
+
+  it('returns only the gmail_msg_ids already present in email_events', async () => {
+    await seedClassified('msg-seen-1');
+    await seedClassified('msg-seen-2');
+    const c = actionContent('career_pilot.filter_seen_email_events', {
+      gmail_msg_ids: ['msg-seen-1', 'msg-seen-2', 'msg-fresh-1'],
+    });
+    await handleFilterSeenEmailEvents(c, OWNER_SESSION, inDb);
+    const res = readResponse(c.requestId);
+    expect(res.frame.ok).toBe(true);
+    if (!res.frame.ok) throw new Error('unreachable');
+    expect((res.frame.data.seen as string[]).sort()).toEqual(['msg-seen-1', 'msg-seen-2']);
+    expect(res.frame.data.enabled).toBe(true);
+  });
+
+  it('returns seen: [] for empty input (no query)', async () => {
+    const c = actionContent('career_pilot.filter_seen_email_events', { gmail_msg_ids: [] });
+    await handleFilterSeenEmailEvents(c, OWNER_SESSION, inDb);
+    const res = readResponse(c.requestId);
+    expect(res.frame.ok).toBe(true);
+    if (!res.frame.ok) throw new Error('unreachable');
+    expect(res.frame.data.seen).toEqual([]);
+  });
+
+  it('returns seen: [] when the skip toggle is disabled (full re-classification pass)', async () => {
+    await seedClassified('msg-seen-x');
+    getDb()
+      .prepare(
+        "INSERT OR REPLACE INTO preferences (key, value, updated_at) VALUES ('funnel_curator_skip_classified_messages', 'false', datetime('now'))",
+      )
+      .run();
+    const c = actionContent('career_pilot.filter_seen_email_events', { gmail_msg_ids: ['msg-seen-x'] });
+    await handleFilterSeenEmailEvents(c, OWNER_SESSION, inDb);
+    const res = readResponse(c.requestId);
+    expect(res.frame.ok).toBe(true);
+    if (!res.frame.ok) throw new Error('unreachable');
+    expect(res.frame.data.seen).toEqual([]);
+    expect(res.frame.data.enabled).toBe(false);
+  });
+
+  it('refuses with FORBIDDEN for sandbox sessions', async () => {
+    const c = actionContent('career_pilot.filter_seen_email_events', { gmail_msg_ids: ['msg-x'] });
+    await handleFilterSeenEmailEvents(c, SANDBOX_SESSION, inDb);
     const res = readResponse(c.requestId);
     expect(res.frame.ok).toBe(false);
     if (res.frame.ok) throw new Error('unreachable');
