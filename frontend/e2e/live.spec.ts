@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 
-// /live composes the funnel + architecture data + the SSE trace + /api/telemetry
+// /dashboard composes the funnel + architecture data + the SSE trace + /api/telemetry
 // into the aggregate ops dashboard (§24.29). The E2E server seeds the backlog,
 // funnel, sessions, and a fixed container count; the telemetry/cost panels render
 // from the seeded per-turn rows (§24.47 — local-sourced, no Portkey API).
@@ -18,7 +18,7 @@ function ignorable(url: string): boolean {
   )
 }
 
-test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
+test.describe('/dashboard — aggregate ops dashboard, frontend <-> backend', () => {
   test('renders every panel + the trace stream + a working filter chip from the seeded API', async ({ page }) => {
     const consoleErrors: string[] = []
     page.on('console', (msg) => {
@@ -30,9 +30,9 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
       failedRequests.push(`${req.method()} ${req.url()} — ${req.failure()?.errorText ?? ''}`)
     })
 
-    await page.goto('/live')
+    await page.goto('/dashboard')
 
-    await expect(page.getByRole('heading', { level: 1, name: 'Live' })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
 
     // System status (unboxed header strip): seeded live_mode=true,
     // pause_state=active → "LIVE" + "RUNNING" (§24.69 — "active" reads as RUNNING,
@@ -59,7 +59,7 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
     // tier — a public application's ref is the company, not the obfuscated label).
     await expect(page.getByTestId('funnel-compact-reveal')).toContainText('Wayne Enterprises')
 
-    // §24.35 Pass B: the anonymization demo moved off /live into the
+    // §24.35 Pass B: the anonymization demo moved off /dashboard into the
     // /architecture pub-sanitize node modal — covered by architecture.spec.ts.
 
     // §24.34/§24.35 Pass C: the per-turn (category='turn') row renders as a
@@ -102,7 +102,7 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
   })
 
   test('the trace header explains the cast via one InfoTip (§24.60)', async ({ page }) => {
-    await page.goto('/live')
+    await page.goto('/dashboard')
     // Retried like funnel.spec's stat-tile tip (§24.65 Δ): under parallel-
     // worker load a click can land during hydration / a late layout settle
     // (the tip closes on scroll), so a single click is racy.
@@ -118,19 +118,19 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
   })
 
   test('a trace-line [ref] deep-links into the /pipeline drawer (§24.60)', async ({ page }) => {
-    await page.goto('/live')
+    await page.goto('/dashboard')
     await page.getByTestId('trace-ref-link').filter({ hasText: 'fintech-a' }).first().click()
     await expect(page).toHaveURL(/\/pipeline\?app=fintech-a/)
     await expect(page.getByRole('dialog', { name: '[fintech-a]' })).toBeVisible()
   })
 
-  test('the /pipeline drawer round-trips into that application’s filtered /live activity (§24.60)', async ({
+  test('the /pipeline drawer round-trips into that application’s filtered /dashboard activity (§24.60)', async ({
     page,
   }) => {
     await page.goto('/pipeline?app=fintech-a')
     await expect(page.getByRole('dialog', { name: '[fintech-a]' })).toBeVisible()
     await page.getByTestId('detail-live-link').click()
-    await expect(page).toHaveURL(/\/live\?app=fintech-a/)
+    await expect(page).toHaveURL(/\/dashboard\?app=fintech-a/)
 
     // The dismissible app-filter chip is active and the stream is scoped: only
     // fintech-a rows render (every visible [ref] is the filtered one).
@@ -141,12 +141,12 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
 
     // Dismissing clears the param and restores the full stream.
     await chip.click()
-    await expect(page).toHaveURL('/live')
+    await expect(page).toHaveURL('/dashboard')
     await expect(page.getByTestId('trace-app-filter')).toBeHidden()
   })
 
   test('a Recent-outcomes row deep-links into the /pipeline drawer (§24.57)', async ({ page }) => {
-    await page.goto('/live')
+    await page.goto('/dashboard')
     await page.getByTestId('recent-outcome-link').filter({ hasText: 'Wayne Enterprises' }).click()
     await expect(page).toHaveURL(/\/pipeline\?app=Wayne([+ ]|%20)Enterprises/)
     await expect(page.getByRole('dialog', { name: 'Wayne Enterprises' })).toBeVisible()
@@ -156,35 +156,35 @@ test.describe('/live — aggregate ops dashboard, frontend <-> backend', () => {
     await expect(page).toHaveURL('/pipeline')
   })
 
-  test('the shared header nav reaches /live and back', async ({ page }) => {
+  test('the shared header nav reaches /dashboard and back', async ({ page }) => {
     await page.goto('/')
     const nav = page.getByRole('navigation', { name: 'Primary' })
 
-    await nav.getByRole('link', { name: 'Live' }).click()
-    await expect(page).toHaveURL('/live')
-    await expect(page.getByRole('heading', { level: 1, name: 'Live' })).toBeVisible()
+    await nav.getByRole('link', { name: 'Dashboard' }).click()
+    await expect(page).toHaveURL('/dashboard')
+    await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
 
     await nav.getByRole('link', { name: 'Jane Doe' }).click()
     await expect(page).toHaveURL('/')
     await expect(page.getByTestId('hero-status')).toBeVisible()
   })
 
-  test('the landing hero CTA crosses into /live', async ({ page }) => {
+  test('the landing hero CTA crosses into /dashboard', async ({ page }) => {
     await page.goto('/')
     // Scope to the hero (the connective rail also offers a "See it work" deepen).
     await page.getByRole('main').getByRole('link', { name: 'See it work →' }).click()
-    await expect(page).toHaveURL('/live')
-    await expect(page.getByRole('heading', { level: 1, name: 'Live' })).toBeVisible()
+    await expect(page).toHaveURL('/dashboard')
+    await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
   })
 
   test('the Job Pipeline panel links into /pipeline (contextual nav — §24.35 Pass A)', async ({ page }) => {
-    await page.goto('/live')
+    await page.goto('/dashboard')
     // Scope to main; the funnel panel header action is the only "open →" link.
     await page
       .getByRole('main')
       .getByRole('link', { name: /open →/ })
       .click()
     await expect(page).toHaveURL(/\/pipeline$/)
-    await expect(page.getByRole('heading', { level: 1, name: 'Job Pipeline' })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: 'My Job Pipeline' })).toBeVisible()
   })
 })

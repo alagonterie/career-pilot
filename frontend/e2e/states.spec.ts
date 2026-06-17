@@ -14,7 +14,7 @@ import { expect, test } from '@playwright/test'
 test.describe('/pipeline async states', () => {
   test('loading → a skeleton board, not the real board', async ({ page }) => {
     await page.goto('/pipeline?__state=loading')
-    await expect(page.getByRole('heading', { level: 1, name: 'Job Pipeline' })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: 'My Job Pipeline' })).toBeVisible()
     await expect(page.getByTestId('funnel-skeleton')).toBeVisible()
     await expect(page.getByTestId('funnel-board')).toHaveCount(0)
   })
@@ -53,16 +53,16 @@ test.describe('/architecture async states', () => {
   })
 })
 
-test.describe('/live async states', () => {
+test.describe('/dashboard async states', () => {
   test('loading → panel skeletons + a connecting trace stream', async ({ page }) => {
-    await page.goto('/live?__state=loading')
-    await expect(page.getByRole('heading', { level: 1, name: 'Live' })).toBeVisible()
+    await page.goto('/dashboard?__state=loading')
+    await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
     await expect(page.getByTestId('panel-skeleton').first()).toBeVisible()
     await expect(page.getByTestId('trace-empty')).toContainText(/connecting/i)
   })
 
   test('empty → a connected-but-quiet trace stream', async ({ page }) => {
-    await page.goto('/live?__state=empty')
+    await page.goto('/dashboard?__state=empty')
     await expect(page.getByTestId('trace-empty')).toContainText(/no agent activity/i)
   })
 })

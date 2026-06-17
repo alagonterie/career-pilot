@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 
-// /simulator is the grippiest spoke of the conversion spine (§24.31). The E2E
+// /watch is the grippiest spoke of the conversion spine (§24.31). The E2E
 // server enables PORTAL_MOCK_SIMULATOR, so POST /api/simulator runs a scripted,
 // container-free run and the live trace/chat/end stream drives the real UI end
 // to end. The mid-run view is timing-dependent (no visual baseline — that's the
@@ -28,11 +28,11 @@ function gate(
   return { consoleErrors, failedRequests }
 }
 
-test.describe('/simulator — the recruiter simulator, frontend <-> backend', () => {
+test.describe('/watch — the recruiter simulator, frontend <-> backend', () => {
   test('input → live run → results, with a context-carrying Talk to me', async ({ page }) => {
     const { consoleErrors, failedRequests } = gate(page)
 
-    await page.goto('/simulator')
+    await page.goto('/watch')
     await expect(page.getByRole('heading', { level: 1, name: /watch me apply to your role/i })).toBeVisible()
     // The simulator page carries no generic connective rail (its own results CTAs
     // are the next step).
@@ -83,7 +83,7 @@ test.describe('/simulator — the recruiter simulator, frontend <-> backend', ()
     // browser's 404 resource message is the expected artifact, not a real error.
     const { consoleErrors, failedRequests } = gate(page, [/status of 404/])
 
-    await page.goto('/simulator/results/det-sim-1')
+    await page.goto('/watch/results/det-sim-1')
     await expect(page.getByRole('heading', { level: 1, name: /Principal Engineer @ Wayne Enterprises/i })).toBeVisible()
     await expect(page.getByTestId('sim-outreach')).toContainText('builder who ships at your scale')
     await expect(page.getByTestId('share-talk')).toBeVisible()
@@ -100,26 +100,26 @@ test.describe('/simulator — the recruiter simulator, frontend <-> backend', ()
     expect(a11y.violations).toEqual([])
 
     // A missing/expired id → the honest "run your own" state.
-    await page.goto('/simulator/results/does-not-exist')
+    await page.goto('/watch/results/does-not-exist')
     await expect(page.getByTestId('share-missing')).toBeVisible()
 
     expect(consoleErrors).toEqual([])
     expect(failedRequests).toEqual([])
   })
 
-  test('the rail, the nav, and the home pitch all reach /simulator', async ({ page }) => {
-    // The /live rail's pivot → /simulator.
-    await page.goto('/live')
+  test('the rail, the nav, and the home pitch all reach /watch', async ({ page }) => {
+    // The /dashboard rail's pivot → /watch.
+    await page.goto('/dashboard')
     await page
       .getByTestId('connective-rail')
       .getByRole('link', { name: /run it on your role/i })
       .click()
-    await expect(page).toHaveURL('/simulator')
+    await expect(page).toHaveURL('/watch')
     await expect(page.getByRole('heading', { level: 1, name: /watch me apply to your role/i })).toBeVisible()
 
     // The top nav reaches it.
     await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Watch it work' }).click()
-    await expect(page).toHaveURL('/simulator')
+    await expect(page).toHaveURL('/watch')
 
     // The home Viewport-4 pitch CTA reaches it.
     await page.goto('/')
@@ -127,6 +127,6 @@ test.describe('/simulator — the recruiter simulator, frontend <-> backend', ()
       .getByRole('main')
       .getByRole('link', { name: /run it on your role/i })
       .click()
-    await expect(page).toHaveURL('/simulator')
+    await expect(page).toHaveURL('/watch')
   })
 })

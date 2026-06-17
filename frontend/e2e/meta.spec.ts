@@ -7,12 +7,12 @@ import { expect, test } from '@playwright/test'
 
 test.describe('social meta + favicon + 404 (§24.36 36.5)', () => {
   test('a route exposes the OG + Twitter-card tags + the favicon link', async ({ page }) => {
-    await page.goto('/work')
+    await page.goto('/experience')
 
-    await expect(page.locator('meta[property="og:title"]')).toHaveAttribute('content', /Work — Jane Doe/)
+    await expect(page.locator('meta[property="og:title"]')).toHaveAttribute('content', /Experience — Jane Doe/)
     await expect(page.locator('meta[property="og:type"]')).toHaveAttribute('content', 'website')
     await expect(page.locator('meta[property="og:image"]')).toHaveAttribute('content', /\/og\.png$/)
-    await expect(page.locator('meta[property="og:url"]')).toHaveAttribute('content', /^https?:\/\/.+\/work$/)
+    await expect(page.locator('meta[property="og:url"]')).toHaveAttribute('content', /^https?:\/\/.+\/experience$/)
     await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute('content', 'summary_large_image')
     await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', '/favicon.svg')
   })

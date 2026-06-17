@@ -33,7 +33,7 @@ test('about page matches visual baseline', { tag: '@visual' }, async ({ page }) 
 })
 
 test('work page matches visual baseline', { tag: '@visual' }, async ({ page }) => {
-  await page.goto('/work')
+  await page.goto('/experience')
   await expect(page.getByRole('heading', { name: 'Jane Doe', level: 1 })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Experience', level: 2 })).toBeVisible()
   await expect(page).toHaveScreenshot('work.png', {
@@ -44,7 +44,7 @@ test('work page matches visual baseline', { tag: '@visual' }, async ({ page }) =
 
 test('funnel page matches visual baseline', { tag: '@visual' }, async ({ page }) => {
   await page.goto('/pipeline')
-  await expect(page.getByRole('heading', { name: 'Job Pipeline', level: 1 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'My Job Pipeline', level: 1 })).toBeVisible()
   // Wait for the board to render from the seeded API so the snapshot is stable.
   await expect(page.getByTestId('funnel-board')).toBeVisible()
   await expect(page.getByText('Wayne Enterprises')).toBeVisible()
@@ -114,8 +114,8 @@ test('architecture sanitizer-node modal matches visual baseline', { tag: '@visua
 })
 
 test('live page matches visual baseline', { tag: '@visual' }, async ({ page }) => {
-  await page.goto('/live')
-  await expect(page.getByRole('heading', { name: 'Live', level: 1 })).toBeVisible()
+  await page.goto('/dashboard')
+  await expect(page.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeVisible()
   // Wait for the SSE trace to replay the seeded backlog so the centerpiece is
   // populated before the snapshot (mirrors the home-ticker wait). The funnel,
   // sessions, container, and recent-outcomes panels are fixed-seed deterministic;
@@ -165,7 +165,7 @@ test('architecture loading state matches visual baseline', { tag: '@visual' }, a
 })
 
 test('live loading state matches visual baseline', { tag: '@visual' }, async ({ page }) => {
-  await page.goto('/live?__state=loading')
+  await page.goto('/dashboard?__state=loading')
   await expect(page.getByTestId('panel-skeleton').first()).toBeVisible()
   await expect(page.getByTestId('trace-empty')).toContainText(/connecting/i)
   await expect(page).toHaveScreenshot('live-loading.png', { animations: 'disabled', fullPage: true })
@@ -199,7 +199,7 @@ test('contact page matches visual baseline', { tag: '@visual' }, async ({ page }
 })
 
 test('simulator input view matches visual baseline', { tag: '@visual' }, async ({ page }) => {
-  await page.goto('/simulator')
+  await page.goto('/watch')
   await expect(page.getByRole('heading', { name: /watch me apply to your role/i, level: 1 })).toBeVisible()
   // The pre-run Apple-register input view — fully static (the timing-dependent
   // mid-run streaming view is covered by the semantic E2E, not a snapshot).
@@ -215,7 +215,7 @@ test('simulator input view matches visual baseline', { tag: '@visual' }, async (
 })
 
 test('simulator share results matches visual baseline', { tag: '@visual' }, async ({ page }) => {
-  await page.goto('/simulator/results/det-sim-1')
+  await page.goto('/watch/results/det-sim-1')
   // The seeded, far-future-expiry shareable run — deterministic (no streaming).
   await expect(page.getByRole('heading', { name: /Principal Engineer @ Wayne Enterprises/i, level: 1 })).toBeVisible()
   await expect(page.getByTestId('sim-outreach')).toBeVisible()

@@ -23,14 +23,14 @@ test.describe('/contact — the conversion sink, frontend <-> backend', () => {
       failedRequests.push(`${req.method()} ${req.url()} — ${req.failure()?.errorText ?? ''}`)
     })
 
-    await page.goto('/contact?company=Acme%20Corp&role=Staff%20Engineer&from=live')
+    await page.goto('/contact?company=Acme%20Corp&role=Staff%20Engineer&from=dashboard')
 
     await expect(page.getByRole('heading', { level: 1, name: 'Talk to me' })).toBeVisible()
 
     // Carried context: the company/role prefill + the "from" note.
     await expect(page.getByLabel('Company')).toHaveValue('Acme Corp')
     await expect(page.getByLabel('Role / title')).toHaveValue('Staff Engineer')
-    await expect(page.getByText(/from the live view/i)).toBeVisible()
+    await expect(page.getByText(/from the dashboard view/i)).toBeVisible()
 
     // The sink shows no connective rail (it IS the rail's destination).
     await expect(page.getByTestId('connective-rail')).toHaveCount(0)
@@ -50,13 +50,13 @@ test.describe('/contact — the conversion sink, frontend <-> backend', () => {
   })
 
   test('the connective rail + nav reach /contact, and convert carries ?from', async ({ page }) => {
-    await page.goto('/live')
+    await page.goto('/dashboard')
 
-    // The rail's convert path on /live → /contact?from=live.
+    // The rail's convert path on /dashboard → /contact?from=dashboard.
     const rail = page.getByTestId('connective-rail')
     await expect(rail).toBeVisible()
     await rail.getByRole('link', { name: /talk to me/i }).click()
-    await expect(page).toHaveURL(/\/contact\?from=live/)
+    await expect(page).toHaveURL(/\/contact\?from=dashboard/)
     await expect(page.getByRole('heading', { level: 1, name: 'Talk to me' })).toBeVisible()
 
     // The top nav also reaches the sink.

@@ -14,7 +14,7 @@ import { expect, test } from '@playwright/test'
 // the footerSocials unit test; their render is verified locally against a seeded
 // backend via .dev.vars.
 test.describe('site footer — the social/legal strip', () => {
-  for (const path of ['/', '/live']) {
+  for (const path of ['/', '/dashboard']) {
     test(`renders on ${path} with the About/Privacy doorways`, async ({ page }) => {
       await page.goto(path)
       const footer = page.getByTestId('site-footer')

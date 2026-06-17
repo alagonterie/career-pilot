@@ -25,7 +25,7 @@ test.describe('/pipeline — the funnel board, frontend <-> backend', () => {
 
     await page.goto('/pipeline')
 
-    await expect(page.getByRole('heading', { level: 1, name: 'Job Pipeline' })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: 'My Job Pipeline' })).toBeVisible()
 
     // Board renders from the seeded /api/funnel over the polling hook.
     const board = page.getByTestId('funnel-board')
@@ -135,13 +135,13 @@ test.describe('/pipeline — the funnel board, frontend <-> backend', () => {
   })
 
   test('/momentum redirects to /pipeline, ?app preserved (§24.59)', async ({ page }) => {
-    // Pre-rename links (bookmarks, old /live outcome deep-links) keep working.
+    // Pre-rename links (bookmarks, old /dashboard outcome deep-links) keep working.
     await page.goto('/momentum?app=Wayne%20Enterprises')
     await expect(page).toHaveURL(/\/pipeline\?app=Wayne([+ ]|%20)Enterprises/)
     await expect(page.getByRole('dialog', { name: 'Wayne Enterprises' })).toBeVisible()
     await page.goto('/momentum')
     await expect(page).toHaveURL('/pipeline')
-    await expect(page.getByRole('heading', { level: 1, name: 'Job Pipeline' })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: 'My Job Pipeline' })).toBeVisible()
   })
 
   test('?app deep-link opens the drawer once the funnel loads (§24.57)', async ({ page }) => {
@@ -252,9 +252,9 @@ test.describe('/pipeline — the funnel board, frontend <-> backend', () => {
     await page.goto('/')
     const nav = page.getByRole('navigation', { name: 'Primary' })
 
-    await nav.getByRole('link', { name: 'Job Pipeline' }).click()
+    await nav.getByRole('link', { name: 'My Job Pipeline' }).click()
     await expect(page).toHaveURL('/pipeline')
-    await expect(page.getByRole('heading', { level: 1, name: 'Job Pipeline' })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: 'My Job Pipeline' })).toBeVisible()
 
     await nav.getByRole('link', { name: 'Jane Doe' }).click()
     await expect(page).toHaveURL('/')

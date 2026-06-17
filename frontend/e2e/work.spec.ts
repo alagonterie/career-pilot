@@ -1,10 +1,10 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 
-// /work is a static SSR shell (no SSE / live-push) rendered from the typed
+// /experience is a static SSR shell (no SSE / live-push) rendered from the typed
 // WorkProfile placeholder (STRATEGY §24.25). Correctness rests on semantic
 // assertions + a11y + the console/network gate.
-test.describe('/work — resume/portfolio shell + shared nav', () => {
+test.describe('/experience — resume/portfolio shell + shared nav', () => {
   test('renders the resume sections from the read-model placeholder', async ({ page }) => {
     const consoleErrors: string[] = []
     page.on('console', (msg) => {
@@ -17,7 +17,7 @@ test.describe('/work — resume/portfolio shell + shared nav', () => {
       failedRequests.push(`${req.method()} ${req.url()} — ${req.failure()?.errorText ?? ''}`)
     })
 
-    await page.goto('/work')
+    await page.goto('/experience')
 
     await expect(page.getByRole('heading', { level: 1, name: 'Jane Doe' })).toBeVisible()
     for (const heading of [
@@ -43,12 +43,12 @@ test.describe('/work — resume/portfolio shell + shared nav', () => {
     expect(failedRequests).toEqual([])
   })
 
-  test('the shared header nav round-trips between / and /work', async ({ page }) => {
+  test('the shared header nav round-trips between / and /experience', async ({ page }) => {
     await page.goto('/')
     const nav = page.getByRole('navigation', { name: 'Primary' })
 
     await nav.getByRole('link', { name: 'Experience' }).click()
-    await expect(page).toHaveURL('/work')
+    await expect(page).toHaveURL('/experience')
     await expect(page.getByRole('heading', { level: 2, name: 'Experience' })).toBeVisible()
 
     await nav.getByRole('link', { name: 'Jane Doe' }).click()

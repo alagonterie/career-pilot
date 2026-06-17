@@ -47,12 +47,12 @@ test.describe('§24.62 — root scrollbar gutter holds layouts still', () => {
   test('the header brand sits at the same x on a scrolling page and a scroll-free page', async ({ page }) => {
     // Same viewport width throughout; only the page (and so the scrollbar)
     // changes. A 2000px-tall viewport makes /contact genuinely scroll-free,
-    // while /live always overflows — without the reserved gutter the brand
+    // while /dashboard always overflows — without the reserved gutter the brand
     // would sit half a scrollbar width apart between the two.
     await page.setViewportSize({ width: 1280, height: 2000 })
 
-    await page.goto('/live')
-    await expect(page.getByRole('heading', { level: 1, name: 'Live' })).toBeVisible()
+    await page.goto('/dashboard')
+    await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
     const scrolling = await brandX(page)
 
     await page.goto('/contact')
