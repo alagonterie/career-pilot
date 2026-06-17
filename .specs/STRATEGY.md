@@ -170,7 +170,7 @@ CREATE TABLE candidate_profile (
   linkedin_url    TEXT,
   x_url           TEXT,
   website_url     TEXT,
-  why_this_exists TEXT,                                   -- markdown, for /about
+  search_goals    TEXT,                                   -- candidate's job-search goals; agent-facing (§24.101)
   headshot_path   TEXT,
   brand_color_hsl TEXT,                                   -- override default
   updated_at      TEXT NOT NULL
@@ -469,7 +469,7 @@ The hook lives at `src/modules/career-pilot/render-persona.ts` (new module; barr
 | `master_resume` | `## Master resume` section, content verbatim | Markdown allowed; can be long. |
 | `skills` (JSON array) | `## Skills` bullet list | Each array entry → one bullet. |
 | `github_url`, `linkedin_url`, `x_url`, `website_url` | `## Links` section | Markdown link list; only render fields that are non-null. |
-| `why_this_exists` | Excluded | This is for the `/about` portal page, not the agent context. |
+| `search_goals` | `## Goals` section | The candidate's job-search goals — agent-facing, so the agent prioritizes toward them (§24.101). Owner persona only; the public sandbox candidate omits it. |
 | `headshot_path`, `brand_color_hsl`, `updated_at` | Excluded | Portal styling / metadata, not agent-relevant. |
 
 **Failure modes:**
@@ -4409,7 +4409,7 @@ Three dev-ergonomics improvements surfaced reviewing the live dev env (the §24.
 **Recon (against the as-built pipeline).**
 - *Model choice is already per-spawn, just not controllable.* The orchestrator model is `container_configs.model` (NULL today → the SDK default, latest Opus); every subagent declares `model: opus` in frontmatter. Both resolve through Claude Code's model aliases, which `applyClaudeTestOverrides` (`src/container-config.ts`) already retargets via `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL` env + `config.model` when `CLAUDE_TEST_MODE=1`. `materializeContainerJson` runs on every spawn and reads `getConfig`, so a `preferences`-tier knob can drive the same overlay at runtime — no redeploy.
 - *The funnel-curator runs on a recurring task, not a tight loop.* `ensureFunnelCuratorTask` inserts a `messages_in` series (`[scheduled trigger: funnel-curator]`, recurrence = `funnel_curator_cron`, default daily 07:30). The sim seeds raw `applications` + injects ATS email; only the curator sweep → orchestrator `update_application` promotes an app onto `public_funnel_view`. So the public board lags the sim's world until the next cron fire — the observed divergence (the sim had an offer + 2 in-flight + 2 ghosts; the board showed 2 rejections).
-- *Onboarding collects 6 fields, not location.* The interview walk (persona + `ONBOARDING_FIELD_ORDER` in `dev-inspector.ts`) is `full_name → target_roles → comp_floor → master_resume → bio → why_this_exists`. `location_pref` is rendered into the persona + weighed for relevance but never collected; `skills` likewise (left out by choice — it overlaps the master resume).
+- *Onboarding collects 7 fields.* The interview walk (persona host-fragment + `ONBOARDING_FIELD_ORDER` in `dev-inspector.ts`) is `full_name → target_roles → comp_floor → location_pref → master_resume → bio → search_goals` (`search_goals` = the §24.101 rename of `why_this_exists`; `location_pref` IS collected — written in the canonical `{type, preferred_cities}` shape per §24.100). `skills` is left out by choice — it overlaps the master resume.
 - *No approval gate exists on funnel moves.* `handleUpdateApplication` writes any status (incl. OFFER/REJECTED) straight through + refreshes the board; the only planned approval-gating is the future `send_outreach_email`. "Accurate representation by default" is already the design — so the board-divergence fix is purely about sweep timing (24.43c), not unlocking a gate.
 
 **Decisions (locked).**
@@ -5913,6 +5913,19 @@ The B1 deep dive flagged "~115 restarts / every 10–40 min" as possible runaway
 - **Onboarding write-side** (instructing the agent to keep writing `{type, preferred_cities}`) rolls into item #5 (onboarding copy); the live box row already matches, so behavior is fixed now.
 
 **DoD.** Denver-hybrid roles score the city credit; definitively off-location roles are demoted below on-location ones; unknown-location and no-preference cases are unaffected; the persona's `## Location` section is populated (or absent, never empty). host `tsc` + new `lead-rules-score.test` (remote/Denver/off-location/unknown/no-pref) + updated `render-persona.test` + prettier green. Box-verifiable on the next lead-scrape cascade (off-location leads sink in `read_job_leads`). **Spec deltas:** this §24.100. Memory: [[todo_backlog]], [[project_job_leads_heartbeat]].
+
+#### 24.101 Rename + repurpose `why_this_exists` → `search_goals` ("My goals"), now agent-facing
+
+**Problem (item #5).** The onboarding field `why_this_exists` (labeled "Why this exists") was confusing — to the owner, and honestly in the abstract. Investigation found why: it's an **orphaned field**. The spec called it "/about prose," but the public `/about` page is hand-authored static content that never renders it; `render-persona` *excludes* it from the agent context; the only surface is the `/dev` persona inspector. It's collected during onboarding (last of six fields) and then goes nowhere meaningful — so the name never matched a real job.
+
+**Decision (owner, 2026-06-17).** Repurpose it as the candidate's **search goals** — "what you want out of this search / what the agent should help you achieve" — and **feed it to the agent** (its main value; today it's excluded). Full rename including the DB column. Label "My goals".
+
+**Change.**
+- **Schema.** New migration renames `candidate_profile.why_this_exists` → `search_goals` (RENAME COLUMN preserves any existing value). The historical `105-candidate-profile` create stays as-is (append-only migrations); the rename runs after it for fresh DBs.
+- **Agent-facing.** `renderPersona` renders a `## Goals` section from `search_goals` (owner persona only — NOT the public `renderSandboxCandidate`, where the candidate's private goals don't belong). The onboarding prompt (persona host-fragment) asks for it clearly and, in the same edit, **pins the canonical `location_pref` shape** (`{type:[...], preferred_cities:[...]}`, §24.100 write-side follow-up) that was previously free-form.
+- **Surfaces.** Field label "My goals" across the `/dev` inspector; the agent-runner MCP `update_profile_field` enum, the onboarding-field order/config, and the actions writer all use `search_goals`. Public `/about` stays static (surfacing goals there is a separate, deferred call).
+
+**DoD.** `why_this_exists` is gone from schema + host + the agent-runner MCP enum + the dev inspector + config + specs; `search_goals` replaces it; the owner persona renders a `## Goals` section; onboarding asks for "My goals" and writes `location_pref` in the canonical shape. host `tsc` + FE `tsc` + host unit (render-persona, dev-inspector) + FE unit (dev-panels, use-dev-inspector) + dev e2e field list + prettier green. **Spec deltas:** this §24.101 + the `candidate_profile` schema note (STRATEGY) + the `/about` field-ownership rows (PORTAL). Memory: [[todo_backlog]].
 
 ---
 
