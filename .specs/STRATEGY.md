@@ -5858,6 +5858,17 @@ The B1 deep dive flagged "~115 restarts / every 10–40 min" as possible runaway
 
 ---
 
+#### 24.96 Make the idle-container ceiling configurable (wire the unwired `container_idle_timeout_sec`)
+
+**Problem.** The host sweep reaps a warm-but-idle container when its heartbeat is stale past `ABSOLUTE_CEILING_MS` — a **hardcoded 30 min** in `host-sweep.ts`, and the only thing that ends an idle "hey"/"hey" container (the agent-runner poll-loop runs `while(true)` and never self-exits; idle polling doesn't touch the heartbeat — only per-event turn activity does). Meanwhile `config/defaults.json` already carries `container_idle_timeout_sec: 1800` (= exactly 30 min) that is **defined but never read** — a knob specced and forgotten. The ceiling should be tunable (via `/dev` now, the future `/admin`) so the owner can trade warm-reuse latency against held RAM / §24.92 slots.
+
+- **Fix.** Wire the existing key: `decideStuckAction` gains an `absoluteCeilingMs` arg (defaulting to the `ABSOLUTE_CEILING_MS` constant, so the pure decision stays testable + unchanged when omitted); `enforceRunningContainerSla` reads `getConfig('container_idle_timeout_sec') * 1000` and passes it. The Bash-extension (`max(ceiling, declaredBashMs)`) is preserved, so lowering the ceiling never kills an active long turn (heartbeat is fresh during a turn; the declared-timeout floor still protects a long Bash run). Surface it in the dev inspector's `KNOB_SPECS` (sessions group) so `/dev` — and the future `/admin`, which edits the same `preferences` tier — can set it live.
+- **Default stays 30 min.** Kept the proven value: warm reuse spares the ~15 s cold-start on a follow-up and costs no tokens (idle = local DB polling only). 15 min was considered — frees the now-finite slots/RAM ~2× sooner and still covers most bursty owner chats — and is the natural tighten if slot pressure ever shows; now a one-knob change, not a code edit.
+
+**DoD.** The idle ceiling reads `container_idle_timeout_sec` (default 1800 s) instead of a constant; a custom value is honored by `decideStuckAction`; `/dev` lists it as an editable `sessions`-group knob. Applies live (read each sweep tick). host `tsc` + host unit (`host-sweep.test` custom-ceiling case + `dev-inspector` knob membership) + prettier green. **Spec deltas:** this §24.96. Memory: [[todo_backlog]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
