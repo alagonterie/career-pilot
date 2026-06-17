@@ -53,7 +53,7 @@ import {
   buildDevState,
   isDevEnv,
 } from './dev-inspector.js';
-import { emptyObservability, getObservability, sandboxSpend24hUsd } from './observability.js';
+import { computeRunningTopology, emptyObservability, getObservability, sandboxSpend24hUsd } from './observability.js';
 import { getTelemetry } from './portkey-analytics.js';
 import { getPublicProfile, type WorkProfile } from './profile.js';
 import { masterFooter, renderResumePdf, tailoredFooter } from './resume-pdf.js';
@@ -471,6 +471,9 @@ function handleArchitecture(res: http.ServerResponse, cors: Record<string, strin
         capacity_max: capacityMax,
         memory_mb_each: memoryMbEach,
         runtime: containerCount === null ? 'down' : 'up',
+        // §24.110: running containers split by traffic class — the /dashboard
+        // memory bar segments by this. Derived from running sessions.
+        by_class: computeRunningTopology(),
       },
       sandbox: {
         enabled: simulatorEnabled,
@@ -709,7 +712,13 @@ function emptyPayloadFor(path: string): unknown {
     case '/api/architecture':
       return {
         sessions: { active: 0, running: 0 },
-        containers: { running: 0, capacity_max: 0, memory_mb_each: 0, runtime: 'up' },
+        containers: {
+          running: 0,
+          capacity_max: 0,
+          memory_mb_each: 0,
+          runtime: 'up',
+          by_class: { chat: 0, ops: 0, sandbox: 0 },
+        },
         // §24.80: a bare/quiet system — sandbox enabled but unused, sweep not yet ticked.
         sandbox: { enabled: true, spend_24h_usd: 0, daily_budget_usd: 0 },
         sweep: { last_run_age_sec: null, fresh: false },

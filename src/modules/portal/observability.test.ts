@@ -19,6 +19,7 @@ import { OPS_THREAD_ID } from '../career-pilot/ops-session.js';
 import {
   _resetObservabilityCache,
   computeObservability,
+  computeRunningTopology,
   emptyObservability,
   getObservability,
 } from './observability.js';
@@ -187,6 +188,50 @@ describe('session_topology', () => {
 
   it('is all-zero when there are no active sessions', () => {
     expect(computeObservability(NOW).session_topology).toEqual({ chat: 0, ops: 0, sandbox: 0 });
+  });
+});
+
+describe('computeRunningTopology (§24.110 — running containers by class)', () => {
+  function seedGroups(): void {
+    createAgentGroup({
+      id: 'ag-owner',
+      name: 'Career Pilot',
+      folder: 'career-pilot',
+      agent_provider: null,
+      created_at: '2026-05-27T00:00:00Z',
+    });
+    createAgentGroup({
+      id: 'ag-sandbox',
+      name: 'Sandbox',
+      folder: 'career-pilot-sandbox',
+      agent_provider: null,
+      created_at: '2026-05-27T00:00:00Z',
+    });
+  }
+  const sess = (over: Partial<Session>): Session => ({
+    id: over.id!,
+    agent_group_id: over.agent_group_id!,
+    messaging_group_id: null,
+    thread_id: over.thread_id ?? null,
+    agent_provider: null,
+    status: 'active',
+    container_status: over.container_status ?? 'running',
+    last_active: null,
+    created_at: '2026-06-01T00:00:00Z',
+    ...over,
+  });
+
+  it('counts only RUNNING sessions, classified by traffic class', () => {
+    seedGroups();
+    createSession(sess({ id: 'r-chat', agent_group_id: 'ag-owner', container_status: 'running' }));
+    createSession(sess({ id: 'r-sandbox', agent_group_id: 'ag-sandbox', container_status: 'idle' }));
+    // A stopped session is NOT a running container → excluded.
+    createSession(sess({ id: 'r-stopped', agent_group_id: 'ag-owner', container_status: 'stopped' }));
+    expect(computeRunningTopology()).toEqual({ chat: 1, ops: 0, sandbox: 1 });
+  });
+
+  it('is all-zero when nothing is running', () => {
+    expect(computeRunningTopology()).toEqual({ chat: 0, ops: 0, sandbox: 0 });
   });
 });
 
