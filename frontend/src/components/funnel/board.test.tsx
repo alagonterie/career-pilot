@@ -246,9 +246,9 @@ describe('DetailPanel', () => {
     expect(screen.queryByTestId('agent-ref')).not.toBeInTheDocument()
   })
 
-  it('links to this application’s filtered /live activity (§24.60)', () => {
+  it('links to this application’s filtered /dashboard activity (§24.60)', () => {
     render(<DetailPanel app={APPS[4]} onClose={() => {}} />)
-    expect(screen.getByTestId('detail-live-link')).toHaveAttribute('href', '/live?app=Wayne Enterprises')
+    expect(screen.getByTestId('detail-live-link')).toHaveAttribute('href', '/dashboard?app=Wayne Enterprises')
   })
 
   it('lists interview kits — incl. archived — linking into the /kit dossier (§24.65)', () => {

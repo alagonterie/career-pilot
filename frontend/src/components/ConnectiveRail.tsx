@@ -2,11 +2,11 @@ import { Link, useLocation } from '@tanstack/react-router'
 
 import { REPO_URL } from '~/lib/site'
 
-type Surface = '/' | '/live' | '/architecture' | '/pipeline' | '/work' | '/about'
+type Surface = '/' | '/dashboard' | '/architecture' | '/pipeline' | '/experience' | '/about'
 type RailKind = 'convert' | 'deepen' | 'pivot'
 
 type RailItem =
-  | { label: string; kind: RailKind; to: '/contact' | '/live' | '/architecture' | '/pipeline' | '/work' | '/simulator' }
+  | { label: string; kind: RailKind; to: '/contact' | '/dashboard' | '/architecture' | '/pipeline' | '/watch' }
   | { label: string; kind: RailKind; href: string }
 
 interface RailCfg {
@@ -23,16 +23,16 @@ const RAIL: Record<Surface, RailCfg> = {
     register: 'marketing',
     items: [
       { label: 'Talk to me', kind: 'convert', to: '/contact' },
-      { label: 'See it work', kind: 'deepen', to: '/live' },
-      { label: 'Watch me apply', kind: 'pivot', to: '/simulator' },
+      { label: 'See it work', kind: 'deepen', to: '/dashboard' },
+      { label: 'Watch me apply', kind: 'pivot', to: '/watch' },
     ],
   },
-  '/live': {
+  '/dashboard': {
     register: 'ops',
     items: [
       { label: 'Talk to me', kind: 'convert', to: '/contact' },
       { label: 'How it works', kind: 'deepen', to: '/architecture' },
-      { label: 'Run it on your role', kind: 'pivot', to: '/simulator' },
+      { label: 'Run it on your role', kind: 'pivot', to: '/watch' },
     ],
   },
   '/architecture': {
@@ -40,21 +40,21 @@ const RAIL: Record<Surface, RailCfg> = {
     items: [
       { label: 'Talk to me', kind: 'convert', to: '/contact' },
       { label: 'Read the code', kind: 'deepen', href: REPO_URL },
-      { label: 'See it run', kind: 'pivot', to: '/live' },
+      { label: 'See it run', kind: 'pivot', to: '/dashboard' },
     ],
   },
   '/pipeline': {
     register: 'ops',
     items: [
       { label: 'Talk to me', kind: 'convert', to: '/contact' },
-      { label: 'Watch it live', kind: 'deepen', to: '/live' },
+      { label: 'Watch it live', kind: 'deepen', to: '/dashboard' },
     ],
   },
-  '/work': {
+  '/experience': {
     register: 'marketing',
     items: [
       { label: 'Talk to me', kind: 'convert', to: '/contact' },
-      { label: 'See the system', kind: 'deepen', to: '/live' },
+      { label: 'See the system', kind: 'deepen', to: '/dashboard' },
     ],
   },
   '/about': {
@@ -62,7 +62,7 @@ const RAIL: Record<Surface, RailCfg> = {
     items: [
       { label: 'Talk to me', kind: 'convert', to: '/contact' },
       { label: 'Read the code', kind: 'deepen', href: REPO_URL },
-      { label: 'See it run', kind: 'pivot', to: '/live' },
+      { label: 'See it run', kind: 'pivot', to: '/dashboard' },
     ],
   },
 }

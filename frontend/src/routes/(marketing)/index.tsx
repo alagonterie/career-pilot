@@ -97,7 +97,7 @@ function Home() {
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           <Button asChild>
             {/* The one cross-register CTA (PORTAL §3.5): opens the /live dashboard. */}
-            <Link to="/live">See it work →</Link>
+            <Link to="/dashboard">See it work →</Link>
           </Button>
           <Button asChild variant="outline">
             <Link to="/contact" search={{ from: 'home' }}>
@@ -193,7 +193,7 @@ function Home() {
         events={events}
         status={status}
         action={
-          <Link to="/live" className="font-mono text-xs text-accent-cool hover:underline">
+          <Link to="/dashboard" className="font-mono text-xs text-accent-cool hover:underline">
             see it all →
           </Link>
         }
@@ -212,7 +212,7 @@ function Home() {
         </p>
         <div className="mt-6 flex justify-center">
           <Button asChild size="lg">
-            <Link to="/simulator">Run it on your role →</Link>
+            <Link to="/watch">Run it on your role →</Link>
           </Button>
         </div>
       </section>
@@ -239,7 +239,7 @@ function Home() {
               </li>
             ))}
           </ul>
-          <Link to="/work" className="mt-1 font-mono text-xs text-accent-cool hover:underline">
+          <Link to="/experience" className="mt-1 font-mono text-xs text-accent-cool hover:underline">
             see all →
           </Link>
         </div>
