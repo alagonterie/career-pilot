@@ -18,8 +18,8 @@ importers:
         specifier: ^1.2.0
         version: 1.2.0
       '@onecli-sh/sdk':
-        specifier: 2.2.1
-        version: 2.2.1
+        specifier: ^0.5.0
+        version: 0.5.0
       '@react-pdf/renderer':
         specifier: ^4.5.1
         version: 4.5.1(react@19.2.7)
@@ -1162,8 +1162,8 @@ packages:
     resolution: {integrity: sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==}
     engines: {node: ^14.21.3 || >=16}
 
-  '@onecli-sh/sdk@2.2.1':
-    resolution: {integrity: sha512-q2mCW4ZsARlLEoTxz/P0NQ4MiCh7Z2n28pxkSc7srS+tozyw40PdTnWYW7NI8hfSYplZTx5856Adq1iPi4KN3Q==}
+  '@onecli-sh/sdk@0.5.0':
+    resolution: {integrity: sha512-oe5Yx9o98v6N1PgzcCR7nULHHqcqKWNJIDOHGOSNX+l20mLlZpFUqfKPeFmsojBNRQMoqbvZQKUlFMp6gVuYBA==}
     engines: {node: '>=20'}
 
   '@oozcitak/dom@2.0.2':
@@ -4394,7 +4394,7 @@ snapshots:
 
   '@noble/hashes@1.8.0': {}
 
-  '@onecli-sh/sdk@2.2.1': {}
+  '@onecli-sh/sdk@0.5.0': {}
 
   '@oozcitak/dom@2.0.2':
     dependencies:
