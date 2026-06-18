@@ -1173,7 +1173,7 @@ The agent learns from outcomes. Rejection-as-fuel is the canonical case.
 5. Free-form answers stored in `rejection_learnings` (private) keyed to the application + role category.
 6. **Future fuel:** every subsequent `research-company` and `tailor-resume` run for similar companies/roles includes a context block:
    > *"Prior learnings from similar attempts:* [bulleted, anonymized excerpts]*"*
-7. **Optional portal publication:** the candidate can flip `reflection_published: true` per learning. Published reflections show on the application's `/pipeline` detail panel as a "What I learned" block, with the company still obfuscated unless `public_state = 'public'`.
+7. **Optional portal publication:** the candidate can flip `reflection_published: true` per learning. Published reflections show on the application's `/pipeline` detail panel as a **"Lessons learned" list** (all published reflections for that application, newest first; §24.117) — the rejection-as-fuel loop made visible to a visitor, with an InfoTip framing it honestly as retrieval-augmented memory (not self-training). The company stays obfuscated unless `public_state = 'public'`.
 
 **Why this matters for the showcase:** A hiring manager who lands on `/pipeline` and sees a closed/rejected entry with a handwritten reflection ("*I underestimated their bar for systems design — leaning into Designing Data-Intensive Applications before my next big-tech round*") thinks: *this is someone who learns in public*. That signal is much harder to fake than competence claims.
 
@@ -1435,7 +1435,8 @@ Backend tables:
 | `stage` | the derived 5-stage value for the funnel strip (Applied / Screening / Tech / Final / Offer, + terminal) |
 | `applied_at`, `stage_entered_at`, `last_activity_at` | timestamps — the API/frontend computes "days in stage / pipeline" at read time (never precomputed, so a row never goes stale) |
 | `win_confidence` | heuristic %, labeled low-rigor on `/pipeline` |
-| `published_learning` | sanitized excerpt of the latest published reflection for this application (nullable) — feeds the `/pipeline` "What I learned" block (§6.7) without the API ever reading the private `learnings` table |
+| `published_learning` | sanitized excerpt of the **latest** published reflection for this application (nullable) — legacy single-excerpt companion of `learnings_json`, kept for back-compat |
+| `learnings_json` | sanitized JSON array of **all** published reflections for this application (`{kind, created_at, excerpt}`, newest first; §24.117) — feeds the `/pipeline` "Lessons learned" list (§6.7) without the API ever reading the private `learnings` table |
 
 When an application's obfuscation policy changes (`public_state` flip, label/name edit), the hook refreshes the row so `application_ref` reflects current intent — mirroring the retroactive resanitization already done for `public_audit_trail`.
 
