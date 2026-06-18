@@ -19,11 +19,17 @@ import type { JobLeadPayload, SourceAdapter, Source, AtsSource } from './types.j
 
 const GREENHOUSE_BASE = 'https://boards-api.greenhouse.io/v1/boards';
 const LEVER_BASE = 'https://api.lever.co/v0/postings';
-// HTTP header values must be ASCII / ByteString. Any non-Latin-1
-// character (em dash, smart quotes, etc.) causes node fetch to throw
-// "Cannot convert argument to a ByteString". Keep this pure ASCII.
+// Identify the scraper to job boards (etiquette). Personal contact details are
+// NEVER committed — the real UA (with a contact for scraping politeness) is
+// injected at deploy time via the JOB_SCRAPER_USER_AGENT env var (a GitHub
+// var/secret → .env, sourced into the environment); the committed default
+// carries no personal data.
+// HTTP header values must be ASCII / ByteString. Any non-Latin-1 character (em
+// dash, smart quotes, etc.) makes node fetch throw "Cannot convert argument to
+// a ByteString" — keep both the default AND any injected override pure ASCII.
 const USER_AGENT =
-  'career-pilot/0.1 (+https://github.com/janedoe/career-pilot - personal job-search agent, contact: janedoe@gmail.com)';
+  process.env.JOB_SCRAPER_USER_AGENT ||
+  'career-pilot/0.1 (automated job-search agent; +https://github.com/example/career-pilot)';
 const FETCH_TIMEOUT_MS = 15_000;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 const CRAWL_DELAY_MS_LEVER = 1_000; // honor robots.txt Crawl-delay: 1
