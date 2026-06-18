@@ -6075,6 +6075,16 @@ Two small follow-ups.
 
 **DoD.** The active rail entry is obviously distinct (green label + a clear bar) against the muted inactive entries, verified by eye on a rendered active state; the new unit test pins the click→active→indicator contract. FE `tsc` + `LongformDoc`/kit/sections unit + prettier `--no-semi` green. No `@visual` re-bless (inactive state unchanged; active state isn't in the baselines). **Spec deltas:** this §24.113 (supersedes the §24.99 treatment). Memory: [[todo_backlog]].
 
+#### 24.114 Idle ceilings — shorten chat to 10 min, give ops a short ceiling
+
+**Problem.** The owner found containers linger longer than warranted for sparse single-owner use: a quick one-off chat or an ops wake that did nothing still holds a slot + ~512 MB for the full §24.96 ceiling (30 min). Not a reaping bug (the reaper works) — the ceiling is just tuned too long for the actual pattern, and ops (which only runs scheduled jobs, spaced apart) has the same warmth budget as interactive chat despite rarely benefitting from it.
+
+**Fix (two tunables).**
+1. **Chat/global ceiling 1800 → 600s (10 min).** A follow-up within 10 min stays warm; later → one ~15s cold-start, a fine trade for a pool that clears promptly. `container_idle_timeout_sec` default lowered (still `/dev`-tunable).
+2. **A separate, short OPS ceiling — `ops_container_idle_timeout_sec` (default 60s).** `enforceRunningContainerSla` picks the ceiling per session: `idleCeilingForSession(session, opsCeilingMs(), configuredCeilingMs())` → ops sessions (`isOpsSession`, the ops thread) get the 60s ceiling, everything else the 10-min one. This is the single mechanism behind both owner asks — "reap an ops container immediately after a no-op wake" AND "a shorter ceiling for ops than chat": an ops wake that did nothing (or a finished scheduled job) goes idle and reaps within ~1 sweep tick instead of holding a slot for 10 min. **Safe:** a still-working ops turn is untouched — the §24.96 `decideStuckAction` Bash-extension (`ceiling = max(ceiling, declaredBashMs)`) keeps a container with a declared long tool alive, and a cascade keeps the heartbeat fresh (never idle).
+
+**DoD.** Chat containers reap at 10 min idle, ops containers at ~60s idle; an actively-working ops turn isn't killed; both are `/dev`-tunable. host `tsc` + `idleCeilingForSession` unit (ops→short, else→global) + a `decideStuckAction` case proving a 90s-idle container is killed under the 60s ops ceiling but kept under the 10-min one + dev-inspector knob-list/default tests + full host suite + prettier green. Applies live on the next sweep tick (after the deploy restart). **Spec deltas:** this §24.114 + the `container_idle_timeout_sec` default change + `ops_container_idle_timeout_sec` default + KNOB_SPECS. Memory: [[container-ttl-investigation]], [[todo_backlog]].
+
 ---
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.

@@ -247,7 +247,16 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     min: 60,
     max: 86_400,
     integer: true,
-    note: 'How long a warm-but-idle container lives before the host sweep reaps it (default 1800 = 30 min). Idle = local polling only, no LLM spend — the cost is held RAM + one concurrency slot. Lower frees slots/RAM sooner; higher keeps containers warmer (no cold-start on a quick follow-up). Applies live on the next sweep tick.',
+    note: 'How long a warm-but-idle CHAT container lives before the host sweep reaps it (default 600 = 10 min). Idle = local polling only, no LLM spend — the cost is held RAM + one concurrency slot. Lower frees slots/RAM sooner; higher keeps containers warmer (no cold-start on a quick follow-up). Ops sessions use the separate, shorter ops ceiling below. Applies live on the next sweep tick.',
+  },
+  ops_container_idle_timeout_sec: {
+    type: 'number',
+    group: 'sessions',
+    label: 'Idle OPS-container ceiling (s)',
+    min: 30,
+    max: 86_400,
+    integer: true,
+    note: 'How long the OPS container (the one that runs scheduled jobs — briefing, pipeline sweep, scouting) lives once idle (default 60 s). Much shorter than the chat ceiling because ops jobs are spaced apart, so a no-op wake or a finished job needn’t stay warm — reaping it promptly frees the slot/RAM. An actively-working ops turn is unaffected (a declared long Bash extends the ceiling). Applies live on the next sweep tick.',
   },
   container_orphan_reap_grace_sec: {
     type: 'number',
