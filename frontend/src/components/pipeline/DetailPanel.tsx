@@ -204,7 +204,7 @@ export function DetailPanel({ app, onClose }: { app: PipelineApplication | null;
                   >
                     <p className="flex items-baseline gap-2 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
                       <span aria-hidden="true" className="text-ai">
-                        ✦
+                        ✎
                       </span>
                       <span className="text-foreground/80">{label ?? 'Lesson'}</span>
                       {l.created_at ? <span>{kitDate(l.created_at)}</span> : null}
