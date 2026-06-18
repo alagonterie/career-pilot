@@ -1,6 +1,9 @@
+import * as React from 'react'
+
 import { Skeleton } from '~/components/ui/skeleton'
 import { PIPELINE_STAGES } from '~/lib/pipeline-stages'
 import type { PipelineApplication } from '~/lib/use-pipeline'
+import { cn } from '~/lib/utils'
 
 /**
  * The compact one-row pipeline for the /dashboard rail + the marketing-home strip
@@ -10,6 +13,16 @@ import type { PipelineApplication } from '~/lib/use-pipeline'
  * the full board, it renders the short stage codes (§24.79 D2 — APP/SCREEN/…)
  * from the shared `~/lib/pipeline-stages` source the board uses for its long
  * names. Pure presentation of the already-polled `/api/funnel` rows.
+ *
+ * §24.119 turned the five flat boxes into a *directional pipeline* — flavor with
+ * zero new numbers (the hero stat line already carries the active total, so any
+ * count-summary here would just restate it):
+ *  - chevrons (`›`) flow the eye left→right toward OFFER; the ones up to the
+ *    leading edge brighten ("flow has reached here"), the rest fade;
+ *  - OFFER (the goal) takes a quiet brand accent so the finish line is legible;
+ *  - the furthest-right populated stage takes a faint ring — a "how far along"
+ *    momentum cue (a new *dimension*, not a restated count);
+ *  - empty (0-count) stages dim so the eye follows where the pipeline actually is.
  *
  * `expandLabels` (§24.87) opts a wide caller into the LONG stage names at `lg+`
  * (short below) — the home `/` strip sets it (it has the room and reads better);
@@ -33,35 +46,87 @@ export function PipelineCompact({
   for (const a of apps) counts[a.stage] = (counts[a.stage] ?? 0) + 1
   const publicOffers = apps.filter((a) => a.stage === 'offer' && a.public_state === 'public')
 
+  // §24.119: the leading edge — the furthest-right stage that holds any
+  // application. The momentum cue (how far the search has actually reached),
+  // NOT a restated number, so it never duplicates the hero stat line. -1 while
+  // loading / empty (no ring, all chevrons faded).
+  let leadingEdgeIdx = -1
+  if (!loading) {
+    PIPELINE_STAGES.forEach((s, i) => {
+      if ((counts[s.stage] ?? 0) > 0) leadingEdgeIdx = i
+    })
+  }
+  const lastIdx = PIPELINE_STAGES.length - 1
+
   return (
     <div data-testid="funnel-compact" className="flex flex-col gap-3">
-      <div className="grid grid-cols-5 gap-1.5">
-        {PIPELINE_STAGES.map((s) => (
-          <div
-            key={s.stage}
-            data-testid={`funnel-compact-${s.stage}`}
-            className="flex flex-col items-center rounded-md border border-border bg-background/40 px-1 py-2"
-          >
-            {loading ? (
-              // h-7 matches the text-lg count's line box → identical cell height.
-              <Skeleton className="h-7 w-6" />
-            ) : (
-              <span className="font-mono text-lg font-semibold tabular-nums text-foreground">
-                {counts[s.stage] ?? 0}
-              </span>
-            )}
-            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-              {expandLabels ? (
-                <>
-                  <span className="lg:hidden">{s.short}</span>
-                  <span className="hidden whitespace-nowrap lg:inline">{s.long}</span>
-                </>
-              ) : (
-                s.short
-              )}
-            </span>
-          </div>
-        ))}
+      <div className="flex items-stretch gap-1">
+        {PIPELINE_STAGES.map((s, i) => {
+          const n = counts[s.stage] ?? 0
+          const isOffer = i === lastIdx
+          const isEmpty = !loading && n === 0
+          const isLeadingEdge = i === leadingEdgeIdx
+          // Chevrons up to (and into) the leading edge read "flow reached here";
+          // beyond it they fade — the rail itself shows momentum.
+          const chevronReached = i <= leadingEdgeIdx
+          return (
+            <React.Fragment key={s.stage}>
+              {i > 0 ? (
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'flex shrink-0 items-center font-mono text-xs',
+                    chevronReached ? 'text-primary/50' : 'text-muted-foreground/25',
+                  )}
+                >
+                  ›
+                </span>
+              ) : null}
+              <div
+                data-testid={`funnel-compact-${s.stage}`}
+                data-leading-edge={isLeadingEdge ? 'true' : undefined}
+                title={
+                  isLeadingEdge ? 'the furthest stage an application has reached' : isOffer ? 'the goal' : undefined
+                }
+                className={cn(
+                  'flex flex-1 flex-col items-center rounded-md border px-1 py-2 transition-colors',
+                  isOffer ? 'border-primary/30 bg-primary/5' : 'border-border bg-background/40',
+                  isLeadingEdge ? 'ring-1 ring-primary/40' : '',
+                  isEmpty ? 'opacity-50' : '',
+                )}
+              >
+                {loading ? (
+                  // h-7 matches the text-lg count's line box → identical cell height.
+                  <Skeleton className="h-7 w-6" />
+                ) : (
+                  <span
+                    className={cn(
+                      'font-mono text-lg font-semibold tabular-nums',
+                      isOffer ? 'text-primary' : 'text-foreground',
+                    )}
+                  >
+                    {n}
+                  </span>
+                )}
+                <span
+                  className={cn(
+                    'font-mono text-[10px] uppercase tracking-wider',
+                    isOffer ? 'text-primary/80' : 'text-muted-foreground',
+                  )}
+                >
+                  {expandLabels ? (
+                    <>
+                      <span className="lg:hidden">{s.short}</span>
+                      <span className="hidden whitespace-nowrap lg:inline">{s.long}</span>
+                    </>
+                  ) : (
+                    s.short
+                  )}
+                </span>
+              </div>
+            </React.Fragment>
+          )
+        })}
       </div>
       {!loading && publicOffers.length > 0 ? (
         <p data-testid="funnel-compact-reveal" className="font-mono text-xs text-primary">
