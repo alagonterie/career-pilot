@@ -486,7 +486,7 @@ export function outcomeToneClass(stage: string): string {
 
 /**
  * Compact artifact badges for a Recent-outcomes row (§24.118): a `▤` kit glyph
- * and a `✦` "fuel" (published-learning) glyph, each shown only when that artifact
+ * and a `✎` "fuel" (published-learning) glyph, each shown only when that artifact
  * exists, with the count in a native `title` tooltip (lightweight — a dense mono
  * row can't host InfoTips; the §24.109 spend-legend precedent). The two artifact
  * classes #2 surfaced in the /pipeline drawer (§24.65 / §24.117), now glanceable
@@ -505,7 +505,7 @@ function OutcomeArtifactBadges({ app }: { app: PipelineApplication }) {
       ) : null}
       {lessons > 0 ? (
         <span data-testid="recent-outcome-fuel" title={`${lessons} ${lessons === 1 ? 'lesson' : 'lessons'} captured`}>
-          ✦
+          ✎
         </span>
       ) : null}
     </span>
