@@ -484,6 +484,34 @@ export function outcomeToneClass(stage: string): string {
   }
 }
 
+/**
+ * Compact artifact badges for a Recent-outcomes row (§24.118): a `▤` kit glyph
+ * and a `✦` "fuel" (published-learning) glyph, each shown only when that artifact
+ * exists, with the count in a native `title` tooltip (lightweight — a dense mono
+ * row can't host InfoTips; the §24.109 spend-legend precedent). The two artifact
+ * classes #2 surfaced in the /pipeline drawer (§24.65 / §24.117), now glanceable
+ * here; the whole row deep-links into that drawer where both are detailed.
+ */
+function OutcomeArtifactBadges({ app }: { app: PipelineApplication }) {
+  const kits = app.interview_kits?.length ?? 0
+  const lessons = app.learnings?.length ?? 0
+  if (kits === 0 && lessons === 0) return null
+  return (
+    <span data-testid="recent-outcome-badges" className="flex items-center gap-1 text-ai">
+      {kits > 0 ? (
+        <span data-testid="recent-outcome-kit" title={`${kits} interview ${kits === 1 ? 'kit' : 'kits'}`}>
+          ▤
+        </span>
+      ) : null}
+      {lessons > 0 ? (
+        <span data-testid="recent-outcome-fuel" title={`${lessons} ${lessons === 1 ? 'lesson' : 'lessons'} captured`}>
+          ✦
+        </span>
+      ) : null}
+    </span>
+  )
+}
+
 export function RecentOutcomesPanel({ apps, status }: { apps: PipelineApplication[]; status?: PollStatus }) {
   const recent = apps
     .filter((a) => a.last_activity_at != null)
@@ -529,6 +557,8 @@ export function RecentOutcomesPanel({ apps, status }: { apps: PipelineApplicatio
                     {isPublic ? a.application_ref : `[${a.application_ref}]`}
                   </span>
                   <span className="flex items-center gap-2">
+                    {/* §24.118: badge whether this outcome has interview kits / captured fuel. */}
+                    <OutcomeArtifactBadges app={a} />
                     <span className={`uppercase tracking-wider ${outcomeToneClass(a.stage)}`}>{a.stage}</span>
                     {isPublic ? <span className="text-primary">◆</span> : null}
                   </span>
