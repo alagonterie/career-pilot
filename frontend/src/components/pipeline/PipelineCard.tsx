@@ -48,16 +48,26 @@ export function PipelineCard({ app, onSelect }: { app: PipelineApplication; onSe
         <p data-testid="funnel-card-age" className="font-mono text-[11px] tabular-nums text-muted-foreground">
           {app.days_in_stage != null ? `${app.days_in_stage}d in stage` : '—'}
         </p>
+        {/* §24.117 Δ2: COMPACT chips — glyph + count only (the noun lives in the
+            title), so `age + chips` always fits one line and every card keeps the
+            same height. The full-word form overflowed narrow cards (both kit +
+            lessons present), wrapping the age mid-phrase. */}
         {kitCount > 0 || lessonCount > 0 ? (
           <span className="flex shrink-0 items-center gap-2 font-mono text-[10px] text-ai">
             {kitCount > 0 ? (
-              <span data-testid="funnel-card-kit" title="AI-built interview kits — open the card for details">
-                ▤ {kitCount > 1 ? `${kitCount} kits` : 'kit'}
+              <span
+                data-testid="funnel-card-kit"
+                title={`${kitCount} AI-built interview ${kitCount === 1 ? 'kit' : 'kits'} — open the card for details`}
+              >
+                ▤{kitCount > 1 ? ` ${kitCount}` : ''}
               </span>
             ) : null}
             {lessonCount > 0 ? (
-              <span data-testid="funnel-card-lesson" title="published lessons learned — open the card for details">
-                ✎ {lessonCount > 1 ? `${lessonCount} lessons` : 'lesson'}
+              <span
+                data-testid="funnel-card-lesson"
+                title={`${lessonCount} published ${lessonCount === 1 ? 'lesson' : 'lessons'} — open the card for details`}
+              >
+                ✎{lessonCount > 1 ? ` ${lessonCount}` : ''}
               </span>
             ) : null}
           </span>

@@ -164,7 +164,7 @@ describe('PipelineCard kit chip (§24.65)', () => {
     render(
       <PipelineCard app={app({ application_ref: 'x', interview_kits: [kit('TECH_SCREEN')] })} onSelect={() => {}} />,
     )
-    expect(screen.getByTestId('funnel-card-kit')).toHaveTextContent('▤ kit')
+    expect(screen.getByTestId('funnel-card-kit')).toHaveTextContent('▤')
 
     render(
       <PipelineCard
@@ -172,7 +172,7 @@ describe('PipelineCard kit chip (§24.65)', () => {
         onSelect={() => {}}
       />,
     )
-    expect(screen.getAllByTestId('funnel-card-kit')[1]).toHaveTextContent('▤ 2 kits')
+    expect(screen.getAllByTestId('funnel-card-kit')[1]).toHaveTextContent('▤ 2')
   })
 
   it('shows no chip without kits', () => {
@@ -186,12 +186,12 @@ describe('PipelineCard lesson chip (§24.117)', () => {
 
   it('shows the ✎ chip when published lessons exist (count when several)', () => {
     render(<PipelineCard app={app({ application_ref: 'x', learnings: [lesson()] })} onSelect={() => {}} />)
-    expect(screen.getByTestId('funnel-card-lesson')).toHaveTextContent('✎ lesson')
+    expect(screen.getByTestId('funnel-card-lesson')).toHaveTextContent('✎')
 
     render(
       <PipelineCard app={app({ application_ref: 'y', learnings: [lesson(), lesson('offer')] })} onSelect={() => {}} />,
     )
-    expect(screen.getAllByTestId('funnel-card-lesson')[1]).toHaveTextContent('✎ 2 lessons')
+    expect(screen.getAllByTestId('funnel-card-lesson')[1]).toHaveTextContent('✎ 2')
   })
 
   it('shows the kit + lesson chips together when the app has both', () => {
