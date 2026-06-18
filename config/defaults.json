@@ -145,6 +145,11 @@
     "sandbox_session_reap_idle_sec": 900,
     "portal_public_url": "",
     "contact_message_max_chars": 4000,
+    "contact_relay_enabled": true,
+    "contact_retention_max": 500,
+    "contact_dedup_window_sec": 300,
+    "contact_relay_window_sec": 60,
+    "contact_relay_max_per_window": 30,
     "origin_jwt_validation_enabled": false
   },
   "system_modes": {

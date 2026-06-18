@@ -49,6 +49,7 @@ import {
   handleReadFunnelState,
 } from './funnel-actions.js';
 import { handlePersistInterviewKit } from './interview-kit-actions.js';
+import { handleReadContacts } from './contacts-actions.js';
 import { handlePersistLearning, handleReadLearnings } from './learnings-actions.js';
 
 /**
@@ -107,3 +108,4 @@ registerOwnerOnly('career_pilot.get_calendar_sync_state', handleGetCalendarSyncS
 registerOwnerOnly('career_pilot.filter_seen_email_events', handleFilterSeenEmailEvents);
 registerOwnerOnly('career_pilot.persist_learning', handlePersistLearning);
 registerOwnerOnly('career_pilot.read_learnings', handleReadLearnings);
+registerOwnerOnly('career_pilot.read_contacts', handleReadContacts);

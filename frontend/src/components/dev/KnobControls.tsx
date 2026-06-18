@@ -3,7 +3,7 @@ import type { DevKnob, KnobGroup, KnobWriteResult } from '~/lib/use-dev-inspecto
 
 import { KnobControl } from './KnobControl'
 
-const GROUP_ORDER: KnobGroup[] = ['sim', 'pacing', 'budget', 'models', 'sessions', 'telemetry', 'polling']
+const GROUP_ORDER: KnobGroup[] = ['sim', 'pacing', 'budget', 'models', 'sessions', 'telemetry', 'polling', 'contact']
 
 const GROUP_META: Record<KnobGroup, { title: string; blurb: string }> = {
   sim: { title: 'Recruiter sim', blurb: 'The dev fixture that injects ATS mail into the dev mailbox.' },
@@ -25,6 +25,11 @@ const GROUP_META: Record<KnobGroup, { title: string; blurb: string }> = {
       'Request-telemetry capture + retention, and the proactive health-check cadence (new criticals ping the owner once until cleared).',
   },
   polling: { title: 'Polling', blurb: 'How often the host syncs Gmail / Calendar.' },
+  contact: {
+    title: 'Contact safety',
+    blurb:
+      'Abuse backstops for the public /contact relay (it spends no money — junk only risks Telegram spam + DB rows). Kill switch + a global flood cap behind the per-IP edge limit.',
+  },
 }
 
 interface KnobControlsProps {

@@ -508,7 +508,7 @@ export const persistLearning: McpToolDefinition = {
   tool: {
     name: 'persist_learning',
     description:
-      "Save the candidate's reflection after an outcome (rejection, interview, offer) so it becomes durable memory — the system's learning loop. Call it AFTER you've had the reflection conversation, not instead of it. Capture the signal that will sharpen the NEXT similar application: which round, the skill/fit/noise read, anything quotable for next time. Pass `role_category` (the role family, e.g. \"backend\", \"platform\", \"ai\") so `read_learnings` can surface it when researching/tailoring a similar role later. `reflections` can be a short string OR a structured object of labelled answers. Set `publish:true` ONLY when the candidate wants the lesson shown publicly on the /pipeline detail — generalize it first so no company is identifiable. This writes private candidate signal; never call it from a sandbox run.",
+      'Save the candidate\'s reflection after an outcome (rejection, interview, offer) so it becomes durable memory — the system\'s learning loop. Call it AFTER you\'ve had the reflection conversation, not instead of it. Capture the signal that will sharpen the NEXT similar application: which round, the skill/fit/noise read, anything quotable for next time. Pass `role_category` (the role family, e.g. "backend", "platform", "ai") so `read_learnings` can surface it when researching/tailoring a similar role later. `reflections` can be a short string OR a structured object of labelled answers. Set `publish:true` ONLY when the candidate wants the lesson shown publicly on the /pipeline detail — generalize it first so no company is identifiable. This writes private candidate signal; never call it from a sandbox run.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -604,6 +604,44 @@ export const readLearnings: McpToolDefinition = {
   },
 };
 
+// ── read_contacts (recruiter contact recall, §24.121) ───────────────────────
+
+export const readContacts: McpToolDefinition = {
+  tool: {
+    name: 'read_contacts',
+    description:
+      'Pull recent recruiter submissions from the /contact form (most recent first). Each carries the sender’s name, email, company, role, and message. Use it when the candidate references a contact ("how should I reply to that Acme one?", "add that recruiter to my pipeline") — read the contact, then help draft a reply or file it. These arrive as instant notifications to the candidate’s phone; this tool is how YOU see them. Returns [] when none match.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        company: {
+          type: 'string',
+          description: 'Optional. Filter to contacts whose company contains this text (e.g. "Acme").',
+        },
+        limit: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 50,
+          description: 'Max contacts to return (default 10, newest first).',
+        },
+      },
+    },
+    annotations: { readOnlyHint: true },
+  },
+  async handler(args) {
+    const res = await sendAction<{ contacts: Array<Record<string, unknown>>; count: number }>(
+      'career_pilot.read_contacts',
+      {
+        company: (args.company as string | undefined) ?? null,
+        limit: (args.limit as number | undefined) ?? null,
+      },
+    );
+    if (!res.ok) return actionErr('read_contacts', res.error);
+    if (res.data.count === 0) return ok('No recruiter contacts yet for that filter.', res.data);
+    return ok(`${res.data.count} contact(s):\n${JSON.stringify(res.data.contacts, null, 2)}`, res.data);
+  },
+};
+
 registerTools([
   updateProfileField,
   setWorkProfile,
@@ -616,4 +654,5 @@ registerTools([
   createGmailDraft,
   persistLearning,
   readLearnings,
+  readContacts,
 ]);

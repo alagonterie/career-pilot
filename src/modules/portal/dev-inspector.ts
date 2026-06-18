@@ -50,7 +50,7 @@ export function isDevEnv(): boolean {
 // ── the write allow-list + per-knob validation specs ─────────────────────────
 
 export type KnobType = 'boolean' | 'number' | 'cron' | 'enum';
-export type KnobGroup = 'sim' | 'pacing' | 'budget' | 'polling' | 'models' | 'sessions' | 'telemetry';
+export type KnobGroup = 'sim' | 'pacing' | 'budget' | 'polling' | 'models' | 'sessions' | 'telemetry' | 'contact';
 
 export interface KnobSpec {
   type: KnobType;
@@ -308,6 +308,22 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     label: 'Dev model tier',
     options: ['default', 'sonnet', 'haiku'],
     note: MODEL_TIER_NOTE,
+  },
+  // ── contact relay safety (§24.121) ──
+  contact_relay_enabled: {
+    type: 'boolean',
+    group: 'contact',
+    label: 'Contact relay enabled',
+    note: 'Master toggle for the /contact form relay. Off → submissions return "unavailable" (the form shows its error) and nothing is delivered or persisted. The emergency off-switch for a contact-spam event. The form spends no money (a pure relay), so the only harm a junk flood poses is owner-Telegram spam + DB rows — both bounded by the cap + retention below.',
+  },
+  contact_relay_max_per_window: {
+    type: 'number',
+    group: 'contact',
+    label: 'Contact flood cap / min',
+    min: 0,
+    max: 1000,
+    integer: true,
+    note: 'Global ceiling on contacts accepted per ~60s window (defense-in-depth behind the per-IP edge rate-limit). Over the cap → "unavailable". 0 disables the host-side cap (the edge stays in force). Retention + dedup are config-tier (contact_retention_max / contact_dedup_window_sec).',
   },
 };
 
