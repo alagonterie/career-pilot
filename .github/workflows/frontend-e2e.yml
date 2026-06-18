@@ -21,6 +21,16 @@ on:
       - 'scripts/portal-e2e-server.ts'
       - 'src/modules/portal/**'
 
+# Rapid successive pushes to the same ref (the common spec→build→fix cadence)
+# cancel the stale e2e run instead of each running to completion — only the
+# latest commit is worth validating. Mirrors deploy-frontend's cancel-in-progress
+# so the e2e gate and the deploy always reflect the same (latest) commit. The
+# single biggest GitHub-Actions-minute saver here (a whole redundant run, vs the
+# seconds an install tweak shaves).
+concurrency:
+  group: frontend-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   frontend-e2e:
     runs-on: ubuntu-latest
@@ -41,6 +51,19 @@ jobs:
         run: pnpm --filter @career-pilot/frontend cf-typegen
       - name: Typecheck frontend
         run: pnpm --filter @career-pilot/frontend typecheck
+      # Cache the downloaded browser binary (~120MB) across runs, keyed on the
+      # lockfile (a Playwright bump changes the lock → cache invalidates → the
+      # matching browser is re-fetched). The `--with-deps` apt step below still
+      # runs (system libs aren't cacheable this way), but the download is skipped
+      # on a hit. A pre-baked Playwright container would also skip apt, but at the
+      # cost of a ~1.5GB image pull + the image's pinned Node — not worth it here.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
       - name: Install Playwright Chromium
         run: pnpm --filter @career-pilot/frontend exec playwright install --with-deps chromium
       - name: Frontend E2E (semantic + a11y)
