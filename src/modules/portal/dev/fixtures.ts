@@ -421,6 +421,68 @@ async function seedKits(db: Database.Database, seeds: KitSeed[]): Promise<void> 
   }
 }
 
+interface LearningSeed {
+  applicationId: string;
+  kind: string;
+  roleCategory: string;
+  /** Object → labelled answers joined into the excerpt; string → as-is. */
+  reflections: Record<string, string> | string;
+  createdAt: string;
+}
+
+/**
+ * Seed PUBLISHED learnings (§24.117) then re-project each app's public funnel
+ * view so `learnings_json` fills — the drawer's "Lessons learned" list. Reuses
+ * the real `upsertPublicFunnelView` (DRY: same sanitize+excerpt path as prod).
+ */
+function seedLearnings(db: Database.Database, seeds: LearningSeed[]): void {
+  for (const s of seeds) {
+    db.prepare(
+      `INSERT INTO learnings (id, application_id, kind, role_category, reflections, reflection_published, created_at)
+         VALUES (?, ?, ?, ?, ?, 1, ?)`,
+    ).run(
+      `fixture-learn-${s.applicationId}-${s.kind}`,
+      s.applicationId,
+      s.kind,
+      s.roleCategory,
+      typeof s.reflections === 'string' ? s.reflections : JSON.stringify(s.reflections),
+      s.createdAt,
+    );
+  }
+  const apps = new Set(seeds.map((s) => s.applicationId));
+  for (const id of apps) upsertPublicFunnelView(db, id);
+}
+
+/**
+ * The two published reflections on the Wayne Enterprises OFFER (§24.117) — a
+ * final-round refine + an offer retro — shared by both the deterministic E2E
+ * and the rich dev seed (only the app id differs). PII-free, no company names;
+ * the candidate's own approach. Newest first by `createdAt`.
+ */
+const WAYNE_LEARNINGS = (applicationId: string): LearningSeed[] => [
+  {
+    applicationId,
+    kind: 'final',
+    roleCategory: 'backend',
+    reflections: {
+      what_worked: 'Leading with the multi-region migration story landed — they cared about reliability under scale.',
+      do_differently: 'I rushed the system-design whiteboard; next time I narrate the failure modes before optimizing.',
+    },
+    createdAt: '2026-05-20T18:00:00Z',
+  },
+  {
+    applicationId,
+    kind: 'offer',
+    roleCategory: 'backend',
+    reflections: {
+      what_worked:
+        'A tailored follow-up within a day of the onsite kept momentum and re-surfaced my strongest project.',
+      next_time: 'Ask about on-call expectations earlier — it shaped my read of the team more than comp did.',
+    },
+    createdAt: '2026-05-28T15:00:00Z',
+  },
+];
+
 /**
  * Kits for the deterministic E2E funnel (§24.65): the public OFFER app (Wayne
  * Enterprises) carries two ARCHIVED kits with full readable content — the
@@ -457,6 +519,9 @@ export async function seedDeterministicKits(db: Database.Database): Promise<void
       style: 'doc-export',
     },
   ]);
+  // §24.117: the public OFFER carries two published lessons → the drawer's
+  // "Lessons learned" list (re-projected over the kits just seeded above).
+  seedLearnings(db, WAYNE_LEARNINGS('det-app-5'));
 }
 
 /** Kits for the rich dev seed — same shape, dev-app ids (incl. one FINAL-round active kit). */
@@ -494,6 +559,8 @@ export async function seedRichKits(db: Database.Database): Promise<void> {
       style: 'doc-export',
     },
   ]);
+  // §24.117: same two published lessons on the rich-seed Wayne OFFER.
+  seedLearnings(db, WAYNE_LEARNINGS('dev-app-6'));
 }
 
 // ── deterministic simulator run (E2E share page — fixed row) ────────────────

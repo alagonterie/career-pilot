@@ -163,6 +163,7 @@ interface FunnelViewRow {
   win_confidence: number | null;
   win_confidence_rationale: string | null;
   published_learning: string | null;
+  learnings_json: string | null;
   kits_json: string | null;
 }
 
@@ -177,18 +178,38 @@ function parseKitsJson(raw: string | null): unknown[] {
   }
 }
 
+/**
+ * Parse `learnings_json` into the API's `learnings` array (§24.117). Falls back
+ * to synthesizing a single-element array from the legacy `published_learning`
+ * excerpt when `learnings_json` is null (a row not yet re-projected after
+ * migration 139) — so no published note disappears in the deploy gap and the FE
+ * has one code path.
+ */
+function parseLearnings(learningsJson: string | null, publishedLearning: string | null): unknown[] {
+  if (learningsJson) {
+    try {
+      const parsed = JSON.parse(learningsJson);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      /* fall through to the published_learning synthesize */
+    }
+  }
+  if (publishedLearning) return [{ kind: null, created_at: null, excerpt: publishedLearning }];
+  return [];
+}
+
 function handleFunnel(res: http.ServerResponse, cors: Record<string, string>): void {
   const rows = getDb()
     .prepare(
       `SELECT application_id, application_ref, public_state, role_title, status, stage,
               applied_at, stage_entered_at, last_activity_at, win_confidence,
-              win_confidence_rationale, published_learning, kits_json
+              win_confidence_rationale, published_learning, learnings_json, kits_json
          FROM public_funnel_view`,
     )
     .all() as FunnelViewRow[];
 
   const now = Date.now();
-  const applications = rows.map(({ kits_json, ...r }) => ({
+  const applications = rows.map(({ kits_json, learnings_json, ...r }) => ({
     ...r,
     days_in_stage: daysSince(r.stage_entered_at, now),
     days_in_pipeline: daysSince(r.applied_at, now),
@@ -196,6 +217,9 @@ function handleFunnel(res: http.ServerResponse, cors: Record<string, string>): v
     // section — enums + timestamps only; kit CONTENT rides /api/kit, never
     // this polled payload.
     interview_kits: parseKitsJson(kits_json),
+    // §24.117: ALL published reflections for the drawer's "Lessons learned"
+    // list (kind/created_at/excerpt) — the rejection-as-fuel loop made visible.
+    learnings: parseLearnings(learnings_json, r.published_learning),
   }));
 
   const stage_counts: Record<string, number> = {};

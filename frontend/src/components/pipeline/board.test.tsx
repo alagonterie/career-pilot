@@ -301,6 +301,51 @@ describe('DetailPanel', () => {
     render(<DetailPanel app={APPS[0]} onClose={() => {}} />)
     expect(screen.queryByTestId('detail-kits')).not.toBeInTheDocument()
   })
+
+  it('lists published learnings as a "Lessons learned" list with the fuel InfoTip (§24.117)', () => {
+    render(
+      <DetailPanel
+        app={app({
+          application_ref: 'Wayne Enterprises',
+          public_state: 'public',
+          stage: 'offer',
+          learnings: [
+            { kind: 'offer', created_at: '2026-05-28T15:00:00Z', excerpt: 'The fast follow-up kept momentum.' },
+            { kind: 'final', created_at: '2026-05-20T18:00:00Z', excerpt: 'Narrate failure modes before optimizing.' },
+          ],
+        })}
+        onClose={() => {}}
+      />,
+    )
+    const section = screen.getByTestId('detail-learnings')
+    const rows = within(section).getAllByTestId('detail-learning')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toHaveTextContent('After the offer')
+    expect(rows[0]).toHaveTextContent('The fast follow-up kept momentum.')
+    expect(rows[1]).toHaveTextContent('After the final round')
+    // §24.107 honesty: the tip frames it as retrieval-augmented memory, not self-training.
+    fireEvent.click(within(section).getByRole('button', { name: 'About: lessons learned' }))
+    expect(screen.getByTestId('info-tip-panel')).toHaveTextContent(/retrieval-augmented memory/i)
+    // The section is attributed to the curator that publishes notes.
+    expect(within(section).getByTestId('agent-ref')).toHaveAttribute('data-actor', 'pipeline-scribe')
+  })
+
+  it('falls back to a generic "Lesson" label for a learning with no kind (synthesized legacy excerpt)', () => {
+    render(
+      <DetailPanel
+        app={app({ application_ref: 'x', learnings: [{ kind: null, created_at: null, excerpt: 'A legacy note.' }] })}
+        onClose={() => {}}
+      />,
+    )
+    const row = screen.getByTestId('detail-learning')
+    expect(row).toHaveTextContent('Lesson')
+    expect(row).toHaveTextContent('A legacy note.')
+  })
+
+  it('omits the Lessons learned section when the application has no learnings (§24.117)', () => {
+    render(<DetailPanel app={APPS[0]} onClose={() => {}} />)
+    expect(screen.queryByTestId('detail-learnings')).not.toBeInTheDocument()
+  })
 })
 
 describe('card click opens the detail panel (composed)', () => {

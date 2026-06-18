@@ -126,19 +126,30 @@ function seedLearning(opts: {
   id: string;
   application_id: string;
   reflections: string;
+  kind?: string;
   published?: boolean;
   created_at?: string;
 }): void {
   db.prepare(
     `INSERT INTO learnings (id, application_id, kind, role_category, reflections, reflection_published, created_at)
-     VALUES (@id, @application_id, 'rejection', 'fintech', @reflections, @published, @created_at)`,
+     VALUES (@id, @application_id, @kind, 'fintech', @reflections, @published, @created_at)`,
   ).run({
     id: opts.id,
     application_id: opts.application_id,
+    kind: opts.kind ?? 'rejection',
     reflections: opts.reflections,
     published: opts.published ? 1 : 0,
     created_at: opts.created_at ?? '2026-05-12T00:00:00Z',
   });
+}
+
+function readLearningsJson(applicationId: string): Array<{ kind: string; created_at: string; excerpt: string }> | null {
+  const raw = (
+    db.prepare('SELECT learnings_json FROM public_funnel_view WHERE application_id = ?').get(applicationId) as
+      | { learnings_json: string | null }
+      | undefined
+  )?.learnings_json;
+  return raw ? (JSON.parse(raw) as Array<{ kind: string; created_at: string; excerpt: string }>) : null;
 }
 
 interface ViewRow {
@@ -312,6 +323,74 @@ describe('upsertPublicFunnelView', () => {
   it('is a no-op (no throw, no row) when the application does not exist', () => {
     expect(() => upsertPublicFunnelView(db, 'missing')).not.toThrow();
     expect(readView('missing')).toBeUndefined();
+  });
+});
+
+// ── learnings_json (§24.117) ─────────────────────────────────────────────────
+
+describe('learnings_json', () => {
+  it('projects ALL published learnings newest-first with kind + sanitized excerpt', () => {
+    seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a' });
+    seedLearning({
+      id: 'lrn-old',
+      application_id: 'app-1',
+      kind: 'final',
+      published: true,
+      created_at: '2026-05-12T00:00:00Z',
+      reflections: JSON.stringify({ what_worked: 'Good rapport with the Acme Corp panel.' }),
+    });
+    seedLearning({
+      id: 'lrn-new',
+      application_id: 'app-1',
+      kind: 'offer',
+      published: true,
+      created_at: '2026-05-20T00:00:00Z',
+      reflections: JSON.stringify({ unlock: 'The fast follow-up. Reach me at jane@acme.com.' }),
+    });
+    upsertPublicFunnelView(db, 'app-1');
+
+    const learnings = readLearningsJson('app-1');
+    expect(learnings).toHaveLength(2);
+    // Newest first.
+    expect(learnings![0].kind).toBe('offer');
+    expect(learnings![1].kind).toBe('final');
+    expect(learnings!.map((l) => l.created_at)).toEqual(['2026-05-20T00:00:00Z', '2026-05-12T00:00:00Z']);
+    // Each excerpt is sanitized (Pass 1 PII + Pass 2 company redaction).
+    expect(learnings![1].excerpt).toContain('[REDACTED:fintech-a]');
+    const all = JSON.stringify(learnings);
+    expect(all).not.toContain('Acme Corp');
+    expect(all).not.toContain('jane@acme.com');
+  });
+
+  it('excludes unpublished learnings from learnings_json', () => {
+    seedApp({ id: 'app-1', company_name: 'Acme', obfuscated_label: 'fintech-a' });
+    seedLearning({
+      id: 'lrn-1',
+      application_id: 'app-1',
+      kind: 'offer',
+      published: true,
+      reflections: JSON.stringify({ x: 'published one' }),
+    });
+    seedLearning({
+      id: 'lrn-2',
+      application_id: 'app-1',
+      kind: 'final',
+      published: false,
+      reflections: JSON.stringify({ x: 'private one' }),
+    });
+    upsertPublicFunnelView(db, 'app-1');
+
+    const learnings = readLearningsJson('app-1');
+    expect(learnings).toHaveLength(1);
+    const all = JSON.stringify(learnings);
+    expect(all).toContain('published one');
+    expect(all).not.toContain('private one');
+  });
+
+  it('leaves learnings_json null when no published learnings exist', () => {
+    seedApp({ id: 'app-1', company_name: 'Acme', obfuscated_label: 'fintech-a' });
+    upsertPublicFunnelView(db, 'app-1');
+    expect(readLearningsJson('app-1')).toBeNull();
   });
 });
 

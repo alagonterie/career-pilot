@@ -22,6 +22,18 @@ export interface KitMeta {
   has_content: boolean
 }
 
+/**
+ * A published reflection projected for the /pipeline drawer's "Lessons learned"
+ * list (§24.117). `excerpt` is already sanitized + truncated host-side; `kind`
+ * is the free-form reflection category (null for a legacy single-excerpt row
+ * synthesized from `published_learning`); `created_at` may be null likewise.
+ */
+export interface LearningMeta {
+  kind: string | null
+  created_at: string | null
+  excerpt: string
+}
+
 export interface PipelineApplication {
   /** Opaque, unique per-application id — the stable React key + motion layoutId.
    * (`application_ref` is the obfuscated label and is shared across a company's
@@ -43,6 +55,31 @@ export interface PipelineApplication {
   days_in_pipeline: number | null
   /** Interview kits prepared for this application (§24.65) — all, incl. archived. */
   interview_kits?: KitMeta[]
+  /** Published reflections for this application (§24.117) — all, newest first. */
+  learnings?: LearningMeta[]
+}
+
+const LEARNING_KIND_LABELS: Record<string, string> = {
+  offer: 'After the offer',
+  rejection: 'After the rejection',
+  rejected: 'After the rejection',
+  final: 'After the final round',
+  interview: 'After the interview',
+  screening: 'After the screen',
+  outreach: 'On outreach',
+  withdrawn: 'After withdrawing',
+}
+
+/**
+ * Humanize a learning's free-form `kind` into a short retro label (§24.117), or
+ * null when absent (a legacy excerpt synthesized from `published_learning` has
+ * no kind). An unrecognized kind passes through as-authored — never mangled.
+ */
+export function learningKindLabel(kind: string | null): string | null {
+  if (!kind) return null
+  const k = kind.trim().toLowerCase()
+  if (!k) return null
+  return LEARNING_KIND_LABELS[k] ?? kind.trim()
 }
 
 export interface PipelineResponse {

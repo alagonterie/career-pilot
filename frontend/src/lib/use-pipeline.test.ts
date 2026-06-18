@@ -1,7 +1,13 @@
 import { renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { deriveStatTiles, usePipeline, type PipelineApplication, type PipelineResponse } from './use-pipeline'
+import {
+  deriveStatTiles,
+  learningKindLabel,
+  usePipeline,
+  type PipelineApplication,
+  type PipelineResponse,
+} from './use-pipeline'
 
 function app(p: Partial<PipelineApplication> = {}): PipelineApplication {
   return {
@@ -71,6 +77,23 @@ describe('deriveStatTiles', () => {
     // name, and the honest caveat (§24.60) lives with the math.
     expect(byLabel['Avg days active']).toMatch(/heuristic/i)
     expect(byLabel['Avg days active']?.length ?? 0).toBeGreaterThan(20)
+  })
+})
+
+describe('learningKindLabel (§24.117)', () => {
+  it('humanizes known reflection kinds (case-insensitive)', () => {
+    expect(learningKindLabel('offer')).toBe('After the offer')
+    expect(learningKindLabel('REJECTION')).toBe('After the rejection')
+    expect(learningKindLabel('final')).toBe('After the final round')
+  })
+
+  it('passes an unrecognized kind through as-authored (never mangled)', () => {
+    expect(learningKindLabel('post-mortem')).toBe('post-mortem')
+  })
+
+  it('returns null for an absent kind (a synthesized legacy excerpt)', () => {
+    expect(learningKindLabel(null)).toBeNull()
+    expect(learningKindLabel('   ')).toBeNull()
   })
 })
 
