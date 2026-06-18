@@ -193,6 +193,30 @@ describe('PipelineCompact + RecentOutcomes', () => {
     expect(document.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(5)
   })
 
+  it('marks the furthest-populated stage as the leading edge — mid-pipeline (§24.119)', () => {
+    // Furthest reached = tech (no final/offer apps), so TECH carries the ring —
+    // the momentum dimension the strip adds beyond the hero count, not OFFER.
+    render(
+      <PipelineCompact
+        apps={[app({ application_ref: 'a', stage: 'applied' }), app({ application_ref: 'b', stage: 'tech' })]}
+      />,
+    )
+    expect(screen.getByTestId('funnel-compact-tech')).toHaveAttribute('data-leading-edge', 'true')
+    expect(screen.getByTestId('funnel-compact-applied')).not.toHaveAttribute('data-leading-edge')
+    expect(screen.getByTestId('funnel-compact-offer')).not.toHaveAttribute('data-leading-edge')
+  })
+
+  it('marks OFFER as the leading edge once an application reaches it (§24.119)', () => {
+    // APPS' devtools-b is a public offer → OFFER is the furthest reached.
+    render(<PipelineCompact apps={APPS} />)
+    expect(screen.getByTestId('funnel-compact-offer')).toHaveAttribute('data-leading-edge', 'true')
+  })
+
+  it('renders no leading edge while loading — the ring is data-dependent (§24.119)', () => {
+    render(<PipelineCompact apps={[]} loading />)
+    expect(document.querySelector('[data-leading-edge="true"]')).toBeNull()
+  })
+
   it('lists recent outcomes newest-first with the public marker', () => {
     render(<RecentOutcomesPanel apps={APPS} />)
     const items = within(screen.getByTestId('recent-outcomes')).getAllByRole('listitem')
