@@ -6315,6 +6315,25 @@ So listing `greenhouse`/`lever` as `host-onecli` providers makes the gateway's h
 
 ---
 
+#### 24.127 Stage B — OneCLI gateway pre-v1 → v1 migration (codified; mechanism confirmed)
+
+**Problem.** Stage B's `@onecli-sh/sdk` 0.5→2.2.1 bump requires the gateway's `/v1` API — the SDK hardcodes `POST ${ONECLI_URL}/v1/agents` (read the 2.2.1 source; no base-path override). The dev box's gateway, **upgraded in-place** 1.23.0→1.36.0 (a bare `docker compose` image-tag bump per upstream `docs/onecli-upgrades.md`), still serves the **legacy `/agents` API and 404s every `/v1`** — so `ensureAgent` 404'd and all container spawns failed (the 2026-06-18 incident; SDK rolled back to `^0.5.0`, box healthy on 0.5.0↔1.36.0, gateway + vault intact). The documented standard upgrade did NOT activate `/v1`.
+
+**Mechanism — CONFIRMED via local Docker (both gates resolved; isolated from the box).** Two throwaway 1.36.0 gateways settled it:
+1. **A clean 1.36.0 serves `/v1`:** `/v1/health→200`, `/v1/agents→401` (auth-gated, exists), `/agents→307` (legacy redirected away), 64 migrations. ⇒ the blocker is **in-place state, not the version**.
+2. **The dev-box vault `pg_dump` restored into a clean 1.36.0 → `/v1` works AND the vault is intact:** `/v1/health→200`, `secrets=2`, `app_connections=3`, `migrations=64`. ⇒ **the pgdata/vault is correct; the differentiator is the stale `onecli_app-data` volume** (pre-v1 gateway runtime state), and **NO OAuth re-auth is needed** (the 3 Google connections live in pgdata and survive).
+
+**The migration (codified → `scripts/migrate-onecli-v1.sh`; idempotent, backup-gated).** On the box:
+1. **Backup:** `pg_dump` the vault + `cp -a ~/.onecli` → `~/.onecli-backups/` (the incident pattern, already proven).
+2. **Reset the gateway runtime state, KEEP the vault:** `docker compose -p onecli stop onecli` → `docker volume rm onecli_app-data` (keep `onecli_pgdata`) → recreate (`docker compose -p onecli up -d`). Fresh app-data ⇒ 1.36.0 serves `/v1`; pgdata (vault) untouched. *(Fallback if state proves entangled: export → clean install → restore the dump — exactly what local test #2 validated end-to-end.)*
+3. **Redistribute the regenerated CA:** the app-data reset regenerates the gateway MITM CA (`/app/data/gateway/ca.*`), so refresh `~/.onecli/ca-bundle.pem` + the per-group container mount and re-apply the durable bind-host config (re-run the bootstrap OneCLI durable-config step). **This is the only real-box risk** — a transient credential-injection break until the new CA is redistributed; the backup + verify gate it.
+4. **Verify:** `curl 127.0.0.1:10254/v1/health → ok`; vault counts unchanged (2 secrets / 3 connections); a real container spawn + Gmail/Portkey injection 200.
+5. **Then re-land the held SDK bump** (`package.json` `@onecli-sh/sdk` → `2.2.1`, already tsc+test-verified) + redeploy → `ensureAgent` hits `/v1/agents` → success.
+
+**DoD.** `scripts/migrate-onecli-v1.sh` codifies steps 1–4 (backup-first, idempotent, verifies `/v1` + vault before declaring success); RECOVERY.md gains the "OneCLI v1 gateway migration" runbook; box-verified — gateway serves `/v1`, vault intact (no re-auth), SDK 2.2.1 spawns + injects. **Gates (satisfied):** ✓ clean 1.36.0 serves `/v1`; ✓ vault + OAuth survive. **Spec deltas:** this §24.127; the §24.124 Stage B SDK 2.2.1 bump re-lands after a green migration. Memory: [[todo_backlog]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
