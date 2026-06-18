@@ -6103,6 +6103,20 @@ The host path (`handleRecordTurnTelemetry` → `insertProgressRow`, gated by `ow
 
 **DoD.** A subagent dispatch produces a deterministic `subagent_progress` row regardless of whether the model calls `record_progress`. container `tsc` + `collectTurnSignals` regression cases (dispatch in a separate emission from a thinking block under one `message.id`; `record_*` deduped by block id; `record_*` after a text block still counted; same-subagent dispatches deduped by name) + full container suite (210) green. **Box-verify (post-deploy):** force an ops sweep, confirm a `"Dispatched by the orchestrator."` row lands — the §24.78 emission that has never appeared. **Spec deltas:** this §24.115 (corrects the §24.34/§24.78 collection). Memory: [[b1-june16-cascade-diagnosis]], [[todo_backlog]].
 
+#### 24.116 Render deterministic dispatch traces as system lifecycle markers, not agent speech (§24.115 Q2)
+
+**Problem.** Once §24.115 made the deterministic `"Dispatched by the orchestrator."` rows actually appear, they rendered identically to a subagent's own `record_progress` narration — a mono line `time · [agent chip] · "Dispatched by the orchestrator."` — so the orchestrator looked like it was *saying* that sentence in the subagent's voice. These rows are SYSTEM lifecycle events (the orchestrator launched a subagent), not the subagent talking.
+
+**Decision (owner-aligned).** Split the two senses of "owned": the row's SUBJECT stays the subagent (`agent_name` unchanged → it keeps its filter chip, so a subagent's launch + narration stay one story), but its VOICE is the system — rendered as a dim status marker, not a sentence. The orchestrator is the implicit actor, conveyed by styling, not by re-bucketing the row under "System".
+
+**Fix (FE-only; no server change).** The deterministic summary is a fixed, PII-free host constant, and it IS delivered (`/api/activity` carries `summary`; `stage` lives in undelivered `details_json`). So the FE discriminates on it: `isDispatchLifecycle(e)` = `category==='subagent_progress' && summary===DISPATCH_LIFECYCLE_SUMMARY` (the FE mirror of the host's `SUBAGENT_DISPATCH_SUMMARY`, pinned by a test). Rendering:
+- **`/live` + `/dashboard` trace (`LogStream`):** a `DispatchMarker` — a dim italic `▸ dispatched` pill that IS its own quiet `DisclosureTip` (the shared cast-chip interaction, hover/tap → a one-line explainer), with a dotted underline as the only interactivity hint. No per-row ⓘ (this component already rejected per-occurrence tips as clutter, and these rows are frequent).
+- **Home ticker (`LiveTicker`):** the same dim `▸ dispatched` marker but WITHOUT the disclosure — the 5-line teaser stays glanceable; the explainer lives on the full stream.
+
+**Follow-ons (deferred).** A structured API discriminator (a `lifecycle` enum) would beat the summary-string match once §24.115's optional deterministic "completed" beat (the SDK `task_notification`) lands — at two markers the structured field pays for itself. The dev/demo fixtures don't yet seed a dispatch row (no visual-baseline change); add one when the fixtures next get attention.
+
+**DoD.** A dispatched row reads as a system status, never as agent speech, and explains itself on hover/tap; a subagent's narration is unchanged. FE `tsc` + `LogStream` unit (dispatch row → marker, not the sentence; disclosure reveals the explainer) + `LiveTicker`/`use-activity-stream` suites + prettier `--no-semi` green. No `@visual` re-bless (no fixture dispatch rows → baseline unchanged). Box-verify: eyeball `/dashboard` after deploy — the new deterministic rows render as `▸ dispatched`, not the sentence. **Spec deltas:** this §24.116 (the §24.115 Q2 follow-on). Memory: [[b1-june16-cascade-diagnosis]], [[todo_backlog]].
+
 ---
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
