@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 
+import { AvailabilityBadge } from '~/components/AvailabilityBadge'
 import { PipelineCompact } from '~/components/live/PipelineCompact'
 import { LiveTicker } from '~/components/LiveTicker'
 import { Button } from '~/components/ui/button'
@@ -72,18 +73,11 @@ function Home() {
             falls still if it drops — replacing the literal 🟢 emoji + a second
             competing live indicator with a single, on-brand pill. */}
         <div className="mb-6 flex justify-center">
-          <span
-            data-testid="hero-status"
-            data-status={status}
+          <AvailabilityBadge
+            status={status}
             title={status === 'open' ? `live — ${count} event${count === 1 ? '' : 's'} received` : status}
-            className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3.5 py-1.5 text-sm text-foreground"
-          >
-            <span
-              aria-hidden="true"
-              className={`h-2 w-2 rounded-full ${status === 'open' ? 'bg-primary cp-live-pulse' : 'bg-muted-foreground'}`}
-            />
-            Open to offers
-          </span>
+            data-testid="hero-status"
+          />
         </div>
 
         <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">{p.name}</h1>
