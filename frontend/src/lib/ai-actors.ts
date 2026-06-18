@@ -15,9 +15,14 @@
  *   - 'system'   — the orchestrator itself; the honest fallback for
  *                  whole-system output with no single specialist author
  *
- * The public-view sanitizer is deliberately NOT here: it's deterministic
- * (regex + name replacement), not AI, so marking it would be the very
- * dishonesty this registry guards against.
+ * The public-view sanitizer is NOT in this cast registry — but not because it's
+ * "non-AI". Its Pass 3 IS a real LLM pass (host-side Haiku via Portkey), so the
+ * /architecture node legitimately carries the ✦ provenance mark (§24.123). It's
+ * excluded here because the registry is the roster of *named, @-referenceable
+ * actors* (dispatchable subagents + the host models with a role/blurb), and the
+ * sanitizer is a pipeline/mechanism, not an actor you'd name. Marking its
+ * deterministic Pass-1/2 output as AI would still be dishonest — but the node
+ * mark reflects the pipeline as a whole, where Pass 3 is genuine AI.
  */
 
 export type ActorKind = 'subagent' | 'host' | 'system'

@@ -287,6 +287,11 @@ export const NODES: ArchNode[] = [
   {
     id: 'pub-sanitize',
     label: 'Sanitization',
+    // Pass 3 is a real LLM pass (host-side Haiku via Portkey) — the node carries
+    // the ✦ provenance mark like the orchestrator/subagents (§24.123). The
+    // deterministic Pass 1/2 backbone + the withhold failsafe stay disclosed in
+    // the copy; the mark reflects the pipeline as a whole, where Pass 3 is AI.
+    ai: true,
     region: 'public',
     probe: 'structural',
     description:

@@ -26,7 +26,10 @@ export function AnonymizationDemo({ state }: { state: SanitizeDemoState }) {
         <>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div>
-              <p className="mb-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              {/* min-h reserves the 2-line wrap height so both column labels
+                  occupy the same height and the two <pre> panes top-align,
+                  regardless of which label wraps (§24.123). */}
+              <p className="mb-1 min-h-8 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
                 Raw · host-side, never published
               </p>
               <pre
@@ -37,7 +40,7 @@ export function AnonymizationDemo({ state }: { state: SanitizeDemoState }) {
               </pre>
             </div>
             <div>
-              <p className="mb-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              <p className="mb-1 min-h-8 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
                 Sanitized · what the dashboard shows
               </p>
               <pre
