@@ -9,6 +9,7 @@
     "container_memory_mb": 512,
     "container_cpu": 1.0,
     "container_idle_timeout_sec": 1800,
+    "container_orphan_reap_grace_sec": 120,
     "container_max_concurrent": 4,
     "sanitization_llm_review_threshold_chars": 1000,
     "sanitization_llm_review_aggressiveness": "high",
