@@ -6152,6 +6152,23 @@ The host path (`handleRecordTurnTelemetry` → `insertProgressRow`, gated by `ow
 
 **DoD.** A Recent-outcomes row shows `▤` when the app has kits, `✎` when it has published learnings, both when both, neither when none; the tooltips carry the counts; the row still deep-links into the drawer. FE `tsc` + `RecentOutcomesPanel` unit (badge presence/absence + tooltip count) + `live`/`mobile-live` `@visual` re-blessed (Wayne's offer row gains `▤ ✎` — verified by eye) + prettier `--no-semi` green. **Spec deltas:** this §24.118. Memory: [[todo_backlog]].
 
+#### 24.119 Home hero polish — directional pipeline strip (item #4) + the 5-step loop's loop-back closer (item #5)
+
+**Items #4 + #5 (owner backlog, 2026-06-18).** Two `/` hero refinements landed as one slice.
+
+**#4 — the live pipeline strip needs flavor, not a new number.** `PipelineCompact` (shared by `/` "My job search, live" and `/dashboard` "My Job Pipeline") renders five flat, equal stage-count tiles. The owner finds it lifeless but named the real constraint: **avoid redundancy with the rest of the page.** On `/` the hero stat line directly above already reads "N active job applications · M agent actions in 24h · last activity X ago", and the strip's columns sum to that same active count *by construction* (`activeApplicationCount` counts the identical `PIPELINE_STAGE_SET`). So any count-summary bolted onto the strip just restates the hero line. The refinement is to the **tiles themselves**, adding zero new numbers:
+
+- **Flow** — chevrons (`›`) between tiles carry the eye left→right toward OFFER (it IS a pipeline; show the flow). Chevrons up to and including the leading edge render at `text-primary/50` ("flow has reached here"); chevrons beyond fade to `text-muted-foreground/25` ("not yet reached") — the rail itself becomes the momentum cue.
+- **Destination** — the OFFER tile (the goal) takes a quiet brand accent (`border-primary/30 bg-primary/5`, primary count + label) so the finish line is always legible — even when empty (then dimmed: a destination not yet reached).
+- **Leading edge** — the furthest-right stage holding any application takes a faint `ring-primary/40` (+ a `data-leading-edge` hook and a native `title`). This is a NEW *dimension* (how far the search has actually reached), not a restated number, so it never duplicates the hero line.
+- **Empty stages dim** (`opacity-50`) so the eye follows where the pipeline actually is.
+
+Same component → `/dashboard`'s panel inherits the refinement (no redundancy there either — the dashboard has no active-count headline). No data-shape change: the `funnel-compact*` testids, the loading-skeleton branch, and the public-offer reveal line are all preserved.
+
+**#5 — the 5-step loop orphans its 5th step on desktop.** The pitch section's `<ol>` (finds roles / tailors my résumé / drafts outreach / builds interview prep / learns from outcomes) is one `flex-wrap`; on desktop the 5th wraps alone onto a second line, reading as unintended. Fix: split the four **linear** work-steps (numbered chips, a wrapping centered row) from the fifth, the **meta-capability**, rendered deterministically on its own centered line with a `↻` loop-back glyph and the subject-less copy **"and learns from every outcome"** (owner: drop "it" → parallel with the four verb-phrase steps above it). Deterministic at any width (an own-line closer never orphans), reads as intentional, and the `↻` says the loop feeds back. Must read decently on mobile too (owner ask): the four chips wrap centered, the closer sits on its own centered line that fits a phone width.
+
+**DoD.** `/` strip + `/dashboard` strip render as a directional pipeline — chevrons between tiles, OFFER accented, the furthest-populated stage ringed (`data-leading-edge`), empty stages dimmed — verified by eye on both. The pitch loop shows four numbered chips + a `↻ and learns from every outcome` closer on its own line, decent on desktop AND mobile. FE `tsc` + `PipelineCompact` unit (leading-edge selection incl. a mid-pipeline case AND an offer case; offer accent; chevrons/empty classes don't regress the existing count/reveal/loading assertions) + `home`/`mobile-home`/`live`/`mobile-live`/`live-loading` `@visual` re-blessed + prettier `--no-semi` green. **Spec deltas:** this §24.119; PORTAL.md §5.1 (the strip's directional treatment + the loop's loop-back closer). Memory: [[todo_backlog]].
+
 ---
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
