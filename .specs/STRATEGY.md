@@ -6298,6 +6298,23 @@ So listing `greenhouse`/`lever` as `host-onecli` providers makes the gateway's h
 
 ---
 
+#### 24.126 Stage A — port the upgrade-marker tripwire (§24.124 Stage A, the build)
+
+**The forced change (nanoclaw 2.1.0 `[BREAKING]`).** Upstream's host refuses to boot unless `data/upgrade-state.json` records that the install reached the running code version through a sanctioned path — guarding against a raw `git pull` + restart landing 2.1.x-expecting code on an un-upgraded environment. We're not wholesale-pulling upstream's `src/index.ts` (ours is heavily customized), so we **port the mechanism** into the fork rather than inherit it.
+
+**Upstream mechanism (read at the `v2.1.17` tag).** `src/upgrade-state.ts` exports `UpgradeState {version, updatedAt, via}`, `markerPath()` (→ `data/upgrade-state.json`), `getCodeVersion()` (package.json), `read/writeUpgradeState()`, and `enforceUpgradeTripwire()` — a boot gate that `process.exit(1)`s when the marker is missing/corrupt **or** `marker.version !== code version`. `src/index.ts` calls it at "step 0.5", before DB init. `scripts/upgrade-state.ts` is the `get`/`set` CLI; the sanctioned callers (setup / update-nanoclaw / migrate-nanoclaw) run `set` on success.
+
+**Decisions (the port + our adaptations).**
+- **D1 — port faithfully, three artifacts:** `src/upgrade-state.ts` (adapted to our `DATA_DIR`/`log`; package.json resolved via `path.resolve(DATA_DIR,'..','package.json')` so it's cwd-independent), `scripts/upgrade-state.ts` (CLI), and the `enforceUpgradeTripwire()` call as the first line of `main()` in `src/index.ts` (before DB init), matching upstream's step-0.5 placement.
+- **D2 — `set` always stamps the CODE version (divergence from upstream's `set [version]`):** the marker version must equal the running code, always — letting a caller pass an arbitrary version is a foot-gun (could stamp a mismatch that then trips or, worse, falsely passes). Our `set [via]` takes only an optional `via` label; version is non-overridable.
+- **D3 — box-safety is the ordering (the brick-the-box control):** the box has **no marker today**, so the guarded process would `exit(1)` on first restart unless stamped first. `scripts/bootstrap-vm.sh` stamps the marker (`scripts/upgrade-state.ts set bootstrap`) in a new **step 5.5, immediately before `--step service`** — which is where dist is rebuilt + the service restarts. So the guarded process always boots against a fresh, matching marker. Idempotent (re-stamps every deploy). A pre-stamp bootstrap failure leaves the *old* process running (the service isn't restarted until step 6), so a failed deploy can't brick.
+- **D4 — test/dev escape hatch:** `enforceUpgradeTripwire()` no-ops under `VITEST` / `NODE_ENV=test` / `CP_SKIP_UPGRADE_TRIPWIRE=1` so the suite and local `pnpm dev` don't trip (the tripwire protects the box/production boot, not the harness). The pure decision (`evaluateTripwire(state, codeVersion)`) is the unit-test seam.
+- **D5 — version stays `2.0.70` for now; the tripwire becomes load-bearing when we bump it.** Stamping the current version trivially passes today; the guard earns its keep at the later stage that bumps `package.json` (the dep-upgrade marker), where any non-bootstrap restart then correctly trips until re-stamped.
+
+**DoD.** `evaluateTripwire` unit test (missing → trip, version-mismatch → trip, match → ok); host `pnpm build` + full suite green; `scripts/upgrade-state.ts get/set` round-trips locally; `bootstrap-vm.sh` stamps at step 5.5 before `--step service`; RECOVERY.md gains an "Upgrade tripwire" runbook. **Box-gated (the deploy is the proof):** the post-push `deploy-backend` provisions, stamps, restarts, and the portal smoke check passes (a brick would fail it). **Spec deltas:** this §24.126; §24.124 Stage A marked built. Memory: [[todo_backlog]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
