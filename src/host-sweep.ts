@@ -150,7 +150,10 @@ export function decideStuckAction(args: {
 }): StuckDecision {
   const { now, heartbeatMtimeMs, containerState, claims } = args;
   const absoluteCeilingMs = args.absoluteCeilingMs ?? ABSOLUTE_CEILING_MS;
-  const declaredBashMs = bashTimeoutMs(containerState);
+  // Extend BOTH the idle ceiling and the per-claim tolerance while ANY tool is in
+  // flight, so a long subagent/WebFetch/MCP call isn't killed mid-run by a short
+  // idle ceiling (§24.114). null when idle → the plain ceiling applies.
+  const inFlightToolMs = inFlightToolCeilingMs(containerState);
 
   // Ceiling check only applies when we have an actual heartbeat timestamp.
   // A freshly-spawned container hasn't had any SDK activity yet so no
@@ -162,13 +165,13 @@ export function decideStuckAction(args: {
   // claim-stuck check below handles it.
   if (heartbeatMtimeMs !== 0) {
     const heartbeatAge = now - heartbeatMtimeMs;
-    const ceiling = Math.max(absoluteCeilingMs, declaredBashMs ?? 0);
+    const ceiling = Math.max(absoluteCeilingMs, inFlightToolMs ?? 0);
     if (heartbeatAge > ceiling) {
       return { action: 'kill-ceiling', heartbeatAgeMs: heartbeatAge, ceilingMs: ceiling };
     }
   }
 
-  const tolerance = Math.max(CLAIM_STUCK_MS, declaredBashMs ?? 0);
+  const tolerance = Math.max(CLAIM_STUCK_MS, inFlightToolMs ?? 0);
   for (const claim of claims) {
     const claimedAt = parseSqliteUtc(claim.status_changed);
     if (Number.isNaN(claimedAt)) continue;
@@ -380,9 +383,26 @@ function heartbeatMtimeMs(agentGroupId: string, sessionId: string): number {
   }
 }
 
-function bashTimeoutMs(state: ContainerState | null): number | null {
-  if (!state || state.current_tool !== 'Bash') return null;
-  return typeof state.tool_declared_timeout_ms === 'number' ? state.tool_declared_timeout_ms : null;
+/** A generous backstop ceiling for an in-flight tool with no declared timeout
+ *  (a subagent Task, WebFetch, an MCP call — none emit SDK events while they run,
+ *  so the heartbeat goes stale mid-call). Long enough that no real tool/subagent
+ *  is killed mid-run by a short idle ceiling (§24.114), short enough that a truly
+ *  hung tool is still reaped. A low-level safety bound, not a user knob. */
+const TOOL_IN_FLIGHT_CEILING_MS = 30 * 60 * 1000;
+
+/**
+ * The ceiling extension while a tool is in flight (§24.96 generalized in §24.114):
+ * a still-running tool must NOT be killed by a short idle ceiling. A declared
+ * timeout (Bash declares one) is honored exactly; ANY other in-flight tool gets
+ * the generous backstop. `null` when no tool is in flight (the container is idle
+ * → the plain idle ceiling applies, so a no-op wake still reaps fast).
+ */
+function inFlightToolCeilingMs(state: ContainerState | null): number | null {
+  if (!state || !state.current_tool) return null;
+  if (typeof state.tool_declared_timeout_ms === 'number' && state.tool_declared_timeout_ms > 0) {
+    return state.tool_declared_timeout_ms;
+  }
+  return TOOL_IN_FLIGHT_CEILING_MS;
 }
 
 function enforceRunningContainerSla(
