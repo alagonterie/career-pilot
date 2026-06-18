@@ -12,9 +12,11 @@ import {
   CLAIM_STUCK_MS,
   _resetStuckProcessingRowsForTesting,
   decideStuckAction,
+  idleCeilingForSession,
   parseSqliteUtc,
   shouldSuppressColdWake,
 } from './host-sweep.js';
+import { OPS_THREAD_ID } from './modules/career-pilot/ops-session.js';
 import type { Session } from './types.js';
 
 const BASE = Date.parse('2026-04-20T12:00:00.000Z');
@@ -22,6 +24,38 @@ const BASE = Date.parse('2026-04-20T12:00:00.000Z');
 function claim(id: string, offsetMs: number) {
   return { message_id: id, status_changed: new Date(BASE - offsetMs).toISOString() };
 }
+
+describe('idleCeilingForSession', () => {
+  it('gives ops sessions the short ops ceiling and everything else the global one', () => {
+    expect(idleCeilingForSession({ thread_id: OPS_THREAD_ID }, 60_000, 600_000)).toBe(60_000);
+    expect(idleCeilingForSession({ thread_id: null }, 60_000, 600_000)).toBe(600_000);
+    expect(idleCeilingForSession({ thread_id: 'sb-web-123' }, 60_000, 600_000)).toBe(600_000);
+  });
+
+  it('reaps a recently-idle container under the short ops ceiling (where the global would keep it)', () => {
+    const now = BASE;
+    const idle90sAgo = now - 90_000;
+    // 90s idle: past the 60s ops ceiling → kill; under the 600s chat ceiling → ok.
+    expect(
+      decideStuckAction({
+        now,
+        heartbeatMtimeMs: idle90sAgo,
+        containerState: null,
+        claims: [],
+        absoluteCeilingMs: 60_000,
+      }).action,
+    ).toBe('kill-ceiling');
+    expect(
+      decideStuckAction({
+        now,
+        heartbeatMtimeMs: idle90sAgo,
+        containerState: null,
+        claims: [],
+        absoluteCeilingMs: 600_000,
+      }).action,
+    ).toBe('ok');
+  });
+});
 
 describe('decideStuckAction', () => {
   it('returns ok when heartbeat is fresh and no claims', () => {

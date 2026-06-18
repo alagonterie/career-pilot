@@ -286,8 +286,9 @@ describe('buildDevKnobs', () => {
       .map((k) => k.key)
       .sort();
     expect(sessionKeys).toEqual([
-      'container_idle_timeout_sec', // §24.96 — the idle-container ceiling
+      'container_idle_timeout_sec', // §24.96 — the (chat) idle-container ceiling
       'container_orphan_reap_grace_sec', // §24.112 — the orphan reaper
+      'ops_container_idle_timeout_sec', // §24.114 — the short ops ceiling
       'ops_mirror_to_chat',
       'ops_transcript_rotate_age_days',
       'ops_transcript_rotate_bytes',
@@ -301,14 +302,18 @@ describe('buildDevKnobs', () => {
     expect(applyKnobWrite(db, { key: 'ops_transcript_rotate_age_days', reset: true }).status).toBe(200);
   });
 
-  it('exposes the idle-container ceiling knob (§24.96) — 1800s default, write-validated', () => {
+  it('exposes the chat + ops idle-container ceiling knobs (§24.96/§24.114), write-validated', () => {
     const db = getDb();
-    const knob = buildDevKnobs(db).knobs.find((k) => k.key === 'container_idle_timeout_sec');
-    expect(knob).toMatchObject({ default: 1800, group: 'sessions', type: 'number' });
+    const chat = buildDevKnobs(db).knobs.find((k) => k.key === 'container_idle_timeout_sec');
+    expect(chat).toMatchObject({ default: 600, group: 'sessions', type: 'number' }); // 10 min
+    const ops = buildDevKnobs(db).knobs.find((k) => k.key === 'ops_container_idle_timeout_sec');
+    expect(ops).toMatchObject({ default: 60, group: 'sessions', type: 'number' }); // short ops ceiling
 
-    expect(applyKnobWrite(db, { key: 'container_idle_timeout_sec', value: 600 }).status).toBe(200); // 10 min
-    expect(getConfig<number>(db, 'container_idle_timeout_sec')).toBe(600);
+    expect(applyKnobWrite(db, { key: 'container_idle_timeout_sec', value: 900 }).status).toBe(200);
+    expect(getConfig<number>(db, 'container_idle_timeout_sec')).toBe(900);
     expect(applyKnobWrite(db, { key: 'container_idle_timeout_sec', value: 30 }).status).toBe(400); // below the 60s min
+    expect(applyKnobWrite(db, { key: 'ops_container_idle_timeout_sec', value: 90 }).status).toBe(200);
+    expect(getConfig<number>(db, 'ops_container_idle_timeout_sec')).toBe(90);
   });
 
   it('exposes the §24.68 telemetry knobs with write validation', () => {

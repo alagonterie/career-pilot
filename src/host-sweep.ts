@@ -50,6 +50,7 @@ import { log } from './log.js';
 import { openInboundDb, openOutboundDb, openOutboundDbRw, inboundDbPath, heartbeatPath } from './session-manager.js';
 import { isContainerRunning, killContainer, trackedContainerNames, wakeContainer } from './container-runner.js';
 import { reapUntrackedContainers } from './container-runtime.js';
+import { isOpsSession } from './modules/career-pilot/ops-session.js';
 import type { Session } from './types.js';
 
 /**
@@ -81,6 +82,32 @@ function configuredCeilingMs(): number {
   } catch {
     return ABSOLUTE_CEILING_MS;
   }
+}
+
+/** Default short idle ceiling for the OPS container — ops sessions only run
+ *  scheduled jobs (spaced minutes/hours apart), so a no-op wake or a finished job
+ *  needn't stay warm; reap it shortly after it goes idle. */
+const OPS_CEILING_MS = 60 * 1000;
+
+/** The configured OPS idle ceiling in ms (`ops_container_idle_timeout_sec`). */
+function opsCeilingMs(): number {
+  try {
+    return getConfig<number>(getDb(), 'ops_container_idle_timeout_sec', OPS_CEILING_MS / 1000) * 1000;
+  } catch {
+    return OPS_CEILING_MS;
+  }
+}
+
+/**
+ * The idle ceiling to apply to a session's container (pure). Ops sessions get the
+ * short ops ceiling — an ops wake that did nothing (or a finished scheduled job)
+ * reaps almost immediately instead of holding a slot for the chat ceiling; a
+ * still-working ops turn is unaffected (the decideStuckAction Bash-extension keeps
+ * it alive while a tool is declared running). Everything else gets the global
+ * ceiling.
+ */
+export function idleCeilingForSession(session: Pick<Session, 'thread_id'>, opsMs: number, globalMs: number): number {
+  return isOpsSession(session) ? opsMs : globalMs;
 }
 
 /** Default grace before an untracked container is reapable (§24.112) — above the
@@ -369,7 +396,7 @@ function enforceRunningContainerSla(
     heartbeatMtimeMs: heartbeatMtimeMs(agentGroupId, session.id),
     containerState: getContainerState(outDb),
     claims: getProcessingClaims(outDb),
-    absoluteCeilingMs: configuredCeilingMs(),
+    absoluteCeilingMs: idleCeilingForSession(session, opsCeilingMs(), configuredCeilingMs()),
   });
 
   if (decision.action === 'ok') return;
