@@ -144,18 +144,22 @@ function Home() {
           for the interview, then do it again a hundred times. So I built an AI agent system that runs that loop for me,
           continuously, and keeps me in the driver’s seat.
         </p>
-        {/* The loop as four confident steps — centered + wrapping (not a left-aligned
+        {/* The loop as five confident steps — centered + wrapping (not a left-aligned
             2-col grid that hitched against the centered prose), each with a small
-            brand-tinted number chip instead of a footnote-sized grey digit. */}
+            brand-tinted number chip instead of a footnote-sized grey digit. The 5th
+            ("learns from outcomes", §24.111) closes the loop — the meta-capability
+            that makes each of the hundred iterations sharper. */}
         <ol className="mx-auto mt-7 flex max-w-xl flex-wrap items-center justify-center gap-x-4 gap-y-3 text-sm text-foreground/90">
-          {['finds roles', 'tailors my résumé', 'drafts outreach', 'builds interview prep'].map((step, i) => (
-            <li key={step} className="flex items-center gap-2">
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/15 font-mono text-[11px] font-semibold text-primary">
-                {i + 1}
-              </span>
-              {step}
-            </li>
-          ))}
+          {['finds roles', 'tailors my résumé', 'drafts outreach', 'builds interview prep', 'learns from outcomes'].map(
+            (step, i) => (
+              <li key={step} className="flex items-center gap-2">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/15 font-mono text-[11px] font-semibold text-primary">
+                  {i + 1}
+                </span>
+                {step}
+              </li>
+            ),
+          )}
         </ol>
         <p className="mt-6 text-balance text-sm leading-relaxed text-muted-foreground">
           …and you can watch it happen below, or run it on your own open role right now.

@@ -42,11 +42,15 @@ function entryFraction(from: string, to: string): number {
 
 /**
  * Edge path between two nodes. Same-row siblings connect side-to-side (a clean
- * horizontal); cross-row/cross-band edges route as an orthogonal elbow
- * (down → across → down). `from` (a) is always the upper-or-same-row node. The
- * horizontal leg sits just below the source so it lands in the inter-band gap
- * (never riding a band border), and `entryFrac` distributes the arrowhead
- * across the target's top when several edges share a target.
+ * horizontal); cross-row/cross-band edges route as an orthogonal elbow. Usually
+ * `from` (a) is the upper-or-same-row node and the elbow runs down → across →
+ * down, with the horizontal leg just below the source (landing in the inter-band
+ * gap, never riding a band border). When `from` is BELOW `to` (an upward edge —
+ * e.g. the OneCLI gateway writing UP to Google Workspace, §24.111) the elbow is
+ * mirrored: leave the source's top, leg just above it, arrive at the target's
+ * bottom — otherwise the path would dip down then shoot a long line up across the
+ * source's whole band. `entryFrac` distributes the arrowhead across the target
+ * edge when several edges share a target.
  */
 function edgePath(a: ArchNode, b: ArchNode, entryFrac = 0.5): string {
   if (a.y === b.y) {
@@ -56,11 +60,12 @@ function edgePath(a: ArchNode, b: ArchNode, entryFrac = 0.5): string {
     const ex = leftToRight ? b.x : b.x + b.w
     return `M${sx} ${y} L${ex} ${y}`
   }
+  const upward = a.y > b.y // a (the source) sits below b (the target)
   const sx = a.x + a.w / 2
-  const sy = a.y + a.h
+  const sy = upward ? a.y : a.y + a.h // leave the top when heading up, else the bottom
   const ex = b.x + b.w * entryFrac
-  const ey = b.y
-  const legY = sy + 14
+  const ey = upward ? b.y + b.h : b.y // arrive at the target's bottom when heading up, else its top
+  const legY = sy + (upward ? -14 : 14)
   return `M${sx} ${sy} L${sx} ${legY} L${ex} ${legY} L${ex} ${ey}`
 }
 
