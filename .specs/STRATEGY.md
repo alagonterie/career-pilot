@@ -6049,6 +6049,16 @@ Owner approved building the §24.109 deferral. Make the memory bar's per-source 
 
 **DoD.** `/api/architecture` returns `containers.by_class`; the memory bar segments by source (largest left), colors match the spend legend, segments sum to the headline; all-zero falls back to the single bar. host `tsc` + observability unit (`computeRunningTopology` classifies running sessions) + portal-api unit (by_class present) + FE `tsc` + `ContainerPoolPanel` unit (segments + fallback) + `dashboard`/`mobile-dashboard` `@visual` re-blessed (two-color bar — verified by eye) + prettier green. **Spec deltas:** this §24.110. Memory: [[todo_backlog]].
 
+#### 24.111 Wrap-up fixes — home-pitch learning bullet + the §24.108 edge-routing bug
+
+Two small follow-ups.
+
+**A — Home pitch gains the learning loop (§24.107 follow-up).** The home `/` pitch lists "the loop as four confident steps" (`finds roles → tailors my résumé → drafts outreach → builds interview prep`) — but the rejection-as-fuel learning loop (now built + featured on `/about`) is the most differentiating capability and is missing from the short pitch. Add a fifth step, **"learns from outcomes"**, closing the loop (the meta-capability that makes each of the hundred iterations sharper). One array element; the centered wrapping chip row absorbs a 5th cleanly.
+
+**B — Fix the `/architecture` Google-Workspace edge routing (§24.108 bug).** The owner flagged the new `host-onecli → trig-google` edge as looking buggy — correctly. `edgePath` (`ArchDiagram.tsx`) assumes `from` (a) is the upper-or-same-row node and routes the cross-band elbow *down → across → down*. But this edge's `from` (`host-onecli`, HOST band) is **below** its `to` (`trig-google`, TRIGGERS band), so the elbow leaves onecli's bottom, dips further DOWN into the container gap, then shoots a long line UP across the whole host band — the visible artifact. Fix: generalize `edgePath` to handle an upward edge (`a.y > b.y`) symmetrically — leave the source's TOP, leg 14px ABOVE it, arrive at the target's BOTTOM. The downward/same-row branches stay byte-identical (no regression; this is the only upward edge), so only the architecture baselines move.
+
+**DoD.** The home pitch shows five steps ending in "learns from outcomes"; the Google-Workspace edge renders as a clean upward elbow (verified by eye). FE `tsc` + diagram unit + `home`/`mobile-home` + architecture `@visual` re-blessed + prettier green. **Spec deltas:** this §24.111. Memory: [[todo_backlog]]. **Open (not built): the container-TTL question (#3) — diagnosis recorded in memory; box-verify before any fix.**
+
 ---
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
