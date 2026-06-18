@@ -236,6 +236,17 @@ provision_args=()
 [ "$CP_ALLOW_PRODUCTION" = "1" ] && provision_args+=(--allow-production)
 pnpm exec tsx scripts/provision-backend.ts ${provision_args[@]+"${provision_args[@]}"}
 
+# ─── 5.5 upgrade marker (stamp BEFORE the service restart) ──────────────────
+# The §24.126 boot tripwire (enforceUpgradeTripwire in src/index.ts) refuses to
+# start unless data/upgrade-state.json records the running code version. This
+# automated deploy IS a sanctioned upgrade path, so stamp the marker now — the
+# next step (--step service) rebuilds dist and restarts, and the guarded process
+# must find a fresh, matching marker or it exits(1). Idempotent: re-stamps the
+# current version every deploy. (Placed before --step service so a failure here
+# leaves the old process running — the service isn't restarted until step 6.)
+say "5.5 upgrade marker (stamp)"
+pnpm exec tsx scripts/upgrade-state.ts set bootstrap
+
 # ─── 6. service (build dist + install user-systemd unit + start) ────────────
 # --step service runs `pnpm run build`, writes the path-derived unit
 # (nanoclaw-v2-<slug>.service), enables linger, and restarts. Survives SSH
