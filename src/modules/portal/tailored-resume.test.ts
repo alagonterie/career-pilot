@@ -19,7 +19,7 @@ const MASTER: WorkProfile = {
   experience: [
     {
       role: 'Senior Software Engineer',
-      company: 'Acme Corp',
+      company: 'Acme',
       period: '2021 — Present',
       bullets: [
         'Built a Rust in-memory authorization engine answering security checks 850 times faster than the SQL it replaced.',
@@ -28,14 +28,14 @@ const MASTER: WorkProfile = {
     },
     {
       role: 'Software Engineer',
-      company: 'AuthService',
+      company: 'Globex',
       period: '2019 — 2021',
       bullets: ['Owned a TypeScript services layer from prototype to production.'],
     },
   ],
   projects: [
     { name: 'career-pilot', description: 'This portal.', href: 'https://example.com/cp', tags: ['AI'] },
-    { name: 'CoreSvc', description: 'A system.', tags: ['Go'] },
+    { name: 'Helios', description: 'A system.', tags: ['Go'] },
   ],
   skills: ['TypeScript', 'Go', 'Cloudflare', 'AI Agents', 'Rust', 'CQRS', 'gRPC'],
   skillGroups: [
@@ -56,7 +56,7 @@ describe('validateTailoredResume — identity + structure forced from the master
       experience: [
         {
           role: 'Sr. Software Engineer', // rephrased title
-          company: 'Acme Corp',
+          company: 'Acme',
           period: 'whenever', // wrong dates
           bullets: ['Built a Rust authorization engine that answered security checks 850 times faster than SQL.'],
         },
@@ -82,7 +82,7 @@ describe('validateTailoredResume — bullets selected/ordered, never reworded in
       experience: [
         {
           role: 'Senior Software Engineer',
-          company: 'Acme Corp',
+          company: 'Acme',
           period: '2021 — Present',
           bullets: [
             'Built a Rust authorization engine that answered security checks 850 times faster than SQL.', // reworded → snaps
@@ -104,7 +104,7 @@ describe('validateTailoredResume — bullets selected/ordered, never reworded in
       experience: [
         {
           role: 'Software Engineer',
-          company: 'AuthService',
+          company: 'Globex',
           period: '2019 — 2021',
           bullets: ['Led a cross-functional cloud migration to Kubernetes.'], // unrelated → dropped
         },
@@ -161,8 +161,8 @@ describe('validateTailoredResume — quality floor: never a worse subset of the 
     expect(validateTailoredResume({ projects: [] }, MASTER).profile!.projects.map((p) => p.name)).toEqual(
       MASTER.projects.map((p) => p.name),
     );
-    const picked = validateTailoredResume({ projects: [{ name: 'CoreSvc', description: 'd' }] }, MASTER);
-    expect(picked.profile!.projects.map((p) => p.name)).toEqual(['CoreSvc']);
+    const picked = validateTailoredResume({ projects: [{ name: 'Helios', description: 'd' }] }, MASTER);
+    expect(picked.profile!.projects.map((p) => p.name)).toEqual(['Helios']);
   });
 
   it('lets the agent’s projectsFirst layout hint survive validation (§24.106)', () => {
@@ -180,7 +180,7 @@ describe('validateTailoredResume — quality floor: never a worse subset of the 
       bio: [],
       experience: [
         {
-          company: 'Acme Corp',
+          company: 'Acme',
           role: 'Senior Software Engineer',
           period: '2021 — Present',
           bullets: ['Built a Rust authorization engine that answered security checks 850 times faster than SQL.'],
@@ -207,7 +207,7 @@ describe('validateTailoredResume — fabrication is rejected', () => {
       name: 'X',
       experience: [
         { role: 'Staff Engineer', company: 'Google', period: '2020 — Present', bullets: ['Invented role.'] },
-        { role: 'Senior Software Engineer', company: 'Acme Corp', period: '2021 — Present', bullets: ['Real.'] },
+        { role: 'Senior Software Engineer', company: 'Acme', period: '2021 — Present', bullets: ['Real.'] },
       ],
     };
     const res = validateTailoredResume(emitted, MASTER);
@@ -232,7 +232,7 @@ describe('validateTailoredResume — fabrication is rejected', () => {
         bio: ['A summary written for this role.'],
         experience: [
           {
-            company: 'Acme Corp',
+            company: 'Acme',
             role: 'Senior Software Engineer',
             period: '2021 — Present',
             bullets: ['Built a Rust authorization engine that answered security checks 850 times faster than SQL.'],

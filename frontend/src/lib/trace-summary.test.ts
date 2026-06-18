@@ -22,9 +22,9 @@ describe('humanizeTraceSummary', () => {
 
   it('strips exact-match quotes inside a query so the curly wrap does not nest', () => {
     const out = humanizeTraceSummary(
-      ev({ name: 'WebSearch', input_summary: '{"query":"\\"Acme Corp\\" engineering culture 2026"}' }),
+      ev({ name: 'WebSearch', input_summary: '{"query":"\\"Acme\\" engineering culture 2026"}' }),
     )
-    expect(out).toBe('“Acme Corp engineering culture 2026”')
+    expect(out).toBe('“Acme engineering culture 2026”')
   })
 
   it('shortens the url for WebFetch', () => {
