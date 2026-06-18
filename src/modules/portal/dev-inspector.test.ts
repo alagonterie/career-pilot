@@ -287,6 +287,7 @@ describe('buildDevKnobs', () => {
       .sort();
     expect(sessionKeys).toEqual([
       'container_idle_timeout_sec', // §24.96 — the idle-container ceiling
+      'container_orphan_reap_grace_sec', // §24.112 — the orphan reaper
       'ops_mirror_to_chat',
       'ops_transcript_rotate_age_days',
       'ops_transcript_rotate_bytes',

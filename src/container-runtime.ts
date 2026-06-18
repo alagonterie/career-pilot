@@ -134,6 +134,77 @@ export function stopInstallContainers(reason: string): string[] {
   });
 }
 
+/** Parse the spawn epoch-ms a container name encodes (`nanoclaw-v2-<folder>-<ms>`),
+ *  or null when the trailing segment isn't a timestamp. */
+function parseSpawnMs(name: string): number | null {
+  const m = name.match(/-(\d{10,})$/);
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * Pure selection (§24.112): from the install's running container names, the
+ * ORPHANS to reap — those NOT in `trackedNames` (the host's in-memory set) AND
+ * older than `graceMs`. The age comes free from the name's spawn timestamp, so a
+ * just-spawned container still registering into the map (age < grace) is
+ * protected, while an old untracked container is a genuine orphan. A name with no
+ * parseable timestamp is left alone (conservative — never reap what we can't age).
+ */
+export function selectOrphanContainerNames(
+  allNames: string[],
+  trackedNames: Set<string>,
+  graceMs: number,
+  now: number,
+): string[] {
+  return allNames.filter((name) => {
+    if (trackedNames.has(name)) return false;
+    const spawnMs = parseSpawnMs(name);
+    if (spawnMs == null) return false;
+    return now - spawnMs > graceMs;
+  });
+}
+
+/** List this install's running container names (label-scoped). [] on any error. */
+function listInstallContainerNames(): string[] {
+  try {
+    const output = execSync(
+      `${CONTAINER_RUNTIME_BIN} ps --filter label=${CONTAINER_INSTALL_LABEL} --format '{{.Names}}'`,
+      { stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf-8' },
+    );
+    return output.trim().split('\n').filter(Boolean);
+  } catch (err) {
+    log.warn('Failed to list install containers for orphan reconcile', { err });
+    return [];
+  }
+}
+
+/**
+ * Reap orphaned containers the host is no longer tracking (§24.112). Run each
+ * host-sweep tick: a running install container whose name isn't in `trackedNames`
+ * (the host's in-memory `activeContainers`) and that has outlived `graceMs` is
+ * dead weight — it can't receive work (work routes through `wakeContainer`, which
+ * registers in the map), so the host has lost track of it (orphaned by a
+ * restart/deploy clearing the map, or removed from the map while its docker
+ * process lingered). Stop it. This closes the idle-ceiling escape hatch — the
+ * §24.96 ceiling otherwise only sees map-tracked containers. Never throws;
+ * returns the names stopped.
+ */
+export function reapUntrackedContainers(trackedNames: Set<string>, graceMs: number, now: number = Date.now()): string[] {
+  const orphans = selectOrphanContainerNames(listInstallContainerNames(), trackedNames, graceMs, now);
+  const reaped: string[] = [];
+  for (const name of orphans) {
+    try {
+      stopContainer(name);
+      reaped.push(name);
+    } catch {
+      /* already gone */
+    }
+  }
+  if (reaped.length > 0) {
+    log.info('Reaped untracked orphan containers', { count: reaped.length, names: reaped });
+  }
+  return reaped;
+}
+
 /**
  * Count this install's running containers (for the portal /api/architecture
  * panel). Returns `null` when the container runtime is unreachable so the

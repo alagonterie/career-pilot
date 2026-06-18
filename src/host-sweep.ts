@@ -48,7 +48,8 @@ import {
 } from './db/session-db.js';
 import { log } from './log.js';
 import { openInboundDb, openOutboundDb, openOutboundDbRw, inboundDbPath, heartbeatPath } from './session-manager.js';
-import { isContainerRunning, killContainer, wakeContainer } from './container-runner.js';
+import { isContainerRunning, killContainer, trackedContainerNames, wakeContainer } from './container-runner.js';
+import { reapUntrackedContainers } from './container-runtime.js';
 import type { Session } from './types.js';
 
 /**
@@ -79,6 +80,20 @@ function configuredCeilingMs(): number {
     return getConfig<number>(getDb(), 'container_idle_timeout_sec', ABSOLUTE_CEILING_MS / 1000) * 1000;
   } catch {
     return ABSOLUTE_CEILING_MS;
+  }
+}
+
+/** Default grace before an untracked container is reapable (§24.112) — above the
+ *  cold-start so a just-spawned container still registering into the map is safe. */
+const ORPHAN_REAP_GRACE_MS = 120 * 1000;
+
+/** The configured orphan-reap grace in ms (`container_orphan_reap_grace_sec`),
+ *  read each tick so a /dev change applies live; falls back to the constant. */
+function orphanReapGraceMs(): number {
+  try {
+    return getConfig<number>(getDb(), 'container_orphan_reap_grace_sec', ORPHAN_REAP_GRACE_MS / 1000) * 1000;
+  } catch {
+    return ORPHAN_REAP_GRACE_MS;
   }
 }
 // Stuck tolerance window applied per 'processing' claim — "did we see any
@@ -221,6 +236,15 @@ async function sweep(): Promise<void> {
     for (const session of sessions) {
       await sweepSession(session);
     }
+
+    // 0e. Orphan reconcile (§24.112): reap running install containers the host is
+    // no longer tracking — orphaned by a restart/deploy clearing the in-memory map,
+    // or removed from the map while their docker process lingered. The
+    // per-session enforceRunningContainerSla only sees map-tracked containers
+    // (isContainerRunning reads the map, not docker), so an untracked container
+    // escapes the 30-min idle ceiling entirely. AFTER the session loop so the map
+    // reflects this tick's wakes. Best-effort, never throws.
+    reapUntrackedContainers(trackedContainerNames(), orphanReapGraceMs());
   } catch (err) {
     log.error('Host sweep error', { err });
   }

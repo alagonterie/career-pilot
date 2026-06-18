@@ -24,6 +24,7 @@ import {
   ensureContainerRuntimeRunning,
   cleanupOrphans,
   stopInstallContainers,
+  selectOrphanContainerNames,
 } from './container-runtime.js';
 import { CONTAINER_INSTALL_LABEL } from './config.js';
 import { log } from './log.js';
@@ -88,6 +89,32 @@ describe('ensureContainerRuntimeRunning', () => {
 });
 
 // --- cleanupOrphans ---
+
+describe('selectOrphanContainerNames', () => {
+  // Real container names carry a 13-digit Date.now() suffix (nanoclaw-v2-<folder>-<ms>).
+  const NOW = 1_700_000_000_000;
+  const TRACKED = 'nanoclaw-v2-career-pilot-1699999900000'; // tracked → never reaped
+  const OLD = 'nanoclaw-v2-career-pilot-1699999000000'; // untracked, age 1_000_000ms
+  const YOUNG = 'nanoclaw-v2-career-pilot-1699999999000'; // untracked, age 1_000ms
+  const tracked = new Set([TRACKED]);
+  const all = [TRACKED, OLD, YOUNG, 'onecli-postgres-1'];
+
+  it('reaps only untracked containers older than the grace', () => {
+    expect(selectOrphanContainerNames(all, tracked, 100_000, NOW)).toEqual([OLD]);
+  });
+
+  it('never reaps a tracked container, even when old', () => {
+    expect(selectOrphanContainerNames([TRACKED], tracked, 0, NOW)).toEqual([]);
+  });
+
+  it('protects a just-spawned (within-grace) untracked container', () => {
+    expect(selectOrphanContainerNames([YOUNG], new Set(), 100_000, NOW)).toEqual([]);
+  });
+
+  it('leaves a name with no parseable spawn timestamp alone (conservative)', () => {
+    expect(selectOrphanContainerNames(['onecli', 'some-tool'], new Set(), 0, NOW)).toEqual([]);
+  });
+});
 
 describe('cleanupOrphans', () => {
   it('filters ps by the install label so peers are not reaped', () => {

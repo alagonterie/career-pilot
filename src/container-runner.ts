@@ -118,6 +118,12 @@ export function isContainerRunning(sessionId: string): boolean {
   return activeContainers.has(sessionId);
 }
 
+/** The container NAMES the host is currently tracking (§24.112) — the orphan
+ *  reconcile (host-sweep) reaps any running install container NOT in this set. */
+export function trackedContainerNames(): Set<string> {
+  return new Set([...activeContainers.values()].map((c) => c.containerName));
+}
+
 /**
  * Wake up a container for a session. If already running or mid-spawn, no-op
  * (the in-flight wake promise is reused).

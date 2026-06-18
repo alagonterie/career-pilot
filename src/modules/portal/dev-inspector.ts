@@ -249,6 +249,15 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     integer: true,
     note: 'How long a warm-but-idle container lives before the host sweep reaps it (default 1800 = 30 min). Idle = local polling only, no LLM spend — the cost is held RAM + one concurrency slot. Lower frees slots/RAM sooner; higher keeps containers warmer (no cold-start on a quick follow-up). Applies live on the next sweep tick.',
   },
+  container_orphan_reap_grace_sec: {
+    type: 'number',
+    group: 'sessions',
+    label: 'Orphan-container reap grace (s)',
+    min: 30,
+    max: 3600,
+    integer: true,
+    note: 'How long a running container the host is NOT tracking (orphaned by a restart/deploy, or removed from the in-memory map while its docker process lingered) is left before the sweep reaps it. The grace protects a just-spawned container still registering into the map; above the cold-start (default 120 s). Closes the gap where an untracked container escapes the idle ceiling. Applies live on the next sweep tick.',
+  },
   // ── observability (§24.68) ──
   telemetry_capture: {
     type: 'boolean',
