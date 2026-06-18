@@ -12,14 +12,14 @@ import type { WorkProfile } from './profile.js';
 import { extractTailoredResumeBlock, stripTailoredResumeBlock, validateTailoredResume } from './tailored-resume.js';
 
 const MASTER: WorkProfile = {
-  name: 'Alexander LaGonterie',
+  name: 'Jane Doe',
   title: 'Senior Software Engineer · Team Lead',
   bio: ['Master bio.'],
   lookingFor: ['Staff / Lead'],
   experience: [
     {
       role: 'Senior Software Engineer',
-      company: 'Vertafore',
+      company: 'Acme',
       period: '2021 — Present',
       bullets: [
         'Built a Rust in-memory authorization engine answering security checks 850 times faster than the SQL it replaced.',
@@ -28,14 +28,14 @@ const MASTER: WorkProfile = {
     },
     {
       role: 'Software Engineer',
-      company: 'AuthEngine',
+      company: 'Globex',
       period: '2019 — 2021',
       bullets: ['Owned a TypeScript services layer from prototype to production.'],
     },
   ],
   projects: [
     { name: 'career-pilot', description: 'This portal.', href: 'https://example.com/cp', tags: ['AI'] },
-    { name: 'TMS', description: 'A system.', tags: ['Go'] },
+    { name: 'Helios', description: 'A system.', tags: ['Go'] },
   ],
   skills: ['TypeScript', 'Go', 'Cloudflare', 'AI Agents', 'Rust', 'CQRS', 'gRPC'],
   skillGroups: [
@@ -44,7 +44,7 @@ const MASTER: WorkProfile = {
     { category: 'Cloud & AI', items: ['Cloudflare', 'AI Agents'] },
   ],
   education: ['BS Computer Science, State University'],
-  links: { github: 'https://github.com/alagonterie' },
+  links: { github: 'https://github.com/janedoe' },
 };
 
 describe('validateTailoredResume — identity + structure forced from the master', () => {
@@ -56,7 +56,7 @@ describe('validateTailoredResume — identity + structure forced from the master
       experience: [
         {
           role: 'Sr. Software Engineer', // rephrased title
-          company: 'Vertafore',
+          company: 'Acme',
           period: 'whenever', // wrong dates
           bullets: ['Built a Rust authorization engine that answered security checks 850 times faster than SQL.'],
         },
@@ -66,9 +66,9 @@ describe('validateTailoredResume — identity + structure forced from the master
     const res = validateTailoredResume(emitted, MASTER);
     expect(res.ok).toBe(true);
     const p = res.profile!;
-    expect(p.name).toBe('Alexander LaGonterie');
+    expect(p.name).toBe('Jane Doe');
     expect(p.title).toBe('Senior Software Engineer · Team Lead');
-    expect(p.links).toEqual({ github: 'https://github.com/alagonterie' });
+    expect(p.links).toEqual({ github: 'https://github.com/janedoe' });
     expect(p.experience[0].role).toBe('Senior Software Engineer');
     expect(p.experience[0].period).toBe('2021 — Present');
     expect(p.education).toEqual(['BS Computer Science, State University']);
@@ -82,7 +82,7 @@ describe('validateTailoredResume — bullets selected/ordered, never reworded in
       experience: [
         {
           role: 'Senior Software Engineer',
-          company: 'Vertafore',
+          company: 'Acme',
           period: '2021 — Present',
           bullets: [
             'Built a Rust authorization engine that answered security checks 850 times faster than SQL.', // reworded → snaps
@@ -104,7 +104,7 @@ describe('validateTailoredResume — bullets selected/ordered, never reworded in
       experience: [
         {
           role: 'Software Engineer',
-          company: 'AuthEngine',
+          company: 'Globex',
           period: '2019 — 2021',
           bullets: ['Led a cross-functional cloud migration to Kubernetes.'], // unrelated → dropped
         },
@@ -161,8 +161,8 @@ describe('validateTailoredResume — quality floor: never a worse subset of the 
     expect(validateTailoredResume({ projects: [] }, MASTER).profile!.projects.map((p) => p.name)).toEqual(
       MASTER.projects.map((p) => p.name),
     );
-    const picked = validateTailoredResume({ projects: [{ name: 'TMS', description: 'd' }] }, MASTER);
-    expect(picked.profile!.projects.map((p) => p.name)).toEqual(['TMS']);
+    const picked = validateTailoredResume({ projects: [{ name: 'Helios', description: 'd' }] }, MASTER);
+    expect(picked.profile!.projects.map((p) => p.name)).toEqual(['Helios']);
   });
 
   it('lets the agent’s projectsFirst layout hint survive validation (§24.106)', () => {
@@ -180,7 +180,7 @@ describe('validateTailoredResume — quality floor: never a worse subset of the 
       bio: [],
       experience: [
         {
-          company: 'Vertafore',
+          company: 'Acme',
           role: 'Senior Software Engineer',
           period: '2021 — Present',
           bullets: ['Built a Rust authorization engine that answered security checks 850 times faster than SQL.'],
@@ -207,7 +207,7 @@ describe('validateTailoredResume — fabrication is rejected', () => {
       name: 'X',
       experience: [
         { role: 'Staff Engineer', company: 'Google', period: '2020 — Present', bullets: ['Invented role.'] },
-        { role: 'Senior Software Engineer', company: 'Vertafore', period: '2021 — Present', bullets: ['Real.'] },
+        { role: 'Senior Software Engineer', company: 'Acme', period: '2021 — Present', bullets: ['Real.'] },
       ],
     };
     const res = validateTailoredResume(emitted, MASTER);
@@ -232,7 +232,7 @@ describe('validateTailoredResume — fabrication is rejected', () => {
         bio: ['A summary written for this role.'],
         experience: [
           {
-            company: 'Vertafore',
+            company: 'Acme',
             role: 'Senior Software Engineer',
             period: '2021 — Present',
             bullets: ['Built a Rust authorization engine that answered security checks 850 times faster than SQL.'],
@@ -243,7 +243,7 @@ describe('validateTailoredResume — fabrication is rejected', () => {
       MASTER,
     );
     expect(res.ok).toBe(true);
-    expect(res.profile!.name).toBe('Alexander LaGonterie');
+    expect(res.profile!.name).toBe('Jane Doe');
     expect(res.profile!.title).toBe('Senior Software Engineer · Team Lead');
     expect(res.profile!.experience[0].bullets[0]).toContain('Rust in-memory authorization engine');
   });

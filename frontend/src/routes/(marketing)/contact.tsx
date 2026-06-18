@@ -42,7 +42,7 @@ function ContactPage() {
   // and the plain-text email was a scraping leak the footer deliberately avoids.
   return (
     <main className="mx-auto flex w-full max-w-xl flex-col px-6 py-16">
-      <div className="mb-6">
+      <div className="mb-6 flex justify-center">
         <AvailabilityBadge
           status={status}
           data-testid="contact-status"
