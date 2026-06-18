@@ -58,6 +58,25 @@ export function eventSourceLabel(e: AuditEvent): string {
 }
 
 /**
+ * §24.116: the fixed host-emitted summary on a deterministic §24.78 subagent
+ * dispatch row (mirrors `SUBAGENT_DISPATCH_SUMMARY` in the host's actions.ts).
+ * It is a PII-free constant the host controls — never model text — so the FE can
+ * discriminate these lifecycle rows from the model's own `record_progress`
+ * narration on the delivered `summary` alone, without a `details_json` round-trip
+ * (which /api/activity never delivers). Pinned to the host constant by a test.
+ */
+export const DISPATCH_LIFECYCLE_SUMMARY = 'Dispatched by the orchestrator.'
+
+/**
+ * True for a deterministic subagent-dispatch lifecycle row (§24.116) — a SYSTEM
+ * event (the orchestrator launched a subagent), which the trace stream renders
+ * as a dim status marker, not as the subagent's own voice.
+ */
+export function isDispatchLifecycle(e: AuditEvent): boolean {
+  return e.category === 'subagent_progress' && e.summary === DISPATCH_LIFECYCLE_SUMMARY
+}
+
+/**
  * Subscribe to the portal activity stream and keep the most recent `limit`
  * events (newest last). Connects with `since=0` so the ticker shows recent
  * backlog immediately, then live-tails. Client-only: SSR renders the idle

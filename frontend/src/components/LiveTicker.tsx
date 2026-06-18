@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import { EventSourceLabel } from '~/components/EventSourceLabel'
 import { LiveCursor, StateNote } from '~/components/states'
 import type { StreamStatus } from '~/lib/sse'
-import type { AuditEvent } from '~/lib/use-activity-stream'
+import { type AuditEvent, isDispatchLifecycle } from '~/lib/use-activity-stream'
 
 /**
  * The ticker clock (§24.57): today's events render `HH:MM`; an event from a
@@ -107,7 +107,17 @@ export function LiveTicker({
                       [{e.application_ref}]
                     </Link>
                   ) : null}
-                  <span className="text-foreground">{e.summary}</span>
+                  {/* §24.116: a deterministic dispatch lifecycle row renders as a
+                      dim "▸ dispatched" marker, not the sentence — a system event,
+                      not the subagent speaking. The teaser stays light (no
+                      disclosure); the full explainer lives on the /live stream. */}
+                  {isDispatchLifecycle(e) ? (
+                    <span className="italic text-muted-foreground/80" title="the orchestrator launched this subagent">
+                      ▸ dispatched
+                    </span>
+                  ) : (
+                    <span className="text-foreground">{e.summary}</span>
+                  )}
                 </span>
                 {e.model_used ? <span className="text-muted-foreground">{e.model_used}</span> : null}
               </li>
