@@ -1,8 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod'
+import { motion } from 'motion/react'
 import * as React from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
+import { FormField, StableLabel } from '~/components/form-controls'
 import { Button } from '~/components/ui/button'
 import { useTurnstile } from '~/lib/use-turnstile'
 
@@ -16,16 +18,6 @@ const schema = z.object({
   message: z.string().min(1, 'A message (or a pasted JD) is required'),
 })
 type ContactFields = z.infer<typeof schema>
-
-function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-sm font-medium text-foreground">{label}</span>
-      {children}
-      {error ? <span className="text-xs text-destructive">{error}</span> : null}
-    </label>
-  )
-}
 
 const inputClass =
   'rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -65,41 +57,56 @@ export function ContactForm({ company, role, from }: { company?: string; role?: 
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       setSent(true)
     } catch {
-      setSubmitError('Could not send right now — please reach me directly below.')
+      setSubmitError('Couldn’t send right now — please try again, or reach me via the links in the footer.')
     }
   }
 
   if (sent) {
+    // §24.120: the one place a visitor *acts* gets a real payoff — a warmer,
+    // specific, lightly-animated confirmation that leans into the true fact that
+    // the relay just hit my phone. The fade/scale-in is reduced-motion-safe via
+    // the root MotionConfig; visual snapshots disable animations (settled state).
     return (
-      <div
+      <motion.div
         data-testid="contact-sent"
-        className="mt-10 rounded-lg border border-primary/40 bg-card p-6 text-sm text-foreground"
+        initial={{ opacity: 0, scale: 0.97 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.2, ease: 'easeOut' }}
+        className="mt-10 flex items-start gap-3 rounded-lg border border-primary/40 bg-card p-6 text-sm text-foreground"
       >
-        <p className="font-medium">Sent.</p>
-        <p className="mt-1 text-muted-foreground">I typically reply within 24 hours.</p>
-      </div>
+        <span
+          aria-hidden="true"
+          className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 font-mono text-primary"
+        >
+          ✓
+        </span>
+        <div>
+          <p className="font-medium">Sent — that just pinged my phone.</p>
+          <p className="mt-1 text-muted-foreground">I typically reply within 24 hours.</p>
+        </div>
+      </motion.div>
     )
   }
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} noValidate className="mt-10 flex flex-col gap-5" data-testid="contact-form">
-      <Field label="Your name" error={errors.name?.message}>
+      <FormField label="Your name" error={errors.name?.message}>
         <input type="text" autoComplete="name" className={inputClass} {...register('name')} />
-      </Field>
+      </FormField>
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-        <Field label="Email" error={errors.email?.message}>
+        <FormField label="Email" error={errors.email?.message}>
           <input type="email" autoComplete="email" className={inputClass} {...register('email')} />
-        </Field>
-        <Field label="Company" error={errors.company?.message}>
+        </FormField>
+        <FormField label="Company" error={errors.company?.message}>
           <input type="text" autoComplete="organization" className={inputClass} {...register('company')} />
-        </Field>
+        </FormField>
       </div>
-      <Field label="Role / title" error={errors.role?.message}>
+      <FormField label="Role / title" error={errors.role?.message}>
         <input type="text" className={inputClass} {...register('role')} />
-      </Field>
-      <Field label="Message (or paste a JD)" error={errors.message?.message}>
+      </FormField>
+      <FormField label="Message (or paste a JD)" error={errors.message?.message}>
         <textarea rows={5} className={inputClass} {...register('message')} />
-      </Field>
+      </FormField>
 
       {submitError ? (
         <p data-testid="contact-error" role="alert" className="text-sm text-destructive">
@@ -110,8 +117,10 @@ export function ContactForm({ company, role, from }: { company?: string; role?: 
       {widget}
 
       <div className="flex justify-end">
+        {/* §24.120 Δ: StableLabel fixes the button's width to its widest label so
+            it never resizes when "Send →" swaps to "Sending…". */}
         <Button type="submit" disabled={isSubmitting || (enforce && !token)}>
-          {isSubmitting ? 'Sending…' : 'Send →'}
+          <StableLabel labels={['Send →', 'Sending…']} active={isSubmitting ? 'Sending…' : 'Send →'} />
         </Button>
       </div>
     </form>

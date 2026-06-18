@@ -32,20 +32,22 @@ describe('ContactForm (PORTAL §5.7)', () => {
     expect(fetchSpy).not.toHaveBeenCalled() // never POSTs an invalid submission
   })
 
-  it('shows the Sent confirmation on a successful relay', async () => {
+  it('shows the elevated Sent confirmation (the instant-to-phone payoff — §24.120) on a successful relay', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true } as Response))
     render(<ContactForm />)
     fillValid()
     fireEvent.click(screen.getByRole('button', { name: /send/i }))
-    expect(await screen.findByTestId('contact-sent')).toBeInTheDocument()
+    const sent = await screen.findByTestId('contact-sent')
+    expect(sent).toHaveTextContent(/pinged my phone/i)
   })
 
-  it('shows an honest error pointing to direct contact when the relay is unavailable', async () => {
+  it('shows an honest error pointing at the footer (§24.120 — the removed "below" block) when the relay is unavailable', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503 } as Response))
     render(<ContactForm />)
     fillValid()
     fireEvent.click(screen.getByRole('button', { name: /send/i }))
-    expect(await screen.findByTestId('contact-error')).toBeInTheDocument()
+    const err = await screen.findByTestId('contact-error')
+    expect(err).toHaveTextContent(/footer/i)
   })
 
   it('relays the originating surface as `source` when `from` is provided', async () => {

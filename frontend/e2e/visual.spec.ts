@@ -192,6 +192,11 @@ test('contact page matches visual baseline', { tag: '@visual' }, async ({ page }
   await expect(page.getByRole('heading', { name: 'Talk to me', level: 1 })).toBeVisible()
   // The empty form (default state) — fully static, nothing wall-clock-derived.
   await expect(page.getByTestId('contact-form')).toBeVisible()
+  // §24.120: the "Open to offers" pill's dot is SSE-status-driven (green/pulsing
+  // when live, muted when not), so wait for the live state before capture — else
+  // the dot color flakes idle↔open. The pulse animation itself is frozen by
+  // `animations:'disabled'`; only the steady color matters to the baseline.
+  await expect(page.getByTestId('contact-status')).toHaveAttribute('data-status', 'open')
   await expect(page).toHaveScreenshot('contact.png', {
     animations: 'disabled',
     fullPage: true,

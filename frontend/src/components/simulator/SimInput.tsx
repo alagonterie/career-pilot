@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
 import { AgentRef } from '~/components/AgentRef'
+import { FormField, StableLabel } from '~/components/form-controls'
 import { Button } from '~/components/ui/button'
 import { useTurnstile } from '~/lib/use-turnstile'
 import type { SimRunInput } from '~/lib/use-simulator-run'
@@ -40,16 +41,6 @@ const schema = z.object({
 })
 type SimFields = z.infer<typeof schema>
 
-function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-sm font-medium text-foreground">{label}</span>
-      {children}
-      {error ? <span className="text-xs text-destructive">{error}</span> : null}
-    </label>
-  )
-}
-
 const inputClass =
   'rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
@@ -84,24 +75,29 @@ export function SimInput({ onRun, disabled }: { onRun: (input: SimRunInput) => v
   return (
     <form onSubmit={handleSubmit(submit)} noValidate data-testid="sim-input-form" className="flex flex-col gap-5">
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-        <Field label="Company name" error={errors.company?.message}>
+        <FormField label="Company name" error={errors.company?.message}>
           <input type="text" autoComplete="organization" className={inputClass} {...register('company')} />
-        </Field>
-        <Field label="Public URL (optional)">
+        </FormField>
+        <FormField label="Public URL (optional)">
           <input type="url" placeholder="https://…" className={inputClass} {...register('public_url')} />
-        </Field>
+        </FormField>
       </div>
-      <Field label="Role / title" error={errors.role?.message}>
+      <FormField label="Role / title" error={errors.role?.message}>
         <input type="text" className={inputClass} {...register('role')} />
-      </Field>
-      <Field label="What the role looks for (paste the JD or describe — optional)">
+      </FormField>
+      <FormField label="What the role looks for (paste the JD or describe — optional)">
         <textarea rows={5} className={inputClass} {...register('jd')} />
-      </Field>
+      </FormField>
 
       <div className="flex flex-col items-center gap-3">
         {widget}
+        {/* §24.120 Δ: StableLabel fixes the width to the widest label so the
+            button doesn't shrink when "Watch me apply →" swaps to "Starting…". */}
         <Button type="submit" disabled={disabled || (enforce && !token)}>
-          {disabled ? 'Starting…' : 'Watch me apply →'}
+          <StableLabel
+            labels={['Watch me apply →', 'Starting…']}
+            active={disabled ? 'Starting…' : 'Watch me apply →'}
+          />
         </Button>
       </div>
 
