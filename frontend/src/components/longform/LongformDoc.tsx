@@ -93,19 +93,20 @@ function TocEntry({
           : 'shrink-0 rounded-full border px-2.5 py-1',
         active
           ? variant === 'rail'
-            ? 'font-medium text-foreground'
+            ? 'font-medium text-primary'
             : 'border-primary/50 text-foreground'
           : variant === 'rail'
             ? 'text-muted-foreground hover:text-foreground'
             : 'border-border text-muted-foreground hover:text-foreground',
       )}
     >
-      {/* "You are here" on the desktop rail (§24.99): a 2px accent bar pinned to
-          the rail's left edge (overlaying the container's grey border-l), the
-          classic scroll-spy indicator. Overlay-only → no layout shift; brightness
-          alone (foreground vs muted) read as too subtle at 11px. */}
+      {/* "You are here" on the desktop rail (§24.99 → §24.113): the active label
+          turns brand-primary (a colour change, not just weight — foreground-vs-
+          muted and a 2px inset bar both read as "no difference" at 11px mono), with
+          a full-height 3px accent bar pinned over the rail's grey border-l. Overlay
+          + colour only → no layout shift. */}
       {railActive ? (
-        <span aria-hidden="true" className="absolute -left-3 top-1 bottom-1 w-0.5 rounded-full bg-primary" />
+        <span aria-hidden="true" className="absolute -left-3 inset-y-0.5 w-[3px] rounded-full bg-primary" />
       ) : null}
       {sealed ? <span aria-hidden="true">⊘ </span> : null}
       {section.title}
