@@ -5,7 +5,7 @@ import * as React from 'react'
 import { AgentMark } from '~/components/AgentMark'
 import { InfoTip } from '~/components/InfoTip'
 import { useDialog } from '~/lib/use-dialog'
-import type { PipelineApplication } from '~/lib/use-pipeline'
+import { learningKindLabel, type PipelineApplication } from '~/lib/use-pipeline'
 import { kitDate, roundLabel } from '~/lib/use-kit'
 
 function Fact({ label, value }: { label: string; value: string }) {
@@ -175,12 +175,45 @@ export function DetailPanel({ app, onClose }: { app: PipelineApplication | null;
           </section>
         ) : null}
 
-        {app.published_learning ? (
-          <section aria-labelledby="learning-heading" className="flex flex-col gap-2">
-            <h3 id="learning-heading" className="font-mono text-[11px] uppercase tracking-widest text-muted-foreground">
-              Published note
+        {/* §24.117: published reflections for this application — the rejection-
+            as-fuel loop made visible. Mirrors the kit section above (a titled
+            list with an explainer tip), but each row renders its sanitized
+            excerpt inline: a lesson is short text, not a linked document. */}
+        {app.learnings && app.learnings.length > 0 ? (
+          <section aria-labelledby="learnings-heading" data-testid="detail-learnings" className="flex flex-col gap-2">
+            <h3
+              id="learnings-heading"
+              className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-widest text-muted-foreground"
+            >
+              Lessons learned
+              <InfoTip label="lessons learned">
+                After an outcome, the agent reflects with me and saves the lesson. Before it researches or tailors for a
+                similar future role, it pulls these lessons back in — so each outcome sharpens the next application.
+                It&apos;s retrieval-augmented memory, not a model that retrains itself. Lessons I choose to publish show
+                up here.
+              </InfoTip>
             </h3>
-            <p className="text-sm leading-relaxed text-foreground/90">{app.published_learning}</p>
+            <ul className="flex flex-col gap-2">
+              {app.learnings.map((l, i) => {
+                const label = learningKindLabel(l.kind)
+                return (
+                  <li
+                    key={`${l.created_at ?? 'na'}-${i}`}
+                    data-testid="detail-learning"
+                    className="flex flex-col gap-1 rounded-md border border-border px-3 py-2"
+                  >
+                    <p className="flex items-baseline gap-2 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+                      <span aria-hidden="true" className="text-ai">
+                        ✦
+                      </span>
+                      <span className="text-foreground/80">{label ?? 'Lesson'}</span>
+                      {l.created_at ? <span>{kitDate(l.created_at)}</span> : null}
+                    </p>
+                    <p className="text-sm leading-relaxed text-foreground/90">{l.excerpt}</p>
+                  </li>
+                )
+              })}
+            </ul>
             <AgentMark actor="pipeline-scribe" lead="Published by" />
           </section>
         ) : null}

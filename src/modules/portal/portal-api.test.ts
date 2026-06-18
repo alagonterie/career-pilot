@@ -177,6 +177,42 @@ describe('GET /api/funnel', () => {
     expect(withKit.interview_kits[0]).toMatchObject({ round: 'TECH_SCREEN', status: 'active', has_content: true });
     expect(body.applications.find((a) => a.application_ref === 'ai-infra-a')!.interview_kits).toEqual([]);
   });
+
+  it('carries learnings from learnings_json; synthesizes from published_learning; empty when none (§24.117)', async () => {
+    seedFunnel({ id: 'app-1', ref: 'fintech-a', status: 'OFFER', stage: 'offer' });
+    // Legacy row: only published_learning set, learnings_json NULL (deploy gap).
+    seedFunnel({
+      id: 'app-2',
+      ref: 'ai-infra-a',
+      status: 'REJECTED',
+      stage: 'rejected',
+      published_learning: 'A legacy single note.',
+    });
+    seedFunnel({ id: 'app-3', ref: 'devtools-a', status: 'APPLIED', stage: 'applied' });
+    getDb()
+      .prepare(`UPDATE public_funnel_view SET learnings_json = @j WHERE application_id = 'app-1'`)
+      .run({
+        j: JSON.stringify([
+          { kind: 'offer', created_at: '2026-05-20T00:00:00Z', excerpt: 'What unlocked the offer.' },
+          { kind: 'final', created_at: '2026-05-12T00:00:00Z', excerpt: 'A final-round refine.' },
+        ]),
+      });
+
+    const body = (await (await fetch(`${base}/api/funnel`)).json()) as {
+      applications: Array<{ application_ref: string; learnings: Array<Record<string, unknown>> }>;
+    };
+    const byRef = (r: string) => body.applications.find((a) => a.application_ref === r)!;
+
+    // learnings_json delivered as-is, order preserved.
+    expect(byRef('fintech-a').learnings).toHaveLength(2);
+    expect(byRef('fintech-a').learnings[0]).toMatchObject({ kind: 'offer', excerpt: 'What unlocked the offer.' });
+
+    // Legacy row synthesizes a single element from published_learning.
+    expect(byRef('ai-infra-a').learnings).toEqual([{ kind: null, created_at: null, excerpt: 'A legacy single note.' }]);
+
+    // No learnings → empty array.
+    expect(byRef('devtools-a').learnings).toEqual([]);
+  });
 });
 
 // ── /api/kit (§24.65) ──────────────────────────────────────────────────────

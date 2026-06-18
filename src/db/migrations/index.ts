@@ -45,6 +45,7 @@ import { migration135 } from './135-simulator-tailored-resume-json.js';
 import { migration136 } from './136-visitor-attribution.js';
 import { migration137 } from './137-pipeline-audit-vocab.js';
 import { migration138 } from './138-rename-search-goals.js';
+import { migration139 } from './139-learnings-public-surfacing.js';
 
 export interface Migration {
   version: number;
@@ -97,6 +98,7 @@ const migrations: Migration[] = [
   migration136,
   migration137,
   migration138,
+  migration139,
 ];
 
 export function runMigrations(db: Database.Database): void {

@@ -45,6 +45,11 @@ test.describe('/pipeline — the funnel board, frontend <-> backend', () => {
     await expect(panel).toBeVisible()
     // §24.73: the win-confidence score is attributed to the host model that wrote it.
     await expect(panel.getByTestId('agent-ref').filter({ hasText: 'win-confidence' })).toBeVisible()
+    // §24.117: the published reflections render as a "Lessons learned" list
+    // (newest first — the offer retro leads), the rejection-as-fuel loop made visible.
+    const lessons = panel.getByTestId('detail-learning')
+    await expect(lessons).toHaveCount(2)
+    await expect(lessons.first()).toContainText('After the offer')
     // §24.58: an open dialog scroll-locks the page behind it (the shared
     // useDialog contract), and closing restores it.
     await expect.poll(async () => page.evaluate(() => getComputedStyle(document.body).overflow)).toBe('hidden')
@@ -75,13 +80,16 @@ test.describe('/pipeline — the funnel board, frontend <-> backend', () => {
 
     // Tab cycles the dialog's tabbables (Close → Live activity → the
     // Interview-prep InfoTip + the two seeded kit rows (§24.65) → the §24.73
-    // win-confidence-scorer AgentRef chip, the last tabbable) and the trap
-    // wraps at both ends — focus never escapes the page behind.
+    // win-confidence-scorer AgentRef chip → the §24.117 "Lessons learned" InfoTip
+    // + its pipeline-scribe AgentRef chip, the last tabbable) and the trap wraps
+    // at both ends — focus never escapes the page behind.
     const close = panel.getByRole('button', { name: 'Close panel' })
     const liveLink = panel.getByTestId('detail-live-link')
     const kitTip = panel.getByRole('button', { name: 'About: interview prep' })
     const kitLinks = panel.getByTestId('detail-kit-link')
     const winRef = panel.getByTestId('agent-ref').filter({ hasText: 'win-confidence' })
+    const learningsTip = panel.getByRole('button', { name: 'About: lessons learned' })
+    const learningsRef = panel.getByTestId('detail-learnings').getByTestId('agent-ref')
     await page.keyboard.press('Tab')
     await expect(close).toBeFocused()
     await page.keyboard.press('Tab')
@@ -94,10 +102,14 @@ test.describe('/pipeline — the funnel board, frontend <-> backend', () => {
     await expect(kitLinks.nth(1)).toBeFocused()
     await page.keyboard.press('Tab')
     await expect(winRef).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(learningsTip).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(learningsRef).toBeFocused()
     await page.keyboard.press('Tab') // off the end → wraps to the start
     await expect(close).toBeFocused()
     await page.keyboard.press('Shift+Tab') // off the top → wraps to the end
-    await expect(winRef).toBeFocused()
+    await expect(learningsRef).toBeFocused()
 
     // Escape closes and focus returns to the triggering card.
     await page.keyboard.press('Escape')
