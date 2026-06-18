@@ -19,6 +19,7 @@ import { startHostSweep, stopHostSweep } from './host-sweep.js';
 import { startRecruiterSim, stopRecruiterSim } from './modules/career-pilot/recruiter-sim/runner.js';
 import { routeInbound } from './router.js';
 import { log } from './log.js';
+import { enforceUpgradeTripwire } from './upgrade-state.js';
 
 // Response + shutdown registries live in response-registry.ts to break the
 // circular import cycle: src/index.ts imports src/modules/index.js for side
@@ -68,6 +69,13 @@ import { initChannelAdapters, teardownChannelAdapters, getChannelAdapter } from 
 
 async function main(): Promise<void> {
   log.info('NanoClaw starting');
+
+  // Step 0.5 — upgrade tripwire (§24.126). Refuse to boot if this install
+  // reached the current code version outside a sanctioned path (the deploy
+  // bootstrap stamps the marker before restarting; manual recovery via
+  // `scripts/upgrade-state.ts set`). Runs before any DB/IO work. No-ops under
+  // test/dev. May process.exit(1).
+  enforceUpgradeTripwire();
 
   // 0. Circuit breaker — backoff on rapid restarts
   await enforceStartupBackoff();

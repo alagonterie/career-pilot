@@ -182,6 +182,23 @@ cd /opt/career-pilot
 
 ---
 
+## 3.5 Upgrade tripwire — host won't boot ("update did not go through the supported path")
+
+**When:** The host process exits immediately on start and the log/stderr shows `NanoClaw stopped: update did not go through the supported path`. This is the §24.126 boot guard (`enforceUpgradeTripwire`): it refuses to start unless `data/upgrade-state.json` records that this install reached the *running code version* through a sanctioned path. It fires when the marker is missing, corrupt, or its `version` ≠ the current `package.json` version — i.e. the code was updated (a version bump) without the deploy bootstrap (which stamps the marker at step 5.5) running, e.g. after a raw `git pull` + manual `systemctl restart`.
+
+**Recovery (the deliberate update was intended):** stamp the marker, then restart.
+
+```bash
+# On the box, as the service user, from /opt/career-pilot-dev:
+pnpm exec tsx scripts/upgrade-state.ts get          # inspect the current marker (or "none")
+pnpm exec tsx scripts/upgrade-state.ts set           # stamp the running code version
+systemctl --user restart "$(. setup/lib/install-slug.sh && systemd_unit)"
+```
+
+The normal `deploy-backend` path needs none of this — `scripts/bootstrap-vm.sh` stamps the marker (step 5.5) before it restarts the service. Reach for this only when the service was restarted outside that path. **Do not** edit `data/upgrade-state.json` by hand; `set` writes the correct shape (`{version, updatedAt, via}`) at the current code version. Local dev / the test suite never trip (the guard no-ops under `VITEST` / `NODE_ENV=test` / `CP_SKIP_UPGRADE_TRIPWIRE=1`).
+
+---
+
 ## 4. Container restart
 
 **When:** A NanoClaw agent container has crashed, gone unresponsive, or is in an inconsistent state. Symptoms: agent stops responding to Telegram, `ncl sessions list` shows a session as `running` but `processing_ack` is stale.
