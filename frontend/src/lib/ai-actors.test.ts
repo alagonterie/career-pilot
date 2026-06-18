@@ -27,8 +27,10 @@ describe('ai-actors registry (§24.73)', () => {
 
   it('resolves by exact name, then alias, then substring; null for the unknown', () => {
     expect(resolveActor('tailor-resume')?.name).toBe('tailor-resume')
-    // Alias path is still used by the host/system actors (the orchestrator label).
-    expect(resolveActor('orchestrator')?.name).toBe('my agent system')
+    // The system actor's name is now 'orchestrator'; its prior name 'my agent
+    // system' is kept as a back-compat alias that still resolves to it.
+    expect(resolveActor('orchestrator')?.name).toBe('orchestrator')
+    expect(resolveActor('my agent system')?.name).toBe('orchestrator')
     // The pre-rename 'funnel-curator' alias is RETIRED (§24.77 / migration 137 made
     // the audit data native) — the legacy name no longer resolves to an actor.
     expect(resolveActor('funnel-curator')).toBeNull()
@@ -43,6 +45,6 @@ describe('ai-actors registry (§24.73)', () => {
     expect(actorPlainText(resolveActor('tailor-resume')!)).toBe('the tailor-resume agent')
     // 'win-confidence' (the raw metric name) resolves to the scorer via alias.
     expect(actorPlainText(resolveActor('win-confidence')!)).toBe('the win-confidence-scorer model')
-    expect(actorPlainText(SYSTEM_ACTOR)).toBe('my agent system')
+    expect(actorPlainText(SYSTEM_ACTOR)).toBe('orchestrator')
   })
 })

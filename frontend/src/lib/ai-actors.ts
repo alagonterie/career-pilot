@@ -85,7 +85,7 @@ export const AI_ACTORS: AiActor[] = [
     name: 'pipeline-scribe',
     role: 'Pipeline curator',
     blurb:
-      'Keeps the public pipeline honest — writes the published notes and curates which applications are safe to reveal.',
+      'Keeps the public pipeline honest — tracks each application’s stage from recruiter signals and curates which applications are safe to reveal.',
     access: 'curates the public view',
     kind: 'subagent',
   },
@@ -99,19 +99,21 @@ export const AI_ACTORS: AiActor[] = [
     aliases: ['win-confidence', 'win confidence', 'win_confidence'],
   },
   {
-    name: 'my agent system',
+    name: 'orchestrator',
     role: 'Orchestrator',
     blurb: 'The orchestrating agent that runs my search end-to-end and dispatches the specialist subagents.',
     access: 'runs the whole loop',
     kind: 'system',
-    aliases: ['orchestrator', 'agent-system', 'agent system'],
+    // 'my agent system' was the prior name — kept as an alias so any persisted
+    // wire labels / older call-sites still resolve to this actor.
+    aliases: ['my agent system', 'agent-system', 'agent system'],
   },
 ]
 
 const BY_NAME: Record<string, AiActor> = Object.fromEntries(AI_ACTORS.map((a) => [a.name.toLowerCase(), a]))
 
 /** The system/orchestrator fallback — the honest author of whole-system output. */
-export const SYSTEM_ACTOR: AiActor = BY_NAME['my agent system']
+export const SYSTEM_ACTOR: AiActor = BY_NAME['orchestrator']
 
 /**
  * Resolve a raw name/label (a registry key, an alias, or a wire dispatch label
@@ -141,5 +143,5 @@ export function resolveActor(raw: string | null | undefined): AiActor | null {
 export function actorPlainText(a: AiActor): string {
   if (a.kind === 'subagent') return `the ${a.name} agent`
   if (a.kind === 'host') return `the ${a.name} model`
-  return a.name // system: reads as "my agent system"
+  return a.name // system: reads as "orchestrator"
 }

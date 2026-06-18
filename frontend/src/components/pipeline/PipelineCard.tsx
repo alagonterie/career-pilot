@@ -16,6 +16,9 @@ export function PipelineCard({ app, onSelect }: { app: PipelineApplication; onSe
   const win = app.win_confidence
   // §24.65: kit-existence cue in the same glyph register as `◆ public`.
   const kitCount = app.interview_kits?.length ?? 0
+  // §24.117: published-lesson cue — the ▤-kit's sibling (a ✎ pencil, §24.118 Δ),
+  // so the board signals "this application has lessons" the way it does kits.
+  const lessonCount = app.learnings?.length ?? 0
 
   return (
     <button
@@ -45,13 +48,18 @@ export function PipelineCard({ app, onSelect }: { app: PipelineApplication; onSe
         <p data-testid="funnel-card-age" className="font-mono text-[11px] tabular-nums text-muted-foreground">
           {app.days_in_stage != null ? `${app.days_in_stage}d in stage` : '—'}
         </p>
-        {kitCount > 0 ? (
-          <span
-            data-testid="funnel-card-kit"
-            className="shrink-0 font-mono text-[10px] text-ai"
-            title="AI-built interview kits — open the card for details"
-          >
-            ▤ {kitCount > 1 ? `${kitCount} kits` : 'kit'}
+        {kitCount > 0 || lessonCount > 0 ? (
+          <span className="flex shrink-0 items-center gap-2 font-mono text-[10px] text-ai">
+            {kitCount > 0 ? (
+              <span data-testid="funnel-card-kit" title="AI-built interview kits — open the card for details">
+                ▤ {kitCount > 1 ? `${kitCount} kits` : 'kit'}
+              </span>
+            ) : null}
+            {lessonCount > 0 ? (
+              <span data-testid="funnel-card-lesson" title="published lessons learned — open the card for details">
+                ✎ {lessonCount > 1 ? `${lessonCount} lessons` : 'lesson'}
+              </span>
+            ) : null}
           </span>
         ) : null}
       </div>
