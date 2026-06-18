@@ -6222,6 +6222,20 @@ So listing `greenhouse`/`lever` as `host-onecli` providers makes the gateway's h
 
 ---
 
+#### 24.123 /architecture — mark the sanitizer's live AI pass + fix the demo's label misalignment (item #7 follow-ups)
+
+**Two owner follow-ups (2026-06-18) after the §24.122 audit confirmed Pass 3 is live.**
+
+**(a) The sanitizer node under-claims — it uses AI, but renders as a non-AI node.** §24.122 established that the sanitizer's Pass 3 (the LLM semantic pass) is genuinely live — a host-side Haiku call via Portkey (`sanitizer-pass3.ts`) that genericizes products/events/paraphrases, with fail-safe = withhold. Yet `pub-sanitize` carried no `ai` flag, so it rendered with none of the ✦ provenance language the orchestrator/subagents use (§24.73). That under-claims a real, owner-built AI capability. **Decision:** set `pub-sanitize.ai = true` → the ✦ mark (AI accent) on the diagram label + the modal title, exactly like `cont-orch`/`cont-subagents`. This is *honest now* (it wasn't when the cast registry was written and Pass 3 was a no-op stub): the node's modal copy already discloses the hybrid shape — deterministic PII scrub (Pass 1) + company/alias obfuscation (Pass 2) + the LLM semantic pass (Pass 3) + the withhold failsafe — so the ✦ reflects the pipeline-as-a-whole, where Pass 3 is genuine AI. The `ai-actors.ts` registry comment is corrected: the sanitizer stays out of the *cast registry* because it's a pipeline/mechanism, not a named, @-referenceable actor — **not** because it's "non-AI" (that reason went stale when Pass 3 shipped).
+
+**(b) The sanitizer-demo's two comparison panes are vertically misaligned.** In the `AnonymizationDemo` (the modal's live demo), the right-column label "Sanitized · what the dashboard shows" wraps to two lines at the modal's ~226px column width while the left "Raw · host-side, never published" is one line, so the right `<pre>` starts lower than the left → the raw/sanitized panes don't top-align. **Fix:** reserve a consistent label height (`min-h-8`, covering the 2-line wrap) on both column labels so the two `<pre>`s always top-align regardless of which label wraps — the §24.120 reserve-space-to-prevent-shift pattern, applied to a two-column comparison.
+
+**Build (frontend-only).** `nodes.ts`: `pub-sanitize.ai = true`. `ai-actors.ts`: correct the sanitizer-exclusion comment. `AnonymizationDemo.tsx`: `min-h-8` on both column labels. **Re-bless** the `architecture` + `mobile-architecture` baselines (the node label gains "✦ ") and `architecture-sanitizer-modal` (the modal title gains "✦ " + the demo panes now top-align) — verified by eye.
+
+**DoD.** The sanitizer node shows ✦ on the diagram and in its modal title; the demo's raw/sanitized panes top-align at every width that renders them side-by-side. FE `tsc` + diagram/anon unit tests + prettier (`--no-semi`) green; the three baselines re-blessed and eyeballed. **Spec deltas:** this §24.123. Memory: [[todo_backlog]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
