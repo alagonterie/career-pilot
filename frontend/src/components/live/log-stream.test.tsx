@@ -265,6 +265,24 @@ describe('LogStream', () => {
     // the turn row is the seal — NOT one of the action lines
     expect(screen.getAllByTestId('trace-line')).toHaveLength(1)
   })
+
+  it('renders a deterministic dispatch row as a system lifecycle marker, not agent narration (§24.116)', () => {
+    const dispatch = ev({
+      seq: 5,
+      category: 'subagent_progress',
+      agent_name: 'scrape-jobs',
+      summary: 'Dispatched by the orchestrator.',
+    })
+    render(<LogStream events={[dispatch]} status="open" count={1} />)
+    // the row is still the subagent's (its chip shows) — but rendered as a dim
+    // "dispatched" pill, NOT the sentence, so it never reads as the agent speaking
+    expect(screen.getByText('scrape-jobs')).toBeInTheDocument()
+    expect(screen.getByTestId('trace-dispatch-marker')).toBeInTheDocument()
+    expect(screen.queryByText('Dispatched by the orchestrator.')).not.toBeInTheDocument()
+    // the pill itself is the quiet disclosure (no ⓘ) — hover/tap reveals a one-liner
+    fireEvent.click(screen.getByTestId('trace-dispatch-marker'))
+    expect(screen.getByTestId('dispatch-tip-panel')).toHaveTextContent(/orchestrator launched this subagent/i)
+  })
 })
 
 describe('nextStuck — the auto-follow unstick guard (B4 / §24.62 Δ)', () => {

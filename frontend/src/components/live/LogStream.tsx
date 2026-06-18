@@ -2,12 +2,13 @@ import { Link } from '@tanstack/react-router'
 import { useReducedMotion } from 'motion/react'
 import * as React from 'react'
 
+import { DisclosureTip } from '~/components/DisclosureTip'
 import { EventSourceLabel } from '~/components/EventSourceLabel'
 import { InfoTip } from '~/components/InfoTip'
 import { LiveIndicator } from '~/components/LiveIndicator'
 import { LiveCursor, StateNote } from '~/components/states'
 import type { StreamStatus } from '~/lib/sse'
-import type { AuditEvent } from '~/lib/use-activity-stream'
+import { type AuditEvent, isDispatchLifecycle } from '~/lib/use-activity-stream'
 
 function clock(ts: string): string {
   const d = new Date(ts)
@@ -106,6 +107,45 @@ function Lane({ children, title, tone }: { children: React.ReactNode; title: str
     <span className={tone ?? 'text-muted-foreground'} title={title}>
       {children}
     </span>
+  )
+}
+
+/**
+ * §24.116: a deterministic §24.78 "subagent dispatched" lifecycle marker. The
+ * orchestrator launched a subagent — a SYSTEM event, not the subagent's own
+ * voice — so it renders as a dim status pill (not a sentence) and never reads as
+ * the agent "saying" it. The row stays filed under the subagent (its chip), so
+ * launch + narration remain one story. A quiet DisclosureTip — the same cast-chip
+ * interaction, NOT a per-row ⓘ (rejected as clutter above) — lets a curious
+ * visitor hover/tap the pill for a one-line explanation; the dotted underline is
+ * the only hint it's interactive.
+ */
+function DispatchMarker() {
+  return (
+    <DisclosureTip
+      ariaLabel="About: dispatched"
+      panelTestId="dispatch-tip-panel"
+      panelWidth={240}
+      panelClassName="text-muted-foreground"
+      trigger={(p) => (
+        <button
+          ref={p.ref}
+          type="button"
+          data-testid="trace-dispatch-marker"
+          aria-expanded={p['aria-expanded']}
+          aria-controls={p['aria-controls']}
+          aria-label={p['aria-label']}
+          onClick={p.onClick}
+          className="inline-flex items-baseline gap-1 italic text-muted-foreground/80 underline decoration-muted-foreground/30 decoration-dotted underline-offset-2 transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <span aria-hidden="true">▸</span>
+          dispatched
+        </button>
+      )}
+    >
+      The orchestrator launched this subagent — a deterministic system marker, not the agent speaking. Its own progress
+      notes appear below if it reports any.
+    </DisclosureTip>
   )
 }
 
@@ -387,6 +427,16 @@ export function LogStream({
                     ) : null}
                   </span>
                   <span aria-hidden="true" className="h-px flex-1 bg-border" />
+                </li>
+              ) : isDispatchLifecycle(row.e) ? (
+                // §24.116: a deterministic subagent-dispatch lifecycle marker — a
+                // system event (the orchestrator launched a subagent), rendered as
+                // a dim status pill, NOT as the subagent narrating. Stays filed
+                // under the subagent chip, so launch + narration are one story.
+                <li key={row.e.seq} data-testid="trace-line" className="flex flex-wrap items-baseline gap-x-2 py-0.5">
+                  <span className="tabular-nums text-muted-foreground">{clock(row.e.ts)}</span>
+                  <EventSourceLabel event={row.e} />
+                  <DispatchMarker />
                 </li>
               ) : (
                 <li key={row.e.seq} data-testid="trace-line" className="flex flex-wrap items-baseline gap-x-2 py-0.5">
