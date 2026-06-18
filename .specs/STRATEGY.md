@@ -6135,6 +6135,16 @@ The host path (`handleRecordTurnTelemetry` → `insertProgressRow`, gated by `ow
 
 **DoD.** The `/pipeline` drawer shows every published reflection for an app as a "Lessons learned" list with the fuel-explaining InfoTip; unpublished reflections never appear; a row's excerpt is sanitized (no PII / non-public company); the deploy-gap synthesize keeps a pre-migration note visible. host `tsc` + `public-funnel-view`/`portal-api` host unit (learnings_json: all-published, newest-first, sanitized, excluded-when-unpublished; API delivers the array + synthesize fallback) + FE `tsc` + `DetailPanel`/`use-pipeline` unit (list renders kind+excerpt+InfoTip; absent → no section; `learningKindLabel`) + the funnel `@e2e` focus-trap order updated for the new InfoTip + a drawer learnings assertion + prettier (`--no-semi` FE) green. No `@visual` re-bless (the drawer isn't screenshotted; the board/page baselines are unaffected). Box-verify: open the Wayne drawer on the dev box → the two seeded lessons render; after a real published reflection, that application's drawer shows it. **Spec deltas:** this §24.117 + PORTAL §6.7 (publication = a list) + PORTAL §5.4 view-schema (`learnings_json`). Memory: [[todo_backlog]].
 
+#### 24.118 /dashboard "Recent outcomes" — badge kits + fuel per outcome (item #3)
+
+**Item #3 (owner backlog, 2026-06-18).** The `/dashboard` "Recent outcomes" rows (§24.109 #12 gave them outcome tone) show only `[ref] · STAGE`. The owner wants each row to badge whether that application has interview kits AND/OR captured "fuel" (published learnings) — the two artifact classes #2/§24.117 surfaced in the `/pipeline` drawer, now glanceable on the dashboard.
+
+**No new data.** `RecentOutcomesPanel` already takes `PipelineApplication[]` from `/api/funnel`, which now carries `interview_kits` (§24.65) AND `learnings` (§24.117) per app. Pure FE add — the same payload, a denser read.
+
+**Design.** Each outcome row gains compact glyph badges before the stage word, in the established vocabulary: `▤` (a kit exists) + `✦` (a published lesson exists), both `text-ai`, each a native `title` tooltip ("N interview kit(s)" / "N lesson(s) captured") — lightweight, not per-row InfoTips (the §24.109 spend-legend precedent; a dense mono row can't host tips). Glyph = presence; the count lives in the tooltip. The whole row stays one deep-link into the `/pipeline` drawer, where §24.65/§24.117 detail both. A row with neither artifact shows no badge (honest absence). The seeded Wayne OFFER (two kits + two lessons) shows `▤ ✦`.
+
+**DoD.** A Recent-outcomes row shows `▤` when the app has kits, `✦` when it has published learnings, both when both, neither when none; the tooltips carry the counts; the row still deep-links into the drawer. FE `tsc` + `RecentOutcomesPanel` unit (badge presence/absence + tooltip count) + `live`/`mobile-live` `@visual` re-blessed (Wayne's offer row gains `▤ ✦` — verified by eye) + prettier `--no-semi` green. **Spec deltas:** this §24.118. Memory: [[todo_backlog]].
+
 ---
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
