@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'bun:test';
 
-import { sdkMessageToTraceEvents, subagentDispatchesFromMessage } from './claude.js';
+import { sdkMessageToTraceEvents, subagentDispatchesFromMessage, collectTurnSignals } from './claude.js';
 
 // §24.20: sdkMessageToTraceEvents is the pure translation from one SDK message
 // to simulator trace events. Owner path (emitTrace=false) must yield nothing.
@@ -92,10 +92,55 @@ describe('subagentDispatchesFromMessage (§24.78)', () => {
   });
 
   it('ignores non-delegation tool_use, and non-assistant / empty messages', () => {
-    expect(subagentDispatchesFromMessage(assistant([{ type: 'tool_use', name: 'WebSearch', input: { query: 'x' } }]))).toEqual([]);
+    expect(
+      subagentDispatchesFromMessage(assistant([{ type: 'tool_use', name: 'WebSearch', input: { query: 'x' } }])),
+    ).toEqual([]);
     expect(subagentDispatchesFromMessage(assistant([{ type: 'tool_use', name: 'Agent', input: {} }]))).toEqual([]);
     expect(subagentDispatchesFromMessage({ type: 'result', total_cost_usd: 0.04 })).toEqual([]);
     expect(subagentDispatchesFromMessage({ type: 'user' })).toEqual([]);
     expect(subagentDispatchesFromMessage(null)).toEqual([]);
+  });
+});
+
+// §24.115: collectTurnSignals must survive the SDK's per-block streaming — one
+// assistant message PER content block, all sharing a `message.id`. The original
+// §24.34 message.id dedup processed only the first emission, so the dispatch
+// tool_use (which lands AFTER a thinking block) was dropped on every turn — the
+// §24.78 deterministic trace emitted 0 rows in its entire life. These cases are
+// the regression guard.
+describe('collectTurnSignals (§24.115 — per-block dedup, dispatch every emission)', () => {
+  const asst = (id: string, content: unknown[]) => ({ type: 'assistant', message: { id, content } });
+
+  it('collects a dispatch that streams in a SEPARATE emission from a thinking block under the SAME message.id (the §24.78 bug)', () => {
+    const thinking = asst('msg_X', [{ type: 'thinking', thinking: 'deciding…' }]);
+    const dispatch = asst('msg_X', [
+      { type: 'tool_use', id: 'toolu_1', name: 'Agent', input: { subagent_type: 'pipeline-scribe', prompt: 'go' } },
+    ]);
+    expect(collectTurnSignals([thinking, dispatch]).subagentDispatches).toEqual(['pipeline-scribe']);
+  });
+
+  it('counts a record_* tool_use ONCE per block id even when the SDK re-emits the same block', () => {
+    const rec = asst('msg_Y', [
+      { type: 'tool_use', id: 'toolu_r', name: 'mcp__nanoclaw__record_funnel_event', input: {} },
+    ]);
+    expect(collectTurnSignals([rec, rec]).recordCalls).toBe(1);
+  });
+
+  it('counts a record_* block that streams after a text block under the same message.id (old dedup returned 0)', () => {
+    const text = asst('msg_Z', [{ type: 'text', text: 'ok' }]);
+    const rec = asst('msg_Z', [
+      { type: 'tool_use', id: 'toolu_a', name: 'mcp__career_pilot__record_progress', input: {} },
+    ]);
+    expect(collectTurnSignals([text, rec]).recordCalls).toBe(1);
+  });
+
+  it('dedups repeated dispatches of the same subagent by name across the turn', () => {
+    const d1 = asst('msg_A', [
+      { type: 'tool_use', id: 't1', name: 'Agent', input: { subagent_type: 'scrape-jobs', prompt: 'a' } },
+    ]);
+    const d2 = asst('msg_B', [
+      { type: 'tool_use', id: 't2', name: 'Agent', input: { subagent_type: 'scrape-jobs', prompt: 'b' } },
+    ]);
+    expect(collectTurnSignals([d1, d2]).subagentDispatches).toEqual(['scrape-jobs']);
   });
 });

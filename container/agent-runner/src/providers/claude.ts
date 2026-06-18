@@ -25,9 +25,7 @@ function summarizeToolInput(input: unknown): string | undefined {
   try {
     const s = typeof input === 'string' ? input : JSON.stringify(input);
     const oneLine = s.replace(/\s+/g, ' ').trim();
-    return oneLine.length > TRACE_INPUT_SUMMARY_MAX
-      ? oneLine.slice(0, TRACE_INPUT_SUMMARY_MAX) + '…'
-      : oneLine;
+    return oneLine.length > TRACE_INPUT_SUMMARY_MAX ? oneLine.slice(0, TRACE_INPUT_SUMMARY_MAX) + '…' : oneLine;
   } catch {
     return undefined;
   }
@@ -121,6 +119,62 @@ function finiteOrZero(v: unknown): number {
  */
 export function isRecordCallToolName(name: unknown): boolean {
   return typeof name === 'string' && /__record_(funnel_event|progress)$/.test(name);
+}
+
+/**
+ * §24.115: the per-turn signals the host derives from the SDK stream — the count
+ * of record_* tool calls (the §24.34 audit signal) and the set of subagents the
+ * orchestrator dispatched (the §24.78 deterministic lifecycle trace).
+ *
+ * The SDK streams ONE assistant message PER content block under a SHARED
+ * `message.id` (box-proven: a `thinking` block, then the `tool_use` block, both
+ * carrying the same `msg_…`). The original §24.34 loop deduped on `message.id`,
+ * so it processed only the FIRST emission and dropped every later block — which
+ * silently broke §24.78: the dispatch `tool_use` always lands AFTER a thinking
+ * block, so its `subagent_type` was never collected (0 deterministic rows ever).
+ *
+ * This accumulator fixes both:
+ *   - record_* is deduped by tool_use BLOCK id (stable per logical call,
+ *     idempotent across re-emission, distinct across blocks of one message);
+ *   - dispatch collection runs on EVERY assistant emission — the target is a Set
+ *     keyed on the public subagent name, so it is already idempotent.
+ *
+ * `recordCallBlockIds` / `subagentDispatches` are caller-owned (the streaming
+ * loop threads them across the turn). Returns this message's record_* delta.
+ */
+export function accumulateTurnSignals(
+  message: unknown,
+  recordCallBlockIds: Set<string>,
+  subagentDispatches: Set<string>,
+): number {
+  if (!message || typeof message !== 'object') return 0;
+  if ((message as { type?: string }).type !== 'assistant') return 0;
+  const content = (message as { message?: { content?: unknown } }).message?.content;
+  const blocks = Array.isArray(content) ? (content as unknown[]) : [];
+  let delta = 0;
+  for (const b of blocks) {
+    const block = b as { type?: string; name?: string; id?: string };
+    if (block.type === 'tool_use' && isRecordCallToolName(block.name)) {
+      if (!block.id || !recordCallBlockIds.has(block.id)) {
+        if (block.id) recordCallBlockIds.add(block.id);
+        delta++;
+      }
+    }
+  }
+  for (const st of subagentDispatchesFromMessage(message)) subagentDispatches.add(st);
+  return delta;
+}
+
+/**
+ * §24.115: the array-driven form of {@link accumulateTurnSignals} — the unit-test
+ * seam for the streaming loop, which threads the same two Sets across a turn.
+ */
+export function collectTurnSignals(messages: unknown[]): { recordCalls: number; subagentDispatches: string[] } {
+  const recordCallBlockIds = new Set<string>();
+  const subagentDispatches = new Set<string>();
+  let recordCalls = 0;
+  for (const m of messages) recordCalls += accumulateTurnSignals(m, recordCallBlockIds, subagentDispatches);
+  return { recordCalls, subagentDispatches: [...subagentDispatches] };
 }
 
 interface SdkModelUsage {
@@ -319,10 +373,15 @@ function parseTranscript(content: string): ParsedMessage[] {
     try {
       const entry = JSON.parse(line);
       if (entry.type === 'user' && entry.message?.content) {
-        const text = typeof entry.message.content === 'string' ? entry.message.content : entry.message.content.map((c: { text?: string }) => c.text || '').join('');
+        const text =
+          typeof entry.message.content === 'string'
+            ? entry.message.content
+            : entry.message.content.map((c: { text?: string }) => c.text || '').join('');
         if (text) messages.push({ role: 'user', content: text });
       } else if (entry.type === 'assistant' && entry.message?.content) {
-        const textParts = entry.message.content.filter((c: { type: string }) => c.type === 'text').map((c: { text: string }) => c.text);
+        const textParts = entry.message.content
+          .filter((c: { type: string }) => c.type === 'text')
+          .map((c: { text: string }) => c.text);
         const text = textParts.join('');
         if (text) messages.push({ role: 'assistant', content: text });
       }
@@ -335,7 +394,13 @@ function parseTranscript(content: string): ParsedMessage[] {
 
 function formatTranscriptMarkdown(messages: ParsedMessage[], title?: string | null, assistantName?: string): string {
   const now = new Date();
-  const dateStr = now.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+  const dateStr = now.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
   const lines = [`# ${title || 'Conversation'}`, '', `Archived: ${dateStr}`, '', '---', ''];
   for (const msg of messages) {
     const sender = msg.role === 'user' ? 'User' : assistantName || 'Assistant';
@@ -387,7 +452,11 @@ const postToolUseHook: HookCallback = async () => {
  * the agent's `conversations/` folder so context survives a compaction or a
  * session rotation. Best-effort: returns false (and logs) on any failure.
  */
-function archiveTranscriptFile(transcriptPath: string | undefined, sessionId: string | undefined, assistantName?: string): boolean {
+function archiveTranscriptFile(
+  transcriptPath: string | undefined,
+  sessionId: string | undefined,
+  assistantName?: string,
+): boolean {
   if (!transcriptPath || !fs.existsSync(transcriptPath)) {
     log('No transcript found for archiving');
     return false;
@@ -404,14 +473,20 @@ function archiveTranscriptFile(transcriptPath: string | undefined, sessionId: st
     if (fs.existsSync(indexPath)) {
       try {
         const index = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
-        summary = index.entries?.find((e: { sessionId: string; summary?: string }) => e.sessionId === sessionId)?.summary;
+        summary = index.entries?.find(
+          (e: { sessionId: string; summary?: string }) => e.sessionId === sessionId,
+        )?.summary;
       } catch {
         /* ignore */
       }
     }
 
     const name = summary
-      ? summary.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50)
+      ? summary
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 50)
       : `conversation-${new Date().getHours().toString().padStart(2, '0')}${new Date().getMinutes().toString().padStart(2, '0')}`;
 
     const conversationsDir = process.env.NANOCLAW_CONVERSATIONS_DIR || '/workspace/agent/conversations';
@@ -631,11 +706,10 @@ export class ClaudeProvider implements AgentProvider {
         additionalDirectories: this.additionalDirectories,
         resume: input.continuation,
         pathToClaudeCodeExecutable: '/pnpm/claude',
-        systemPrompt: instructions ? { type: 'preset' as const, preset: 'claude_code' as const, append: instructions } : undefined,
-        allowedTools: [
-          ...TOOL_ALLOWLIST,
-          ...Object.keys(this.mcpServers).map(mcpAllowPattern),
-        ],
+        systemPrompt: instructions
+          ? { type: 'preset' as const, preset: 'claude_code' as const, append: instructions }
+          : undefined,
+        allowedTools: [...TOOL_ALLOWLIST, ...Object.keys(this.mcpServers).map(mcpAllowPattern)],
         disallowedTools: [...SDK_DISALLOWED_TOOLS, ...this.extraDisallowedTools],
         env: this.env,
         model: this.model,
@@ -663,9 +737,11 @@ export class ClaudeProvider implements AgentProvider {
       // the whole turn (subagents included — their assistant messages flow
       // through here too), so the result event can carry the count.
       let recordCalls = 0;
-      const recordSeen = new Set<string>();
-      // §24.78: subagent_types dispatched this turn (deduped) — the host emits a
-      // deterministic lifecycle row per name regardless of emitTrace.
+      // §24.115: dedup record_* by tool_use BLOCK id (not message.id) and collect
+      // §24.78 dispatches on every emission — the SDK streams one assistant
+      // message per content block under a shared message.id, so a message.id
+      // dedup drops the dispatch tool_use that lands after a thinking block.
+      const recordCallBlockIds = new Set<string>();
       const subagentDispatches = new Set<string>();
       for await (const message of sdkResult) {
         if (aborted) return;
@@ -674,25 +750,10 @@ export class ClaudeProvider implements AgentProvider {
         // Yield activity for every SDK event so the poll loop knows the agent is working
         yield { type: 'activity' };
 
-        // §24.34: tally record_funnel_event / record_progress dispatches,
-        // deduping by message.id (parallel tool calls repeat the id with
-        // identical content — the SDK cost-tracking dedup rule). Always-on
-        // (independent of emitTrace) — this feeds the owner audit trail.
-        if (message.type === 'assistant') {
-          const am = message as { message?: { id?: string; content?: unknown } };
-          const mid = am.message?.id;
-          if (!mid || !recordSeen.has(mid)) {
-            if (mid) recordSeen.add(mid);
-            const blocks = Array.isArray(am.message?.content) ? (am.message!.content as unknown[]) : [];
-            for (const b of blocks) {
-              const block = b as { type?: string; name?: string };
-              if (block.type === 'tool_use' && isRecordCallToolName(block.name)) recordCalls++;
-            }
-            // §24.78: collect deterministic owner-path subagent dispatches
-            // (subagent_type only — the Set dedups repeats across the turn).
-            for (const st of subagentDispatchesFromMessage(message)) subagentDispatches.add(st);
-          }
-        }
+        // §24.34/§24.78 (fixed §24.115): per-turn signals — record_* count +
+        // dispatched subagents. Always-on (independent of emitTrace) — feeds the
+        // owner audit trail. See accumulateTurnSignals for the block-id dedup.
+        recordCalls += accumulateTurnSignals(message, recordCallBlockIds, subagentDispatches);
 
         // Simulator trace (§24.20): sandbox-gated. Emits tool/subagent calls
         // from assistant messages and end-of-run cost from the result message.
@@ -706,7 +767,7 @@ export class ClaudeProvider implements AgentProvider {
         if (message.type === 'system' && message.subtype === 'init') {
           yield { type: 'init', continuation: message.session_id };
         } else if (message.type === 'result') {
-          const text = 'result' in message ? (message as { result?: string }).result ?? null : null;
+          const text = 'result' in message ? ((message as { result?: string }).result ?? null) : null;
           const base = sdkResultToTurnTelemetry(message);
           const telemetry: TurnTelemetry | undefined = base
             ? { ...base, record_calls: recordCalls, subagent_dispatches: [...subagentDispatches] }
