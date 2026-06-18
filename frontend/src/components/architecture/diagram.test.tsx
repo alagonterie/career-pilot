@@ -363,10 +363,28 @@ describe('NodePanel', () => {
 
   it('keeps the jobs-API node vendor-aliased (the §24.63 D1 decision)', () => {
     const jobs = byId('cont-jobs')
-    expect(`${jobs.label} ${jobs.description}`).not.toMatch(/serpapi/i)
+    const prose = `${jobs.label} ${jobs.description}`
+    expect(prose).not.toMatch(/serpapi/i)
+    // §24.122: the node aggregates a key-less ATS fallback too, so the prose
+    // must name that second tier — without leaking a vendor brand.
+    expect(jobs.description).toMatch(/fall(s)? back/i)
+    expect(jobs.description).toMatch(/no key|need no key/i)
+    expect(prose).not.toMatch(/greenhouse|lever/i)
     // Quality bar still holds without naming the vendor: a resolving source link.
     render(<NodePanel node={jobs} status="healthy" arch={ARCH} mode={MODE} obs={OBS} onClose={() => {}} />)
     expect(screen.getByRole('link', { name: /scrape-jobs\.ts/ })).toBeInTheDocument()
+  })
+
+  it('maps the OneCLI gateway only to credential-injected providers (§24.122)', () => {
+    // The gateway's health must reflect only traffic that actually rides the
+    // proxy with an injected secret. greenhouse/lever are host-side, key-less
+    // public fetches — folding them in here misattributes non-gateway traffic
+    // (the §24.69 D6 "union" bug). cont-jobs keeps them as a subsystem aggregate.
+    const gateway = byId('host-onecli')
+    expect(gateway.providers).toEqual(['gmail', 'calendar', 'drive', 'serpapi', 'portkey'])
+    expect(gateway.providers).not.toContain('greenhouse')
+    expect(gateway.providers).not.toContain('lever')
+    expect(byId('cont-jobs').providers).toEqual(['serpapi', 'greenhouse', 'lever'])
   })
 
   it('anchors the orchestrator source in the agent-runner tree, not the host provider config (§24.63)', () => {

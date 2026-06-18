@@ -180,9 +180,12 @@ export const NODES: ArchNode[] = [
     label: 'OneCLI gateway',
     region: 'host',
     probe: 'provider',
-    // Every credential-injected provider rides this proxy; it's only "down" when
-    // EVERYthing through it is failing (one dead service is that service's node).
-    providers: ['gmail', 'calendar', 'drive', 'serpapi', 'greenhouse', 'lever', 'portkey'],
+    // Every credential-injected provider that rides this proxy; it's only "down"
+    // when EVERYthing through it is failing (one dead service is that service's
+    // node). The public, key-less ATS boards (greenhouse/lever) are host-side
+    // fetches that never traverse the gateway — deliberately NOT here (§24.122,
+    // correcting the §24.69 D6 "union" that misattributed host traffic to it).
+    providers: ['gmail', 'calendar', 'drive', 'serpapi', 'portkey'],
     providerAggregate: 'gateway',
     description:
       'The credential perimeter — inherited with the NanoClaw fork and kept. Every outbound HTTPS call a container makes rides this proxy, and the real secrets (the Portkey key, the job-search API key, Google OAuth tokens) are injected on the wire. A container never holds a real credential.',
@@ -272,7 +275,7 @@ export const NODES: ArchNode[] = [
     probe: 'provider',
     providers: ['serpapi', 'greenhouse', 'lever'],
     description:
-      'A commercial Google-Jobs search index. The scrape-jobs subagent queries it for live postings, which land in the job-leads pool the orchestrator continuously re-reads while scouting. Not an LLM call — a plain HTTPS fetch, with the API key injected in flight by the OneCLI gateway.',
+      'The job-search sources the scrape-jobs subagent works from. Its primary is a commercial Google-Jobs search index, queried directly with the API key injected in flight by the OneCLI gateway; when that’s rate-limited or down it falls back to public applicant-tracking job boards, which need no key. Fresh postings land in the job-leads pool the orchestrator continuously re-reads while scouting. Not an LLM call — plain HTTPS fetches.',
     source: 'container/agent-runner/src/mcp-tools/scrape-jobs.ts',
     x: 558,
     y: 430,
