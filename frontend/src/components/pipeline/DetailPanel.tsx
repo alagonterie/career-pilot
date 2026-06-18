@@ -214,7 +214,13 @@ export function DetailPanel({ app, onClose }: { app: PipelineApplication | null;
                 )
               })}
             </ul>
-            <AgentMark actor="pipeline-scribe" lead="Published by" />
+            {/* §24.117 Δ: credit the ORCHESTRATOR, not pipeline-scribe. A
+                published lesson is the candidate's reflection DISTILLED +
+                generalized by the orchestrator before publish (persona
+                "Reflection prompting" → persist_learning), so it IS AI-composed
+                — hence the ✦ mark + the AI-violet glyph — authored by the
+                system, not the curator (which never touches learnings). */}
+            <AgentMark actor="orchestrator" lead="Distilled by" />
           </section>
         ) : null}
 

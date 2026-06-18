@@ -181,6 +181,49 @@ describe('PipelineCard kit chip (§24.65)', () => {
   })
 })
 
+describe('PipelineCard lesson chip (§24.117)', () => {
+  const lesson = (kind = 'rejection') => ({ kind, created_at: '2026-06-01T00:00:00Z', excerpt: 'A lesson.' })
+
+  it('shows the ✎ chip when published lessons exist (count when several)', () => {
+    render(<PipelineCard app={app({ application_ref: 'x', learnings: [lesson()] })} onSelect={() => {}} />)
+    expect(screen.getByTestId('funnel-card-lesson')).toHaveTextContent('✎ lesson')
+
+    render(
+      <PipelineCard app={app({ application_ref: 'y', learnings: [lesson(), lesson('offer')] })} onSelect={() => {}} />,
+    )
+    expect(screen.getAllByTestId('funnel-card-lesson')[1]).toHaveTextContent('✎ 2 lessons')
+  })
+
+  it('shows the kit + lesson chips together when the app has both', () => {
+    render(
+      <PipelineCard
+        app={app({
+          application_ref: 'x',
+          interview_kits: [
+            {
+              round: 'TECH_SCREEN',
+              interview_type: 'technical_screen',
+              interview_at: null,
+              status: 'active',
+              created_at: '2026-06-01T00:00:00Z',
+              has_content: true,
+            },
+          ],
+          learnings: [lesson()],
+        })}
+        onSelect={() => {}}
+      />,
+    )
+    expect(screen.getByTestId('funnel-card-kit')).toBeInTheDocument()
+    expect(screen.getByTestId('funnel-card-lesson')).toBeInTheDocument()
+  })
+
+  it('shows no lesson chip without lessons', () => {
+    render(<PipelineCard app={app({ application_ref: 'z' })} onSelect={() => {}} />)
+    expect(screen.queryByTestId('funnel-card-lesson')).not.toBeInTheDocument()
+  })
+})
+
 describe('StatTiles', () => {
   it('renders the four labeled tiles', () => {
     render(<StatTiles apps={APPS} />)
@@ -326,8 +369,9 @@ describe('DetailPanel', () => {
     // §24.107 honesty: the tip frames it as retrieval-augmented memory, not self-training.
     fireEvent.click(within(section).getByRole('button', { name: 'About: lessons learned' }))
     expect(screen.getByTestId('info-tip-panel')).toHaveTextContent(/retrieval-augmented memory/i)
-    // The section is attributed to the curator that publishes notes.
-    expect(within(section).getByTestId('agent-ref')).toHaveAttribute('data-actor', 'pipeline-scribe')
+    // §24.117 Δ: attributed to the orchestrator that DISTILLS the reflection
+    // (AI-composed), not pipeline-scribe — which never touches learnings.
+    expect(within(section).getByTestId('agent-ref')).toHaveAttribute('data-actor', 'orchestrator')
   })
 
   it('falls back to a generic "Lesson" label for a learning with no kind (synthesized legacy excerpt)', () => {

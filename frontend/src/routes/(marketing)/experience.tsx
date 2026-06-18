@@ -61,7 +61,7 @@ function Work() {
             attributed to the orchestrator, not a single specialist. */}
         {source === 'agent' && generatedAt ? (
           <AgentMark
-            actor="my agent system"
+            actor="orchestrator"
             lead="Composed by"
             trail={`from my master résumé · ${composedOn(generatedAt)}`}
             className="mt-3"
