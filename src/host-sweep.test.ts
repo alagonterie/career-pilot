@@ -155,6 +155,40 @@ describe('decideStuckAction', () => {
     expect(res.action).toBe('ok');
   });
 
+  it('does NOT kill a long NON-Bash tool mid-run under a short ceiling (§24.114)', () => {
+    // A subagent Task (or WebFetch / MCP call) in flight emits no SDK events while
+    // it runs, so the heartbeat is stale 5 min — but the 60s ops ceiling must NOT
+    // kill it, because a tool is in flight (extended to the backstop). This is the
+    // safety the short ops ceiling depends on.
+    const res = decideStuckAction({
+      now: BASE,
+      heartbeatMtimeMs: BASE - 5 * 60 * 1000,
+      containerState: {
+        current_tool: 'Task',
+        tool_declared_timeout_ms: null, // no declared timeout → generous backstop
+        tool_started_at: new Date(BASE - 5 * 60 * 1000).toISOString(),
+      },
+      claims: [],
+      absoluteCeilingMs: 60_000, // the short ops ceiling
+    });
+    expect(res.action).toBe('ok');
+  });
+
+  it('does NOT claim-stuck a long non-Bash tool either (tolerance extends too)', () => {
+    const res = decideStuckAction({
+      now: BASE,
+      heartbeatMtimeMs: BASE - 5 * 60 * 1000, // older than the claim, no events
+      containerState: {
+        current_tool: 'WebFetch',
+        tool_declared_timeout_ms: null,
+        tool_started_at: new Date(BASE - 5 * 60 * 1000).toISOString(),
+      },
+      claims: [claim('msg-1', 5 * 60 * 1000)], // claimed 5 min ago, past the 60s base tolerance
+      absoluteCeilingMs: 60_000,
+    });
+    expect(res.action).toBe('ok');
+  });
+
   it('returns kill-claim when a claim is past 60s and heartbeat has not moved', () => {
     const claimedAgeMs = CLAIM_STUCK_MS + 10_000;
     const res = decideStuckAction({
