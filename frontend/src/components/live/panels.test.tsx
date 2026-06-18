@@ -220,6 +220,47 @@ describe('PipelineCompact + RecentOutcomes', () => {
     expect(offer.className).toContain('text-primary')
     expect(screen.getByText('devtools-b').className).not.toContain('text-primary')
   })
+
+  it('badges kits + fuel per outcome, with counts in the tooltip (§24.118)', () => {
+    const kit = {
+      round: 'TECH_SCREEN',
+      interview_type: 'technical_screen',
+      interview_at: null,
+      status: 'active',
+      created_at: '2026-06-01T00:00:00Z',
+      has_content: true,
+    }
+    const lesson = { kind: 'offer', created_at: '2026-05-20T00:00:00Z', excerpt: 'What unlocked the offer.' }
+    render(
+      <RecentOutcomesPanel
+        apps={[
+          app({
+            application_ref: 'both',
+            stage: 'offer',
+            last_activity_at: '2026-05-25T09:00:00Z',
+            interview_kits: [kit, kit],
+            learnings: [lesson],
+          }),
+          app({
+            application_ref: 'kit-only',
+            stage: 'final',
+            last_activity_at: '2026-05-24T09:00:00Z',
+            interview_kits: [kit],
+          }),
+          app({ application_ref: 'none', stage: 'rejected', last_activity_at: '2026-05-23T09:00:00Z' }),
+        ]}
+      />,
+    )
+    const rows = within(screen.getByTestId('recent-outcomes')).getAllByRole('listitem')
+    // Row 0 (newest, 'both'): both glyphs, counts in the titles.
+    expect(within(rows[0]).getByTestId('recent-outcome-kit')).toHaveAttribute('title', '2 interview kits')
+    expect(within(rows[0]).getByTestId('recent-outcome-fuel')).toHaveAttribute('title', '1 lesson captured')
+    // Row 1 ('kit-only'): a kit glyph, no fuel glyph.
+    expect(within(rows[1]).getByTestId('recent-outcome-kit')).toHaveAttribute('title', '1 interview kit')
+    expect(within(rows[1]).queryByTestId('recent-outcome-fuel')).not.toBeInTheDocument()
+    // Row 2 ('none'): no badge cluster at all.
+    expect(within(rows[2]).queryByTestId('recent-outcome-badges')).not.toBeInTheDocument()
+  })
 })
 
 describe('InfoTip explainers on the metric jargon (§24.57)', () => {

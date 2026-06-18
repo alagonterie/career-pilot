@@ -149,7 +149,11 @@ test.describe('/dashboard — aggregate ops dashboard, frontend <-> backend', ()
 
   test('a Recent-outcomes row deep-links into the /pipeline drawer (§24.57)', async ({ page }) => {
     await page.goto('/dashboard')
-    await page.getByTestId('recent-outcome-link').filter({ hasText: 'Wayne Enterprises' }).click()
+    // §24.118: the seeded Wayne OFFER (two kits + two published lessons) badges both.
+    const wayneRow = page.getByTestId('recent-outcome-link').filter({ hasText: 'Wayne Enterprises' })
+    await expect(wayneRow.getByTestId('recent-outcome-kit')).toBeVisible()
+    await expect(wayneRow.getByTestId('recent-outcome-fuel')).toBeVisible()
+    await wayneRow.click()
     await expect(page).toHaveURL(/\/pipeline\?app=Wayne([+ ]|%20)Enterprises/)
     await expect(page.getByRole('dialog', { name: 'Wayne Enterprises' })).toBeVisible()
     // Closing clears the param (the drawer state stays shareable but not sticky).
