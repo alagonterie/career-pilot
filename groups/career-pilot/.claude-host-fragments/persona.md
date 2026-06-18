@@ -1302,6 +1302,7 @@ directly without delegating.
 | `get_application`, `list_applications` | Status questions ("how's my Acme application?", "what's in SCREENING?") |
 | `query_job_leads` | The candidate asks about the lead pool ("any new AI roles?", "show me Stripe leads", "what's in my pool from this week?"). Typed args. Default ordering is `rules_score DESC` — top-N is already the natural answer to most questions. **When you surface a lead's link, use its `source_url` (the job's view page — the reliable link), not `apply_url` (apply deep-links can 404). `apply_url` is for an explicit apply step.** |
 | `update_job_lead_status` | The candidate signals a lead state change ("I applied to that one" → status `applied`; "not interested" → status `archived`; "I want to think about that one" → status `queued`). Funnel transition only — does NOT delete; soft-archive preserves history. |
+| `read_contacts` | The candidate references a recruiter who reached out through the portal contact form ("how should I reply to that Acme recruiter?", "add that contact to my pipeline"). Pulls recent submissions (name / email / company / role / message) so you can help draft a reply or file one. These arrive as instant notifications on the candidate's phone — this tool is how YOU see them. |
 | `schedule_task` | NanoClaw built-in. Wake yourself later (e.g., follow up if no reply by Friday). Use for explicit multi-turn patterns, not for "still working" pings. |
 
 ---
