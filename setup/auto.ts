@@ -30,13 +30,7 @@ import * as p from '@clack/prompts';
 import k from 'kleur';
 
 import { BACK_TO_CHANNEL_SELECTION } from './lib/back-nav.js';
-import { runDiscordChannel } from './channels/discord.js';
-import { runIMessageChannel } from './channels/imessage.js';
-import { runSignalChannel } from './channels/signal.js';
-import { runSlackChannel } from './channels/slack.js';
-import { runTeamsChannel } from './channels/teams.js';
 import { runTelegramChannel } from './channels/telegram.js';
-import { runWhatsAppChannel } from './channels/whatsapp.js';
 import { pingCliAgent, type PingResult } from './lib/agent-ping.js';
 import { brightSelect } from './lib/bright-select.js';
 import { offerClaudeOnFailure } from './lib/claude-handoff.js';
@@ -61,7 +55,7 @@ import { isValidTimezone } from '../src/timezone.js';
 const CLI_AGENT_NAME = 'Terminal Agent';
 const RUN_START = Date.now();
 
-type ChannelChoice = 'telegram' | 'discord' | 'whatsapp' | 'signal' | 'teams' | 'slack' | 'imessage' | 'other' | 'skip';
+type ChannelChoice = 'telegram' | 'other' | 'skip';
 
 async function main(): Promise<void> {
   // Make sure ~/.local/bin is on PATH for every child process we spawn.
@@ -452,30 +446,15 @@ async function main(): Promise<void> {
       if (channelChoice !== 'skip' && channelChoice !== 'other') {
         await resolveDisplayName();
       }
-      let result: void | typeof BACK_TO_CHANNEL_SELECTION;
+      let result: void | typeof BACK_TO_CHANNEL_SELECTION = undefined;
       if (channelChoice === 'telegram') {
         result = await runTelegramChannel(displayName!);
-      } else if (channelChoice === 'discord') {
-        result = await runDiscordChannel(displayName!);
-      } else if (channelChoice === 'whatsapp') {
-        result = await runWhatsAppChannel(displayName!);
-      } else if (channelChoice === 'signal') {
-        result = await runSignalChannel(displayName!);
-      } else if (channelChoice === 'teams') {
-        result = await runTeamsChannel(displayName!);
-      } else if (channelChoice === 'slack') {
-        result = await runSlackChannel(displayName!);
-      } else if (channelChoice === 'imessage') {
-        result = await runIMessageChannel(displayName!);
       } else if (channelChoice === 'other') {
         result = await askOtherChannelName();
       } else {
         p.log.info(
           brandBody(
-            wrapForGutter(
-              'No messaging app for now. You can add one later (like Telegram, Discord, WhatsApp, Teams, Slack, or iMessage).',
-              4,
-            ),
+            wrapForGutter('No messaging app for now. You can add one later (like Telegram, or another via /add-<name>).', 4),
           ),
         );
       }
@@ -511,7 +490,7 @@ async function main(): Promise<void> {
       }
       if (!res.terminal?.fields.CONFIGURED_CHANNELS) {
         notes.push(
-          '• Want to chat from your phone? Add a messaging app with `/add-telegram`, `/add-slack`, or `/add-discord`.',
+          '• Want to chat from your phone? Add a messaging app with `/add-telegram`.',
         );
       }
       if (notes.length > 0) {
@@ -578,18 +557,6 @@ function channelDmLabel(choice: ChannelChoice): string | null {
   switch (choice) {
     case 'telegram':
       return 'Telegram';
-    case 'discord':
-      return 'Discord DMs';
-    case 'whatsapp':
-      return 'WhatsApp';
-    case 'signal':
-      return 'Signal';
-    case 'teams':
-      return 'Teams';
-    case 'imessage':
-      return 'iMessage';
-    case 'slack':
-      return 'Slack DMs';
     default:
       return null;
   }
@@ -1091,30 +1058,11 @@ async function askDisplayName(fallback: string): Promise<string> {
 }
 
 async function askChannelChoice(): Promise<ChannelChoice> {
-  const isMac = process.platform === 'darwin';
   const choice = ensureAnswer(
     await brightSelect<ChannelChoice>({
       message: 'Want to chat with your assistant from your phone?',
       options: [
         { value: 'telegram', label: 'Yes, connect Telegram', hint: 'recommended' },
-        { value: 'discord', label: 'Yes, connect Discord' },
-        { value: 'whatsapp', label: 'Yes, connect WhatsApp' },
-        {
-          value: 'signal',
-          label: 'Yes, connect Signal',
-          hint: 'needs signal-cli installed',
-        },
-        {
-          value: 'imessage',
-          label: 'Yes, connect iMessage (experimental)',
-          hint: isMac ? 'local macOS mode' : 'remote Photon only',
-        },
-        {
-          value: 'slack',
-          label: 'Yes, connect Slack (experimental)',
-          hint: 'needs public URL',
-        },
-        { value: 'teams', label: 'Yes, connect Microsoft Teams', hint: 'complex setup' },
         { value: 'other', label: 'Other…', hint: 'install via /add-<name> after setup' },
         { value: 'skip', label: 'Skip for now', hint: "I'll just use the terminal" },
       ],
