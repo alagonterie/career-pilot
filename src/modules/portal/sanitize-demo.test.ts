@@ -23,9 +23,12 @@ describe('buildSanitizeDemo', () => {
     expect(r.sanitized).toContain('[AMOUNT_REDACTED]');
     expect(r.sanitized).toContain('[REDACTED:saas-demo]');
     expect(r.sanitized).toContain('recruiter_id=[REDACTED]');
+    // §24.134d: the AI judgment tier redacts the product codename.
+    expect(r.sanitized).toContain('[AI_REDACTED]');
+    expect(r.sanitized).not.toMatch(/Borealis/);
     expect(r.sanitized).not.toContain('sarah.briggs@globex.com');
     expect(r.sanitized).not.toMatch(/Globex/i);
-    expect(r.redactions).toBeGreaterThanOrEqual(5);
+    expect(r.redactions).toBeGreaterThanOrEqual(6);
   });
 
   it('redacts a synthetic SSN where a sample includes one', () => {

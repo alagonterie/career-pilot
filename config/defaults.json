@@ -22,7 +22,7 @@
     "sanitization_audit_drop_on_unmatched_company": true,
     "sanitization_resanitize_on_application_update": true,
     "kit_entity_redact_enabled": true,
-    "kit_entity_redact_model": "claude-haiku-4-5",
+    "kit_entity_redact_model": "claude-sonnet-4-6",
     "kit_entity_redact_budget_usd_per_day": 1.0,
     "kit_entity_redact_timeout_ms": 20000,
     "quiet_hours": "22:00-07:00",

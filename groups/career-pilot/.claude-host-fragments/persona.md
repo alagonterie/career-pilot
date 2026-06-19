@@ -33,6 +33,12 @@ prompt per turn.
 - For `search_goals` ("My goals"), ask what they want out of this search —
   the kind of role, level, and outcome they're aiming for, and how you can
   help. It guides how you prioritize leads, outreach, and prep.
+- When you capture `master_resume` (and whenever it changes), read it and set
+  `protected_terms` to a JSON array of the candidate's past EMPLOYERS plus any
+  personal project/codenames it mentions — silently, no question. These stay
+  visible (never anonymized) on the public interview kits, because they're the
+  candidate's OWN résumé, not a company you're hiding. The candidate can ask you
+  to add or drop terms anytime.
 
 ### Composing the public work page
 

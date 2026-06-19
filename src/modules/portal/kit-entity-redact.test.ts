@@ -15,8 +15,10 @@ import { runMigrations } from '../../db/migrations/index.js';
 
 import {
   applyEntityRedactions,
+  filterProtected,
   kitEntityRedactActive,
   parseEntityTokens,
+  readProtectedTerms,
   redactKitEntities,
   __resetEntityRedactStateForTests,
 } from './kit-entity-redact.js';
@@ -61,7 +63,7 @@ describe('kit-entity-redact', () => {
 
   describe('parseEntityTokens', () => {
     it('parses a bare JSON array', () => {
-      expect(parseEntityTokens('["EdgeProxy","Borg"]')).toEqual(['EdgeProxy', 'Borg']);
+      expect(parseEntityTokens('["Quicksilver","Borealis"]')).toEqual(['Quicksilver', 'Borealis']);
     });
     it('extracts an array embedded in prose', () => {
       expect(parseEntityTokens('Here are the tokens: ["Atlas", "Helios"] — redact those.')).toEqual([
@@ -78,13 +80,15 @@ describe('kit-entity-redact', () => {
     });
     it('drops too-short / too-long / placeholder tokens and dedupes case-insensitively', () => {
       const long = 'x'.repeat(80);
-      expect(parseEntityTokens(`["a","EdgeProxy","edgeproxy","[REDACTED:infra-d]","${long}", 7]`)).toEqual(['EdgeProxy']);
+      expect(parseEntityTokens(`["a","Quicksilver","quicksilver","[REDACTED:infra-d]","${long}", 7]`)).toEqual([
+        'Quicksilver',
+      ]);
     });
   });
 
   describe('applyEntityRedactions', () => {
     it('replaces detected tokens with the provenance-distinct AI token, leaving the rest', () => {
-      const out = applyEntityRedactions('They use EdgeProxy (Rust) and gRPC at scale.', ['EdgeProxy']);
+      const out = applyEntityRedactions('They use Quicksilver (Rust) and gRPC at scale.', ['Quicksilver']);
       expect(out).toBe('They use [AI_REDACTED] (Rust) and gRPC at scale.');
       // generic tech NOT passed as a token is untouched
       expect(out).toContain('Rust');
@@ -112,10 +116,10 @@ describe('kit-entity-redact', () => {
   });
 
   describe('redactKitEntities', () => {
-    const SECTION = "[REDACTED:infra-d]'s EdgeProxy (Rust) and modern backend stack are where this applies.";
+    const SECTION = "[REDACTED:infra-d]'s Quicksilver (Rust) and modern backend stack are where this applies.";
 
     it('returns null when Portkey is not configured (no key)', async () => {
-      const fetchMock = okFetch('["EdgeProxy"]');
+      const fetchMock = okFetch('["Quicksilver"]');
       vi.stubGlobal('fetch', fetchMock);
       expect(await redactKitEntities(SECTION, db)).toBeNull();
       expect(fetchMock).not.toHaveBeenCalled();
@@ -123,11 +127,11 @@ describe('kit-entity-redact', () => {
 
     it('redacts the detected codename but preserves generic tech, and caches', async () => {
       process.env.PORTKEY_API_KEY = 'pk-test';
-      const fetchMock = okFetch('["EdgeProxy"]');
+      const fetchMock = okFetch('["Quicksilver"]');
       vi.stubGlobal('fetch', fetchMock);
 
       const first = await redactKitEntities(SECTION, db);
-      expect(first).not.toContain('EdgeProxy');
+      expect(first).not.toContain('Quicksilver');
       expect(first).toContain('[AI_REDACTED]');
       expect(first).toContain('Rust'); // generic tech kept
       expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -163,10 +167,44 @@ describe('kit-entity-redact', () => {
     it('returns null when over the daily budget, without calling out', async () => {
       process.env.PORTKEY_API_KEY = 'pk-test';
       setBudget(db, '0.0001'); // below the per-call estimate
-      const fetchMock = okFetch('["EdgeProxy"]');
+      const fetchMock = okFetch('["Quicksilver"]');
       vi.stubGlobal('fetch', fetchMock);
       expect(await redactKitEntities(SECTION, db)).toBeNull();
       expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('protected keep-list (§24.134d)', () => {
+    function setProtected(json: string): void {
+      db.prepare(
+        `INSERT INTO candidate_profile (id, protected_terms, updated_at)
+         VALUES (1, @v, '2026-06-19T00:00:00Z')
+         ON CONFLICT(id) DO UPDATE SET protected_terms = @v`,
+      ).run({ v: json });
+    }
+
+    it('filterProtected drops candidate-owned tokens (case-insensitive, substring-tolerant)', () => {
+      expect(filterProtected(['Quicksilver', 'Acme', 'acme inc'], ['Acme'])).toEqual(['Quicksilver']);
+      expect(filterProtected(['Quicksilver'], [])).toEqual(['Quicksilver']); // no keep-list = no-op
+    });
+
+    it('readProtectedTerms parses the profile JSON; [] when absent/malformed', () => {
+      expect(readProtectedTerms(db)).toEqual([]); // no row yet
+      setProtected('["Acme","Globex"]');
+      expect(readProtectedTerms(db)).toEqual(['Acme', 'Globex']);
+      setProtected('not json');
+      expect(readProtectedTerms(db)).toEqual([]);
+    });
+
+    it('redactKitEntities never redacts a protected term, even when the model flags it', async () => {
+      process.env.PORTKEY_API_KEY = 'pk-test';
+      setProtected('["Acme"]');
+      // The model returns a real codename AND the candidate's own employer.
+      vi.stubGlobal('fetch', okFetch('["Quicksilver","Acme"]'));
+      const out = await redactKitEntities('You led the rearchitecture at Acme; their Quicksilver proxy is key.', db);
+      expect(out).not.toContain('Quicksilver'); // codename redacted
+      expect(out).toContain('Acme'); // employer kept — filtered out of the redaction set
+      expect(out).toContain('[AI_REDACTED]');
     });
   });
 });

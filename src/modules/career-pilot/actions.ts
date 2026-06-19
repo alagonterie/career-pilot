@@ -138,6 +138,9 @@ const PROFILE_FIELDS = new Set([
   'headshot_path',
   'brand_color_hsl',
   'gmail_account',
+  // §24.134d: the candidate-owned keep-list for the kit redaction belt (employers,
+  // own project names) — runtime data the owner sets, never hardcoded.
+  'protected_terms',
 ]);
 
 // `candidate_profile` typed columns. The agent passes free-form values to
@@ -146,7 +149,7 @@ const PROFILE_FIELDS = new Set([
 // always finds the shape it expects. Without this, the agent storing
 // target_roles as a comma string or an over-escaped JSON string left the field
 // unparseable → it read as empty (the onboarding-stuck-at-5/6 bug).
-const ARRAY_PROFILE_FIELDS = new Set(['target_roles', 'skills']);
+const ARRAY_PROFILE_FIELDS = new Set(['target_roles', 'skills', 'protected_terms']);
 const NUMBER_PROFILE_FIELDS = new Set(['comp_floor']);
 const OBJECT_PROFILE_FIELDS = new Set(['location_pref']);
 

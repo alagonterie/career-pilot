@@ -22,7 +22,7 @@
  *   Haiku returned a fabricated interview transcript, ok:true). The kit belt is
  *   the deterministic scan PLUS the §24.134a entity-redaction belt — a DETECTION
  *   call (list entities, never rewrite) that catches product/project codenames a
- *   'safe' section names next to the [REDACTED:…] marker (the "EdgeProxy" leak).
+ *   'safe' section names next to the [REDACTED:…] marker (the codename leak).
  *   Detection is LLM judgment; the redaction it drives is deterministic.
  *
  * The seal is server-side by construction: withheld text never lands in

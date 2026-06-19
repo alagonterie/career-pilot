@@ -361,7 +361,7 @@ export async function resanitizeApplicationAuditTrail(
   // §24.134a: the kit projection is a separate read-model with its OWN belt
   // (the entity-redaction detection pass). A sanitizer-rule change — or running
   // the resanitize script after one — must reproject the kit too, else a kit
-  // row keeps a stale, pre-belt rendering (the live "EdgeProxy" leak). Best-effort
+  // row keeps a stale, pre-belt rendering (the live codename leak). Best-effort
   // like everything else here; upsertPublicKitView never throws.
   try {
     await upsertPublicKitView(db, applicationId);

@@ -6463,9 +6463,9 @@ A legibility pass over the layout, distinct from the WS3 deadfile sweep:
 
 One morning's good ops cascade (07:31 funnel-curator → research-company + build-interview-kit; an interview kit built for a `content delivery infrastructure` company) surfaced three independent gaps. Diagnosed against live dev-box state, not inferred. The unifying lesson — already learned in §24.78 — is **don't trust the model to voluntarily do the right thing; back the load-bearing behavior host-side.** Two of the three are that same fragility resurfacing on new surfaces.
 
-##### 24.134a Kit entity-redaction belt (the "EdgeProxy" leak)
+##### 24.134a Kit entity-redaction belt (the product-codename leak)
 
-**Observed:** `public_kit_view` for the live (obfuscated) Cloudflare app rendered the `lean-into` ('safe') section with `"[REDACTED:infra-d]'s EdgeProxy (Rust) …"` — Pass 2 redacted *Cloudflare* but the product codename *EdgeProxy* (a public Cloudflare repo) sat un-redacted next to the `[REDACTED:…]` marker, which re-identifies the company. `/live` was clean (the `record_progress` strings DO run Pass 3); only the kit path leaked.
+**Observed:** `public_kit_view` for a live (obfuscated) app rendered the `lean-into` ('safe') section with `"[REDACTED:infra-d]'s «codename» (Rust) …"` — Pass 2 redacted the company NAME but a product codename (the target company's public open-source project) sat un-redacted next to the `[REDACTED:…]` marker, which re-identifies the company. `/live` was clean (the `record_progress` strings DO run Pass 3); only the kit path leaked.
 
 **Root cause:** the kit projection (`public-kit-view.ts`) deliberately skips Pass 3 (§24.65 Δ — Haiku *role-plays* kit-length prose on a REWRITE prompt). Its only belt on a 'safe' section is deterministic Pass 1 (PII) + Pass 2 (tracked **company name/alias**) + the `leaksNonPublicCompany` scan. A product/project codename is none of those, so nothing catches it.
 
@@ -6473,13 +6473,13 @@ One morning's good ops cascade (07:31 funnel-curator → research-company + buil
 
 - **Fail-safe = seal.** Belt-active (`kit_entity_redact_enabled` AND `portkeyConfigured()`) but the call fails / parses to nothing / over budget → the section is SEALED (withheld), consistent with the kit path's existing fail-closed posture. Belt-inactive (CI/local, no Portkey, no real surface) → render deterministic, today's behavior.
 - **Safe-by-default.** Unlike `sanitization_pass3_enabled` (opt-in cosmetic rewrite), this is a leak-prevention belt → `kit_entity_redact_enabled` defaults **true** in `config/defaults.json`; it's inert without Portkey, so CI/unit tests (no key) are unaffected. New tunables: `kit_entity_redact_{model,budget_usd_per_day,timeout_ms}`. Content-keyed process cache + per-UTC-day budget guard mirror `sanitizer-pass3.ts`.
-- **Backfill.** `resanitizeApplicationAuditTrail` (the operator re-mirror path + the policy-flip hook) now also calls `upsertPublicKitView`, so re-running `scripts/resanitize-application.ts --id <leaked app>` reprojects the kit through the new belt. Used once on the box to scrub the live EdgeProxy row.
+- **Backfill.** `resanitizeApplicationAuditTrail` (the operator re-mirror path + the policy-flip hook) now also calls `upsertPublicKitView`, so re-running `scripts/resanitize-application.ts --id <leaked app>` reprojects the kit through the new belt. Used once on the box to scrub the live codename row.
 
 **DoD.** New module never throws; returns null→seal on any failure. `projectSections` async; existing `public-kit-view.test.ts` green unchanged (belt inert without Portkey). New `kit-entity-redact.test.ts`: detect→deterministic-redact with a mocked `callPortkeyChat` (tokens redacted; generic tech + own-employer preserved; empty array = unchanged; failure = null; cache hit). On the box: enable the pref, resanitize the leaked app, confirm `public_kit_view … LIKE '%ingora%'` returns 0 rows and the section still renders its generic-tech text.
 
 ##### 24.134b Daily-briefing host backstop (the silent skip)
 
-**Observed:** the `0 8 * * *` briefing task fired + `completed` at 14:00Z; the 13:31 funnel-curator wrote a non-empty `attention_json` (one `action_owed` — "Cloudflare recruiter screen requested"); a kit had been built ~25 min prior — yet the ops session produced **0 owner-facing messages all day** (93 system action-RPCs, none of kind≠system). The orchestrator silent-skipped a briefing its own persona rules say it must send ("attention[] non-empty → you still emit").
+**Observed:** the `0 8 * * *` briefing task fired + `completed` at 14:00Z; the 13:31 funnel-curator wrote a non-empty `attention_json` (one `action_owed` — "recruiter screen requested"); a kit had been built ~25 min prior — yet the ops session produced **0 owner-facing messages all day** (93 system action-RPCs, none of kind≠system). The orchestrator silent-skipped a briefing its own persona rules say it must send ("attention[] non-empty → you still emit").
 
 **Fix (owner choice: host deterministic backstop, attention-only).** Same shape as §24.78. New `src/modules/career-pilot/briefing-backstop.ts`, invoked from a host-sweep MODULE-HOOK after the recurrence step (`maybeDeliverBriefingBackstop(inDb, outDb, session)`), ops session only:
 

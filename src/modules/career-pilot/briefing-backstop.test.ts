@@ -200,15 +200,13 @@ function markerCount(): number {
 describe('maybeDeliverBriefingBackstop', () => {
   it('delivers once when a completed briefing left non-empty attention unsurfaced, then is idempotent', async () => {
     seedCompletedBriefing(isoMinutesAgo(2));
-    seedCuratorAttention(
-      '[{"company":"Cloudflare","reason":"recruiter screen requested","action_hint":"Share times"}]',
-    );
+    seedCuratorAttention('[{"company":"Acme","reason":"recruiter screen requested","action_hint":"Share times"}]');
 
     await maybeDeliverBriefingBackstop(inDb, outDb, OPS_SESSION);
     expect(delivered).toHaveLength(1);
     expect(delivered[0].channelType).toBe('telegram');
     expect(delivered[0].platformId).toBe('telegram:123');
-    expect(delivered[0].content).toContain('Cloudflare');
+    expect(delivered[0].content).toContain('Acme');
     expect(markerCount()).toBe(1);
 
     // second tick: marker present → no second send
@@ -219,7 +217,7 @@ describe('maybeDeliverBriefingBackstop', () => {
   it('does NOT deliver when an owner message already landed in the window (no double-message)', async () => {
     seedCompletedBriefing(isoMinutesAgo(2));
     seedOwnerOutboundAt(isoMinutesAgo(1)); // the briefing emitted (or a coincident push)
-    seedCuratorAttention('[{"company":"Cloudflare","reason":"x"}]');
+    seedCuratorAttention('[{"company":"Acme","reason":"x"}]');
 
     await maybeDeliverBriefingBackstop(inDb, outDb, OPS_SESSION);
     expect(delivered).toHaveLength(0);
@@ -237,7 +235,7 @@ describe('maybeDeliverBriefingBackstop', () => {
 
   it('defers WITHOUT marking when outbound is not yet open (retryable)', async () => {
     seedCompletedBriefing(isoMinutesAgo(2));
-    seedCuratorAttention('[{"company":"Cloudflare","reason":"x"}]');
+    seedCuratorAttention('[{"company":"Acme","reason":"x"}]');
 
     await maybeDeliverBriefingBackstop(inDb, null, OPS_SESSION);
     expect(delivered).toHaveLength(0);
@@ -246,7 +244,7 @@ describe('maybeDeliverBriefingBackstop', () => {
 
   it('mark-skips a stale briefing (too old to surprise the owner with)', async () => {
     seedCompletedBriefing(isoMinutesAgo(200)); // > 120min max age
-    seedCuratorAttention('[{"company":"Cloudflare","reason":"x"}]');
+    seedCuratorAttention('[{"company":"Acme","reason":"x"}]');
 
     await maybeDeliverBriefingBackstop(inDb, outDb, OPS_SESSION);
     expect(delivered).toHaveLength(0);
@@ -255,7 +253,7 @@ describe('maybeDeliverBriefingBackstop', () => {
 
   it('is a no-op for a non-ops session', async () => {
     seedCompletedBriefing(isoMinutesAgo(2));
-    seedCuratorAttention('[{"company":"Cloudflare","reason":"x"}]');
+    seedCuratorAttention('[{"company":"Acme","reason":"x"}]');
 
     await maybeDeliverBriefingBackstop(inDb, outDb, { ...OPS_SESSION, thread_id: null });
     expect(delivered).toHaveLength(0);

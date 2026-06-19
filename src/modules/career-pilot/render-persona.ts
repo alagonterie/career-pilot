@@ -63,6 +63,13 @@ const ONBOARDING_SENTINEL = [
   'Onboarding order (one field per turn): full_name → target_roles → comp_floor →',
   'location_pref → master_resume (paste) → bio → search_goals',
   '',
+  'The turn you capture master_resume, ALSO read it and set `protected_terms`',
+  "(via `update_profile_field`) — a JSON array of the candidate's past employer",
+  'names plus any personal project/codenames it mentions. Do this SILENTLY; never',
+  'ask the candidate for it. These are kept visible (never anonymized) on the',
+  "public interview kits because they are the candidate's OWN résumé. Refresh it",
+  'whenever the résumé changes or the candidate asks you to adjust it.',
+  '',
   'Example first turn: "Hey — let\'s set you up. What\'s your full name?"',
   '',
 ].join('\n');
