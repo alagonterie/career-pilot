@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { query as sdkQuery, type HookCallback, type PreCompactHookInput } from '@anthropic-ai/claude-agent-sdk';
+import { query as sdkQuery, type HookCallback, type PreCompactHookInput, type Query } from '@anthropic-ai/claude-agent-sdk';
 
 import { clearContainerToolInFlight, setContainerToolInFlight } from '../db/connection.js';
 import { registerProvider } from './provider-registry.js';
@@ -301,6 +301,28 @@ export function sdkSystemMessageToEvent(message: unknown): ProviderEvent | null 
 
 function log(msg: string): void {
   console.error(`[claude-provider] ${msg}`);
+}
+
+/**
+ * §24.125 WS2: log a compact context-window breakdown once per turn (fire-and-
+ * forget; never throws into the stream). `getContextUsage` is a claude-agent-sdk
+ * 0.3.x control method (callable mid-query) — it reports the preamble's token
+ * cost by category (system prompt / tools / memory / MCP). Cheap ongoing
+ * observability for preamble bloat, which is otherwise invisible: measured ~80K
+ * static tokens at the 0.3.x bump (vs the §24.49 ~55K estimate — the assumption
+ * had drifted). Owner path only (the caller gates on !emitTrace).
+ */
+function logContextUsage(q: Query): void {
+  q.getContextUsage()
+    .then((u) => {
+      const cats = u.categories.map((c) => `${c.name}:${c.tokens}`).join(' ');
+      const mcp = u.mcpTools.reduce((s, t) => s + (t.tokens || 0), 0);
+      const mem = u.memoryFiles.reduce((s, f) => s + (f.tokens || 0), 0);
+      log(
+        `context-usage total=${u.totalTokens}/${u.maxTokens} (${Math.round(u.percentage)}%) | ${cats} | mcpTools=${mcp} memoryFiles=${mem}`,
+      );
+    })
+    .catch((e) => log(`context-usage probe failed: ${e instanceof Error ? e.message : String(e)}`));
 }
 
 // Deferred SDK builtins that either sidestep nanoclaw's own scheduling or
@@ -826,7 +848,11 @@ export class ClaudeProvider implements AgentProvider {
           // init / api_retry / rate_limit_event / compact_boundary /
           // task_notification — see sdkSystemMessageToEvent (§24.128).
           const sysEvent = sdkSystemMessageToEvent(message);
-          if (sysEvent) yield sysEvent;
+          if (sysEvent) {
+            // §24.125 WS2: preamble-size observability on the owner path only.
+            if (sysEvent.type === 'init' && !emitTrace) logContextUsage(sdkResult);
+            yield sysEvent;
+          }
         }
       }
       log(`Query completed after ${messageCount} SDK messages`);
