@@ -6399,6 +6399,22 @@ Path B (§24.128) already removed claude-code from the image. What's left of the
 
 **DoD.** Dockerfile: `agent-browser` pinned to `0.27.1`; `VERCEL_VERSION` ARG + the `pnpm install -g vercel` block removed (the `only-built-dependencies[]=agent-browser` npmrc line preserved, folded into the agent-browser RUN); bun/pnpm untouched. Box-gate: the image rebuilds, a real turn spawns + replies, and — the only Stage-D-specific check — a `research-company` turn that browses still works (agent-browser present at the pinned version). Memory: [[todo_backlog]].
 
+#### 24.130 WS2 — runtime-preamble audit (measured; lean confirmed; levers are no-ops)
+
+§24.125 WS2 deferred until Stage C was box-green so the preamble is measured against one stable 0.3.x baseline. Done — and the honest outcome is **"measured, already lean, the harvest levers don't move it."**
+
+**Measurement tool (the durable deliverable).** Wired `logContextUsage` in `claude.ts`: on the owner-path `init`, fire the 0.3.x `Query.getContextUsage()` control method (fire-and-forget, never throws into the stream) and log one compact line — the preamble's token cost by category. Ongoing observability for preamble bloat, which is otherwise invisible.
+
+**Finding (box reading).** Static preamble ≈ **57.7K**: System prompt 6.3K + **System tools 18.0K** + MCP tools 11.5K + Custom agents 0.8K + **Memory/persona 21.1K** (live `Messages` 30K + `Autocompact buffer` 33K + free space are not preamble). This **confirms §24.49's ~55K** — the "already lean" claim holds. (An earlier `cache_creation_tokens` reading of ~80K had alarmed me; it folds in ~30K of live messages — not a preamble regression.)
+
+**Levers, evaluated against the data:**
+- **Drop unused builtins** (NotebookEdit / TeamCreate / TeamDelete / SendMessage — career-pilot edits no notebooks and uses orchestrator→subagent dispatch, never agent teams). Added to `SDK_DISALLOWED_TOOLS` + removed from the allowlist. **Box-measured: `System tools` stayed 18.0K — NO preamble shrink.** Those tools aren't part of the counted base (or `disallowedTools` doesn't reduce the binary's fixed builtin schema). **Kept as hygiene** (consistent with the existing Cron/Plan/Worktree disallow entries — tools that don't fit our model), explicitly NOT as a shrink.
+- **Grep/Glob drop:** moot — the System-tools base is fixed by the Claude Code binary; not reducible from our `allowedTools`/`disallowedTools`.
+- **`settingSources` narrow (`user`/`local` → `project`):** **rejected.** The `user` source (`/home/node/.claude` = the mounted `.claude-shared`) carries load-bearing config (git CA, env, hooks per `/init-onecli`); narrowing would break credential/env wiring for a marginal gain.
+- **Persona (21K):** the largest static chunk, but intentional — the persona-refactor was DECLINED (§24.125); it's the behavioral contract.
+
+**Conclusion.** No low-risk preamble shrink is available: persona is intentional, the System-tools base is fixed, MCP tools are load-bearing, `settingSources` is load-bearing. WS2's value is the durable `getContextUsage` measurement (catches future bloat) + the confirmation the preamble is lean. **Box-verified:** the measurement logs each owner turn (`total=88K/165K (53%)`); `WS2_OK`/`WS2_TRIM_OK` turns spawn + reply normally. Memory: [[todo_backlog]].
+
 ---
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
