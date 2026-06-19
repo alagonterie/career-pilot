@@ -19,8 +19,11 @@
  *   Pass 3 is deliberately NOT in this path (§24.65 Δ): its rewriter prompt is
  *   tuned for one-line activity strings, and on kit-length instruction-shaped
  *   prose it ROLE-PLAYS the section instead of sanitizing it (observed live:
- *   Haiku returned a fabricated interview transcript, ok:true). The kit belt
- *   is the deterministic scan; entity coverage comes from alias hygiene.
+ *   Haiku returned a fabricated interview transcript, ok:true). The kit belt is
+ *   the deterministic scan PLUS the §24.134a entity-redaction belt — a DETECTION
+ *   call (list entities, never rewrite) that catches product/project codenames a
+ *   'safe' section names next to the [REDACTED:…] marker (the "EdgeProxy" leak).
+ *   Detection is LLM judgment; the redaction it drives is deterministic.
  *
  * The seal is server-side by construction: withheld text never lands in
  * `public_kit_view`, so it can never reach the wire. No kit title and no
@@ -34,6 +37,7 @@ import type Database from 'better-sqlite3';
 
 import { log } from '../../log.js';
 
+import { kitEntityRedactActive, redactKitEntities } from './kit-entity-redact.js';
 import { parseKitSections, type ParsedKitSection } from './kit-sections.js';
 import { sanitize } from './sanitizer.js';
 
@@ -128,15 +132,19 @@ function leaksNonPublicCompany(db: Database.Database, text: string): boolean {
   }
 }
 
-function projectSections(
+async function projectSections(
   db: Database.Database,
   applicationId: string,
   isPublic: boolean,
   markdown: string,
-): PublicKitSection[] {
+): Promise<PublicKitSection[]> {
   const parsed = parseKitSections(markdown);
   const out: PublicKitSection[] = [];
   let sealedUnknowns = 0;
+  // Cheap kill switch read once per projection (not per section): when the belt
+  // is active we run the §24.134a entity-detection call on every rendered 'safe'
+  // section below.
+  const beltActive = !isPublic && kitEntityRedactActive(db);
 
   for (const section of parsed) {
     if (isPublic) {
@@ -166,8 +174,8 @@ function projectSections(
 
     // Safe section on a live app: deterministic sanitize (Pass 1+2 — NOT
     // Pass 3, see the module header) + the alias-aware company-scan net.
-    const text = sanitize(section.body, { application_id: applicationId, db });
-    if (leaksNonPublicCompany(db, text)) {
+    let text = sanitize(section.body, { application_id: applicationId, db });
+    const sealUnverified = (): void => {
       out.push({
         id: section.id,
         title: section.title,
@@ -176,7 +184,22 @@ function projectSections(
         item_count: section.itemCount,
         withheld_reason: `${section.itemCount} item${section.itemCount === 1 ? '' : 's'} · sealed — the sanitizer could not verify this section`,
       });
+    };
+    if (leaksNonPublicCompany(db, text)) {
+      sealUnverified();
       continue;
+    }
+    // §24.134a entity belt: detect + deterministically redact company-identifying
+    // residue (product/project codenames) the deterministic passes can't see.
+    // null = the call failed → seal (fail-safe = withhold, the kit path's
+    // existing posture). Re-run the company scan after redaction.
+    if (beltActive) {
+      const redacted = await redactKitEntities(text, db);
+      if (redacted === null || leaksNonPublicCompany(db, redacted)) {
+        sealUnverified();
+        continue;
+      }
+      text = redacted;
     }
     out.push({
       id: section.id,
@@ -233,7 +256,7 @@ export async function upsertPublicKitView(db: Database.Database, applicationId: 
       // metadata-only row; the page renders an honest "content not captured".
       const sections =
         kit.markdown && kit.markdown.trim().length > 0
-          ? projectSections(db, applicationId, isPublic, kit.markdown)
+          ? await projectSections(db, applicationId, isPublic, kit.markdown)
           : [];
 
       db.prepare(

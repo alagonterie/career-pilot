@@ -28,6 +28,7 @@ import type Database from 'better-sqlite3';
 
 import { log } from '../../log.js';
 
+import { upsertPublicKitView } from './public-kit-view.js';
 import { sanitize, sanitizeForPublic } from './sanitizer.js';
 
 const DEFAULT_PUBLIC_SUMMARY_MAX_CHARS = 500;
@@ -355,6 +356,17 @@ export async function resanitizeApplicationAuditTrail(
     }
   } catch (err) {
     log.error('resanitizeApplicationAuditTrail: progress-ref rederive failed', { applicationId, err });
+  }
+
+  // §24.134a: the kit projection is a separate read-model with its OWN belt
+  // (the entity-redaction detection pass). A sanitizer-rule change — or running
+  // the resanitize script after one — must reproject the kit too, else a kit
+  // row keeps a stale, pre-belt rendering (the live "EdgeProxy" leak). Best-effort
+  // like everything else here; upsertPublicKitView never throws.
+  try {
+    await upsertPublicKitView(db, applicationId);
+  } catch (err) {
+    log.error('resanitizeApplicationAuditTrail: kit reproject failed', { applicationId, err });
   }
 
   log.info('resanitizeApplicationAuditTrail complete', { applicationId, rewritten, deleted, progressRefsUpdated });

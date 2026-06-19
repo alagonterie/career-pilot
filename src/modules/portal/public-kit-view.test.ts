@@ -10,13 +10,14 @@
  *     name ever lands in the projection
  *   - public_funnel_view.kits_json carries the drawer metadata (all kits, D1)
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 
 import { closeDb, initTestDb } from '../../db/connection.js';
 import { runMigrations } from '../../db/migrations/index.js';
 import { upsertInterviewKit } from '../career-pilot/interview-kit-store.js';
 
+import { __resetEntityRedactStateForTests } from './kit-entity-redact.js';
 import { type PublicKitSection, upsertPublicKitView } from './public-kit-view.js';
 import { upsertPublicFunnelView } from './public-funnel-view.js';
 
@@ -259,5 +260,93 @@ describe('public_funnel_view.kits_json (§24.65 drawer metadata)', () => {
       kits_json: string | null;
     };
     expect(row.kits_json).toBeNull();
+  });
+});
+
+// §24.134a — the entity-redaction belt only engages when Portkey is configured
+// (key present) AND the pref is on (default). It runs on rendered 'safe'
+// sections of a LIVE app. A codename that Pass 2 can't see (it isn't the company
+// name/alias) gets redacted; a detector failure SEALS the section (fail-safe).
+describe('upsertPublicKitView entity belt (§24.134a)', () => {
+  // A 'safe' lean-into section naming a company-specific codename next to the
+  // company. Pass 2 redacts the company name but not the codename — that's the
+  // gap the belt closes.
+  const KIT_WITH_CODENAME = `## Part 1 — Interviewer operating manual
+
+### Your role
+Conduct a realistic technical screen for Senior Platform Engineer at Initech Systems.
+
+### Lean into
+- Initech Systems's Helios (Rust) proxy layer is exactly your distributed-systems wheelhouse.
+`;
+
+  const savedKey = process.env.PORTKEY_API_KEY;
+  const savedBypass = process.env.PORTKEY_BYPASS;
+
+  beforeEach(() => {
+    __resetEntityRedactStateForTests();
+    process.env.PORTKEY_API_KEY = 'pk-test';
+    delete process.env.PORTKEY_BYPASS;
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (savedKey === undefined) delete process.env.PORTKEY_API_KEY;
+    else process.env.PORTKEY_API_KEY = savedKey;
+    if (savedBypass === undefined) delete process.env.PORTKEY_BYPASS;
+    else process.env.PORTKEY_BYPASS = savedBypass;
+  });
+
+  function stubDetector(content: string): void {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content } }] }),
+      })) as unknown as typeof fetch,
+    );
+  }
+
+  it('redacts a codename the deterministic passes miss, keeping generic tech', async () => {
+    stubDetector('["Helios"]');
+    seedApp({ id: 'app-1', company: 'Initech Systems', label: 'fintech-a' });
+    seedKit('app-1', 'TECH_SCREEN', KIT_WITH_CODENAME);
+    await upsertPublicKitView(db, 'app-1');
+
+    const lean = byId(readSections('app-1'), 'lean-into');
+    expect(lean.kind).toBe('content');
+    expect(lean.body).not.toContain('Helios'); // belt caught it
+    expect(lean.body).toContain('[REDACTED]');
+    expect(lean.body).toContain('Rust'); // generic tech preserved
+    expect(lean.body).not.toMatch(/initech/i); // Pass 2 still did its job
+  });
+
+  it('seals the section when the detector call fails (fail-safe)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 502, json: async () => ({}) })) as unknown as typeof fetch,
+    );
+    seedApp({ id: 'app-1', company: 'Initech Systems', label: 'fintech-a' });
+    seedKit('app-1', 'TECH_SCREEN', KIT_WITH_CODENAME);
+    await upsertPublicKitView(db, 'app-1');
+
+    const lean = byId(readSections('app-1'), 'lean-into');
+    expect(lean.kind).toBe('withheld');
+    expect(lean.body).toBeUndefined();
+    // and the codename certainly never reached the wire
+    expect(JSON.stringify(readSections('app-1'))).not.toContain('Helios');
+  });
+
+  it('public app does NOT invoke the belt (no key needed; own name revealed)', async () => {
+    // belt is gated on !isPublic — a revealed app renders everything verbatim.
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+    seedApp({ id: 'app-1', company: 'Initech Systems', label: 'fintech-a', public_state: 'public' });
+    seedKit('app-1', 'TECH_SCREEN', KIT_WITH_CODENAME);
+    await upsertPublicKitView(db, 'app-1');
+
+    const lean = byId(readSections('app-1'), 'lean-into');
+    expect(lean.kind).toBe('content');
+    expect(lean.body).toContain('Helios'); // revealed → verbatim
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

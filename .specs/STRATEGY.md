@@ -6459,6 +6459,38 @@ A legibility pass over the layout, distinct from the WS3 deadfile sweep:
 - **Docs sorted by ownership:** our findings docs `PHASE5_PREP_FINDINGS.md` + `PHASE9_DEPLOY_FINDINGS.md` moved `docs/` → `.specs/` (our authored specs/docs live in `.specs/`; `docs/` is upstream NanoClaw reference). `docs/APPLE-CONTAINER-NETWORKING.md` deleted (Apple-`container`-CLI networking — macOS-only; we run Docker on Ubuntu) along with its `docs/README.md` index row.
 - **`.gitignore`:** dropped the upstream `!groups/global/` + `!groups/main/` default-group exceptions so only our named groups (`career-pilot`, `-sandbox`, `_shared-*`) are committed; the local untracked `groups/{main,research-company}` leftovers were deleted off disk. host `pnpm build` + full suite green.
 
+#### 24.134 Morning-ops hardening (three box-observed gaps, 2026-06-19)
+
+One morning's good ops cascade (07:31 funnel-curator → research-company + build-interview-kit; an interview kit built for a `content delivery infrastructure` company) surfaced three independent gaps. Diagnosed against live dev-box state, not inferred. The unifying lesson — already learned in §24.78 — is **don't trust the model to voluntarily do the right thing; back the load-bearing behavior host-side.** Two of the three are that same fragility resurfacing on new surfaces.
+
+##### 24.134a Kit entity-redaction belt (the "EdgeProxy" leak)
+
+**Observed:** `public_kit_view` for the live (obfuscated) Cloudflare app rendered the `lean-into` ('safe') section with `"[REDACTED:infra-d]'s EdgeProxy (Rust) …"` — Pass 2 redacted *Cloudflare* but the product codename *EdgeProxy* (a public Cloudflare repo) sat un-redacted next to the `[REDACTED:…]` marker, which re-identifies the company. `/live` was clean (the `record_progress` strings DO run Pass 3); only the kit path leaked.
+
+**Root cause:** the kit projection (`public-kit-view.ts`) deliberately skips Pass 3 (§24.65 Δ — Haiku *role-plays* kit-length prose on a REWRITE prompt). Its only belt on a 'safe' section is deterministic Pass 1 (PII) + Pass 2 (tracked **company name/alias**) + the `leaksNonPublicCompany` scan. A product/project codename is none of those, so nothing catches it.
+
+**Fix (owner choice: "LLM-detect, targeted").** A new belt module `src/modules/portal/kit-entity-redact.ts`, run per 'safe' section on a LIVE app inside `projectSections`, AFTER the deterministic sanitize + the existing leak scan. It uses a **DETECTION** prompt (list entities, never rewrite — sidesteps the §24.65 role-play failure) via the sanctioned `callPortkeyChat` host path: the model returns a JSON array of remaining substrings that could re-identify the redacted company (products, project/codenames, internal tools, named teams/offices/people, distinctive coined/branded terms). The host then **deterministically** redacts each returned token (word-boundary, → `[REDACTED]`) and re-runs `leaksNonPublicCompany`. The prompt's EXCLUDE list keeps the section useful: widely-known generic technologies (languages/protocols/databases/cloud/common OSS) AND the candidate's OWN past employers/projects (their résumé — the "targeted" scope, not "redact everything"). Bias rule encodes the owner's instinct without hardcoding any term: *"when unsure whether a coined word is generic tech or a company brand, INCLUDE it."* No real codename appears in the prompt.
+
+- **Fail-safe = seal.** Belt-active (`kit_entity_redact_enabled` AND `portkeyConfigured()`) but the call fails / parses to nothing / over budget → the section is SEALED (withheld), consistent with the kit path's existing fail-closed posture. Belt-inactive (CI/local, no Portkey, no real surface) → render deterministic, today's behavior.
+- **Safe-by-default.** Unlike `sanitization_pass3_enabled` (opt-in cosmetic rewrite), this is a leak-prevention belt → `kit_entity_redact_enabled` defaults **true** in `config/defaults.json`; it's inert without Portkey, so CI/unit tests (no key) are unaffected. New tunables: `kit_entity_redact_{model,budget_usd_per_day,timeout_ms}`. Content-keyed process cache + per-UTC-day budget guard mirror `sanitizer-pass3.ts`.
+- **Backfill.** `resanitizeApplicationAuditTrail` (the operator re-mirror path + the policy-flip hook) now also calls `upsertPublicKitView`, so re-running `scripts/resanitize-application.ts --id <leaked app>` reprojects the kit through the new belt. Used once on the box to scrub the live EdgeProxy row.
+
+**DoD.** New module never throws; returns null→seal on any failure. `projectSections` async; existing `public-kit-view.test.ts` green unchanged (belt inert without Portkey). New `kit-entity-redact.test.ts`: detect→deterministic-redact with a mocked `callPortkeyChat` (tokens redacted; generic tech + own-employer preserved; empty array = unchanged; failure = null; cache hit). On the box: enable the pref, resanitize the leaked app, confirm `public_kit_view … LIKE '%ingora%'` returns 0 rows and the section still renders its generic-tech text.
+
+##### 24.134b Daily-briefing host backstop (the silent skip)
+
+**Observed:** the `0 8 * * *` briefing task fired + `completed` at 14:00Z; the 13:31 funnel-curator wrote a non-empty `attention_json` (one `action_owed` — "Cloudflare recruiter screen requested"); a kit had been built ~25 min prior — yet the ops session produced **0 owner-facing messages all day** (93 system action-RPCs, none of kind≠system). The orchestrator silent-skipped a briefing its own persona rules say it must send ("attention[] non-empty → you still emit").
+
+**Fix (owner choice: host deterministic backstop).** Same shape as §24.78. When a `daily-briefing` turn completes with NO owner-bound message but the latest `funnel_curator_output.attention_json` is non-empty, the host renders a minimal digest from the structured `attention[]` (owner-facing Telegram → real names OK, no sanitizer) and delivers it. The model's own richer briefing is preferred when it emits; the backstop only fires on the silent-skip-with-news case. Detection + delivery hook + config gate (`daily_briefing_backstop_enabled`) spec'd in detail before build.
+
+##### 24.134c Dispatch trace ordering (marker after the work)
+
+**Observed (live, seq order):** subagent `record_progress` rows (116–122) land first, then the deterministic `"Dispatched by the orchestrator."` rows (123–125) at the turn seal — so the dispatch marker sits AFTER the work it kicked off, and is redundant for any subagent that already logged progress.
+
+**Root cause:** §24.78's deterministic rows are reconstructed at turn-END from the SDK result's `subagent_dispatches`, so they always take the turn's highest seq.
+
+**Fix (owner choice: emit at dispatch-time).** The container poll-loop emits the dispatch marker the moment it observes the `Task`/subagent tool_use in the stream (not batched into `record_turn_telemetry` at turn-end), so the marker gets a lower seq than the subagent's own work → it lands first and reads as a proper header for the progress that follows. Container-side change; spec'd in detail before build.
+
 ---
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
