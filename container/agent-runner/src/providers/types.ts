@@ -94,6 +94,14 @@ export interface McpServerConfig {
   command: string;
   args: string[];
   env: Record<string, string>;
+  /**
+   * §24.128: force this stdio server connected before the turn-1 prompt is
+   * built (and its tools always present, never deferred behind tool search).
+   * At claude-agent-sdk 0.3.x, MCP startup is non-blocking by default — without
+   * this, a cold container's first turn can race the connect and find our
+   * career-pilot tools absent.
+   */
+  alwaysLoad?: boolean;
 }
 
 export interface AgentQuery {
