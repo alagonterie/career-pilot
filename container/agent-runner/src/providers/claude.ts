@@ -255,6 +255,50 @@ export function sdkResultToTurnTelemetry(message: unknown): Omit<TurnTelemetry, 
   };
 }
 
+/**
+ * §24.128: pure translation of an SDK system/lifecycle message into a single
+ * ProviderEvent (or null when it carries nothing we surface). Extracted from the
+ * streaming loop so the discriminators are unit-testable without an SDK mock —
+ * the same reason {@link sdkMessageToTraceEvents} was extracted. The turn-stateful
+ * `result` message stays inline in the caller (it folds in the per-turn record/
+ * dispatch counts); everything here depends only on the message.
+ *
+ * 0.3.x shape note: `rate_limit_event` is its own top-level message
+ * (`type:'rate_limit_event'`), NOT a `system` subtype as it was read pre-0.3 —
+ * we accept both so the classification survives the bump (and a revert). The
+ * other lifecycle messages stay `type:'system'` + their subtype.
+ */
+export function sdkSystemMessageToEvent(message: unknown): ProviderEvent | null {
+  if (!message || typeof message !== 'object') return null;
+  const m = message as { type?: string; subtype?: string };
+
+  if (m.type === 'system' && m.subtype === 'init') {
+    return { type: 'init', continuation: (message as { session_id?: string }).session_id ?? '' };
+  }
+  if (m.type === 'rate_limit_event' || (m.type === 'system' && m.subtype === 'rate_limit_event')) {
+    return { type: 'error', message: 'Rate limit', retryable: false, classification: 'quota' };
+  }
+  if (m.type === 'system' && m.subtype === 'api_retry') {
+    return { type: 'error', message: 'API retry', retryable: true };
+  }
+  if (m.type === 'system' && m.subtype === 'compact_boundary') {
+    const meta = (message as { compact_metadata?: { pre_tokens?: number } }).compact_metadata;
+    const detail = meta?.pre_tokens ? ` (${meta.pre_tokens.toLocaleString()} tokens compacted)` : '';
+    return { type: 'result', text: `Context compacted${detail}.` };
+  }
+  if (m.type === 'system' && m.subtype === 'task_notification') {
+    // §24.128 D4: 0.3.x task_notification carries `status`
+    // ('completed'|'failed'|'stopped') + `usage` — the deterministic subagent
+    // lifecycle beat item-#1 Q3 wanted (vs the flaky prompt-nudged
+    // record_progress). Surface the status; the §24.116 audit-row render
+    // consumes the richer signal in its own slice.
+    const tn = message as { summary?: string; status?: string };
+    const verb = tn.status ? `Task ${tn.status}` : 'Task notification';
+    return { type: 'progress', message: tn.summary || verb };
+  }
+  return null;
+}
+
 function log(msg: string): void {
   console.error(`[claude-provider] ${msg}`);
 }
@@ -764,26 +808,20 @@ export class ClaudeProvider implements AgentProvider {
           }
         }
 
-        if (message.type === 'system' && message.subtype === 'init') {
-          yield { type: 'init', continuation: message.session_id };
-        } else if (message.type === 'result') {
+        if (message.type === 'result') {
+          // Turn-stateful: folds in the per-turn record/dispatch counts, so it
+          // stays inline (not in the pure sdkSystemMessageToEvent classifier).
           const text = 'result' in message ? ((message as { result?: string }).result ?? null) : null;
           const base = sdkResultToTurnTelemetry(message);
           const telemetry: TurnTelemetry | undefined = base
             ? { ...base, record_calls: recordCalls, subagent_dispatches: [...subagentDispatches] }
             : undefined;
           yield { type: 'result', text, telemetry };
-        } else if (message.type === 'system' && (message as { subtype?: string }).subtype === 'api_retry') {
-          yield { type: 'error', message: 'API retry', retryable: true };
-        } else if (message.type === 'system' && (message as { subtype?: string }).subtype === 'rate_limit_event') {
-          yield { type: 'error', message: 'Rate limit', retryable: false, classification: 'quota' };
-        } else if (message.type === 'system' && (message as { subtype?: string }).subtype === 'compact_boundary') {
-          const meta = (message as { compact_metadata?: { pre_tokens?: number } }).compact_metadata;
-          const detail = meta?.pre_tokens ? ` (${meta.pre_tokens.toLocaleString()} tokens compacted)` : '';
-          yield { type: 'result', text: `Context compacted${detail}.` };
-        } else if (message.type === 'system' && (message as { subtype?: string }).subtype === 'task_notification') {
-          const tn = message as { summary?: string };
-          yield { type: 'progress', message: tn.summary || 'Task notification' };
+        } else {
+          // init / api_retry / rate_limit_event / compact_boundary /
+          // task_notification — see sdkSystemMessageToEvent (§24.128).
+          const sysEvent = sdkSystemMessageToEvent(message);
+          if (sysEvent) yield sysEvent;
         }
       }
       log(`Query completed after ${messageCount} SDK messages`);

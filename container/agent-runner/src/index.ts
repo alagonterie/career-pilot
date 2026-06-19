@@ -73,11 +73,19 @@ async function main(): Promise<void> {
   const mcpServerPath = path.join(__dirname, 'mcp-tools', 'index.ts');
 
   // Build MCP servers config: nanoclaw built-in + any from container.json
-  const mcpServers: Record<string, { command: string; args: string[]; env: Record<string, string> }> = {
+  const mcpServers: Record<
+    string,
+    { command: string; args: string[]; env: Record<string, string>; alwaysLoad?: boolean }
+  > = {
     nanoclaw: {
       command: 'bun',
       args: ['run', mcpServerPath],
       env: {},
+      // §24.128: this server carries the career-pilot + nanoclaw MCP tools the
+      // orchestrator uses every turn. At claude-agent-sdk 0.3.x MCP startup is
+      // non-blocking by default, so block on this one (it's a local subprocess,
+      // sub-5s) to guarantee the tools are present in the turn-1 prompt.
+      alwaysLoad: true,
     },
   };
 
