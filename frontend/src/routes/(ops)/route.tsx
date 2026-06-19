@@ -25,7 +25,7 @@ function OpsLayout() {
         <Outlet />
       </div>
       <ConnectiveRail />
-      <SiteFooter identity={identity} register="ops" />
+      <SiteFooter identity={identity} />
     </div>
   )
 }

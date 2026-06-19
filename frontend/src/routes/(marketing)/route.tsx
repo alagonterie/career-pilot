@@ -24,7 +24,7 @@ function MarketingLayout() {
         <Outlet />
       </div>
       <ConnectiveRail />
-      <SiteFooter identity={identity} register="marketing" />
+      <SiteFooter identity={identity} />
     </div>
   )
 }

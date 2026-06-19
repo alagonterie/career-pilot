@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
+import { isMonoSurface } from '~/lib/site'
+
 import { railConfigFor } from './ConnectiveRail'
 
 describe('railConfigFor (connective rail, PORTAL §8.4)', () => {
@@ -18,13 +20,14 @@ describe('railConfigFor (connective rail, PORTAL §8.4)', () => {
     expect(railConfigFor('/nope')).toBeNull()
   })
 
-  it('tags ops surfaces ops-register and marketing surfaces marketing', () => {
-    expect(railConfigFor('/dashboard')!.register).toBe('ops')
-    expect(railConfigFor('/pipeline')!.register).toBe('ops')
-    expect(railConfigFor('/architecture')!.register).toBe('ops')
-    expect(railConfigFor('/')!.register).toBe('marketing')
-    expect(railConfigFor('/experience')!.register).toBe('marketing')
-    expect(railConfigFor('/about')!.register).toBe('marketing')
+  it('wears the mono/terminal chrome only on /dashboard + /architecture', () => {
+    expect(isMonoSurface('/dashboard')).toBe(true)
+    expect(isMonoSurface('/architecture')).toBe(true)
+    expect(isMonoSurface('/pipeline')).toBe(false) // the pipeline reads cleaner, not as "techy"
+    expect(isMonoSurface('/')).toBe(false)
+    expect(isMonoSurface('/experience')).toBe(false)
+    expect(isMonoSurface('/about')).toBe(false)
+    expect(isMonoSurface('/contact')).toBe(false)
   })
 
   it('points /about at the repo via an external deepen link (the tell surface → the code)', () => {

@@ -2,7 +2,8 @@ import { Link } from '@tanstack/react-router'
 import { Menu, X } from 'lucide-react'
 import * as React from 'react'
 
-import { PERSON_NAME } from '~/lib/site'
+import { CHROME_WIDTH, PERSON_NAME } from '~/lib/site'
+import { cn } from '~/lib/utils'
 
 type NavLink = { to: string; label: string }
 
@@ -77,11 +78,14 @@ export function SiteHeader() {
 
   return (
     <header data-site-header className="sticky top-0 z-20 w-full border-b border-border bg-background/80 backdrop-blur">
-      {/* max-w-4xl (not 3xl) + a guaranteed gap so the wordmark and the dense
-          6-link nav never crowd — a long real name (VITE_PERSON_NAME) overflowed
-          the narrower box and pressed up against the first link. shrink-0 on both
-          ends keeps either from compressing the other. */}
-      <nav aria-label="Primary" className="mx-auto flex h-14 max-w-4xl items-center justify-between gap-6 px-6">
+      {/* Content centered in the shared CHROME_WIDTH gutter so the header frames the
+          page on the same column as the connective rail + footer. A guaranteed gap +
+          shrink-0 on both ends keeps the wordmark (a long real name VITE_PERSON_NAME)
+          and the dense 6-link nav from compressing each other. */}
+      <nav
+        aria-label="Primary"
+        className={cn('mx-auto flex h-14 items-center justify-between gap-6 px-6', CHROME_WIDTH)}
+      >
         <Link to="/" className="shrink-0 font-mono text-sm font-semibold tracking-tight text-foreground">
           {PERSON_NAME}
         </Link>
