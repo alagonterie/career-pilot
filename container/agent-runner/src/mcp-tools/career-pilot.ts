@@ -59,13 +59,14 @@ const PROFILE_FIELDS = [
   'headshot_path',
   'brand_color_hsl',
   'gmail_account',
+  'protected_terms',
 ] as const;
 
 export const updateProfileField: McpToolDefinition = {
   tool: {
     name: 'update_profile_field',
     description:
-      "Update a single field on the candidate_profile (the candidate's persona content). Use during onboarding (one field per turn) and any time the candidate explicitly updates their profile. The change takes effect on the NEXT container spawn (the persona render hook re-runs and the agent sees the updated context). For JSON-valued fields (target_roles, location_pref, skills), pass the JSON-encoded string.",
+      "Update a single field on the candidate_profile (the candidate's persona content). Use during onboarding (one field per turn) and any time the candidate explicitly updates their profile. The change takes effect on the NEXT container spawn (the persona render hook re-runs and the agent sees the updated context). For JSON-valued fields (target_roles, location_pref, skills, protected_terms), pass the JSON-encoded string. `protected_terms` is the candidate's own employers/project codenames that must stay visible (never anonymized) on public interview kits — derive it from the master resume and keep it current; it IS directly writable here.",
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -76,7 +77,7 @@ export const updateProfileField: McpToolDefinition = {
         },
         value: {
           description:
-            'New value. For comp_floor pass an integer (USD/year). For target_roles, location_pref, skills pass a JSON-encoded string (e.g. \'["Staff Backend", "Platform"]\'). For null-able fields pass null to clear.',
+            'New value. For comp_floor pass an integer (USD/year). For target_roles, location_pref, skills, protected_terms pass a JSON-encoded string (e.g. \'["Staff Backend", "Platform"]\'). For null-able fields pass null to clear.',
         },
       },
       required: ['field', 'value'],

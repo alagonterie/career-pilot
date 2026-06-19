@@ -292,6 +292,7 @@ describe('PersonaPanel', () => {
         website_url: null,
         search_goals: 'because',
         gmail_account: 'candidate.dev@gmail.com',
+        protected_terms: '["Globex","Initech"]',
         updated_at: '2026-06-05T00:00:00Z',
       },
       candidateMd: '# Jane Doe',

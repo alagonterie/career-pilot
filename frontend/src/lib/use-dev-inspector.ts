@@ -91,6 +91,7 @@ export interface DevProfile {
   website_url: string | null
   search_goals: string | null
   gmail_account: string | null
+  protected_terms: string | null // §24.134d — JSON array; auto-derived keep-list (employers/projects)
   updated_at: string
 }
 

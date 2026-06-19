@@ -21,6 +21,7 @@ function profile(overrides: Partial<CandidateProfile> = {}): CandidateProfile {
     headshot_path: null,
     brand_color_hsl: null,
     gmail_account: null,
+    protected_terms: null,
     updated_at: '2026-05-26T00:00:00Z',
     ...overrides,
   };

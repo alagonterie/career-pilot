@@ -44,6 +44,7 @@ export interface CandidateProfile {
   headshot_path: string | null; // excluded (portal styling)
   brand_color_hsl: string | null; // excluded (portal styling)
   gmail_account: string | null; // Phase 2.3 (migration 108) — owner's Gmail address; OAuth refresh token lives in OneCLI vault
+  protected_terms: string | null; // §24.134d (migration 141) — JSON array; the candidate's own employers/projects kept un-redacted on public kits. DERIVED from the résumé (not an onboarding step).
   updated_at: string;
 }
 

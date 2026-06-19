@@ -27,6 +27,7 @@ export function PersonaPanel({ persona }: PersonaPanelProps) {
   const { profile, candidateMd, onboarding } = persona
   const roles = parseList(profile?.target_roles ?? null)
   const skills = parseList(profile?.skills ?? null)
+  const protectedTerms = parseList(profile?.protected_terms ?? null)
 
   return (
     <Card data-testid="persona-panel">
@@ -81,6 +82,27 @@ export function PersonaPanel({ persona }: PersonaPanelProps) {
         {profile?.bio ? <LongField label="Bio" value={profile.bio} /> : null}
         {profile?.search_goals ? <LongField label="My goals" value={profile.search_goals} /> : null}
         {profile?.master_resume ? <LongField label="Master resume" value={profile.master_resume} mono /> : null}
+
+        {/* §24.134d: a DERIVED field, not an onboarding step — the agent extracts
+            it from the résumé behind the scenes. Shown with its own "auto" framing
+            (and deliberately absent from the onboarding checklist + reset steps). */}
+        <div className="flex flex-col gap-1" data-testid="persona-protected-terms">
+          <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            Keep-list
+            <span className="rounded-sm bg-ai/10 px-1 font-mono text-[9px] tracking-wide text-ai">auto-derived</span>
+          </span>
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            The candidate&apos;s own employers/projects, kept visible (never anonymized) on public interview kits. The
+            agent derives this from the résumé behind the scenes — it isn&apos;t an onboarding step or hand-edited.
+          </p>
+          <p className="text-xs">
+            {protectedTerms.length ? (
+              protectedTerms.join(', ')
+            ) : (
+              <span className="text-muted-foreground">— none derived yet</span>
+            )}
+          </p>
+        </div>
 
         <div className="flex flex-col gap-1">
           <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
