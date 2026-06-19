@@ -14,6 +14,7 @@ import {
   handleCreateGmailDraft,
   handleGetApplication,
   handleListApplications,
+  handleRecordDispatch,
   handleRecordFunnelEvent,
   handleRecordProgress,
   handleRecordRequestTelemetry,
@@ -77,6 +78,9 @@ registerOwnerOnly('career_pilot.record_funnel_event', handleRecordFunnelEvent);
 registerOwnerOnly('career_pilot.get_application', handleGetApplication);
 registerOwnerOnly('career_pilot.list_applications', handleListApplications);
 registerOwnerOnly('career_pilot.record_progress', handleRecordProgress);
+// §24.134c: deterministic dispatch trace, emitted at observation-time by the
+// container (owner path only) so it precedes the subagent's own progress rows.
+registerOwnerOnly('career_pilot.record_dispatch', handleRecordDispatch);
 // The two telemetry actions register PLAIN, not owner-only (§24.68 D-C): a
 // sandbox emission writes a private numbers-only request_telemetry row classed
 // 'sandbox' host-side — and never a public_audit_trail row (the invariant

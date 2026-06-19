@@ -197,4 +197,13 @@ export type ProviderEvent =
    * provider was constructed with `emitTrace` (sandbox group); the poll-loop
    * writes each as a `kind:'trace'` outbound row. See STRATEGY.md §24.20.
    */
-  | { type: 'trace'; trace: TraceEvent };
+  | { type: 'trace'; trace: TraceEvent }
+  /**
+   * §24.134c: the orchestrator just dispatched a subagent — emitted the moment
+   * the `Task` tool_use is observed in the stream (owner path only; sandbox uses
+   * the `trace` path above). The poll-loop turns it into a `record_dispatch`
+   * action, so the deterministic "Dispatched by the orchestrator." trace lands
+   * with a seq BEFORE the subagent's own mid-turn record_progress rows — instead
+   * of being reconstructed at turn-end (§24.78), which put it after the work.
+   */
+  | { type: 'dispatch'; subagentType: string };

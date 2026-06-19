@@ -455,6 +455,52 @@ function insertProgressRow(
 }
 
 /**
+ * `record_dispatch` (§24.134c): the deterministic subagent-lifecycle trace,
+ * emitted by the container the MOMENT the orchestrator's `Task` tool_use is
+ * observed — not reconstructed at turn-end like §24.78 originally did. Writing
+ * it here, before the subagent's own record_progress rows arrive, gives it a
+ * lower seq, so the public `/live` trace reads "▸ dispatched X" THEN X's
+ * progress (instead of the marker landing after the work). Carries only the
+ * public-safe subagent name + the fixed summary, so it needs no sanitization.
+ * Sandbox is excluded both ways: the container gates emission on the owner path,
+ * and this handler also skips the sandbox traffic class (defense in depth).
+ */
+export async function handleRecordDispatch(
+  content: Record<string, unknown>,
+  session: Session,
+  inDb: Database.Database,
+): Promise<void> {
+  const requestId = reqId(content);
+  const p = payload(content);
+  try {
+    const subagentType = typeof p.subagent_name === 'string' ? p.subagent_name.trim() : '';
+    if (subagentType && deriveTrafficClass(session) !== 'sandbox') {
+      const db = getDb();
+      if (getConfig<boolean>(db, 'owner_subagent_trace_emit_enabled', true)) {
+        insertProgressRow(db, {
+          id: generateId('prog'),
+          ts: new Date().toISOString(),
+          agentName: subagentType,
+          proactive: 0,
+          summary: SUBAGENT_DISPATCH_SUMMARY,
+          stage: 'dispatched',
+          sessionId: session.id,
+          applicationRef: null,
+          applicationId: null,
+        });
+      }
+    }
+    writeResponse(inDb, requestId, { ok: true, data: { recorded: true } });
+  } catch (err) {
+    log.error('record_dispatch failed', { err });
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'INTERNAL', message: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
+/**
  * `record_progress` writes a subagent's progress trace to the public `/live`
  * feed. The detail string is obfuscated through the SINGLE sanitizer pipeline
  * (§24.12, F2) — Pass 1 (PII regex) + Pass 2 (company/alias) + Pass 3 (host-side
@@ -708,32 +754,15 @@ export async function handleRecordTurnTelemetry(
 
     let id: string | null = null;
     if (trafficClass !== 'sandbox') {
-      // §24.78: deterministic, PII-safe subagent-lifecycle traces. The owner-path
-      // public stream must not depend on a subagent voluntarily calling
-      // record_progress (chronically skipped — box-confirmed June 16/17: the
-      // subagents ran and wrote durable output, yet zero traces landed). Emit one
-      // subagent_progress row per subagent_type the orchestrator dispatched this
-      // turn, carrying ONLY the public-safe name + a fixed summary (no tool input/
-      // prompt), so it needs no sanitization. Written BEFORE the turn row so these
-      // lifecycle lines precede the turn's batch-sealing row in seq order (§24.35).
-      if (getConfig<boolean>(db, 'owner_subagent_trace_emit_enabled', true)) {
-        const dispatches = Array.isArray(p.subagent_dispatches)
-          ? (p.subagent_dispatches as unknown[]).filter((s): s is string => typeof s === 'string' && s.length > 0)
-          : [];
-        for (const subagentType of new Set(dispatches)) {
-          insertProgressRow(db, {
-            id: generateId('prog'),
-            ts: now,
-            agentName: subagentType,
-            proactive: 0,
-            summary: SUBAGENT_DISPATCH_SUMMARY,
-            stage: 'dispatched',
-            sessionId: session.id,
-            applicationRef: null,
-            applicationId: null,
-          });
-        }
-      }
+      // §24.78's deterministic subagent-lifecycle trace used to be reconstructed
+      // HERE from p.subagent_dispatches — but at turn-end it always took the
+      // turn's highest seq, so the "Dispatched by the orchestrator." row landed
+      // AFTER the subagent's own mid-turn record_progress rows. §24.134c moves
+      // the emission to dispatch-OBSERVATION time (the container's `dispatch`
+      // ProviderEvent → record_dispatch → handleRecordDispatch), giving it a
+      // lower seq so it reads as a header for the work that follows. The turn
+      // telemetry still carries subagent_dispatches in details for data, but no
+      // longer writes the lifecycle rows.
 
       id = generateId('turn');
       db.prepare(

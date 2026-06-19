@@ -2,7 +2,12 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { query as sdkQuery, type HookCallback, type PreCompactHookInput, type Query } from '@anthropic-ai/claude-agent-sdk';
+import {
+  query as sdkQuery,
+  type HookCallback,
+  type PreCompactHookInput,
+  type Query,
+} from '@anthropic-ai/claude-agent-sdk';
 
 import { clearContainerToolInFlight, setContainerToolInFlight } from '../db/connection.js';
 import { registerProvider } from './provider-registry.js';
@@ -834,7 +839,20 @@ export class ClaudeProvider implements AgentProvider {
         // §24.34/§24.78 (fixed §24.115): per-turn signals — record_* count +
         // dispatched subagents. Always-on (independent of emitTrace) — feeds the
         // owner audit trail. See accumulateTurnSignals for the block-id dedup.
+        // §24.134c: capture which dispatches are NEW in this message BEFORE the
+        // accumulate call folds them into the set, so we can emit the dispatch
+        // marker at observation-time (below) rather than reconstruct it at turn-end.
+        const newDispatches = subagentDispatchesFromMessage(message).filter((st) => !subagentDispatches.has(st));
         recordCalls += accumulateTurnSignals(message, recordCallBlockIds, subagentDispatches);
+
+        // §24.134c: emit the dispatch marker the moment the Task tool_use is
+        // seen — its outbound row precedes the subagent's own record_progress
+        // rows, so the public trace reads "▸ dispatched X" THEN X's progress.
+        // Owner path only: the sandbox carries dispatch info via the `trace`
+        // path above, and gating here keeps the sandbox stream byte-identical.
+        if (!emitTrace) {
+          for (const st of newDispatches) yield { type: 'dispatch', subagentType: st };
+        }
 
         // Simulator trace (§24.20): sandbox-gated. Emits tool/subagent calls
         // from assistant messages and end-of-run cost from the result message.

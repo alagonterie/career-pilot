@@ -597,6 +597,14 @@ function handleEvent(event: ProviderEvent, _routing: RoutingContext): void {
     case 'progress':
       log(`Progress: ${event.message}`);
       break;
+    case 'dispatch':
+      // §24.134c: emit the deterministic dispatch marker at observation-time so
+      // it precedes the subagent's own record_progress rows in seq order. Fire-
+      // and-forget; the host (handleRecordDispatch) writes the public trace row.
+      void sendActionNoWait('career_pilot.record_dispatch', { subagent_name: event.subagentType }).catch((err) =>
+        log(`dispatch emit failed: ${err instanceof Error ? err.message : String(err)}`),
+      );
+      break;
   }
 }
 
