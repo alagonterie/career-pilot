@@ -308,9 +308,11 @@ function log(msg: string): void {
  * forget; never throws into the stream). `getContextUsage` is a claude-agent-sdk
  * 0.3.x control method (callable mid-query) — it reports the preamble's token
  * cost by category (system prompt / tools / memory / MCP). Cheap ongoing
- * observability for preamble bloat, which is otherwise invisible: measured ~80K
- * static tokens at the 0.3.x bump (vs the §24.49 ~55K estimate — the assumption
- * had drifted). Owner path only (the caller gates on !emitTrace).
+ * observability for preamble bloat, which is otherwise invisible. First box
+ * reading: ~57.7K static (System prompt 6.3K + System tools 18K + MCP 11.5K +
+ * Memory/persona 21K) — confirming §24.49's ~55K estimate (the raw
+ * cache_creation_tokens of ~80K had misled, it folds in ~30K of live messages).
+ * Owner path only (the caller gates on !emitTrace).
  */
 function logContextUsage(q: Query): void {
   q.getContextUsage()
@@ -336,6 +338,12 @@ function logContextUsage(q: Query): void {
 //   the question and blocks on the real reply.
 // - EnterPlanMode / ExitPlanMode / EnterWorktree / ExitWorktree: Claude
 //   Code UI affordances; in a headless container they'd appear stuck.
+// - NotebookEdit / TeamCreate / TeamDelete / SendMessage (§24.125 WS2): career-
+//   pilot edits no Jupyter notebooks and uses the orchestrator→subagent dispatch
+//   model (Task/Agent), never agent teams — so these builtins are dead weight in
+//   the ~18K System-tools schema. Disallowing removes them from context entirely
+//   (bare-name disallow works regardless of permission mode), shrinking the
+//   preamble. The agent's own messaging is the mcp__nanoclaw__send_message tool.
 const SDK_DISALLOWED_TOOLS = [
   'CronCreate',
   'CronDelete',
@@ -346,6 +354,10 @@ const SDK_DISALLOWED_TOOLS = [
   'ExitPlanMode',
   'EnterWorktree',
   'ExitWorktree',
+  'NotebookEdit',
+  'TeamCreate',
+  'TeamDelete',
+  'SendMessage',
 ];
 
 // Tool allowlist for NanoClaw agent containers. MCP-tool entries are derived
@@ -365,13 +377,11 @@ const TOOL_ALLOWLIST = [
   'Task',
   'TaskOutput',
   'TaskStop',
-  'TeamCreate',
-  'TeamDelete',
-  'SendMessage',
   'TodoWrite',
   'ToolSearch',
   'Skill',
-  'NotebookEdit',
+  // §24.125 WS2: TeamCreate/TeamDelete/SendMessage/NotebookEdit dropped — unused
+  // by career-pilot and disallowed above to trim the System-tools schema.
 ];
 
 // MCP server names are sanitized by the SDK when forming tool prefixes:
