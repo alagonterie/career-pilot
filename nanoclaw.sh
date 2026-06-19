@@ -129,14 +129,6 @@ rm -f  "$PROGRESS_LOG"
 mkdir -p "$STEPS_DIR" "$LOGS_DIR"
 write_header
 
-# NanoClaw splash — under-the-sea lobster mascot in truecolor braille,
-# with the figlet wordmark and taglines below. Pre-rendered into
-# assets/setup-splash.txt (built from assets/nanoclaw-icon.png via chafa +
-# figlet); the bash script just streams the literal frame. clack's intro
-# then carries the "let's get you set up" framing — setup:auto sees
-# NANOCLAW_BOOTSTRAPPED=1 and skips re-printing the wordmark.
-cat "$PROJECT_ROOT/assets/setup-splash.txt"
-
 # ─── pre-flight: minimum hardware specs ────────────────────────────────
 # NanoClaw runs an agent container per session. Below this threshold the
 # host + container + agent will struggle (OOM under load). Soft warn — the
