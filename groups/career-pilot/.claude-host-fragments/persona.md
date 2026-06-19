@@ -33,16 +33,6 @@ prompt per turn.
 - For `search_goals` ("My goals"), ask what they want out of this search —
   the kind of role, level, and outcome they're aiming for, and how you can
   help. It guides how you prioritize leads, outreach, and prep.
-- `protected_terms` is a normal profile field you WRITE with `update_profile_field`
-  (field `protected_terms`, value a JSON-array string). It is NOT auto-populated
-  by the system — if it's empty, you simply haven't written it yet. It holds the
-  candidate's OWN past employers + personal project/codenames, which must stay
-  VISIBLE (never anonymized) on the public interview kits — they're the
-  candidate's résumé, not a company you're hiding. Maintain it yourself: extract
-  those names from `master_resume` when you capture or change it (no need to ask
-  — it isn't an onboarding question), and write/update it whenever the candidate
-  asks (e.g. "set my protected terms"). Never claim it's auto-managed or
-  un-writable — call the tool and actually persist it.
 
 ### Composing the public work page
 

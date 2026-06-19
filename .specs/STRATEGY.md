@@ -6516,6 +6516,13 @@ Each chip is a non-interactive `<span>` with a per-tier `title` (hover) — deli
 
 **DoD.** Host suite green (belt token → `[AI_REDACTED]`, updated assertions). Frontend: `Redaction` renders the right tier/glyph/title per token shape; `renderInline` + `LogStream` interleave chips with text without disturbing bold/code/tables; legend renders once on a live kit. Owner sees it locally before ship.
 
+##### 24.134e Over-redaction: model-first, with an optional dev-only keep-list
+
+The belt over-redacted (a kit hit 18 AI redactions, incl. generic terms + the candidate's OWN former employer). Two levers were tried; the decision is **model-first**:
+
+- **Primary (kept): a stronger belt model.** `kit_entity_redact_model` default → **`claude-sonnet-4-6`** (the belt isn't dev-overridden — `dev_model_tier` is container-only — so this applies in dev + prod). Box-verified: Sonnet cut the kit's AI redactions **18 → 5**, KEPT the candidate's former employer (recognized it as their own résumé), and kept generic terms like SOA. The smarter model handles the candidate-owned-term case on its own. Per-belt cost stays negligible (per-kit, cached, fail-safe).
+- **`protected_terms` keep-list: kept ONLY as an optional DEV override, invisible to the agent** (owner decision 2026-06-19). `candidate_profile.protected_terms` (migration 141, JSON array) + the belt's `filterProtected` deterministically force-keeps any listed term — inert when empty (the default). It is **NOT agent-visible**: removed from `update_profile_field` (both the container MCP-tool field enum and the host PROFILE_FIELDS), so the agent has no awareness of or tool for it. The owner sets it directly in the DB; the dev-inspector PersonaPanel shows it read-only, badged "dev override". The originally-planned **AI auto-derivation was DROPPED**: it crowded the persona and the orchestrator chronically confabulated (claimed it wrote it / that the field was un-writable) instead of persisting — and Sonnet makes it unnecessary. The escape hatch exists for the rare case the model over-redacts a specific term the owner wants pinned; nothing auto-maintains it.
+
 ---
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.

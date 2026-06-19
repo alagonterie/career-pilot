@@ -83,23 +83,29 @@ export function PersonaPanel({ persona }: PersonaPanelProps) {
         {profile?.search_goals ? <LongField label="My goals" value={profile.search_goals} /> : null}
         {profile?.master_resume ? <LongField label="Master resume" value={profile.master_resume} mono /> : null}
 
-        {/* §24.134d: a DERIVED field, not an onboarding step — the agent extracts
-            it from the résumé behind the scenes. Shown with its own "auto" framing
-            (and deliberately absent from the onboarding checklist + reset steps). */}
+        {/* §24.134e: an OPTIONAL DEV override — not an onboarding step, not
+            auto-populated, and NOT agent-visible (the agent has no tool for it).
+            The redaction belt's model (Sonnet) normally keeps the candidate's own
+            résumé terms on its own; this is a deterministic escape hatch the owner
+            sets directly in the DB for the rare term the model over-redacts. */}
         <div className="flex flex-col gap-1" data-testid="persona-protected-terms">
           <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
             Keep-list
-            <span className="rounded-sm bg-ai/10 px-1 font-mono text-[9px] tracking-wide text-ai">auto-derived</span>
+            <span className="rounded-sm bg-muted px-1 font-mono text-[9px] tracking-wide text-muted-foreground">
+              dev override
+            </span>
           </span>
           <p className="text-[11px] leading-snug text-muted-foreground">
-            The candidate&apos;s own employers/projects, kept visible (never anonymized) on public interview kits. The
-            agent derives this from the résumé behind the scenes — it isn&apos;t an onboarding step or hand-edited.
+            Terms the redaction belt must never anonymize on public kits. The model normally keeps the candidate&apos;s
+            own employers/projects on its own — this is a deterministic dev escape hatch (set directly in{' '}
+            <code className="text-[10px]">candidate_profile.protected_terms</code>) for the rare term it over-redacts.
+            Not agent-managed.
           </p>
           <p className="text-xs">
             {protectedTerms.length ? (
               protectedTerms.join(', ')
             ) : (
-              <span className="text-muted-foreground">— none derived yet</span>
+              <span className="text-muted-foreground">— none set</span>
             )}
           </p>
         </div>
