@@ -19,7 +19,9 @@ ARG INSTALL_CJK_FONTS=false
 # Pin CLI versions for reproducibility. Bump deliberately — unpinned installs
 # mean every rebuild silently picks up the latest and can break in lockstep
 # across all users.
-ARG CLAUDE_CODE_VERSION=2.1.128
+# claude-code is no longer installed here: at claude-agent-sdk 0.3.x the SDK ships
+# its own version-matched Claude Code binary (@anthropic-ai/claude-agent-sdk-<plat>)
+# and runs it directly (claude.ts omits pathToClaudeCodeExecutable). See §24.128.
 ARG AGENT_BROWSER_VERSION=latest
 ARG VERCEL_VERSION=52.2.1
 ARG BUN_VERSION=1.3.12
@@ -81,14 +83,12 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
     bun install --frozen-lockfile
 
 # ---- pnpm + global Node CLIs -------------------------------------------------
-# Most stable first, most frequently bumped last. Bumping claude-code
-# (the most common change) only invalidates one layer.
+# Most stable first, most frequently bumped last.
 #
 # only-built-dependencies gates pnpm's supply-chain policy:
 #   - agent-browser has a postinstall build step.
-#   - @anthropic-ai/claude-code's postinstall downloads the native Claude
-#     binary (linux-arm64 variant on our image). Without the allowlist
-#     the SDK fails at spawn time with "native binary not found".
+# (claude-code is no longer installed here — §24.128; the agent-runner's
+#  claude-agent-sdk 0.3.x bundles its own native Claude Code binary.)
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 # Pin pnpm to match the host (package.json packageManager). pnpm 11 stopped
@@ -101,14 +101,10 @@ RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
 
 RUN --mount=type=cache,target=/root/.cache/pnpm \
     echo "only-built-dependencies[]=agent-browser" > /root/.npmrc && \
-    echo "only-built-dependencies[]=@anthropic-ai/claude-code" >> /root/.npmrc && \
     pnpm install -g "vercel@${VERCEL_VERSION}"
 
 RUN --mount=type=cache,target=/root/.cache/pnpm \
     pnpm install -g "agent-browser@${AGENT_BROWSER_VERSION}"
-
-RUN --mount=type=cache,target=/root/.cache/pnpm \
-    pnpm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
 
 # ---- ncl CLI wrapper ----------------------------------------------------------
 # Actual script lives in the mounted source at /app/src/cli/ncl.ts.
