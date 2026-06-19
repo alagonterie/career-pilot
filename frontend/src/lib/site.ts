@@ -25,3 +25,20 @@ export const PERSON_NAME = (import.meta.env.VITE_PERSON_NAME as string | undefin
 export function repoBlob(path: string, line?: number): string {
   return `${REPO_URL}/blob/master/${path}${line != null ? `#L${line}` : ''}`
 }
+
+/** The shared chrome gutter: the header nav, the connective rail, and the footer all
+ * center their content in this max-width so the page is framed on one consistent
+ * column, top and bottom. Set to the widest page's content width (the ops boards),
+ * so on those pages the chrome aligns flush with the content and on narrower pages the
+ * content sits centered within it. Retune all three at once by changing this one value. */
+export const CHROME_WIDTH = 'max-w-6xl'
+
+/** The "terminal"-treatment surfaces: the only pages whose chrome (connective rail
+ * + footer) renders in `font-mono` + uppercase label. The dashboard's live telemetry
+ * and the architecture diagram read as a system; the pipeline and everything else
+ * read cleaner. A pathname check the rail + footer share so the set lives in one place. */
+const MONO_SURFACES = new Set<string>(['/dashboard', '/architecture'])
+
+export function isMonoSurface(pathname: string): boolean {
+  return MONO_SURFACES.has(pathname)
+}

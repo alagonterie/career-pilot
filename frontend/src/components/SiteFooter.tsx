@@ -1,10 +1,11 @@
-import { Link } from '@tanstack/react-router'
+import { Link, useRouterState } from '@tanstack/react-router'
 import { Globe } from 'lucide-react'
 import type { ComponentType } from 'react'
 
 import { GitHubIcon, LinkedInIcon, XIcon } from '~/components/brand-icons'
 import type { Identity } from '~/lib/profile-loader'
-import { PERSON_NAME } from '~/lib/site'
+import { CHROME_WIDTH, isMonoSurface, PERSON_NAME } from '~/lib/site'
+import { cn } from '~/lib/utils'
 
 type IconComponent = ComponentType<{ className?: string }>
 
@@ -50,68 +51,75 @@ export function footerSocials(identity: Identity): FooterSocial[] {
  * the candidate's socials as themed `fill-current` brand icons (SSR'd identity,
  * omit-when-null), and the two background doorways — "About" (`/about`, the second
  * framed entrance after the home beat) and "Privacy" (`/about#privacy`, the
- * visitor-privacy disclosure; no standalone `/privacy` page). The `register` prop
- * matches the rail's per-layout width so the footer aligns with the band above it.
+ * visitor-privacy disclosure; no standalone `/privacy` page). Full-bleed top border
+ * (page chrome) with the content in the shared chrome gutter (`CHROME_WIDTH px-6`), so
+ * the foot frames every page on the same column as the top nav — identical on every
+ * page, no resize on nav. Only the mono surfaces (/dashboard, /architecture) wear the
+ * terminal `font-mono`; read from the committed path so it doesn't flip ahead of a nav.
  */
-export function SiteFooter({ identity, register }: { identity: Identity; register: 'marketing' | 'ops' }) {
+export function SiteFooter({ identity }: { identity: Identity }) {
   const socials = footerSocials(identity)
-  const ops = register === 'ops'
+  const pathname = useRouterState({
+    select: (s) => s.resolvedLocation?.pathname ?? s.location.pathname,
+  })
+  const mono = isMonoSurface(pathname)
 
   return (
-    <footer
-      data-testid="site-footer"
-      className={[
-        'mx-auto flex w-full flex-col gap-4 border-t border-border px-6 py-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between',
-        ops ? 'max-w-6xl font-mono' : 'max-w-3xl',
-      ].join(' ')}
-    >
-      <div className="flex flex-col gap-1">
-        <span className="font-mono text-sm font-semibold text-foreground">{PERSON_NAME}</span>
-        <span>
-          {'Built with '}
-          {FOOTER_CREDITS.flatMap((c, i) => [
-            ...(i > 0 ? [' · '] : []),
+    <footer data-testid="site-footer" className={cn('w-full border-t border-border', mono && 'font-mono')}>
+      <div
+        className={cn(
+          'mx-auto flex flex-col gap-4 px-6 py-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between',
+          CHROME_WIDTH,
+        )}
+      >
+        <div className="flex flex-col gap-1">
+          <span className="font-mono text-sm font-semibold text-foreground">{PERSON_NAME}</span>
+          <span>
+            {'Built with '}
+            {FOOTER_CREDITS.flatMap((c, i) => [
+              ...(i > 0 ? [' · '] : []),
+              <a
+                key={c.label}
+                href={c.href}
+                target="_blank"
+                rel="noreferrer"
+                data-testid={`footer-credit-${c.label.split(' ')[0].toLowerCase()}`}
+                className="transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {c.label}
+              </a>,
+            ])}
+          </span>
+        </div>
+
+        <nav aria-label="Footer" className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          {socials.map((s) => (
             <a
-              key={c.label}
-              href={c.href}
+              key={s.label}
+              href={s.href}
               target="_blank"
               rel="noreferrer"
-              data-testid={`footer-credit-${c.label.split(' ')[0].toLowerCase()}`}
-              className="transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={s.label}
+              data-testid={`footer-social-${s.label.toLowerCase()}`}
+              className="inline-flex items-center justify-center rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              {c.label}
-            </a>,
-          ])}
-        </span>
-      </div>
-
-      <nav aria-label="Footer" className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        {socials.map((s) => (
-          <a
-            key={s.label}
-            href={s.href}
-            target="_blank"
-            rel="noreferrer"
-            aria-label={s.label}
-            data-testid={`footer-social-${s.label.toLowerCase()}`}
-            className="inline-flex items-center justify-center rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              <s.Icon className="h-[18px] w-[18px]" />
+            </a>
+          ))}
+          {socials.length > 0 ? <span aria-hidden="true" className="hidden h-3 w-px bg-border sm:block" /> : null}
+          <Link to="/about" data-testid="footer-about" className="transition-colors hover:text-foreground">
+            About
+          </Link>
+          <Link
+            to="/about"
+            hash="privacy"
+            data-testid="footer-privacy"
+            className="transition-colors hover:text-foreground"
           >
-            <s.Icon className="h-[18px] w-[18px]" />
-          </a>
-        ))}
-        {socials.length > 0 ? <span aria-hidden="true" className="hidden h-3 w-px bg-border sm:block" /> : null}
-        <Link to="/about" data-testid="footer-about" className="transition-colors hover:text-foreground">
-          About
-        </Link>
-        <Link
-          to="/about"
-          hash="privacy"
-          data-testid="footer-privacy"
-          className="transition-colors hover:text-foreground"
-        >
-          Privacy
-        </Link>
-      </nav>
+            Privacy
+          </Link>
+        </nav>
+      </div>
     </footer>
   )
 }

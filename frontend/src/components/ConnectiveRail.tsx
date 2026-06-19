@@ -1,6 +1,7 @@
-import { Link, useLocation } from '@tanstack/react-router'
+import { Link, useRouterState } from '@tanstack/react-router'
 
-import { REPO_URL } from '~/lib/site'
+import { CHROME_WIDTH, isMonoSurface, REPO_URL } from '~/lib/site'
+import { cn } from '~/lib/utils'
 
 type Surface = '/' | '/dashboard' | '/architecture' | '/pipeline' | '/experience' | '/about'
 type RailKind = 'convert' | 'deepen' | 'pivot'
@@ -10,7 +11,6 @@ type RailItem =
   | { label: string; kind: RailKind; href: string }
 
 interface RailCfg {
-  register: 'marketing' | 'ops'
   items: RailItem[]
 }
 
@@ -20,7 +20,6 @@ interface RailCfg {
 // unmapped route render no rail.
 const RAIL: Record<Surface, RailCfg> = {
   '/': {
-    register: 'marketing',
     items: [
       { label: 'Talk to me', kind: 'convert', to: '/contact' },
       { label: 'See it work', kind: 'deepen', to: '/dashboard' },
@@ -28,7 +27,6 @@ const RAIL: Record<Surface, RailCfg> = {
     ],
   },
   '/dashboard': {
-    register: 'ops',
     items: [
       { label: 'Talk to me', kind: 'convert', to: '/contact' },
       { label: 'How it works', kind: 'deepen', to: '/architecture' },
@@ -36,7 +34,6 @@ const RAIL: Record<Surface, RailCfg> = {
     ],
   },
   '/architecture': {
-    register: 'ops',
     items: [
       { label: 'Talk to me', kind: 'convert', to: '/contact' },
       { label: 'Read the code', kind: 'deepen', href: REPO_URL },
@@ -44,21 +41,18 @@ const RAIL: Record<Surface, RailCfg> = {
     ],
   },
   '/pipeline': {
-    register: 'ops',
     items: [
       { label: 'Talk to me', kind: 'convert', to: '/contact' },
       { label: 'See it run', kind: 'deepen', to: '/dashboard' },
     ],
   },
   '/experience': {
-    register: 'marketing',
     items: [
       { label: 'Talk to me', kind: 'convert', to: '/contact' },
       { label: 'See the system', kind: 'deepen', to: '/dashboard' },
     ],
   },
   '/about': {
-    register: 'marketing',
     items: [
       { label: 'Talk to me', kind: 'convert', to: '/contact' },
       { label: 'Read the code', kind: 'deepen', href: REPO_URL },
@@ -82,17 +76,24 @@ export function railConfigFor(pathname: string): RailCfg | null {
  * The connective rail (PORTAL §8.4): a slim "what's next" band at the foot of
  * every deep surface so none is a dead-end. The convert path (→ /contact, with
  * the originating surface as `?from`) is the constant + visually primary; the
- * deepen/pivot options are per-surface. Register-aware (clean in marketing,
- * dense/mono in ops), reduced-motion-safe. Self-determines its config from the
- * current path, so the register layouts render it unconditionally.
+ * deepen/pivot options are per-surface. One height everywhere; only the mono
+ * surfaces (/dashboard, /architecture) wear the terminal treatment (mono font +
+ * uppercase label). Reads the committed path, so it renders unconditionally in
+ * both register layouts.
  */
 export function ConnectiveRail() {
-  const { pathname } = useLocation()
+  // The committed (rendered) pathname, not the pending navigation target. Reading
+  // `location` made the rail preview the next page's buttons/height before that page
+  // rendered; `resolvedLocation` lags until the new route commits, so the rail
+  // changes in step with the content.
+  const pathname = useRouterState({
+    select: (s) => s.resolvedLocation?.pathname ?? s.location.pathname,
+  })
   const cfg = railConfigFor(pathname)
   if (!cfg) return null // /contact (the sink) + unmapped routes get no rail
 
   const from = fromParam(pathname)
-  const ops = cfg.register === 'ops'
+  const mono = isMonoSurface(pathname)
 
   const itemClass = (kind: RailKind): string =>
     [
@@ -106,51 +107,58 @@ export function ConnectiveRail() {
     <nav
       aria-label="What's next"
       data-testid="connective-rail"
-      className={[
-        // Centered wrap on a phone (the buttons stack 2+1 there — left-aligned it
-        // read as ragged overflow); left-aligned inline from sm up (unchanged).
-        'mx-auto flex w-full flex-wrap items-center justify-center gap-x-4 gap-y-3 border-t border-border px-6 sm:justify-start',
-        ops ? 'max-w-6xl py-5 font-mono text-xs' : 'max-w-3xl py-8 text-sm',
-      ].join(' ')}
+      className={cn('w-full border-t border-border', mono && 'font-mono')}
     >
-      <span className={ops ? 'uppercase tracking-widest text-muted-foreground' : 'text-muted-foreground'}>
-        What&apos;s next
-      </span>
-      <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-        {cfg.items.map((it) => {
-          if ('href' in it) {
+      <div
+        className={cn(
+          // Full-bleed border (chrome), content in the shared CHROME_WIDTH px-6 column
+          // so the foot frames the page on the same gutter as the top (PORTAL §8.4).
+          // One height everywhere (py-8 text-sm) — it's the conversion band, so give it
+          // presence + comfortable tap targets. Centered wrap on a phone (the buttons
+          // stack 2+1 there — left-aligned read as ragged overflow); left-aligned ≥sm.
+          'mx-auto flex flex-wrap items-center justify-center gap-x-4 gap-y-3 px-6 py-8 text-sm sm:justify-start',
+          CHROME_WIDTH,
+        )}
+      >
+        <span className={mono ? 'uppercase tracking-widest text-muted-foreground' : 'text-muted-foreground'}>
+          What&apos;s next
+        </span>
+        <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
+          {cfg.items.map((it) => {
+            if ('href' in it) {
+              return (
+                <a
+                  key={it.label}
+                  href={it.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  data-testid={`rail-${it.kind}`}
+                  className={itemClass(it.kind)}
+                >
+                  {it.label} ↗
+                </a>
+              )
+            }
+            if (it.to === '/contact') {
+              return (
+                <Link
+                  key={it.label}
+                  to="/contact"
+                  search={{ from }}
+                  data-testid={`rail-${it.kind}`}
+                  className={itemClass(it.kind)}
+                >
+                  {it.label} →
+                </Link>
+              )
+            }
             return (
-              <a
-                key={it.label}
-                href={it.href}
-                target="_blank"
-                rel="noreferrer"
-                data-testid={`rail-${it.kind}`}
-                className={itemClass(it.kind)}
-              >
-                {it.label} ↗
-              </a>
-            )
-          }
-          if (it.to === '/contact') {
-            return (
-              <Link
-                key={it.label}
-                to="/contact"
-                search={{ from }}
-                data-testid={`rail-${it.kind}`}
-                className={itemClass(it.kind)}
-              >
+              <Link key={it.label} to={it.to} data-testid={`rail-${it.kind}`} className={itemClass(it.kind)}>
                 {it.label} →
               </Link>
             )
-          }
-          return (
-            <Link key={it.label} to={it.to} data-testid={`rail-${it.kind}`} className={itemClass(it.kind)}>
-              {it.label} →
-            </Link>
-          )
-        })}
+          })}
+        </div>
       </div>
     </nav>
   )
