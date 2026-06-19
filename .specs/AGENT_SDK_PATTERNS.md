@@ -44,7 +44,7 @@ This is the NanoClaw v2.1.17 pin (`^0.3.170`, resolves to 0.3.181). The caret on
 
 The SDK is on a Claude Code CLI version parity track (lockstep on the trailing number: SDK `0.3.181` ↔ CLI `2.1.181`). Breaking changes we absorbed in the 0.2→0.3 bump (§24.128): `rate_limit_event` became a top-level message type; `TodoWrite`→`TaskCreate/Update/Get/List`; `options.env` *replaces* `process.env` (we spread it); MCP startup is non-blocking by default (set `alwaysLoad:true` on servers whose tools must be present turn-1). When reading external docs, verify which version they're written against.
 
-Upgrade discipline: do not bump independent of NanoClaw upstream. If we bump, do it via a coordinated upstream sync (the `/update-nanoclaw` skill flow). Check the [CHANGELOG](https://github.com/anthropics/claude-agent-sdk-typescript/blob/main/CHANGELOG.md) before any bump. Test in dev. Bump rarely.
+Upgrade discipline: do not bump independent of NanoClaw upstream. If we bump, do it via a coordinated manual upstream sync (diff against the upstream tag, re-apply our deviations). Check the [CHANGELOG](https://github.com/anthropics/claude-agent-sdk-typescript/blob/main/CHANGELOG.md) before any bump. Test in dev. Bump rarely.
 
 ---
 
