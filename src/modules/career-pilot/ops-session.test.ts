@@ -114,8 +114,36 @@ function insertTaskRow(
   ).run(id, ++seq, opts.kind ?? 'task', opts.status ?? 'pending', opts.seriesId, JSON.stringify({ prompt: '[x]' }));
 }
 
+/**
+ * Best-effort recursive remove that tolerates the Windows post-close file lock.
+ *
+ * Windows holds a brief lock on a `.db` AFTER better-sqlite3 closes it (the OS
+ * releases the handle asynchronously), so a `rmSync` racing a just-closed session
+ * DB throws `EBUSY` under full-suite load even though it passes in isolation —
+ * and a throw from `beforeEach`/`afterEach` cascades into every test in the file.
+ * We retry with a GUARANTEED synchronous backoff (`rmSync`'s own `retryDelay` is
+ * a no-op on the sync path) until the lock clears. The lock is transient — the
+ * file passes in isolation; only full-suite I/O contention stretches the release
+ * — so a generous budget makes cleanup reliably SUCCEED (vs. swallowing, which
+ * would leave a stale session DB that leaks rows into the next test). `force`
+ * no-ops a missing dir, so the prior `existsSync` guards are unnecessary.
+ */
+function rmDirSafe(dir: string): void {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (attempt >= 240 || (code !== 'EBUSY' && code !== 'EPERM' && code !== 'ENOTEMPTY')) throw err;
+      // Sleep synchronously (~50ms) to give Windows time to release the lock.
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+    }
+  }
+}
+
 function freshRawInboundDb(): ReturnType<typeof openInboundDbAtPath> {
-  if (fs.existsSync(RAW_DIR)) fs.rmSync(RAW_DIR, { recursive: true });
+  rmDirSafe(RAW_DIR);
   fs.mkdirSync(RAW_DIR, { recursive: true });
   const dbPath = path.join(RAW_DIR, 'inbound.db');
   ensureSchema(dbPath, 'inbound');
@@ -129,15 +157,15 @@ beforeEach(() => {
   const db = initTestDb();
   runMigrations(db);
   _resetEnsureThrottleForTesting();
-  if (fs.existsSync(groupSessionsDir())) fs.rmSync(groupSessionsDir(), { recursive: true, force: true });
+  rmDirSafe(groupSessionsDir());
 });
 
 afterEach(() => {
   closeDb();
   rawDb?.close();
   rawDb = null;
-  if (fs.existsSync(RAW_DIR)) fs.rmSync(RAW_DIR, { recursive: true, force: true });
-  if (fs.existsSync(groupSessionsDir())) fs.rmSync(groupSessionsDir(), { recursive: true, force: true });
+  rmDirSafe(RAW_DIR);
+  rmDirSafe(groupSessionsDir());
 });
 
 describe('isOpsSession', () => {
