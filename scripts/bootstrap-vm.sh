@@ -38,7 +38,7 @@
 #   CP_WEBHOOK_PORT         webhook listener port    (default: 3001 — dev)
 #   CP_PORTKEY_AI_PROVIDER  Portkey provider slug    (default: anthropic-default)
 #   CP_ALLOW_PRODUCTION     "1" to permit prod        (default: unset)
-#   CP_ONECLI_VERSION       OneCLI gateway image tag (default: 1.23.0 — keep in
+#   CP_ONECLI_VERSION       OneCLI gateway image tag (default: 1.36.0 — keep in
 #                           sync with setup/onecli.ts ONECLI_GATEWAY_VERSION)
 #   CP_ONECLI_PUBLIC_URL    gated OneCLI UI URL       (default: unset → install
 #                           default; set → OAuth callbacks use it, gated connect)
@@ -64,7 +64,12 @@ CP_PORTKEY_AI_PROVIDER="${CP_PORTKEY_AI_PROVIDER:-anthropic-default}"
 CP_PORTKEY_CONFIG_ID="${CP_PORTKEY_CONFIG_ID:-pc-career-dad06e}"
 CP_ALLOW_PRODUCTION="${CP_ALLOW_PRODUCTION:-}"
 # OneCLI gateway image tag — keep in sync with setup/onecli.ts ONECLI_GATEWAY_VERSION.
-CP_ONECLI_VERSION="${CP_ONECLI_VERSION:-1.23.0}"
+# 1.36.0 is the first tag whose fresh runtime serves the `/v1` API the 2.x SDK
+# requires (§24.127). The old 1.23.0 default silently re-pinned the durable
+# ~/.onecli/.env to a pre-v1 gateway on every deploy — the version-skew bug that
+# blocked the SDK 2.2.1 bump. A box already migrated by scripts/migrate-onecli-v1.sh
+# stays put; only the volume reset (done once by that script) activates /v1.
+CP_ONECLI_VERSION="${CP_ONECLI_VERSION:-1.36.0}"
 # Gated OneCLI UI URL (e.g. https://onecli.dev.hire.<apex>). Unset → install
 # default (localhost, OAuth unreachable through the tunnel). Set → NEXTAUTH_URL/
 # NEXT_PUBLIC_APP_URL point here so the owner connects Gmail via the gated host.
