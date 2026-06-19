@@ -287,15 +287,16 @@ export const NODES: ArchNode[] = [
   {
     id: 'pub-sanitize',
     label: 'Sanitization',
-    // Pass 3 is a real LLM pass (host-side Haiku via Portkey) — the node carries
-    // the ✦ provenance mark like the orchestrator/subagents (§24.123). The
-    // deterministic Pass 1/2 backbone + the withhold failsafe stay disclosed in
-    // the copy; the mark reflects the pipeline as a whole, where Pass 3 is AI.
+    // TWO real AI passes now (host-side Haiku via Portkey): the Pass-3 semantic
+    // genericizer AND the §24.134a kit entity-belt (detect → deterministic
+    // redact). The node carries the ✦ provenance mark like the orchestrator/
+    // subagents (§24.123); the deterministic Pass 1/2 backbone, the §24.134d
+    // honest-tier labelling, and the withhold failsafe stay disclosed in the copy.
     ai: true,
     region: 'public',
     probe: 'structural',
     description:
-      'Three passes before anything reaches a public table: deterministic PII scrubbing, company-name obfuscation, then an LLM semantic pass that genericizes products and events. The fail-safe is withhold — a line that can’t be sanitized is never published.',
+      'Layered defense before anything reaches a public table: deterministic PII scrubbing + company-name obfuscation, then two AI passes — a semantic genericizer for the activity feed and a detection pass that redacts identifying products and codenames in interview kits. Every redaction carries its provenance, so the page labels who scrubbed what — an AI judgment call vs a deterministic rule — honestly. The fail-safe is withhold: a line that can’t be sanitized is never published.',
     source: 'src/modules/portal/sanitizer.ts',
     demo: 'sanitizer',
     x: 58,
