@@ -749,7 +749,12 @@ export class ClaudeProvider implements AgentProvider {
         cwd: input.cwd,
         additionalDirectories: this.additionalDirectories,
         resume: input.continuation,
-        pathToClaudeCodeExecutable: '/pnpm/claude',
+        // §24.128 Path B: omit pathToClaudeCodeExecutable so the SDK runs its OWN
+        // bundled native binary (@anthropic-ai/claude-agent-sdk-<platform>) — at
+        // 0.3.x that binary IS the version-matched Claude Code CLI (sdk 0.3.181 ⇒
+        // claude-code 2.1.181), so we no longer install/pin claude-code in the
+        // image or hand-maintain SDK↔CLI parity. Validated: the linux-x64 binary
+        // executes on node:22-slim (`claude --version` → 2.1.181).
         systemPrompt: instructions
           ? { type: 'preset' as const, preset: 'claude_code' as const, append: instructions }
           : undefined,
