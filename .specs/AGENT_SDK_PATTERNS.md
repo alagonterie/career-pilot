@@ -2,7 +2,7 @@
 
 This is a cribsheet, not a tutorial. It captures the patterns we use, the gotchas we've already discovered, and the version-pinning discipline. Originally sourced from the official [Agent SDK docs](https://code.claude.com/docs/en/agent-sdk/overview) at SDK version 0.3.150.
 
-> **Version caveat (2026-05-26):** NanoClaw's vendored `container/agent-runner/package.json` pins `@anthropic-ai/claude-agent-sdk: ^0.2.128` — a major version behind what most of this doc was written against. Patterns that hinge on 0.3-only APIs (`startup()`, `forkSession`, `maxBudgetUsd`, etc.) need verification against the 0.2.x surface before relying on them. See [NANOCLAW_INTERNALS.md](NANOCLAW_INTERNALS.md) §11 Δ2 for the rationale; bump scheduled for Phase 5+ when there's a concrete reason.
+> **Version (updated 2026-06-19, Stage E):** `container/agent-runner/package.json` now pins `@anthropic-ai/claude-agent-sdk: ^0.3.170` (resolves to **0.3.181**), bumped from `^0.2.128` in the NanoClaw v2.1.17 upgrade (STRATEGY.md §24.128). This doc was written against 0.3.150, so it is now *aligned* with the shipping SDK — the 0.3-only APIs it references (`startup()`, `getContextUsage()`, the richer `task_notification`, top-level `subagent_type` on messages) are live. Two reality-checks the bump surfaced: (1) **executor model (Path B):** we omit `pathToClaudeCodeExecutable`, so the SDK runs its OWN bundled, version-matched Claude Code binary (`@anthropic-ai/claude-agent-sdk-<platform>` = CLI **2.1.181**) — no separate claude-code install, parity is automatic. (2) **`rate_limit_event` is now a top-level message type, not a `system` subtype** (the one silent parser break, fixed in §24.128). See [NANOCLAW_INTERNALS.md](NANOCLAW_INTERNALS.md) §11 Δ2.
 
 For STRATEGY.md context: this doc is referenced by §5 (subagents), §6 (in-process tools), §11 (system modes via hooks), §16 (local dev), §17 (observability).
 
@@ -31,14 +31,18 @@ Docs we cite: `code.claude.com/docs/en/agent-sdk/*`. We do **not** read or follo
 // container/agent-runner/package.json
 {
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.128"
+    "@anthropic-ai/claude-agent-sdk": "^0.3.170",
+    "@anthropic-ai/sdk": "^0.105.0",
+    "@modelcontextprotocol/sdk": "^1.29.0"
   }
 }
 ```
 
-This is the upstream NanoClaw pin (`^0.2.128`). The caret on a 0.x version is implicitly tight — npm resolves it to `0.2.x` only, never auto-floating to 0.3.x. So we ARE pinned at the major level; the caret only allows patch + minor updates within 0.2.
+This is the NanoClaw v2.1.17 pin (`^0.3.170`, resolves to 0.3.181). The caret on a 0.x version is implicitly tight — npm/bun resolve it to `0.3.x` only, never auto-floating to 0.4. `@anthropic-ai/sdk ^0.105.0` satisfies the SDK's `>=0.93.0` peer; `@modelcontextprotocol/sdk ^1.29.0` is its declared MCP peer.
 
-The SDK is on a Claude Code CLI version parity track and has had breaking changes in the last 6 months (v0.3.142 removed the V2 Session API; `TodoWrite` renamed to `TaskCreate/Update/Get/List`; `options.env` changed semantics). The 0.3.x branch differs meaningfully from 0.2.x in those areas — when reading external docs, verify which version they're written against.
+**Lockfile note (§24.128.1, load-bearing):** `container/agent-runner` is *also* a host **pnpm-workspace member**, so a dep change must update BOTH `container/agent-runner/bun.lock` (the container runtime, via `bun install`) AND the root `pnpm-lock.yaml` (the host workspace, via root `pnpm install`) — otherwise the deploy's `setup.sh` `pnpm install --frozen-lockfile` fails with a stale lockfile.
+
+The SDK is on a Claude Code CLI version parity track (lockstep on the trailing number: SDK `0.3.181` ↔ CLI `2.1.181`). Breaking changes we absorbed in the 0.2→0.3 bump (§24.128): `rate_limit_event` became a top-level message type; `TodoWrite`→`TaskCreate/Update/Get/List`; `options.env` *replaces* `process.env` (we spread it); MCP startup is non-blocking by default (set `alwaysLoad:true` on servers whose tools must be present turn-1). When reading external docs, verify which version they're written against.
 
 Upgrade discipline: do not bump independent of NanoClaw upstream. If we bump, do it via a coordinated upstream sync (the `/update-nanoclaw` skill flow). Check the [CHANGELOG](https://github.com/anthropics/claude-agent-sdk-typescript/blob/main/CHANGELOG.md) before any bump. Test in dev. Bump rarely.
 
@@ -363,7 +367,7 @@ Don't try to constrain `bypassPermissions` with `allowedTools` thinking it'll de
 
 ## 7. Custom tools — `createSdkMcpServer` wrapping
 
-The **20** career-pilot domain tools live in `container/agent-runner/src/mcp-tools/` — `career-pilot.ts` (7), `scrape-jobs.ts` (8), `funnel-curator.ts` (5) — alongside the NanoClaw built-in tool modules (`core`, `interactive`, `scheduling`, `agents`, `self-mod`). (Four originally-planned tools landed elsewhere by design: `analyze_jd` folds into `update_application`'s `jd_analyzed` patch field, `sanitize_text` is host-side in `src/modules/portal/sanitizer.ts`, `parse_email` is the funnel-curator subagent's job, and `save_outreach_draft` became `create_gmail_draft`.) **Integration note:** our actual wiring uses the `registerTools` self-registration pattern in `mcp-tools/server.ts` — NanoClaw's `^0.2.128` SDK is invoked via `pathToClaudeCodeExecutable` with the MCP server running as a child process (see STRATEGY.md §6 and NANOCLAW_INTERNALS.md §8), **not** the `createSdkMcpServer` barrel shown below. The snippet below is retained only as the SDK-canonical illustration of the `tool()` shape (return `isError`, never throw):
+The **20** career-pilot domain tools live in `container/agent-runner/src/mcp-tools/` — `career-pilot.ts` (7), `scrape-jobs.ts` (8), `funnel-curator.ts` (5) — alongside the NanoClaw built-in tool modules (`core`, `interactive`, `scheduling`, `agents`, `self-mod`). (Four originally-planned tools landed elsewhere by design: `analyze_jd` folds into `update_application`'s `jd_analyzed` patch field, `sanitize_text` is host-side in `src/modules/portal/sanitizer.ts`, `parse_email` is the funnel-curator subagent's job, and `save_outreach_draft` became `create_gmail_draft`.) **Integration note:** our actual wiring uses the `registerTools` self-registration pattern in `mcp-tools/server.ts` — the `^0.3.170` SDK runs its **own bundled Claude Code binary** (Path B, §24.128: `pathToClaudeCodeExecutable` is omitted) with the MCP server running as a child process (see STRATEGY.md §6 and NANOCLAW_INTERNALS.md §8), **not** the `createSdkMcpServer` barrel shown below. The snippet below is retained only as the SDK-canonical illustration of the `tool()` shape (return `isError`, never throw):
 
 ```typescript
 // SDK-canonical illustration of the tool() shape.
@@ -594,7 +598,7 @@ mcpServers: {
 ## 13. Quick reference card
 
 ```
-Install:               npm install @anthropic-ai/claude-agent-sdk@^0.2.128  (NanoClaw upstream)
+Install:               npm install @anthropic-ai/claude-agent-sdk@^0.3.170  (NanoClaw v2.1.17)
 Entry point:           import { query, tool, createSdkMcpServer, startup } from "..."
 Pre-warm:              await startup()  (once per process)
 New session:           query({ prompt, options: { ... } })   // no resume

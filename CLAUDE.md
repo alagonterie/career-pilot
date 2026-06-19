@@ -42,7 +42,7 @@ Treat changes to any of these the same way: update with intent, then align imple
 | `.specs/PORTAL.md` | Frontend UX specification — every page, component, interaction, anonymization model | Always first |
 | `.specs/STRATEGY.md` | Backend, infra, delivery plan (10-week phased) | After PORTAL |
 | `.specs/NANOCLAW_INTERNALS.md` | How upstream NanoClaw actually works — composer, sessions, mounts, hook surface, output protocol | Before ANY work that touches NanoClaw mechanics |
-| `.specs/AGENT_SDK_PATTERNS.md` | Claude Agent SDK canonical patterns cribsheet (note: most patterns written against 0.3.150; we use ^0.2.128) | Before any agent-runner code |
+| `.specs/AGENT_SDK_PATTERNS.md` | Claude Agent SDK canonical patterns cribsheet (written against 0.3.150; we now run `^0.3.170` — aligned, post the v2.1.17 bump) | Before any agent-runner code |
 | `.specs/CLOUDFLARE_PATTERNS.md` | Cloudflare protection patterns cribsheet | Before any Worker/infra code |
 | `.specs/RECOVERY.md` | Operator manual for kill switches + recovery | Keep open during operations |
 | `.specs/V2_IDEAS.md` | Deferred features (do NOT scope-creep into these) | When tempted to add scope |
@@ -61,7 +61,7 @@ Treat changes to any of these the same way: update with intent, then align imple
 | Decision | Choice | Why locked |
 |---|---|---|
 | Foundation | Clone-and-customize fork of **NanoClaw v2** (`nanocoai/nanoclaw`) | Not submodule. Not npm-installed. We vendor and customize in place per NanoClaw's own docs. |
-| Agent runtime | **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`, **upstream NanoClaw pin `^0.2.128`**) | In-process library — NOT Managed Agents (Anthropic-hosted REST product with similar name). See AGENT_SDK_PATTERNS.md §0 for disambiguation, §1 for version-pin rationale. Caret on a 0.x version resolves to `0.2.x` only — implicitly tight at the major level. |
+| Agent runtime | **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`, **`^0.3.170`** — resolves 0.3.181, bumped from `^0.2.128` in the v2.1.17 upgrade §24.128) | In-process library — NOT Managed Agents (Anthropic-hosted REST product with similar name). See AGENT_SDK_PATTERNS.md §0 for disambiguation, §1 for version-pin rationale. Caret on a 0.x version resolves to `0.3.x` only — implicitly tight at the major level. The SDK runs its own bundled, version-matched Claude Code binary (Path B; no separate claude-code install). |
 | Frontend | **TanStack Start** (RC) on Cloudflare Workers | Type-safe routing, no RSC tax, smaller bundle. NOT Next.js. See decision memory + PORTAL.md §3.5. |
 | Styling | Tailwind v4 + shadcn/ui (new-york) + motion/react | Locked in PORTAL.md §3.5 |
 | LLM gateway | **Portkey Model Catalog** (Integrations + AI Providers) | "Virtual keys" terminology is deprecated. Use Integrations + AI Providers. **All LLM paths route through Portkey — host-side calls (sim prose, lead-scoring) AND the agent runtime** (Claude Code via `ANTHROPIC_BASE_URL=https://api.portkey.ai` + the `@anthropic-prod` provider slug; see STRATEGY §24.44). PORTKEY_BYPASS=true env enables fallback to direct Anthropic if Portkey is rate-limited or unavailable. |
