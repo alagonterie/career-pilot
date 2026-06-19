@@ -368,6 +368,14 @@ async function sweepSession(session: Session): Promise<void> {
     const { handleRecurrence } = await import('./modules/scheduling/recurrence.js');
     await handleRecurrence(inDb, session);
     // MODULE-HOOK:scheduling-recurrence:end
+
+    // 6. Daily-briefing host backstop (§24.134b): if the briefing wake completed
+    // without surfacing the curator's non-empty attention[], deliver a
+    // deterministic digest. No-op for every non-ops session; never throws.
+    // MODULE-HOOK:career-pilot-briefing-backstop:start
+    const { maybeDeliverBriefingBackstop } = await import('./modules/career-pilot/briefing-backstop.js');
+    await maybeDeliverBriefingBackstop(inDb, outDb, session);
+    // MODULE-HOOK:career-pilot-briefing-backstop:end
   } finally {
     inDb.close();
     outDb?.close();

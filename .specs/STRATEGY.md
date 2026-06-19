@@ -6481,7 +6481,18 @@ One morning's good ops cascade (07:31 funnel-curator → research-company + buil
 
 **Observed:** the `0 8 * * *` briefing task fired + `completed` at 14:00Z; the 13:31 funnel-curator wrote a non-empty `attention_json` (one `action_owed` — "Cloudflare recruiter screen requested"); a kit had been built ~25 min prior — yet the ops session produced **0 owner-facing messages all day** (93 system action-RPCs, none of kind≠system). The orchestrator silent-skipped a briefing its own persona rules say it must send ("attention[] non-empty → you still emit").
 
-**Fix (owner choice: host deterministic backstop).** Same shape as §24.78. When a `daily-briefing` turn completes with NO owner-bound message but the latest `funnel_curator_output.attention_json` is non-empty, the host renders a minimal digest from the structured `attention[]` (owner-facing Telegram → real names OK, no sanitizer) and delivers it. The model's own richer briefing is preferred when it emits; the backstop only fires on the silent-skip-with-news case. Detection + delivery hook + config gate (`daily_briefing_backstop_enabled`) spec'd in detail before build.
+**Fix (owner choice: host deterministic backstop, attention-only).** Same shape as §24.78. New `src/modules/career-pilot/briefing-backstop.ts`, invoked from a host-sweep MODULE-HOOK after the recurrence step (`maybeDeliverBriefingBackstop(inDb, outDb, session)`), ops session only:
+
+- **Trigger:** the latest `status='completed'` `daily-briefing` task in the ops inbound, not yet handled.
+- **Idempotency:** rides the session's host-owned `delivered` table — a synthetic `briefing-backstop:<taskId>` marker is inserted once the task is handled (delivered / stale / no-news / already-covered), so every later sweep tick short-circuits. No new schema.
+- **Never-double-message window heuristic:** count owner-facing (non-`system`) `messages_out` in `[fireTime, fireTime+window_min]`. `>0` → skip (the briefing emitted, OR a coincident killer-match already pinged — an occasional miss of the digest, never a duplicate). `0` → proceed.
+- **Stale gate:** a briefing older than `max_age_min` is marked-and-skipped (don't surprise the owner with hours-late news, e.g. after a host restart).
+- **Render:** attention-only — a terse plain-text digest from the structured `attention[]` (company / reason / action_hint), headline-free like the persona briefing. Owner-facing Telegram via `getDeliveryAdapter().deliver(...)` (the approvals-module primitive); real names OK, NO sanitizer. No lead re-ranking (the silent-skip cases are attention-driven; a fallback path shouldn't spend an LLM call). Then `mirrorOpsDeliveryToChat` so a "tell me more about #1" reply has its referent (§24.67 D2).
+- **Config:** `daily_briefing_backstop_{enabled(true)/window_min(10)/max_age_min(120)}`. Best-effort: never throws; transient failure (no outbound yet, deliver error) DEFERS without marking → next tick retries.
+
+The pure decision (`decideBackstop`) and render (`renderBackstopDigest`) are factored out and unit-tested; the orchestrator is covered with seeded inbound/outbound/central DBs + a stub adapter.
+
+**DoD.** `decideBackstop` returns deliver/mark-skip/defer correctly across stale / no-outbound / owner-message-present / empty-attention / news-present. Orchestrator: delivers once when a completed briefing left attention[] unsurfaced + no owner message in window; never delivers twice (marker); skips when an owner message is in the window (no double); defers (no mark) when outbound is absent. Host build clean; full host suite green. Box: a forced fresh completed-briefing + non-empty attention + quiet window produces exactly one owner Telegram message; a second sweep sends nothing.
 
 ##### 24.134c Dispatch trace ordering (marker after the work)
 
