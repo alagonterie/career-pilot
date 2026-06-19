@@ -199,6 +199,40 @@ The normal `deploy-backend` path needs none of this — `scripts/bootstrap-vm.sh
 
 ---
 
+## 3.6 OneCLI gateway `/v1` migration + orphaned vault recovery
+
+**When:** Container spawns fail with `OneCLIRequestError [URL=…/v1/agents][StatusCode=404]` (the `@onecli-sh/sdk` 2.x line requires the gateway's `/v1` API; a pre-v1 gateway binary 404s it). The migration is codified in `scripts/migrate-onecli-v1.sh` (§24.127). **Read its header first** — it is known-destructive as written.
+
+**⚠️ The hazard that bit us (§24.127.1):** the script's `docker volume rm onecli_app-data` destroys the **vault secret-encryption master key** (OneCLI keeps it in `onecli_app-data`, NOT pgdata). After that, every `secrets` row and `app_connections` OAuth token is **orphaned** — they remain as rows (the OneCLI UI still shows "connected"), but the gateway logs `decrypt failed (wrong key or format mismatch)` and forwards no credential → 401. A `pg_dump` does **not** save you: its ciphertext is keyed to the lost master key. **Prefer the non-destructive path: bump only the gateway image tag (keep both volumes).** `/v1` is a binary feature; the image bump alone should activate it and preserve the key. Validate on local Docker before trusting it in prod.
+
+**Detect the orphaned state:**
+```bash
+# A 401 alone is ambiguous (could be an expired upstream token). The gateway log disambiguates:
+docker logs onecli --since 5m | grep -iE 'decrypt failed|credential not found|injections_applied|status='
+#   "app connection decrypt failed (wrong key…)" / "skipping secret: decryption failed" → ORPHANED (re-auth/re-register)
+#   "injections_applied=1 … status=401"                                                  → token decrypted but upstream rejected it (expired, not orphaned)
+pnpm health --json | grep -A2 gmail-token      # live Gmail probe (true validity, not UI status)
+```
+
+**Recover an orphaned vault** (after an app-data reset already happened):
+1. **Secrets (API keys)** — re-register with the gateway's new key. Read the value from the box `.env` where possible:
+   ```bash
+   onecli secrets delete --id <old-id>
+   PK=$(grep '^PORTKEY_API_KEY=' .env | cut -d= -f2-)
+   onecli secrets create --name Portkey --type generic --value "$PK" --host-pattern api.portkey.ai \
+     --header-name x-portkey-api-key --value-format '{value}'
+   # NOTE: the CLI has dropped the injection header on create — verify injection_config landed, set it if null:
+   docker exec onecli-postgres-1 psql -U onecli -d onecli -c \
+     "UPDATE secrets SET injection_config='{\"headerName\":\"x-portkey-api-key\",\"valueFormat\":\"{value}\"}'::jsonb WHERE name='Portkey'"
+   ```
+   SerpApi is a query-param secret (`--param-name api_key`); its value is not in `.env` — re-add it from the source. (The OneCLI **web UI** sets `injection_config` correctly on both kinds; prefer it when the value is to hand.)
+2. **OAuth connections (gmail / google-calendar / google-drive)** — **owner action**: reconnect each in the gated OneCLI UI (`$CP_ONECLI_PUBLIC_URL/connections`). If it shows "connected" with no Reconnect button, **Disconnect then Connect** — re-authorizing writes a fresh token under the new master key.
+3. **Verify** every provider: `pnpm health --json` (Gmail probe `ok`) + `docker logs onecli` shows `injections_applied=1 … status=200` for `api.portkey.ai` and `gmail.googleapis.com`.
+
+**Do not deploy on the old `CP_ONECLI_VERSION` default** — a deploy whose `~/.onecli/.env` re-pins a pre-v1 tag will `docker compose up -d` back to it and undo the migration. The bootstrap default is 1.36.0; keep it ≥ the first `/v1`-capable tag.
+
+---
+
 ## 4. Container restart
 
 **When:** A NanoClaw agent container has crashed, gone unresponsive, or is in an inconsistent state. Symptoms: agent stops responding to Telegram, `ncl sessions list` shows a session as `running` but `processing_ack` is stale.
