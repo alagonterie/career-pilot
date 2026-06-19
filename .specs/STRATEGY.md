@@ -6344,6 +6344,42 @@ The migration ran and **succeeded** (gateway → 1.36.0, `/v1/health` 404→200,
 
 ---
 
+#### 24.128 Stage C — claude-agent-sdk `0.2.128` → `0.3.x` (grounded against 0.3.181 `.d.ts`)
+
+**Target pins.** `container/agent-runner/package.json`: `@anthropic-ai/claude-agent-sdk` `^0.2.128` → `^0.3.170` (resolves to the highest published 0.3.x — currently 0.3.181 `latest` / 0.3.183 `next`); `@modelcontextprotocol/sdk` `^1.12.1` → `^1.29.0`. This is the **container** (bun) dep tree only — independent of the host's OneCLI SDK (Stage B). The consumers are the defensive untyped parsers in `container/agent-runner/src/providers/claude.ts`; they won't *throw* on shape drift but can **silently return wrong data**. The surfaces below were verified against the actual 0.3.181 type defs (`npm pack`, not the changelog summary).
+
+**CONFIRMED SAFE at 0.3.181 (do NOT churn these):**
+- `query({ options })` — every option we pass exists: `effort` (`'low'|'medium'|'high'|'xhigh'|'max'|number`), `settingSources`, `systemPrompt: {type:'preset', preset:'claude_code', append}`, `pathToClaudeCodeExecutable`, `allowDangerouslySkipPermissions` (still gates `permissionMode:'bypassPermissions'`), `additionalDirectories`, `allowedTools`/`disallowedTools`, `mcpServers: Record<string, McpServerConfig>`, `resume`, `cwd`, `env`, `hooks`. Compiles.
+- `sdkResultToTurnTelemetry` — `SDKResultMessage` keeps `total_cost_usd`, `duration_ms`, `num_turns`, `modelUsage: Record<string, ModelUsage>`; `ModelUsage` keeps `inputTokens`/`outputTokens`/`cacheReadInputTokens`/`cacheCreationInputTokens`/`costUSD` (gains `webSearchRequests`/`contextWindow`/`maxOutputTokens` — additive, ignored).
+- `subagentDispatchesFromMessage` / `accumulateTurnSignals` / `sdkMessageToTraceEvents` — `SDKAssistantMessage.message.content[]` tool_use blocks (`id`/`name`/`input.subagent_type`) + `parent_tool_use_id` stable; `Agent` and `Task` both still matched (the `Task→Agent` rename is an alias, we handle both).
+- System messages: `init` (carries `session_id`), `compact_boundary` (`compact_metadata.pre_tokens`), `api_retry` (`subtype:'api_retry'`) — stable.
+- Hooks: `HookCallback` is now 3-arg but our 1-arg callbacks remain assignable (TS param-count contravariance); `BaseHookInput` keeps `transcript_path`+`session_id` (PreCompact archiving safe); hook output union keeps `continue?`/`decision?:'approve'|'block'`/`stopReason?` (our `{continue:true}` / `{decision:'block',stopReason}` / `{}` all valid — the `as unknown as ReturnType<HookCallback>` cast on the block case may now be droppable).
+
+**CONFIRMED BREAKING (the one real fix):**
+- **`rate_limit_event` is a top-level message `type:'rate_limit_event'` (`SDKRateLimitEvent`), not a `system` subtype.** `claude.ts:778` checks `message.type === 'system' && subtype === 'rate_limit_event'` → never matches at 0.3.x → rate-limit classification silently dead. Fix the discriminator to `message.type === 'rate_limit_event'` (carries `rate_limit_info`). Add/extend a unit test in `claude.test.ts`.
+
+**VERIFY AT BUILD (tsc + the box turn will surface; not pre-confirmable from types):**
+- `TodoWrite` → `TaskCreate/Update/Get/List` rename (0.3.142): our `TOOL_ALLOWLIST` lists `TodoWrite` + `Task`/`TaskOutput`/`TaskStop`. Confirm against the `init` message's `tools[]` what the 0.3.x names are, and re-confirm whether `allowedTools` still scopes tool *exposure* under `bypassPermissions` (locked decision says `allowedTools` is ignored for *permission* purposes under bypass — but the MCP-namespace derivation at the call site is load-bearing for tool *reachability*; don't regress it).
+- The §24.115 streaming invariant ("one assistant message per content block under a shared `message.id`") is **behavioral** — `SDKPartialAssistantMessage` is in the union; the block-id dedup in `accumulateTurnSignals` must still see the dispatch `tool_use`. Box-only.
+
+**D4 HARVEST — adopt in this stage:**
+- **`task_notification` is now rich**: `status:'completed'|'failed'|'stopped'` + `tool_use_id?` + `usage:{total_tokens,tool_uses,duration_ms}`. Our handler already reads `.summary`; **enrich it to emit the deterministic "completed" beat** item-#1 Q3 wanted (instead of the flaky prompt-nudged `record_progress`). Keep it additive to the existing `progress` event.
+- **`startup()` is exported** (~20× faster first query) — call once at container process start (`container/agent-runner/src/index.ts`), before the poll loop. Cheap, directly eases §24.112/§24.114 cold-spawn pain.
+
+**D4 HARVEST — note now, defer the build:**
+- `SDKAssistantMessage` gains top-level `subagent_type?` + `task_description?` ("the subagent that *produced* this message" — the inverse of our dispatch read, and the on-wire discriminator §24.116 was blocked on). Stage C records this is now available; the actual §24.116 "render dispatches as system lifecycle markers" work stays its own slice.
+- `getContextUsage()` (a method on the query handle) → the measurement tool for §24.125 **WS2** (which sequences *after* this stage is box-green).
+- `SDKModelRefusalFallbackMessage` / `stop_reason:'refusal'` → refusal handling is a future hardening item, not this bump.
+
+**WATCH-ITEM (mitigate in this stage):**
+- **`MCP_CONNECTION_NONBLOCKING=1` is the 0.3.x default** — slow MCP servers report `status:'pending'` in `init` and a turn-1 race could leave career-pilot tools absent. `McpServerConfig.alwaysLoad` is available → set `alwaysLoad:true` on our in-process career-pilot MCP servers (preferred over the global `MCP_CONNECTION_NONBLOCKING=0` so unrelated servers keep the fast path). Verify the `init` message's `mcp_servers[].status` is `connected` (not `pending`) for our servers on a cold box turn.
+
+**Build steps (each its own commit when it lands).** (1) bump the two deps in `container/agent-runner/package.json` + `bun install`; (2) fix `rate_limit_event`; (3) `task_notification` completed-beat + `startup()` pre-warm + MCP `alwaysLoad`; (4) `bun run typecheck` + `bun test` (the `collectTurnSignals` seam + new rate-limit/task-notification cases); (5) rebuild the image (`./container/build.sh`) + redeploy.
+
+**DoD + mandatory box-gate (D3).** Unit seams green (`collectTurnSignals`, the rate-limit + completed-beat cases). Then **box-verified on a real container turn** (the only way to validate the 0.3.x wire shape): the §24.115 deterministic "Dispatched by the orchestrator." trace row still lands; `/api/telemetry` `cache_hit_rate` stays non-zero; `init` shows our MCP servers `connected`; the `container/agent-runner/scripts/sdk-signal-probe.ts` probe passes. **Spec deltas:** this §24.128; Stage E later realigns `AGENT_SDK_PATTERNS.md` §0/§1 + `NANOCLAW_INTERNALS.md` §11 to the 0.3.x reality. Memory: [[todo_backlog]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
