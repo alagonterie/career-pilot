@@ -1,3 +1,4 @@
+import { RedactedText } from '~/components/Redaction'
 import type { SanitizeDemoState } from '~/lib/use-sanitize-demo'
 
 /**
@@ -43,11 +44,15 @@ export function AnonymizationDemo({ state }: { state: SanitizeDemoState }) {
               <p className="mb-1 min-h-8 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
                 Sanitized · what the dashboard shows
               </p>
+              {/* §24.134d: the pane is labeled "what the dashboard shows", so it
+                  renders the redaction tokens as the SAME provenance chips the
+                  rest of the site uses — not the raw literal tokens. The raw pane
+                  on the left still shows the un-sanitized input. */}
               <pre
                 data-testid="anon-sanitized"
                 className="h-64 overflow-auto whitespace-pre-wrap rounded-md border border-primary/30 bg-background p-3 font-mono text-[11px] leading-relaxed text-foreground"
               >
-                {data.sanitized}
+                <RedactedText text={data.sanitized} />
               </pre>
             </div>
           </div>

@@ -73,7 +73,11 @@ export function Redaction({ token }: { token: string }) {
       title={r.title}
       className={cn(
         'mx-0.5 inline-flex cursor-help items-center gap-1 rounded px-1.5 align-baseline font-mono text-[0.78em] leading-snug ring-1 ring-inset',
-        isAi ? 'bg-ai/10 text-ai ring-ai/30' : 'bg-muted text-muted-foreground ring-border',
+        // §24.134d: violet stays, dialed back a notch (owner: "slightly too
+        // vibrant"). The TEXT brightness is contrast-bound (AA 4.5:1 at this size),
+        // so the "less pop" comes from a fainter fill + ring — which also lifts
+        // contrast vs the dark page.
+        isAi ? 'bg-ai/5 text-ai ring-ai/20' : 'bg-muted text-muted-foreground ring-border',
       )}
     >
       {r.glyph ? (

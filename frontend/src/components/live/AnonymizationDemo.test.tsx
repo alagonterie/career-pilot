@@ -18,7 +18,12 @@ describe('AnonymizationDemo (PORTAL §5.2)', () => {
   it('renders both panes, the redaction count, and the synthetic-only label', () => {
     render(<AnonymizationDemo state={state()} />)
     expect(screen.getByTestId('anon-raw')).toHaveTextContent('a@b.com')
-    expect(screen.getByTestId('anon-sanitized')).toHaveTextContent('[EMAIL_REDACTED]')
+    // §24.134d: the sanitized pane renders tokens as provenance chips ("what the
+    // dashboard shows"), not the literal [EMAIL_REDACTED] text.
+    const sanitized = screen.getByTestId('anon-sanitized')
+    expect(sanitized).not.toHaveTextContent('[EMAIL_REDACTED]')
+    expect(sanitized.querySelector('[data-testid="redaction-chip"]')).not.toBeNull()
+    expect(sanitized).toHaveTextContent('hidden')
     expect(screen.getByTestId('anon-count')).toHaveTextContent('1 redaction')
     expect(screen.getByTestId('anon-index')).toHaveTextContent('1 / 3')
     expect(screen.getByText(/synthetic only/i)).toBeInTheDocument()

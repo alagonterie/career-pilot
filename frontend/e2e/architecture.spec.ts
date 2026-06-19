@@ -98,11 +98,17 @@ test.describe('/architecture — live system map, frontend <-> backend', () => {
     await page.getByTestId('arch-node-pub-sanitize').click()
     const modal = page.getByRole('dialog', { name: 'Sanitization' })
     await expect(modal).toBeVisible()
-    // The real sanitizer over a synthetic sample: markers present, synthetic company redacted.
-    await expect(modal.getByTestId('anon-sanitized')).toContainText('[EMAIL_REDACTED]')
-    await expect(modal.getByTestId('anon-sanitized')).toContainText('[REDACTED:saas-demo]')
+    // §24.134d: the real sanitizer over a synthetic sample. Tokens render as
+    // provenance chips ("what the dashboard shows"), not literal [..._REDACTED]
+    // text — the deterministic PII chip + the company pseudonym chip ("saas-demo")
+    // are present; the real synthetic company name never appears.
+    const sanitized = modal.getByTestId('anon-sanitized')
+    await expect(sanitized.getByTestId('redaction-chip').first()).toBeVisible()
+    await expect(sanitized).toContainText('saas-demo')
+    await expect(sanitized).not.toContainText('[EMAIL_REDACTED]')
+    await expect(sanitized).not.toContainText('[REDACTED')
     await expect(modal.getByTestId('anon-raw')).toContainText('Globex')
-    await expect(modal.getByTestId('anon-sanitized')).not.toContainText('Globex')
+    await expect(sanitized).not.toContainText('Globex')
 
     const a11y = await new AxeBuilder({ page }).analyze()
     expect(a11y.violations).toEqual([])
@@ -121,7 +127,7 @@ test.describe('/architecture — live system map, frontend <-> backend', () => {
     await page.getByRole('button', { name: /see the sanitizer run/i }).click()
     const modal = page.getByRole('dialog', { name: 'Sanitization' })
     await expect(modal).toBeVisible()
-    await expect(modal.getByTestId('anon-sanitized')).toContainText('[EMAIL_REDACTED]')
+    await expect(modal.getByTestId('anon-sanitized').getByTestId('redaction-chip').first()).toBeVisible()
   })
 
   test('the node modal traps focus and restores it to the node on close (§24.36 36.2)', async ({ page }) => {

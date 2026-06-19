@@ -446,7 +446,12 @@ describe('NodePanel', () => {
         onClose={() => {}}
       />,
     )
-    expect(await screen.findByTestId('anon-sanitized')).toHaveTextContent('[EMAIL_REDACTED]')
+    // §24.134d: the sanitized pane renders the token as the provenance chip
+    // (a deterministic-tier "hidden" chip), not the literal [EMAIL_REDACTED].
+    const sanitized = await screen.findByTestId('anon-sanitized')
+    expect(sanitized).not.toHaveTextContent('[EMAIL_REDACTED]')
+    expect(sanitized.querySelector('[data-testid="redaction-chip"]')).not.toBeNull()
+    expect(sanitized).toHaveTextContent('hidden')
     // the demo replaces the structural "no live probe" note on this node
     expect(screen.queryByText(/no live health probe/i)).not.toBeInTheDocument()
     vi.unstubAllGlobals()

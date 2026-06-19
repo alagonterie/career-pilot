@@ -106,7 +106,9 @@ test('architecture sanitizer-node modal matches visual baseline', { tag: '@visua
   // instant, so the modal is in its final centered state for the snapshot.
   await page.getByTestId('arch-node-pub-sanitize').click()
   const modal = page.getByRole('dialog', { name: 'Sanitization' })
-  await expect(modal.getByTestId('anon-sanitized')).toContainText('[EMAIL_REDACTED]')
+  // §24.134d: the sanitized pane renders provenance chips, not literal tokens —
+  // wait on a chip so the snapshot is stable.
+  await expect(modal.getByTestId('anon-sanitized').getByTestId('redaction-chip').first()).toBeVisible()
   await expect(page).toHaveScreenshot('architecture-sanitizer-modal.png', {
     animations: 'disabled',
     fullPage: true,
