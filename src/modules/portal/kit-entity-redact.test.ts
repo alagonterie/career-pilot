@@ -83,16 +83,16 @@ describe('kit-entity-redact', () => {
   });
 
   describe('applyEntityRedactions', () => {
-    it('replaces detected tokens (word-boundary, case-insensitive) and leaves the rest', () => {
+    it('replaces detected tokens with the provenance-distinct AI token, leaving the rest', () => {
       const out = applyEntityRedactions('They use EdgeProxy (Rust) and gRPC at scale.', ['EdgeProxy']);
-      expect(out).toBe('They use [REDACTED] (Rust) and gRPC at scale.');
+      expect(out).toBe('They use [AI_REDACTED] (Rust) and gRPC at scale.');
       // generic tech NOT passed as a token is untouched
       expect(out).toContain('Rust');
       expect(out).toContain('gRPC');
     });
     it('does not redact a token embedded inside a larger word', () => {
       // 'Go' must not nuke 'Google' or 'goes'
-      expect(applyEntityRedactions('Google goes far with Go.', ['Go'])).toBe('Google goes far with [REDACTED].');
+      expect(applyEntityRedactions('Google goes far with Go.', ['Go'])).toBe('Google goes far with [AI_REDACTED].');
     });
   });
 
@@ -128,7 +128,7 @@ describe('kit-entity-redact', () => {
 
       const first = await redactKitEntities(SECTION, db);
       expect(first).not.toContain('EdgeProxy');
-      expect(first).toContain('[REDACTED]');
+      expect(first).toContain('[AI_REDACTED]');
       expect(first).toContain('Rust'); // generic tech kept
       expect(fetchMock).toHaveBeenCalledTimes(1);
 

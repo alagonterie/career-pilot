@@ -46,6 +46,16 @@ const MIN_TOKEN_LEN = 2;
 const MAX_TOKEN_LEN = 60;
 const MAX_TOKENS_REDACTED = 40;
 
+/**
+ * §24.134d: the belt stamps a PROVENANCE-distinct token so the public surface
+ * can honestly attribute these redactions to the AI judgment pass (violet
+ * `--ai` tier) — distinct from the deterministic Pass-1 PII tokens
+ * (`[EMAIL_REDACTED]` …), the Pass-2 company token (`[REDACTED:<label>]`), and
+ * Pass-1's bare `[REDACTED]` (URL-query PII). The §24.73 "an AI did this" color
+ * would be a false claim on a regex/DB redaction; a distinct token keeps it true.
+ */
+const AI_REDACTION_TOKEN = '[AI_REDACTED]';
+
 const SYSTEM_PROMPT = [
   'You are a redaction reviewer for a PUBLIC, COMPANY-ANONYMIZED web page.',
   'The input is interview-prep prose. The company being interviewed with has',
@@ -164,7 +174,7 @@ export function applyEntityRedactions(text: string, tokens: string[]): string {
       // (?<!\w)/(?!\w) like Pass 2 — handles tokens with leading/trailing
       // non-word chars uniformly (e.g. "Project-X").
       const re = new RegExp(`(?<!\\w)${escapeRegex(token)}(?!\\w)`, 'gi');
-      t = t.replace(re, '[REDACTED]');
+      t = t.replace(re, AI_REDACTION_TOKEN);
     } catch (err) {
       log.warn('kit-entity-redact: regex compile failed', { token, err });
     }

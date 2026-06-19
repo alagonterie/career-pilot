@@ -3,6 +3,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { AgentMark } from '~/components/AgentMark'
 import { AgentRef } from '~/components/AgentRef'
 import { KitDossier } from '~/components/kit/KitDossier'
+import { RedactionLegend } from '~/components/Redaction'
 import { StateNote } from '~/components/states'
 import { seo } from '~/lib/seo'
 import { PERSON_NAME } from '~/lib/site'
@@ -104,10 +105,13 @@ function KitPage() {
               ◆ revealed post-close — shown in full.
             </p>
           ) : (
-            <p data-testid="kit-banner-sealed" className="font-mono text-xs leading-relaxed text-muted-foreground">
-              This process is live — sections that would identify the company are sealed. If the process is revealed
-              post-close, the kit shows in full.
-            </p>
+            <div className="flex flex-col gap-2">
+              <p data-testid="kit-banner-sealed" className="font-mono text-xs leading-relaxed text-muted-foreground">
+                This process is live — sections that would identify the company are sealed. If the process is revealed
+                post-close, the kit shows in full.
+              </p>
+              <RedactionLegend />
+            </div>
           )}
 
           {kit.sections.length === 0 ? (

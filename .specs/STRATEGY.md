@@ -6504,6 +6504,18 @@ The pure decision (`decideBackstop`) and render (`renderBackstopDigest`) are fac
 
 **DoD.** Container + host typecheck clean; container `bun test` green; host suite green. `handleRecordTurnTelemetry` no longer writes lifecycle rows (only the turn row); `handleRecordDispatch` writes one row per call, normalizes renamed subagents, honors the emit flag, skips sandbox. Box: a real owner cascade shows the `Dispatched by the orchestrator.` rows with a LOWER seq than the subagent's `record_progress` rows of the same turn (the inverse of the §24.78 box capture).
 
+#### 24.134d Universal redaction language (make the redactions a legible feature)
+
+Follows §24.134a: the entity belt is conservative (owner-accepted "better to over-redact"), so a kit now shows MANY redaction tokens. Owner ask: make them read as deliberate AI rigor, not breakage — *and* be honest about which pass did each one (the `--ai` violet means "an AI did this" per §24.73; painting a regex/DB redaction violet would be a false claim).
+
+**Two honest tiers, one universal primitive.** A new `frontend/src/components/Redaction.tsx` renders every redaction token as a pill chip, with the tier read from the token SHAPE (no new metadata):
+- **AI judgment** → violet `--ai` + ✦: the belt's token (now the provenance-distinct `[AI_REDACTED]`, §24.134a delta — the belt stops emitting the bare `[REDACTED]` that collided with Pass-1's URL-query token).
+- **Deterministic scrub** → muted: Pass-1 PII (`[EMAIL_REDACTED]` / `[PHONE_REDACTED]` / `[AMOUNT_REDACTED]` / `[SSN_REDACTED]` / bare `[REDACTED]`) and the Pass-2 company token (`[REDACTED:<label>]`, whose chip shows the stable pseudonym).
+
+Each chip is a non-interactive `<span>` with a per-tier `title` (hover) — deliberately NOT a `DisclosureTip` button like `AgentRef`, since a kit has dozens and that many tab-stops/popovers is the obnoxiousness we're avoiding. A one-time `RedactionLegend` on the `/kit` page carries the explanation. Wired universally through the shared `renderInline` (kit dossier + simulator output) and the `/live` feed summary (`LogStream`); the raw `<pre>` anonymization demo stays literal by design. Net effect: the §24.12 layered defense becomes visible — a visitor can see "deterministic scrub here, AI judgment there."
+
+**DoD.** Host suite green (belt token → `[AI_REDACTED]`, updated assertions). Frontend: `Redaction` renders the right tier/glyph/title per token shape; `renderInline` + `LogStream` interleave chips with text without disturbing bold/code/tables; legend renders once on a live kit. Owner sees it locally before ship.
+
 ---
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.

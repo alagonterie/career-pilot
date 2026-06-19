@@ -315,7 +315,7 @@ Conduct a realistic technical screen for Senior Platform Engineer at Initech Sys
     const lean = byId(readSections('app-1'), 'lean-into');
     expect(lean.kind).toBe('content');
     expect(lean.body).not.toContain('Helios'); // belt caught it
-    expect(lean.body).toContain('[REDACTED]');
+    expect(lean.body).toContain('[AI_REDACTED]');
     expect(lean.body).toContain('Rust'); // generic tech preserved
     expect(lean.body).not.toMatch(/initech/i); // Pass 2 still did its job
   });

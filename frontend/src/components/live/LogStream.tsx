@@ -6,6 +6,7 @@ import { DisclosureTip } from '~/components/DisclosureTip'
 import { EventSourceLabel } from '~/components/EventSourceLabel'
 import { InfoTip } from '~/components/InfoTip'
 import { LiveIndicator } from '~/components/LiveIndicator'
+import { RedactedText } from '~/components/Redaction'
 import { LiveCursor, StateNote } from '~/components/states'
 import type { StreamStatus } from '~/lib/sse'
 import { type AuditEvent, isDispatchLifecycle } from '~/lib/use-activity-stream'
@@ -469,7 +470,9 @@ export function LogStream({
                         [{row.e.application_ref}]
                       </Link>
                     ) : null}
-                    <span className="text-foreground">{row.e.summary}</span>
+                    <span className="text-foreground">
+                      <RedactedText text={row.e.summary} />
+                    </span>
                   </span>
                   {/* progressive metric lanes — present only when captured (§24.24) */}
                   {row.e.model_used ? <Lane title="model">{row.e.model_used}</Lane> : null}

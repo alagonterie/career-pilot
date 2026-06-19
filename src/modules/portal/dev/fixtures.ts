@@ -312,6 +312,12 @@ function buildFixtureKitMarkdown(company: string, role: string): string {
     '- The multi-region ingestion pipeline (4B+ events/day) — name the consistency tradeoffs you made.',
     '- The 38% p99 latency win via edge caching + read-model projections.',
     '- The zero-downtime datastore migration you led — it maps onto their migration pain.',
+    // §24.134d demo: literal [AI_REDACTED] tokens stand in for what the entity
+    // belt emits in production (the belt is Portkey-gated, so it is inert in the
+    // local seed) — plus a real email/$ for the deterministic Pass-1 tiers — so
+    // the /kit demo showcases the redaction chips at a realistic density.
+    '- Their [AI_REDACTED] proxy layer and [AI_REDACTED] event mesh play straight to your distributed-systems depth.',
+    '- Comp target ~$240k is well in range; the recruiter (jane@example.com) flagged a fast loop.',
     '',
     '### Questions to ask',
     '- How far along is the operator rollout the platform team blogged about?',

@@ -233,9 +233,14 @@ test.describe('/pipeline — the funnel board, frontend <-> backend', () => {
     await expect(page.getByTestId('kit-masthead')).toContainText('[ai-infra-a]')
     await expect(page.getByTestId('kit-banner-sealed')).toContainText('sections that would identify the company')
 
-    // Safe sections render real content — with the company name redacted by the
-    // server-side pipeline (the fixture kit names it on purpose).
-    await expect(page.getByTestId('kit-section-your-role')).toContainText('[REDACTED:ai-infra-a]')
+    // Safe sections render real content — the company name is redacted by the
+    // server-side pipeline (the fixture names it on purpose) and rendered as the
+    // §24.134d company chip: the stable pseudonym, never the real name or the
+    // literal [REDACTED:…] token.
+    const roleChip = page.getByTestId('kit-section-your-role').getByTestId('redaction-chip').first()
+    await expect(roleChip).toHaveAttribute('data-tier', 'company')
+    await expect(roleChip).toContainText('ai-infra-a')
+    await expect(page.getByTestId('kit-section-your-role')).not.toContainText('[REDACTED')
     // Identifying sections are sealed: redaction bars + the honest caption, no text.
     const grounding = page.getByTestId('kit-sealed-grounding')
     await expect(grounding.getByTestId('kit-redaction-bars')).toBeVisible()

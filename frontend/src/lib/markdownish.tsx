@@ -1,5 +1,7 @@
 import * as React from 'react'
 
+import { Redaction, splitRedactionParts } from '~/components/Redaction'
+
 /**
  * The hand-rolled markdown-ish renderer (§24.31 Δ, extracted §24.65) — shared
  * by the simulator output pane and the /kit dossier. Handles the shapes the
@@ -34,7 +36,15 @@ export function renderInline(text: string): React.ReactNode {
         </code>
       )
     }
-    return unescapeMd(p)
+    // §24.134d: a plain segment may carry redaction tokens — render each as a
+    // provenance-tiered chip, the rest as unescaped text.
+    return splitRedactionParts(p).map((part, j) =>
+      part.token ? (
+        <Redaction key={`${i}-${j}`} token={part.value} />
+      ) : (
+        <React.Fragment key={`${i}-${j}`}>{unescapeMd(part.value)}</React.Fragment>
+      ),
+    )
   })
 }
 
