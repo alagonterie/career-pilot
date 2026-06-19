@@ -28,10 +28,10 @@ import { getDb } from '../../db/connection.js';
 import { getConfig } from '../../get-config.js';
 import { insertMessage } from '../../db/session-db.js';
 import { log } from '../../log.js';
-import * as payloadCache from '../../scrape-jobs/payload-cache.js';
-import { getAdapter } from '../../scrape-jobs/sources.js';
-import { filterTargets } from '../../scrape-jobs/targets.js';
-import type { JobLeadPayload, PostingSummary, Source, SourcePriority } from '../../scrape-jobs/types.js';
+import * as payloadCache from './scrape-jobs/payload-cache.js';
+import { getAdapter } from './scrape-jobs/sources.js';
+import { filterTargets } from './scrape-jobs/targets.js';
+import type { JobLeadPayload, PostingSummary, Source, SourcePriority } from './scrape-jobs/types.js';
 import type { Session } from '../../types.js';
 
 import { computeFingerprint } from './lead-fingerprint.js';

@@ -23,7 +23,6 @@
     "ncl": "tsx src/cli/client.ts",
     "chat": "tsx scripts/chat.ts",
     "health": "tsx scripts/health-check.ts",
-    "auth": "tsx src/whatsapp-auth.ts",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "test": "vitest run",

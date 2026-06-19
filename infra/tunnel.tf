@@ -12,7 +12,7 @@
 # Remotely-managed tunnel (config_src = "cloudflare"): ingress rules live in
 # Terraform (the *_config resource), so the VM daemon needs only `--token`.
 # Resource names are the v4.52.7 non-deprecated forms
-# (cloudflare_zero_trust_tunnel_cloudflared*, per docs/PHASE9_DEPLOY_FINDINGS.md).
+# (cloudflare_zero_trust_tunnel_cloudflared*, per .specs/PHASE9_DEPLOY_FINDINGS.md).
 
 locals {
   # dev -> api.dev.hire.<apex> / onecli.dev.hire.<apex>

@@ -6,8 +6,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { closeDb, getDb, initTestDb } from '../db/connection.js';
-import { runMigrations } from '../db/migrations/index.js';
+import { closeDb, getDb, initTestDb } from '../../../db/connection.js';
+import { runMigrations } from '../../../db/migrations/index.js';
 import { greenhouseAdapter, leverAdapter } from './sources.js';
 
 interface Row {

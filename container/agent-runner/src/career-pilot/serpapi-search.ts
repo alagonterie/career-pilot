@@ -31,9 +31,9 @@ const MAX_PAGES = 3; // quota guard — each page is one SerpApi search against 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 30;
 const FETCH_TIMEOUT_MS = 20_000;
-const DESCRIPTION_TEXT_CAP = 2000; // matches the host adapters' cap (src/scrape-jobs/sources.ts)
+const DESCRIPTION_TEXT_CAP = 2000; // matches the host adapters' cap (src/modules/career-pilot/scrape-jobs/sources.ts)
 
-/** Normalized payload — mirrors the host `JobLeadPayload` (src/scrape-jobs/types.ts).
+/** Normalized payload — mirrors the host `JobLeadPayload` (src/modules/career-pilot/scrape-jobs/types.ts).
  *  The container is a separate dep tree, so the shape is duplicated here; the
  *  contract is the JSON the host `stash_job_payloads` / `record_job_lead`
  *  actions parse. */

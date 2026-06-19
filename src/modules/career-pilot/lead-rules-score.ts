@@ -12,7 +12,7 @@
  * the defaults; v1.1+ wires them through `config/defaults.json` per the
  * four-tier config model (STRATEGY.md §20).
  */
-import type { JobLeadPayload, Source } from '../../scrape-jobs/types.js';
+import type { JobLeadPayload, Source } from './scrape-jobs/types.js';
 
 export interface CandidateProfileForScoring {
   target_roles: string[];

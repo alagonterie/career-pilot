@@ -19,8 +19,8 @@ import Database from 'better-sqlite3';
 import { closeDb, getDb, initTestDb } from '../../db/connection.js';
 import { runMigrations } from '../../db/migrations/index.js';
 import { ensureSchema, openInboundDb } from '../../db/session-db.js';
-import * as payloadCache from '../../scrape-jobs/payload-cache.js';
-import type { JobLeadPayload } from '../../scrape-jobs/types.js';
+import * as payloadCache from './scrape-jobs/payload-cache.js';
+import type { JobLeadPayload } from './scrape-jobs/types.js';
 import type { Session } from '../../types.js';
 
 import { handleRecordJobLead, handleStashJobPayloads } from './job-lead-actions.js';

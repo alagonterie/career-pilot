@@ -12,7 +12,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { log } from '../log.js';
+import { log } from '../../../log.js';
 import type { TargetEntry, Source, SourcePriority } from './types.js';
 
 const TARGETS_FILE_PATH = join(process.cwd(), 'groups', 'career-pilot', 'data', 'ats-targets.json');

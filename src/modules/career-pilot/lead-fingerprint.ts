@@ -15,7 +15,7 @@
  * approach — see Charikar 2002 (Similarity Estimation Techniques from
  * Rounding Algorithms).
  */
-import type { JobLeadPayload } from '../../scrape-jobs/types.js';
+import type { JobLeadPayload } from './scrape-jobs/types.js';
 
 const DESCRIPTION_TRUNCATE = 4000;
 

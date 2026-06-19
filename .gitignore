@@ -28,9 +28,6 @@ groups/*
 !groups/career-pilot-sandbox/
 !groups/_shared-skills/
 !groups/_shared-subagents/
-# NanoClaw upstream default group skeletons — tracked in upstream, so we track them too
-!groups/global/
-!groups/main/
 # Within our committed groups, gitignore generated/per-install artifacts.
 # Note: groups/<name>/CLAUDE.md is composer-managed (regenerated every
 # container spawn by src/claude-md-compose.ts), as is .claude-fragments/.

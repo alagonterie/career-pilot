@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import type { JobLeadPayload } from '../../scrape-jobs/types.js';
+import type { JobLeadPayload } from './scrape-jobs/types.js';
 
 import { computeRulesScore, profileFromRow, type CandidateProfileForScoring } from './lead-rules-score.js';
 

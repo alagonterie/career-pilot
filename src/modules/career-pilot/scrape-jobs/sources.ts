@@ -13,8 +13,8 @@
  *
  * Spec: STRATEGY.md §24.5 + .specs/research/PHASE_2_5_JOB_BOARDS.md §Q1.
  */
-import { log } from '../log.js';
-import { recordRequestTelemetry } from '../request-telemetry.js';
+import { log } from '../../../log.js';
+import { recordRequestTelemetry } from '../../../request-telemetry.js';
 import type { JobLeadPayload, SourceAdapter, Source, AtsSource } from './types.js';
 
 const GREENHOUSE_BASE = 'https://boards-api.greenhouse.io/v1/boards';
