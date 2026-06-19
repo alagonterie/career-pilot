@@ -2,8 +2,8 @@
  * Upgrade tripwire (ported from NanoClaw 2.1.0's `[BREAKING]` boot guard;
  * STRATEGY.md §24.126). The host refuses to boot unless
  * `data/upgrade-state.json` records that this install reached the running code
- * version through a sanctioned path — the deploy bootstrap, `/update-nanoclaw`,
- * `/migrate-nanoclaw`, or a manual stamp. Guards against a raw `git pull` +
+ * version through a sanctioned path — the deploy bootstrap or a manual stamp.
+ * Guards against a raw `git pull` +
  * restart landing dep-bumped code on an un-upgraded environment (a 2.1.x SDK or
  * OneCLI gateway expecting setup that didn't run).
  *
@@ -64,11 +64,7 @@ export function readUpgradeState(): UpgradeState | null {
   }
   try {
     const parsed = JSON.parse(raw) as Partial<UpgradeState>;
-    if (
-      typeof parsed.version === 'string' &&
-      typeof parsed.updatedAt === 'string' &&
-      typeof parsed.via === 'string'
-    ) {
+    if (typeof parsed.version === 'string' && typeof parsed.updatedAt === 'string' && typeof parsed.via === 'string') {
       return parsed as UpgradeState;
     }
     log.warn('upgrade-state.json is malformed (missing fields)', { path: markerPath() });
@@ -121,7 +117,7 @@ const TRIPWIRE_MESSAGE = [
   'NanoClaw stopped: update did not go through the supported path.',
   '',
   'This install reached the current code version outside a sanctioned upgrade',
-  '(the deploy bootstrap / /update-nanoclaw / /migrate-nanoclaw / a manual stamp).',
+  '(the deploy bootstrap or a manual stamp).',
   'Refusing to boot so a half-applied upgrade can’t run against a stale environment.',
   '',
   'After a deliberate update, stamp the marker — then restart:',
@@ -138,11 +134,7 @@ const TRIPWIRE_MESSAGE = [
  * boot, not the test harness or local `pnpm dev`.
  */
 export function enforceUpgradeTripwire(): void {
-  if (
-    process.env.CP_SKIP_UPGRADE_TRIPWIRE === '1' ||
-    process.env.NODE_ENV === 'test' ||
-    process.env.VITEST
-  ) {
+  if (process.env.CP_SKIP_UPGRADE_TRIPWIRE === '1' || process.env.NODE_ENV === 'test' || process.env.VITEST) {
     return;
   }
   const result = checkUpgradeTripwire();
