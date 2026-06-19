@@ -1457,6 +1457,8 @@ infra/templates/user-data.yml.tpl      # rewrite — Ubuntu cloud-init for NanoC
 
 Everything that NanoClaw v2 ships: `bin/`, `scripts/` (NanoClaw's own), `setup/`, `launchd/`, `container/`, `docs/` (NanoClaw's), `config-examples/`, `repo-tokens/`, `assets/`, `src/` (NanoClaw's host), `nanoclaw.sh`, `pnpm-workspace.yaml`, root `package.json`, `tsconfig.json`, `eslint.config.js`, `vitest.config.ts`, `migrate-v2.sh`, etc.
 
+> **WS3 pruned-set (§24.132):** several of those upstream artifacts have since been deleted as zero-use deadfiles — `repo-tokens/`, `config-examples/`, `migrate-v2.sh` + `migrate-v2-reset.sh` + `setup/migrate-v2/`, the unused `setup/install-<channel>.sh` set, `.github/workflows/{update-tokens,bump-version}.yml`, the upstream governance meta, and the upstream-readme translations. This rebuild list still names them because that is the *upstream* copy-in source; on a fresh rebuild, re-prune per §24.132.
+
 **THEN ADD (career-pilot specifics, the part that's actually our work):**
 
 - `groups/career-pilot/` — owner agent group folder (CLAUDE.md, .claude/agents/, skills/, .claude-host-fragments/, VERIFICATION.md). In-process MCP tools are NOT here — they live in the shared `container/agent-runner/src/mcp-tools/` (v2 removed per-group `agent-runner-src` overlays; see CHANGELOG v2.0.0).
@@ -6424,7 +6426,26 @@ The §24.124 Stage E. No code; realign the spec artifacts that still described t
 - **`decision_architecture`** memory pin note → `^0.3.170` + the lockfile gotcha.
 - **`STRATEGY.md`** current-pin cross-refs (§5 subagents, §6 MCP integration, §24.49 cache-lever table) repinned; the historical upgrade sections (§24.124–§24.130) + the §24.115 bug description keep their `^0.2.x` references (correct as record).
 
-**Remaining v2.1.17:** only **WS3** (repo-wide deadfile sweep, full-delete-only) — saved for last, after the whole upgrade. Memory: [[todo_backlog]].
+**Remaining v2.1.17:** only **WS3** (repo-wide deadfile sweep, full-delete-only) — see §24.132. Memory: [[todo_backlog]].
+
+#### 24.132 WS3 — repo-wide deadfile sweep (full-delete-only)
+
+The last v2.1.17 item, saved for after the upgrade. Sweep the **whole** tree for nanoclaw-origin files with **zero career-pilot use** and delete them *entirely* — never partial-strip a file career-pilot actually uses (the WS1 §24.125 discipline). The test applied per candidate: a **functional** reference in a surviving file (import / `exec` / CI `uses:` / served index-link) = used → leave; a **prose/comment** mention in a spec/doc = updated by this commit, not a blocker.
+
+**Owner-greenlit the full purge (2026-06-19)** — the surgical-cherry-pick upgrade model (`NANOCLAW_INTERNALS.md` §11 Δ13) means we no longer git-merge upstream `main`, so the "deleting upstream subsystems makes merges conflict-heavy" cost is moot.
+
+**Deleted (44 files):**
+- **5 clean orphans (0 refs anywhere):** `docs/upstream-readme-ja.md`, `docs/upstream-readme-zh.md`, `docs/upstream-claude.md`, `docs/BRANCH-FORK-MAINTENANCE.md` (an upstream-*maintainer* fork-sync doc), `scripts/seed-discord.ts` (Discord is V2-deferred).
+- **12 unused channel installers:** `setup/install-{discord,gchat,imessage,linear,matrix,resend,signal-cli,slack,teams,webex,whatsapp,whatsapp-cloud}.sh`. Driven only by `migrate-v2.sh:386`'s dynamic `setup/install-${ch}.sh` with a graceful "no install script" branch — no edit needed.
+- **9 upstream release/badge files:** `repo-tokens/` (7) + `.github/workflows/{update-tokens,bump-version}.yml`. Both workflows trigger on `push: main`; career-pilot ships `master`/`dev`, so they never fire (`BRANCH-FORK-MAINTENANCE.md` itself said "remove in forks").
+- **5 upstream governance/example:** `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`, `CONTRIBUTORS.md`, `RELEASING.md` (all describe *NanoClaw*, not career-pilot), `config-examples/mount-allowlist.json` (dir emptied).
+- **13 v1→v2 migration subsystem:** `migrate-v2.sh`, `migrate-v2-reset.sh`, `setup/migrate-v2/*.ts` (11). career-pilot is a clean v2 rebuild — never ran it. Zero functional TS importers; the `/migrate-nanoclaw` skill is about NanoClaw *versions*, not v1 data, so it stays intact.
+
+**The one kept-file edit (a conscious micro-exception):** deleting the migration subsystem left a stale 2-line *comment* at `setup/auto.ts:432` (`// v1 → v2 migration is handled by 'bash migrate-v2.sh'…`) — removed. A false comment, not used logic; this is the sole edit to a surviving file.
+
+**Excluded — functional coupling (WS1-style traps):** `setup/{signal-auth,whatsapp-auth}.ts` + `setup/lib/teams-manifest.ts` (live `STEPS` registry / `setup/index.ts`); `setup/install-{node,docker,claude,telegram,github}.sh` (used by `claude-assist.ts`/`container.ts`/`setup.sh`); all **ollama/GLM** files (`add-ollama-*` skills, `docs/ollama.md`, `config/glm-4.7-flash.modelfile` — woven into `rank-leads.ts`/`poll-loop.ts`/`container-config.ts`, in active use); `docs/upstream-readme.md` (root `README.md` MIT-attribution link); `docs/{SPEC,REQUIREMENTS,APPLE-CONTAINER-NETWORKING}.md` + `launchd/` (served by the `docs/README.md` index). Out of scope (career-pilot's own, not nanoclaw): the empty stub `src/channels/portal/sse-output.ts`.
+
+**DoD.** `git grep` confirms no surviving file *functionally* references a deleted path; host `pnpm build` green; a throwaway `tsc -p setup` shows no NEW dangling-import errors beyond WS1's 15 pre-existing latent ones (`setup/` has no CI typecheck); the deletions fire `deploy-backend` (one provision run, owner-accepted) and it goes green on the box. **Spec deltas:** this §24.132; the §"ADD from upstream" inventory gets a WS3 pruned-set note. Memory: [[todo_backlog]].
 
 ---
 
