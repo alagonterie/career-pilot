@@ -1,0 +1,41 @@
+name: release
+
+# STRATEGY §24.139 D4-3. A manual `v*` tag (the owner controls timing) cuts a
+# GitHub Release whose body is the matching CHANGELOG.md section. The extraction
+# is a pure, unit-tested script (scripts/changelog-section.ts) — this workflow is
+# the thin shell around it; an empty/absent section FAILS the job (no empty
+# release for an un-changelogged tag). Decoupled from deploy-frontend.yml
+# (§24.139 D4-6): the prod footer chip updates via that workflow's `git describe`,
+# not here. A tag-only re-release that needs the chip refreshed re-runs
+# deploy-frontend via its workflow_dispatch.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write # create the GitHub Release
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Extract the CHANGELOG section for ${{ github.ref_name }}
+        # Exits 1 (failing the job) when the tagged version has no CHANGELOG
+        # section — so a release is never cut with empty notes.
+        run: pnpm exec tsx scripts/changelog-section.ts "${{ github.ref_name }}" CHANGELOG.md > release-notes.md
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" --title "${{ github.ref_name }}" --notes-file release-notes.md

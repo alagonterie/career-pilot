@@ -28,6 +28,8 @@ jobs:
     environment: ${{ github.ref_name == 'master' && 'production' || 'dev' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags + full history visible to `git describe` (the §24.139 version chip)
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -70,6 +72,32 @@ jobs:
           if [ "${{ github.ref_name }}" = "dev" ] && [ -z "$VITE_TURNSTILE_SITE_KEY" ]; then
             export VITE_TURNSTILE_SITE_KEY=1x00000000000000000000AA
           fi
+          # Product version chip (STRATEGY §24.139 D4-4). master → the nearest v*
+          # tag (a release-tag link when HEAD is exactly that tag, else the commit
+          # — an honest "N commits past the last release"); pre-first-tag → the
+          # short SHA. dev → `dev · <sha>` linking the commit. Vite inlines the
+          # VITE_-prefixed exports the same way the vars above are consumed; unset
+          # elsewhere → the frontend falls back to a deterministic link-free `dev`.
+          SHA_FULL="$(git rev-parse HEAD)"
+          SHA_SHORT="$(git rev-parse --short HEAD)"
+          if [ "${{ github.ref_name }}" = "master" ]; then
+            TAG="$(git describe --tags --match 'v*' --abbrev=0 2>/dev/null || true)"
+            EXACT="$(git tag --points-at HEAD --list 'v*' | head -n1)"
+            if [ -n "$EXACT" ]; then
+              export VITE_APP_VERSION="$EXACT"
+              export VITE_APP_VERSION_REF="releases/tag/$EXACT"
+            elif [ -n "$TAG" ]; then
+              export VITE_APP_VERSION="$TAG"
+              export VITE_APP_VERSION_REF="commit/$SHA_FULL"
+            else
+              export VITE_APP_VERSION="$SHA_SHORT"
+              export VITE_APP_VERSION_REF="commit/$SHA_FULL"
+            fi
+          else
+            export VITE_APP_VERSION="dev · $SHA_SHORT"
+            export VITE_APP_VERSION_REF="commit/$SHA_FULL"
+          fi
+          echo "Version chip: $VITE_APP_VERSION ($VITE_APP_VERSION_REF)"
           pnpm exec vite build
           pnpm exec wrangler deploy
           # Push the BFF bindings onto the deployed Worker (idempotent; persists
