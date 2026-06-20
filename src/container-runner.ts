@@ -592,6 +592,19 @@ async function buildContainerArgs(
     args.push('-e', 'HOME=/home/node');
   }
 
+  // §24.141 S2-0 belt: the PUBLIC sandbox runs visitor-controlled prompts, so
+  // harden its container beyond Docker's default posture — drop ALL Linux
+  // capabilities and block privilege escalation, shrinking the blast radius of
+  // any future container-escape. The agent runs as a non-root user doing only
+  // file I/O + outbound HTTP (no capability needed), so this is transparent to a
+  // legit run. The owner agent (trusted) keeps the default posture. (Memory/CPU
+  // caps are deliberately NOT applied here — post-lockdown the abuse vector is
+  // small, and the generic container_* knobs would risk OOM-ing the owner agent.)
+  if (agentGroup.folder === 'career-pilot-sandbox') {
+    args.push('--cap-drop', 'ALL');
+    args.push('--security-opt', 'no-new-privileges');
+  }
+
   // Volume mounts
   for (const mount of mounts) {
     if (mount.readonly) {
