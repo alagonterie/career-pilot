@@ -34,7 +34,11 @@ export function PipelineBoard({
   apps: PipelineApplication[]
   onSelect: (app: PipelineApplication) => void
 }) {
-  const offboard = apps.filter((a) => !PIPELINE_STAGE_SET.has(a.stage))
+  // Newest activity first — a closed/bookmarked archive reads most-recent → oldest
+  // (left → right in the filmstrip); fall back to applied_at when last_activity is null.
+  const offboard = apps
+    .filter((a) => !PIPELINE_STAGE_SET.has(a.stage))
+    .sort((a, b) => (b.last_activity_at ?? b.applied_at ?? '').localeCompare(a.last_activity_at ?? a.applied_at ?? ''))
 
   return (
     <>
@@ -92,15 +96,13 @@ export function PipelineBoard({
           Bookmarked &amp; closed
         </h2>
         {offboard.length > 0 ? (
-          // Cap the height + scroll like the board lanes (PIPELINE_LANE_HEIGHT is a
-          // fixed h-; here a max-h so a few cards stay content-height and only a long
-          // tail scrolls) so this strip can't grow without bound (§24.138 A0-cont).
-          <div
-            data-testid="funnel-offboard-cards"
-            className="flex flex-wrap gap-2 opacity-70 sm:max-h-[16rem] sm:overflow-y-auto sm:pr-1"
-          >
+          // A single horizontal filmstrip (§24.138 A0-cont, owner call): uniform
+          // fixed-width cards in ONE row that scrolls sideways — so the strip stays
+          // one card tall and never grows the page down, however many close. pb-1
+          // leaves room for the horizontal scrollbar.
+          <div data-testid="funnel-offboard-cards" className="flex gap-2 overflow-x-auto pb-1 opacity-70">
             {offboard.map((a) => (
-              <div key={a.application_id} className="min-w-[10rem] flex-1 sm:max-w-[14rem]">
+              <div key={a.application_id} className="w-[14rem] shrink-0">
                 <PipelineCard app={a} onSelect={() => onSelect(a)} />
               </div>
             ))}
@@ -157,9 +159,9 @@ export function PipelineOffboardSkeleton() {
       <h2 className="mb-2 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">
         Bookmarked &amp; closed
       </h2>
-      <div className="flex flex-wrap gap-2">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-[114px] min-w-[10rem] flex-1 sm:max-w-[14rem]" />
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-[114px] w-[14rem] shrink-0" />
         ))}
       </div>
     </section>

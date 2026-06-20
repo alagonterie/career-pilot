@@ -11,10 +11,12 @@ function ignorable(url: string): boolean {
   return url.includes('/api/funnel') || url.includes('/api/activity/stream')
 }
 
-test('the Bookmarked & closed strip caps its height + scrolls with a long tail (§24.138 A0-cont)', async ({ page }) => {
-  // The seed has only a couple of closed apps, so the clamp never triggers there.
+test('the Bookmarked & closed strip is a one-row filmstrip that scrolls sideways (§24.138 A0-cont)', async ({
+  page,
+}) => {
   // Override /api/funnel with a long tail of closed (offboard) apps and prove the
-  // strip is height-capped + scrolls rather than growing the page without bound.
+  // strip stays ONE card row tall and scrolls horizontally, instead of wrapping into
+  // many rows that grow the page down.
   const mkApp = (i: number) => ({
     application_id: `closed-${i}`,
     application_ref: `co-${i}`,
@@ -45,11 +47,15 @@ test('the Bookmarked & closed strip caps its height + scrolls with a long tail (
   await page.goto('/pipeline')
   const strip = page.getByTestId('funnel-offboard-cards')
   await expect(strip).toBeVisible()
-  // 24 cards would be many rows tall; the strip clamps to ~16rem (256px) and the
-  // overflow scrolls inside it instead of growing the page.
-  const box = await strip.evaluate((el) => ({ clientH: el.clientHeight, scrollH: el.scrollHeight }))
-  expect(box.scrollH).toBeGreaterThan(box.clientH + 1) // the long tail overflows → scrolls
-  expect(box.clientH).toBeLessThan(300) // bounded near 16rem, not all 24 cards tall
+  // 24 uniform cards in ONE row overflow the width → horizontal scroll; the strip
+  // stays one card tall (never wraps into page-growing rows).
+  const box = await strip.evaluate((el) => ({
+    clientW: el.clientWidth,
+    scrollW: el.scrollWidth,
+    clientH: el.clientHeight,
+  }))
+  expect(box.scrollW).toBeGreaterThan(box.clientW + 1) // overflows the width → scrolls sideways
+  expect(box.clientH).toBeLessThan(220) // a single card row, not many wrapped rows
 })
 
 test.describe('/pipeline — the funnel board, frontend <-> backend', () => {
