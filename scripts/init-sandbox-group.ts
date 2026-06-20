@@ -43,14 +43,28 @@ export const SANDBOX_FOLDER = 'career-pilot-sandbox';
 const SANDBOX_AGENT_NAME = 'Career Pilot (Sandbox)';
 
 /**
- * The private career_pilot MCP tools, in the SDK `mcp__<server>__<name>` form
- * (server = 'nanoclaw'). Removing them from the sandbox SDK context is Layer 1
- * of the §24.19 isolation. The list is best-effort by design — Layer 2 (the
- * host-side owner gate on every career_pilot action) is the robust catch-all,
- * so a tool added later without updating this list is still unreachable from a
- * sandbox session.
+ * The sandbox tool lockdown: the dangerous built-in tools (Bash/Write/Edit) plus
+ * the private career_pilot MCP tools (SDK `mcp__<server>__<name>` form, server =
+ * 'nanoclaw'). Removing them from the sandbox SDK context is Layer 1 of the
+ * §24.19 isolation.
+ *
+ * For the PRIVATE MCP tools the list is best-effort — Layer 2 (the host-side
+ * owner gate on every career_pilot action) is the robust catch-all, so a private
+ * tool added later without updating this list is still unreachable.
+ *
+ * The BUILT-IN removals (Bash/Write/Edit) have NO Layer-2 equivalent, so they
+ * MUST stay here (§24.141 S2-0). They gave a prompt-injected public visitor
+ * arbitrary in-container code execution + a live path to the GCP metadata SA
+ * token (a `curl` can set the required `Metadata-Flavor: Google` header that
+ * WebFetch cannot). The simulator needs only WebSearch/WebFetch/Read to research
+ * + draft text. Bare names are load-bearing under `bypassPermissions` (where
+ * `allowedTools` is ignored — `disallowedTools` removes from context entirely).
  */
 export const SANDBOX_DISALLOWED_TOOLS = [
+  // Built-in tools that enable arbitrary code / filesystem writes (§24.141 S2-0).
+  'Bash',
+  'Write',
+  'Edit',
   // career-pilot.ts
   'mcp__nanoclaw__update_profile_field',
   'mcp__nanoclaw__update_application',
@@ -147,7 +161,9 @@ function main(): void {
   console.log('Sandbox group ready.');
   console.log(`  agent:   ${ag.name} [${ag.id}] @ groups/${SANDBOX_FOLDER}`);
   console.log(`  channel: portal ${SANDBOX_PLATFORM_ID} (unknown_sender_policy=public, per-thread)`);
-  console.log(`  isolation: ${SANDBOX_DISALLOWED_TOOLS.length} private tools disallowed (Layer 1) + host owner gate (Layer 2)`);
+  console.log(
+    `  isolation: ${SANDBOX_DISALLOWED_TOOLS.length} tools disallowed (Bash/Write/Edit + private MCP, Layer 1) + host owner gate (Layer 2)`,
+  );
 }
 
 // Run as a script only (not when imported by setup-test.ts).
