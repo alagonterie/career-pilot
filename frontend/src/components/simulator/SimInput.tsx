@@ -112,8 +112,8 @@ export function SimInput({ onRun, disabled }: { onRun: (input: SimRunInput) => v
             <AgentRef name="tailor-resume" /> + <AgentRef name="draft-outreach" /> run in parallel.
           </li>
           <li>
-            You walk away with a <span className="text-foreground/90">tailored résumé to download</span>, plus pitch
-            bullets + a cold-outreach email — a real run takes a few minutes.
+            You walk away with two things: a <span className="text-foreground/90">tailored résumé to download</span> and
+            a personalized cold-outreach email — a real run takes a few minutes.
           </li>
         </ol>
         <p className="mt-3 text-xs">

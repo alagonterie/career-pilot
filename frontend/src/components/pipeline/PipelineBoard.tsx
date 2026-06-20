@@ -92,7 +92,10 @@ export function PipelineBoard({
           Bookmarked &amp; closed
         </h2>
         {offboard.length > 0 ? (
-          <div className="flex flex-wrap gap-2 opacity-70">
+          // Cap the height + scroll like the board lanes (PIPELINE_LANE_HEIGHT is a
+          // fixed h-; here a max-h so a few cards stay content-height and only a long
+          // tail scrolls) so this strip can't grow without bound (§24.138 A0-cont).
+          <div className="flex flex-wrap gap-2 opacity-70 sm:max-h-[16rem] sm:overflow-y-auto sm:pr-1">
             {offboard.map((a) => (
               <div key={a.application_id} className="min-w-[10rem] flex-1 sm:max-w-[14rem]">
                 <PipelineCard app={a} onSelect={() => onSelect(a)} />
