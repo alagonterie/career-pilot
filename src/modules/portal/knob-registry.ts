@@ -571,7 +571,7 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     min: 1,
     max: 100,
     integer: true,
-    note: 'How many recent simulator runs the public "recent" strip shows.',
+    note: 'How many recent shareable runs the /watch simulator "Recent runs" strip lists — and that strip only renders in the fallback (when the live simulator is paused/disabled), so it’s usually unseen while the demo is on.',
   },
   sandbox_session_reap_idle_sec: {
     type: 'number',
@@ -813,7 +813,7 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     group: 'sanitization',
     label: 'Sanitization pass-3 model',
     options: MODEL_OPTIONS,
-    note: 'The model the optional LLM sanitization pass uses. Applies to the next run.',
+    note: 'The model the optional public-text pass-3 LLM scrub uses — default Haiku, and the pass itself is OFF by default (sanitization_pass3_enabled). This is NOT the kit entity-redact belt, which defaults to Sonnet (kit_entity_redact_model). Applies to the next run.',
   },
   sanitization_pass3_timeout_ms: {
     type: 'number',

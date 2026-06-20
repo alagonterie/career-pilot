@@ -104,7 +104,10 @@ function AdminPage() {
         </div>
       ) : (
         <>
-          <nav className="flex flex-wrap gap-1 border-b border-border" aria-label="Admin sections">
+          <nav
+            className="sticky top-14 z-10 flex flex-wrap gap-1 border-b border-border bg-background"
+            aria-label="Admin sections"
+          >
             {TABS.map((t) => (
               <button
                 key={t.id}
@@ -170,6 +173,10 @@ function OverviewPanel({ summary }: { summary: AdminSummary | null }) {
             <h2 className="font-mono text-xs uppercase tracking-widest text-foreground">Health</h2>
             <span className="font-mono text-[10px] text-muted-foreground">{health ? fmtTs(health.ranAt) : '—'}</span>
           </div>
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            The proactive `runHealthChecks` pass (live probes skipped) — each non-ok finding carries the exact command
+            to fix it.
+          </p>
           <div className="flex flex-wrap gap-2" data-testid="admin-health-counts">
             <Pill tone="ok" label={`ok ${health?.counts.ok ?? 0}`} />
             <Pill tone="warn" label={`warn ${health?.counts.warn ?? 0}`} />
@@ -215,6 +222,10 @@ function OverviewPanel({ summary }: { summary: AdminSummary | null }) {
                 {summary ? usd(summary.spendTotalMicrousd24h) : '—'}
               </span>
             </div>
+            <p className="text-[11px] leading-snug text-muted-foreground">
+              LLM spend over the last 24h, split by traffic class — ops (scheduled jobs) · chat (owner) · sandbox
+              (public simulator) · host (sim prose, scoring).
+            </p>
             <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5">
               {classes.map((c) => (
                 <div key={c} className="flex items-center justify-between gap-2">
@@ -228,11 +239,17 @@ function OverviewPanel({ summary }: { summary: AdminSummary | null }) {
           </div>
 
           {/* Pool */}
-          <div className="flex items-center justify-between rounded-xl border border-border bg-card p-4 sm:p-5">
-            <h2 className="font-mono text-xs uppercase tracking-widest text-foreground">Container pool</h2>
-            <span className="font-mono text-2xl font-semibold tabular-nums text-foreground" data-testid="admin-pool">
-              {summary ? `${summary.pool.active} / ${summary.pool.capacity}` : '—'}
-            </span>
+          <div className="flex flex-col gap-1 rounded-xl border border-border bg-card p-4 sm:p-5">
+            <div className="flex items-center justify-between">
+              <h2 className="font-mono text-xs uppercase tracking-widest text-foreground">Container pool</h2>
+              <span className="font-mono text-2xl font-semibold tabular-nums text-foreground" data-testid="admin-pool">
+                {summary ? `${summary.pool.active} / ${summary.pool.capacity}` : '—'}
+              </span>
+            </div>
+            <p className="text-[11px] leading-snug text-muted-foreground">
+              Live agent containers vs the concurrency cap (<code className="font-mono">container_max_concurrent</code>,
+              on System). Each warm container holds RAM + a slot until the idle reaper sweeps it.
+            </p>
           </div>
         </div>
       </div>
@@ -284,10 +301,20 @@ function PipelinePanel({ rows, stageCounts }: { rows: AdminPipelineRow[]; stageC
             {rows.map((r) => (
               <tr key={r.application_id} className="border-t border-border">
                 <td className="py-2 pl-4 pr-4 text-foreground">
-                  {r.company_name ?? '—'}
-                  <span className="ml-2 font-mono text-[11px] text-muted-foreground">{r.obfuscated_label ?? ''}</span>
+                  <span className="flex max-w-[16rem] items-baseline gap-2">
+                    <span className="truncate" title={r.company_name ?? undefined}>
+                      {r.company_name ?? '—'}
+                    </span>
+                    <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                      {r.obfuscated_label ?? ''}
+                    </span>
+                  </span>
                 </td>
-                <td className="py-2 pr-4 text-muted-foreground">{r.role_title ?? '—'}</td>
+                <td className="py-2 pr-4 text-muted-foreground">
+                  <span className="block max-w-[14rem] truncate" title={r.role_title ?? undefined}>
+                    {r.role_title ?? '—'}
+                  </span>
+                </td>
                 <td className="py-2 pr-4 text-foreground">{r.stage}</td>
                 <td className="py-2 pr-4 text-right font-mono tabular-nums text-foreground">
                   {r.win_confidence != null ? `${r.win_confidence}%` : '—'}
@@ -326,13 +353,21 @@ function ContactsPanel({ contacts }: { contacts: AdminContact[] }) {
               <td className="py-2 pl-4 pr-4 font-mono text-xs text-muted-foreground">{fmtTs(c.createdAt)}</td>
               <td className="py-2 pr-4">
                 <span className="block text-foreground">{c.name ?? '—'}</span>
-                <span className="block font-mono text-[11px] text-muted-foreground">{c.email ?? '—'}</span>
+                <span className="block break-all font-mono text-[11px] text-muted-foreground">{c.email ?? '—'}</span>
               </td>
               <td className="py-2 pr-4 text-muted-foreground">
-                {c.company ?? '—'}
+                <span className="block max-w-[12rem] truncate" title={c.company ?? undefined}>
+                  {c.company ?? '—'}
+                </span>
                 {c.role ? <span className="block text-[11px]">{c.role}</span> : null}
               </td>
-              <td className="max-w-sm py-2 pr-4 text-muted-foreground">{c.message}</td>
+              <td className="py-2 pr-4 text-muted-foreground">
+                {/* Long messages clamp to 3 lines (full text on hover) so one verbose
+                    submission can't blow out the row height / table width. */}
+                <span className="line-clamp-3 block max-w-md break-words" title={c.message}>
+                  {c.message}
+                </span>
+              </td>
               <td className="py-2 pr-4 font-mono text-xs">
                 {c.delivered ? (
                   <span className="text-accent-cool">✓</span>
@@ -367,7 +402,7 @@ function LinkRow({ link }: { link: AdminAttributionLink }) {
         <span className="ml-2 font-mono text-[11px] text-muted-foreground">/r/{link.code}</span>
       </td>
       <td className="py-2 pr-4 text-foreground">{link.company ?? '—'}</td>
-      <td className="py-2 pr-4 text-muted-foreground">{link.recipient ?? '—'}</td>
+      <td className="max-w-[16rem] break-all py-2 pr-4 text-muted-foreground">{link.recipient ?? '—'}</td>
       <td className="py-2 pr-4 text-right font-mono tabular-nums text-foreground">{link.clicks}</td>
       <td className="py-2 pr-4 text-right font-mono tabular-nums text-foreground">{link.uniqueVisitors}</td>
       <td className="py-2 pr-4 font-mono text-xs text-muted-foreground">{fmtTs(link.lastClickAt)}</td>
@@ -382,7 +417,7 @@ function VisitRow({ visit }: { visit: AdminAttributionVisit }) {
       <td className="py-1.5 pr-4 text-foreground">{visit.company ?? '—'}</td>
       <td className="py-1.5 pr-4 text-muted-foreground">{visit.country ?? '—'}</td>
       <td className="py-1.5 pr-4 text-muted-foreground">{visit.uaClass ?? '—'}</td>
-      <td className="py-1.5 pr-4 text-muted-foreground">{visit.referrer ?? 'direct'}</td>
+      <td className="max-w-[16rem] break-all py-1.5 pr-4 text-muted-foreground">{visit.referrer ?? 'direct'}</td>
     </tr>
   )
 }

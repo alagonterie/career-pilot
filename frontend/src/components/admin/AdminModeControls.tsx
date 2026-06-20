@@ -123,6 +123,25 @@ export function AdminModeControls({ mode, onControl }: Props) {
         )}
       </div>
 
+      <ul className="grid gap-x-6 gap-y-1.5 text-[11px] leading-snug text-muted-foreground sm:grid-cols-2">
+        <li>
+          <span className="font-semibold text-foreground">Mode</span> — SHADOW dry-runs every external action (drafts,
+          never a real send); LIVE arms real outreach. The profile must be complete before it’ll flip.
+        </li>
+        <li>
+          <span className="font-semibold text-foreground">Run state</span> — the current spend posture: RUNNING · PAUSED
+          · HALTED · KILLED.
+        </li>
+        <li>
+          <span className="font-semibold text-foreground">Pause spend</span> — halts every container so nothing can make
+          an LLM call. Fully reversible with Resume.
+        </li>
+        <li>
+          <span className="font-semibold text-foreground">Kill switch</span> — the hard stop (pause + kill + a
+          best-effort credential/budget revoke). Recovery is manual — RECOVERY.md.
+        </li>
+      </ul>
+
       {error ? (
         <p className="text-[11px] text-destructive" data-testid="admin-control-error">
           {error}
