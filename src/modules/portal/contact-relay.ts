@@ -86,6 +86,20 @@ function cfgBool(db: Database.Database, key: string, fallback: boolean): boolean
   }
 }
 
+/**
+ * Neutralize Markdown link syntax in visitor-supplied text (§24.141 S3-1). The
+ * notification is delivered with `parse_mode=Markdown`, and the outbound
+ * sanitizer balances delimiters but PRESERVES `[text](url)` — so a crafted field
+ * could inject a DISGUISED clickable link (arbitrary visible text → arbitrary
+ * target) into the owner's private channel. Breaking the `](` adjacency makes it
+ * render as literal text; a bare URL still shows as itself (no deception).
+ * Applied ONLY to the delivered message — the persisted submission keeps the raw
+ * value for accurate `read_contacts` recall.
+ */
+function deLinkify(s: string): string {
+  return s.replace(/]\(/g, '] (');
+}
+
 /** Pure: format the owner-facing notification from a validated submission. */
 export function buildContactNotification(c: {
   name: string;
@@ -95,11 +109,11 @@ export function buildContactNotification(c: {
   source?: string | null;
   message: string;
 }): string {
-  const lines = ['📬 New contact via the portal', '', `From: ${c.name} <${c.email}>`];
-  if (c.company) lines.push(`Company: ${c.company}`);
-  if (c.role) lines.push(`Role: ${c.role}`);
-  if (c.source) lines.push(`Came from: ${c.source}`);
-  lines.push('', c.message);
+  const lines = ['📬 New contact via the portal', '', `From: ${deLinkify(c.name)} <${deLinkify(c.email)}>`];
+  if (c.company) lines.push(`Company: ${deLinkify(c.company)}`);
+  if (c.role) lines.push(`Role: ${deLinkify(c.role)}`);
+  if (c.source) lines.push(`Came from: ${deLinkify(c.source)}`);
+  lines.push('', deLinkify(c.message));
   return lines.join('\n');
 }
 

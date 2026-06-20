@@ -105,6 +105,22 @@ describe('buildContactNotification', () => {
     expect(minimal).not.toContain('Role:');
     expect(minimal).not.toContain('Came from:');
   });
+
+  it('breaks Markdown link-disguise in visitor fields (§24.141 S3-1)', () => {
+    const out = buildContactNotification({
+      name: '[Click here](https://evil.example)',
+      email: 'sam@acme.example',
+      company: null,
+      role: null,
+      message: 'See [my portfolio](https://evil.example/phish) please',
+    });
+    // The `](` adjacency that forms a Markdown link is broken → renders as text.
+    expect(out).not.toContain('](');
+    expect(out).toContain('] (');
+    // Content is otherwise preserved (the visible text + the URL both survive).
+    expect(out).toContain('Click here');
+    expect(out).toContain('https://evil.example/phish');
+  });
 });
 
 describe('relayContactSubmission', () => {
