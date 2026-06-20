@@ -26,6 +26,22 @@ export function repoBlob(path: string, line?: number): string {
   return `${REPO_URL}/blob/master/${path}${line != null ? `#L${line}` : ''}`
 }
 
+/**
+ * The deployed PRODUCT version, for the footer chip (STRATEGY §24.139 / §24.136
+ * D4) — semver from `v1.0.0`, NOT `package.json`'s NanoClaw-fork number. Read at
+ * CALL time (not module-eval) so it's `vi.stubEnv`-testable. The label + an
+ * optional repo-relative ref are build-time injected by deploy-frontend.yml:
+ * prod → `v1.0.0` + `releases/tag/v1.0.0`; dev → `dev · <sha>` + `commit/<sha>`;
+ * local/unset → `dev` + no ref (a deterministic, link-free chip, so no SHA leaks
+ * into a @visual baseline). The href composes from `REPO_URL` — the single source
+ * for the repo host — so only the path differs between prod and dev.
+ */
+export function appVersion(): { label: string; href: string | null } {
+  const label = (import.meta.env.VITE_APP_VERSION as string | undefined) ?? 'dev'
+  const ref = (import.meta.env.VITE_APP_VERSION_REF as string | undefined) ?? ''
+  return { label, href: ref ? `${REPO_URL}/${ref}` : null }
+}
+
 /** The shared chrome gutter: the header nav, the connective rail, and the footer all
  * center their content in this max-width so the page is framed on one consistent
  * column, top and bottom. Set to the widest page's content width (the ops boards),

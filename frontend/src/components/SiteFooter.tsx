@@ -4,7 +4,7 @@ import type { ComponentType } from 'react'
 
 import { GitHubIcon, LinkedInIcon, XIcon } from '~/components/brand-icons'
 import type { Identity } from '~/lib/profile-loader'
-import { CHROME_WIDTH, isMonoSurface, PERSON_NAME } from '~/lib/site'
+import { appVersion, CHROME_WIDTH, isMonoSurface, PERSON_NAME } from '~/lib/site'
 import { cn } from '~/lib/utils'
 
 type IconComponent = ComponentType<{ className?: string }>
@@ -63,6 +63,9 @@ export function SiteFooter({ identity }: { identity: Identity }) {
     select: (s) => s.resolvedLocation?.pathname ?? s.location.pathname,
   })
   const mono = isMonoSurface(pathname)
+  // The §24.139 product version chip — the sanctioned narrow return of the
+  // retired §8.2 deploy SHA (the version token ONLY, not the metadata block).
+  const version = appVersion()
 
   return (
     <footer data-testid="site-footer" className={cn('w-full border-t border-border', mono && 'font-mono')}>
@@ -90,6 +93,24 @@ export function SiteFooter({ identity }: { identity: Identity }) {
               </a>,
             ])}
           </span>
+          {/* The product version (byte-stable `dev` under the @visual seed). A
+              link to the release tag (prod) / commit (dev); plain text when
+              unset. Carries only the version — not the retired §24.35 metadata. */}
+          {version.href ? (
+            <a
+              href={version.href}
+              target="_blank"
+              rel="noreferrer"
+              data-testid="footer-version"
+              className="font-mono text-[11px] text-muted-foreground/70 transition-colors hover:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {version.label}
+            </a>
+          ) : (
+            <span data-testid="footer-version" className="font-mono text-[11px] text-muted-foreground/70">
+              {version.label}
+            </span>
+          )}
         </div>
 
         <nav aria-label="Footer" className="flex flex-wrap items-center gap-x-3 gap-y-2">

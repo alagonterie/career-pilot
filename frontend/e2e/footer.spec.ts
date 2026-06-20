@@ -25,6 +25,10 @@ test.describe('site footer — the social/legal strip', () => {
       await expect(footer.getByTestId('footer-about')).toHaveAttribute('href', '/about')
       await expect(footer.getByTestId('footer-privacy')).toHaveAttribute('href', '/about#privacy')
 
+      // The §24.139 product version chip — byte-stable `dev` under the local
+      // build (VITE_APP_VERSION unset), link-free so no SHA enters a @visual baseline.
+      await expect(footer.getByTestId('footer-version')).toHaveText('dev')
+
       // The footer is on every page now — it must carry zero a11y violations.
       const a11y = await new AxeBuilder({ page }).include('[data-testid="site-footer"]').analyze()
       expect(a11y.violations).toEqual([])

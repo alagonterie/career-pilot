@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { FOOTER_CREDITS, footerSocials } from './SiteFooter'
 import type { Identity } from '~/lib/profile-loader'
+import { appVersion } from '~/lib/site'
 
 const full: Identity = {
   email: 'jane@example.com',
@@ -42,5 +43,29 @@ describe('FOOTER_CREDITS', () => {
       'https://tanstack.com/start',
     ])
     for (const c of FOOTER_CREDITS) expect(c.href).toMatch(/^https:\/\//)
+  })
+})
+
+describe('appVersion (the footer version chip — §24.139)', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('is a deterministic, link-free `dev` when unset (no SHA in a @visual baseline)', () => {
+    expect(appVersion()).toEqual({ label: 'dev', href: null })
+  })
+
+  it('links a prod tag to its GitHub release, composing the href from REPO_URL', () => {
+    vi.stubEnv('VITE_APP_VERSION', 'v1.0.0')
+    vi.stubEnv('VITE_APP_VERSION_REF', 'releases/tag/v1.0.0')
+    const v = appVersion()
+    expect(v.label).toBe('v1.0.0')
+    expect(v.href).toMatch(/^https:\/\/.+\/releases\/tag\/v1\.0\.0$/)
+  })
+
+  it('links a dev build to its commit', () => {
+    vi.stubEnv('VITE_APP_VERSION', 'dev · 0b2e450')
+    vi.stubEnv('VITE_APP_VERSION_REF', 'commit/0b2e450abc')
+    const v = appVersion()
+    expect(v.label).toBe('dev · 0b2e450')
+    expect(v.href).toMatch(/\/commit\/0b2e450abc$/)
   })
 })
