@@ -118,6 +118,44 @@
 }
 
 /*
+ * Hero entrance (the `/` flare pass) — a one-shot staggered rise of the LIVE
+ * chrome (badge → CTAs → stat line); the SSR'd name/title/hook stay solid.
+ * CSS-only on purpose: the spec's JS-disabled hero must still render, and
+ * motion/react's `initial` would leave it invisible without JS. TRANSFORM-ONLY
+ * (no opacity fade) is load-bearing for a11y (§24.135): a text node sampled
+ * mid-opacity-fade makes axe compute a BLENDED foreground that fails the AA
+ * contrast gate — the muted-foreground stat line tripped exactly this — so the
+ * entrance only translates, never fades. Finite, so Playwright's
+ * `animations:'disabled'` fast-forwards it to the settled frame; `both` fill
+ * holds the pre-roll offset through each element's `animation-delay`; the
+ * reduced-motion block below zeroes duration AND delay → settled at once.
+ */
+@keyframes cp-rise {
+  from {
+    transform: translateY(0.5rem);
+  }
+  to {
+    transform: none;
+  }
+}
+.cp-rise {
+  animation: cp-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/*
+ * Ambient hero backdrop (the `/` flare pass) — two faint brand-hue radial washes
+ * (signal-green + trace-cyan) that give the hero depth so it reads as a designed
+ * surface, not a centered text column. Static (no drift): keeps it calm and
+ * keeps the home visual baselines deterministic. Token-driven via relative-color
+ * syntax so it tracks the palette. Decorative — the element is aria-hidden.
+ */
+.cp-aurora {
+  background:
+    radial-gradient(45% 55% at 50% -8%, hsl(from var(--primary) h s l / 0.13), transparent 70%),
+    radial-gradient(40% 50% at 78% 4%, hsl(from var(--accent-cool) h s l / 0.08), transparent 68%);
+}
+
+/*
  * Reduced-motion — the global guarantee (STRATEGY §24.36 36.4). Neutralizes
  * every looping/decorative CSS *animation* (the ●live pulse, Tailwind's
  * `animate-pulse` on the loading skeletons + the stream `LiveCursor`, and any
@@ -135,6 +173,10 @@
   ::before,
   ::after {
     animation-duration: 0.01ms !important;
+    /* Zero entrance-stagger delays too (the `cp-rise` hero choreography): without
+       this, a delayed element would hold its invisible `from` frame through the
+       delay before snapping in — a flash of missing hero for reduced-motion. */
+    animation-delay: 0ms !important;
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
   }

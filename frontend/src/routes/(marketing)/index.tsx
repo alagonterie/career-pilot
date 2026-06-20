@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 
 import { AvailabilityBadge } from '~/components/AvailabilityBadge'
+import { InfoTip } from '~/components/InfoTip'
 import { PipelineCompact } from '~/components/live/PipelineCompact'
 import { LiveTicker } from '~/components/LiveTicker'
 import { Button } from '~/components/ui/button'
@@ -58,7 +59,16 @@ function Home() {
   const p = profile ?? workProfile
 
   return (
-    <main className="mx-auto flex max-w-3xl flex-col items-center px-6 py-16">
+    <main className="relative mx-auto flex max-w-3xl flex-col items-center overflow-x-clip px-6 py-20 sm:py-24">
+      {/* Ambient hero backdrop (the / flare pass) — faint brand-hue radial washes
+          behind the hero for depth. Decorative + non-interactive, painted behind
+          the in-flow content (-z-10); anchored to this relative <main>. `max-w-full`
+          + the parent's `overflow-x-clip` keep it from ever exceeding the viewport
+          (a wider value caused a phone-width horizontal scroll). */}
+      <div
+        aria-hidden="true"
+        className="cp-aurora pointer-events-none absolute left-1/2 top-0 -z-10 h-[26rem] w-[44rem] max-w-full -translate-x-1/2"
+      />
       {/*
         Viewport 1 — hero (PORTAL §5.1). Name/title SSR'd from candidate_profile
         (placeholder fallback). The hook orients first (what this is) before the
@@ -72,7 +82,14 @@ function Home() {
             dot pulses while the live feed is connected (the page's own liveness) and
             falls still if it drops — replacing the literal 🟢 emoji + a second
             competing live indicator with a single, on-brand pill. */}
-        <div className="mb-6 flex justify-center">
+        {/* Hero entrance (the / flare pass): the entrance rides only on the LIVE
+            chrome — the badge, the CTAs, and the stat line — which stagger in via
+            CSS (`cp-rise`, no-JS- + reduced-motion-safe). The name/title/hook are
+            left OUT of the animation on purpose: they're SSR'd for an instant solid
+            first paint, and a fade from opacity:0 would undercut that. So the
+            headline is solid the moment the HTML lands; the live bits animate around
+            it. */}
+        <div className="cp-rise mb-6 flex justify-center">
           <AvailabilityBadge
             status={status}
             title={status === 'open' ? `live — ${count} event${count === 1 ? '' : 's'} received` : status}
@@ -88,7 +105,10 @@ function Home() {
           — and this entire page is it, working live.
         </p>
 
-        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <div
+          className="cp-rise mt-8 flex flex-wrap items-center justify-center gap-3"
+          style={{ animationDelay: '0.08s' }}
+        >
           <Button asChild>
             {/* The one cross-register CTA (PORTAL §3.5): opens the /live dashboard. */}
             <Link to="/dashboard">See it work →</Link>
@@ -108,7 +128,8 @@ function Home() {
             rare empty-seed case (backend unreachable at SSR) — §24.36 + the / pass. */}
         <div
           data-testid="hero-stats"
-          className="mt-6 flex h-9 flex-wrap items-center justify-center gap-x-2 gap-y-1 font-mono text-xs text-muted-foreground sm:h-5"
+          className="cp-rise mt-6 flex h-9 flex-wrap items-center justify-center gap-x-2 gap-y-1 font-mono text-xs text-muted-foreground sm:h-5"
+          style={{ animationDelay: '0.16s' }}
           aria-live="polite"
         >
           {shownStats.length > 0 ? (
@@ -129,7 +150,7 @@ function Home() {
           arrives, so a visitor isn't left reverse-engineering what's happening. Static
           prose (no per-visitor data); ends with one quiet deepener into the full story
           (/about). The less-interested scroll straight past into the proof below. */}
-      <section aria-labelledby="home-pitch-heading" className="mt-16 w-full max-w-xl text-center">
+      <section aria-labelledby="home-pitch-heading" className="mt-24 w-full max-w-xl text-center">
         <h2 id="home-pitch-heading" className="sr-only">
           What this is
         </h2>
@@ -162,7 +183,7 @@ function Home() {
           </li>
         </ol>
         <p className="mt-6 text-balance text-sm leading-relaxed text-muted-foreground">
-          …and you can watch it happen below, or run it on your own open role right now.
+          Watch it happen below — or run it on your own open role right now.
         </p>
         <Link to="/about" className="mt-5 inline-block text-sm text-accent-cool hover:underline">
           Read the full story →
@@ -175,12 +196,19 @@ function Home() {
           space instead of popping in — there's essentially always live data here.
           A cold backend error is the one case it collapses (no stranded skeleton). */}
       {pipelineStatus !== 'error' ? (
-        <section aria-labelledby="home-pipeline-heading" className="mt-20 w-full">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 id="home-pipeline-heading" className="text-sm font-semibold text-muted-foreground">
+        <section aria-labelledby="home-pipeline-heading" className="mt-24 w-full">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2
+              id="home-pipeline-heading"
+              className="flex items-center gap-1.5 text-sm font-semibold text-muted-foreground"
+            >
               My job search, live
+              <InfoTip label="My job search, live" align="text">
+                Every role I’m actively pursuing, as a live pipeline. Companies stay anonymized until each process
+                closes — a deliberate privacy choice. Tap any stage on the pipeline page to follow it.
+              </InfoTip>
             </h2>
-            <Link to="/pipeline" className="font-mono text-xs text-accent-cool hover:underline">
+            <Link to="/pipeline" className="shrink-0 font-mono text-xs text-accent-cool hover:underline">
               track it →
             </Link>
           </div>
@@ -205,7 +233,7 @@ function Home() {
 
       {/* Viewport 4 — the "watch me apply" pitch (PORTAL §5.1): a single high-intent
           CTA into the grippiest spoke. No form here — the form lives on /watch. */}
-      <section aria-labelledby="home-watch-heading" className="mt-20 w-full text-center">
+      <section aria-labelledby="home-watch-heading" className="mt-24 w-full text-center">
         <h2 id="home-watch-heading" className="text-2xl font-bold tracking-tight">
           Watch me apply to your role
         </h2>
@@ -222,7 +250,7 @@ function Home() {
       </section>
 
       {/* Viewport 5 — resume + contact teaser (PORTAL §5.1). */}
-      <section aria-labelledby="home-teaser-heading" className="mt-20 grid w-full gap-10 sm:grid-cols-3">
+      <section aria-labelledby="home-teaser-heading" className="mt-24 grid w-full gap-10 sm:grid-cols-3">
         <h2 id="home-teaser-heading" className="sr-only">
           More about me
         </h2>

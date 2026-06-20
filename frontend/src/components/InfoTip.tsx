@@ -1,3 +1,5 @@
+import { cn } from '~/lib/utils'
+
 import { DisclosureTip } from './DisclosureTip'
 
 /**
@@ -11,7 +13,20 @@ import { DisclosureTip } from './DisclosureTip'
  * `AgentRef` cast chip share ONE interaction contract — InfoTip is just its
  * ⓘ-trigger skin.
  */
-export function InfoTip({ label, children }: { label: string; children: React.ReactNode }) {
+export function InfoTip({
+  label,
+  align = 'caps',
+  children,
+}: {
+  label: string
+  /** Vertical optical-centering of the ⓘ circle against its sibling text.
+   *  'caps' (default): next to UPPERCASE labels — nudge up 1px (§24.86), since
+   *  all-caps ink sits high in its line box. 'text': next to normal-case text
+   *  (with descenders), where the line-box center already IS the optical center,
+   *  so the nudge would read 1px high. */
+  align?: 'caps' | 'text'
+  children: React.ReactNode
+}) {
   return (
     <DisclosureTip
       ariaLabel={`About: ${label}`}
@@ -27,11 +42,13 @@ export function InfoTip({ label, children }: { label: string; children: React.Re
           aria-controls={p['aria-controls']}
           aria-label={p['aria-label']}
           onClick={p.onClick}
-          // -translate-y-px (§24.86): every InfoTip sits next to UPPERCASE text in
-          // an items-center wrapper, which centers the circle on the text's line
-          // box — but all-caps ink sits high in that box (empty descender space), so
-          // the circle read ~1px low. The nudge optically centers it on the caps.
-          className="inline-flex h-3.5 w-3.5 shrink-0 -translate-y-px items-center justify-center rounded-full border border-muted-foreground/50 align-middle text-muted-foreground transition-colors hover:border-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          // The optical-centering nudge is `align`-dependent (§24.86): caps labels
+          // get -translate-y-px (all-caps ink sits high in the line box); normal-
+          // case text keeps the line-box center (no nudge).
+          className={cn(
+            'inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border border-muted-foreground/50 align-middle text-muted-foreground transition-colors hover:border-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            align === 'caps' ? '-translate-y-px' : '',
+          )}
         >
           {/* The "i" as a centered SVG (§24.85): a flex-centered text glyph
               centers on its advance box, not its ink, so the sans "i"'s

@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 
 import { EventSourceLabel } from '~/components/EventSourceLabel'
+import { InfoTip } from '~/components/InfoTip'
 import { LiveCursor, StateNote } from '~/components/states'
 import type { StreamStatus } from '~/lib/sse'
 import { type AuditEvent, isDispatchLifecycle } from '~/lib/use-activity-stream'
@@ -45,12 +46,18 @@ export function LiveTicker({
       id="live-ticker"
       aria-labelledby="ticker-heading"
       data-testid="live-ticker"
-      className="mx-auto mt-20 w-full max-w-3xl rounded-lg border border-border bg-card p-4"
+      className="mx-auto mt-24 w-full max-w-3xl rounded-lg border border-border bg-card p-4"
     >
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 id="ticker-heading" className="text-sm font-semibold text-muted-foreground">
-          Agent activity
-        </h2>
+        <span className="flex items-center gap-1.5">
+          <h2 id="ticker-heading" className="text-sm font-semibold text-muted-foreground">
+            Agent activity
+          </h2>
+          <InfoTip label="Agent activity" align="text">
+            A live feed of what my agents are doing right now. The ◆ proactive marker flags the actions the agent kicked
+            off on its own — it’s an autonomous worker, not a chatbot waiting for input.
+          </InfoTip>
+        </span>
         {action}
       </div>
       {/* Reserve the feed's 5-row capacity so the connecting/empty message and the
