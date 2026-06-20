@@ -59,7 +59,13 @@ const CONTACTS = {
       company: 'Acme',
       role: 'Staff Eng',
       source: 'portal',
-      message: 'We are hiring — let’s talk.',
+      // Deliberately long (many lines) so the line-clamp is exercised — a verbose
+      // submission must not blow out the row height / table width.
+      message:
+        'We are hiring for a senior backend role and your portfolio is exactly what we are looking for. ' +
+        'The team ships a high-throughput payments platform and we loved the agent system you built here. ' +
+        'Would you be open to a 30-minute intro call this week or next? We can work around your schedule. ' +
+        'Reply any time — looking forward to it.',
       delivered: 1,
       createdAt: '2026-06-19T10:00:00.000Z',
     },
@@ -182,6 +188,14 @@ test.describe('/admin — control center (§24.138)', () => {
     // Contacts tab: the §24.121 store.
     await page.getByTestId('admin-tab-contacts').click()
     await expect(page.getByTestId('admin-contact-row')).toContainText('sam@acme.example')
+    // The long message is line-clamped: the rendered box is bounded to ~3 lines and
+    // the full content is clipped (scrollHeight exceeds it). A behavioral check —
+    // Chromium normalizes the `-webkit-box` display keyword in getComputedStyle, so
+    // asserting the keyword is unreliable; the height bound is the real contract.
+    const msg = page.getByTestId('admin-contact-message')
+    const clamp = await msg.evaluate((el) => ({ clientH: el.clientHeight, scrollH: el.scrollHeight }))
+    expect(clamp.scrollH).toBeGreaterThan(clamp.clientH + 1) // content is clipped
+    expect(clamp.clientH).toBeLessThan(96) // ~3 lines, not the full ~7-line message
 
     // Visitors tab: the attribution browser.
     await page.getByTestId('admin-tab-visitors').click()

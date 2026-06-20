@@ -363,8 +363,22 @@ function ContactsPanel({ contacts }: { contacts: AdminContact[] }) {
               </td>
               <td className="py-2 pr-4 text-muted-foreground">
                 {/* Long messages clamp to 3 lines (full text on hover) so one verbose
-                    submission can't blow out the row height / table width. */}
-                <span className="line-clamp-3 block max-w-md break-words" title={c.message}>
+                    submission can't blow out the row height / table width. The clamp
+                    is an inline style, not the `line-clamp-3` utility: the utility's
+                    `display:-webkit-box` lost the cascade here (a sibling utility won
+                    `display`), silently killing the clamp — inline style can't be
+                    out-specificity'd by a class. */}
+                <span
+                  data-testid="admin-contact-message"
+                  className="max-w-md break-words"
+                  title={c.message}
+                  style={{
+                    display: '-webkit-box',
+                    WebkitLineClamp: 3,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                  }}
+                >
                   {c.message}
                 </span>
               </td>
