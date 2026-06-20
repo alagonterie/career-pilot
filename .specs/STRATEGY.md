@@ -6554,6 +6554,7 @@ The home `/` landed but read flat/cramped (owner: "this home/hero page really ne
 - **A0 — finishing touches.** The owner's loose-ends list (TBD — captured at session start); each scoped per item. Done before the environment changes underneath us.
 - **A1 — `/admin` control-center** (D1/D2/D3 panels half). First step = the `KNOB_SPECS` audit (enumerate every group, mark include/deny). Then build the tabbed panels over the §17.2 prod-safe reads (`runHealthChecks`, `getTelemetry`/`request_telemetry` rollups, the funnel read-model, the §24.121 contacts store, attribution, container-pool/system) + the included knobs (preferences tier, confirm-gated destructives). Owner-gated on dev. `/admin` E2E.
 - **A2 — version/release tooling** (D4). `CHANGELOG.md` + `release.yml` + `VITE_APP_VERSION` injection + the `SiteFooter` chip (prod tag→release link / dev `dev · sha`).
+- **A2.5 — model-choice audit** (§24.140, owner-added). Audit every Haiku/Sonnet/Opus choice vs purpose; drop the public visitor sandbox Opus→Sonnet via a prod-safe `sandbox_model_tier` knob (owner agent stays Opus); knob-ify `win_confidence_model`; keep the kit-redact Sonnet belt. Answers the "should models / per-IP be knobs?" question (per-IP caps already are).
 - **A3 — security** (D5). The threat-model doc → `/security-review` → targeted hardening → the prompt-injection/sandbox red-team. (The live abuse-sim runs in Phase C.)
 - **A4 — master résumé + identity dress-rehearsal** (D6). The content session; stage the real `candidate_profile` on the dev box (DB-only); confirm `/work`, the PDF, and tailoring render it well.
 
@@ -6697,6 +6698,31 @@ The third slice of §24.136 **Phase A**. A2 gives the product a **version identi
 - host + frontend `tsc` + suites green; the footer e2e covers the chip; `@visual` re-blessed (local-only).
 
 **Spec deltas (this drill-in).** This §24.139; §24.38 Phase-9 table repoint (9.4 → §24.136 B/9.7, Phase 10 → C); PORTAL §8.2 (footer version-chip note). Memory: [[status_current]].
+
+## §24.140 — Phase A2.5: model-choice audit + the sandbox cost lever (cheaper visitor path; host-call model knobs)
+
+A pre-cutover audit of every model choice (Haiku/Sonnet/Opus) against its purpose — an owner pre-prod TODO, run before A3. Output: **one behavior change** (the public visitor path drops Opus→Sonnet) + **two new prod-safe knobs** that also answer the owner's "should model choices be knobs?".
+
+**The map (as audited).** *Agent runtime (in-container):* owner orchestrator + owner subagents (research-company / tailor-resume / draft-outreach / scrape-jobs / build-interview-kit) = **Opus**; funnel-curator / pipeline-scribe = **Sonnet**. The **public sandbox group** orchestrator + its 3 subagents = **Opus**. *Host `callPortkeyChat` (4 total):* kit-entity-redact = **Sonnet** (the §24.134e leak belt), win-confidence = **Haiku**, sanitizer pass-3 = **Haiku** (off by default), recruiter-sim prose = **Haiku** (dev fixture). WebFetch/WebSearch internal summarization = Haiku (Claude Code internal).
+
+**Decisions (owner, 2026-06-20).**
+- **D1 — the public "Watch it work" sandbox runs Sonnet, not Opus.** It's the only path strangers can spend money on; Sonnet is ~40% cheaper (3×/15× vs 5×/25×) and more abuse-resilient, with a marginal quality delta on bounded, capped runs. The owner's REAL search is untouched (a separate agent group).
+- **D2 — the owner agent stays Opus.** Low volume, real outcomes, quality-first. No owner-side trims (scrape-jobs was considered, kept Opus).
+- **D3 — kit-entity-redact stays Sonnet — do NOT downgrade.** Security-load-bearing (§24.134e; Haiku *leaked* company tokens on the public kit surface).
+- **D4 — the lever is a per-group alias-retarget, NOT frontmatter edits.** The rendered `groups/<g>/.claude/agents/*.md` are regenerated every spawn from the SHARED `_shared-subagents/*.md` (one source feeds BOTH owner + sandbox via `composeSubagentDefinitions`), so editing frontmatter either doesn't stick or downgrades the owner too. Instead the sandbox container retargets its `model: opus` alias (`ANTHROPIC_DEFAULT_OPUS_MODEL`) + the orchestrator `config.model` to Sonnet — the same mechanism `dev_model_tier` uses (`applyModelTier`, renamed from `applyDevModelTier`), but applied **unconditionally** (prod too — unlike the `ENVIRONMENT==='dev'`-only `dev_model_tier` branch) and **scoped to `group.folder === 'career-pilot-sandbox'`**.
+- **D5 — expose it as a prod-safe knob: `sandbox_model_tier` (default `'sonnet'`).** This IS the answer to "should model choices be knobs": the visitor model tier becomes an `/admin` + `/dev` lever — and it is **NOT deny-listed**, because it only affects the public sandbox, never the owner orchestrator (contrast `dev_model_tier`, which retargets the owner agent and stays dev-only / ADMIN_DENY). Values map through `applyModelTier`: `default` = Opus / `sonnet` = Sonnet (the default) / `haiku` = Haiku. Applied before the `dev_model_tier` branch so a dev experiment can still override it on dev.
+- **D6 — knob-ify the one prod host call worth it: `win_confidence_model` (default Haiku).** Mirrors the existing `sanitization_pass3_model` / `kit_entity_redact_model` knobs. recruiter-sim prose stays hardcoded Haiku (a dev-only fixture; not worth a knob, and it would land in the deny-listed recruiter_sim cluster).
+- **D7 — subagent/orchestrator models stay committed in frontmatter/config, NOT per-subagent admin dials.** A quality-affecting model choice is a reviewed code change with a test, not a runtime dial flippable mid-demo; the coarse tiers (`dev_model_tier` for dev, `sandbox_model_tier` for the prod sandbox) cover the legitimate runtime levers.
+
+**Per-IP note (the owner's adjacent question).** No new work: the simulator + contact per-IP/budget caps are ALREADY host-side knobs (`sandbox_per_ip_daily_run_cap`, `sandbox_daily_global_budget_usd`, `simulator_max_budget_usd`, `contact_relay_max_per_window` / `_window_sec`); the only non-knob is the EDGE Workers-RL burst, which can't read the DB by architecture (§24.70 D4 — already noted on the `/admin` System tab).
+
+**Decomposition.**
+- **Commit 1 — spec (this; no deploy).**
+- **Commit 2 — build.** `applyDevModelTier`→`applyModelTier` (pure tier mapping, honest name; update its call site + the unit test); the sandbox-group tier hook in `materializeContainerJson` (prod + dev, before the `dev_model_tier` branch); `sandbox_model_tier` + `win_confidence_model` in `config/defaults.json` + `knob-registry.ts` (group `models`; neither deny-listed); `win-confidence.ts` reads `win_confidence_model`; the coverage test auto-enforces the two new keys. Host vitest + tsc green.
+
+**Definition of done.** The sandbox group's container config resolves `model: opus` + the orchestrator to Sonnet by default (unit-tested via `applyModelTier` + a `materializeContainerJson` sandbox case); the owner group is unchanged (still Opus); `sandbox_model_tier` + `win_confidence_model` render on `/admin` (System → models) + `/dev` and are NOT in `ADMIN_DENY`; win-confidence reads the knob; the coverage test passes; kit-entity-redact still Sonnet. Host `tsc` + suites green. No frontend code change (the knob grid is registry-driven); no `@visual` change.
+
+**Spec deltas (this drill-in).** This §24.140; the §24.136 Phase-A list gains A2.5; `config/defaults.json` + `knob-registry.ts`. Memory: [[status_current]].
 
 ---
 
