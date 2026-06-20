@@ -124,7 +124,7 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     label: 'Simulator per-run budget (USD)',
     min: 0,
     max: 10,
-    note: 'Per-run spend ceiling for one public simulator session (maxBudgetUsd). The run stops when it’s reached.',
+    note: 'Per-run spend ceiling for one public simulator session — wired into the sandbox provider as the in-SDK maxBudgetUsd, AND reserved per in-flight run by the global-budget check. NB maxBudgetUsd enforces on the SDK’s ESTIMATED cost (may under-count the Haiku web-search/fetch spend), so the 300s hard-wall + the daily global budget are the real backstops.',
   },
   daily_briefing_max_cost_usd: {
     type: 'number',

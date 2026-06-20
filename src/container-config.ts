@@ -45,6 +45,11 @@ export interface ContainerConfig {
   maxMessagesPerPrompt?: number;
   model?: string;
   effort?: string;
+  /** Per-run agent-turn cap (sandbox only — §24.141 S1-1); passed to the SDK query as maxTurns. */
+  maxTurns?: number;
+  /** Per-run spend ceiling in USD (sandbox only — §24.141 S1-1); passed to the SDK query as
+   *  maxBudgetUsd. Enforces on the SDK's ESTIMATED cost, so it's a weak extra layer. */
+  maxBudgetUsd?: number;
   /**
    * Per-spawn env overrides — applied AFTER OneCLI's gateway env, so these
    * win on conflict. Used by the Ollama test mode to redirect Anthropic SDK
@@ -145,6 +150,14 @@ export function materializeContainerJson(agentGroupId: string): ContainerConfig 
   // owner-group test modes below pin their own model and are mutually exclusive.
   if (group.folder === 'career-pilot-sandbox') {
     applyModelTier(config, getConfig<string>(getDb(), 'sandbox_model_tier', 'sonnet'));
+    // §24.141 S1-1: wire the per-run caps the cribsheet intended but never
+    // plumbed — bound a prompt-injected/runaway public run. maxTurns is the
+    // reliable bound (caps agent turns → caps expensive web ops); maxBudgetUsd
+    // enforces on the SDK's ESTIMATED cost (a weak extra layer — may under-count
+    // the Haiku web-search/fetch spend), so the 300s host hard-wall + the daily
+    // global budget stay the real backstops.
+    config.maxTurns = getConfig<number>(getDb(), 'simulator_max_turns', 30);
+    config.maxBudgetUsd = getConfig<number>(getDb(), 'simulator_max_budget_usd', 0.5);
   }
 
   if (process.env.OLLAMA_TEST_MODE === '1' && group.folder === 'career-pilot') {

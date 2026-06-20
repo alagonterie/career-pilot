@@ -49,8 +49,8 @@ export interface SimulatorStartResult {
   error?: { code: 'BAD_ARGS' | 'UNAVAILABLE' | 'RATE_LIMITED'; message: string };
 }
 
-const DEFAULT_PER_IP_DAILY_CAP = 5;
-const DEFAULT_DAILY_BUDGET_USD = 5;
+const DEFAULT_PER_IP_DAILY_CAP = 3;
+const DEFAULT_DAILY_BUDGET_USD = 10;
 
 const MAX_COMPANY = 200;
 const MAX_ROLE = 200;
@@ -72,8 +72,9 @@ function asTrimmed(v: unknown, max: number): string | null {
  * numbers); the budget uses REAL spend, not a Worker estimate, so it can't drift
  * from the actual cost. `ip` is the CF-verified visitor IP the Worker forwards
  * as `x-cp-client-ip` — absent (no-arg) only the enabled + global checks run.
- * Fail-open on a config/db error (the in-SDK `simulator_max_budget_usd` per-run
- * cap still bounds each run); never throws.
+ * Fail-open on a config/db error — each run is still bounded by the per-run 300s
+ * hard-wall + the in-SDK `maxBudgetUsd`/`maxTurns` caps (§24.141 S1-1, wired
+ * through container.json into the sandbox provider); never throws.
  */
 export function checkSimulatorAllowed(ip?: string | null): { ok: boolean; reason?: string } {
   let enabled = true;
@@ -84,19 +85,22 @@ export function checkSimulatorAllowed(ip?: string | null): { ok: boolean; reason
   }
   if (!enabled) return { ok: false, reason: 'simulator_disabled' };
 
-  // Global daily $-budget: today's persisted cost + an estimate for in-flight
+  // Global daily $-budget: today's persisted cost + a reservation for in-flight
   // (not-yet-persisted) runs, so concurrent starts can't overshoot before their
-  // costs land. Reuses the in-SDK per-run cap as the in-flight estimate.
+  // costs land. Reserves the per-run ceiling (`simulator_max_budget_usd`, also
+  // wired as the in-SDK maxBudgetUsd) per in-flight run — conservative (it
+  // slightly over-reserves vs the ~$0.35 real average), the safe direction for a
+  // hard budget guard.
   try {
     const budgetCents = Math.round(
       getConfig<number>(getDb(), 'sandbox_daily_global_budget_usd', DEFAULT_DAILY_BUDGET_USD) * 100,
     );
-    const estimateCents = Math.max(1, Math.round(getConfig<number>(getDb(), 'simulator_max_budget_usd', 0.1) * 100));
+    const estimateCents = Math.max(1, Math.round(getConfig<number>(getDb(), 'simulator_max_budget_usd', 0.5) * 100));
     if (costCentsToday() + inFlightCount() * estimateCents >= budgetCents) {
       return { ok: false, reason: 'budget_exceeded' };
     }
   } catch {
-    /* don't block on a config/db error — the in-SDK per-run cap bounds spend */
+    /* don't block on a config/db error — the 300s hard-wall + maxBudgetUsd bound each run */
   }
 
   // Per-IP daily run cap: today's persisted runs from this IP + its in-flight

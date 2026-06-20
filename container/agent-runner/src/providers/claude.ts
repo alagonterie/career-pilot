@@ -720,6 +720,8 @@ export class ClaudeProvider implements AgentProvider {
   private additionalDirectories?: string[];
   private model?: string;
   private effort?: string;
+  private maxTurns?: number;
+  private maxBudgetUsd?: number;
   private extraDisallowedTools: string[];
   private emitTrace: boolean;
 
@@ -729,6 +731,8 @@ export class ClaudeProvider implements AgentProvider {
     this.additionalDirectories = options.additionalDirectories;
     this.model = options.model;
     this.effort = options.effort;
+    this.maxTurns = options.maxTurns;
+    this.maxBudgetUsd = options.maxBudgetUsd;
     this.extraDisallowedTools = options.extraDisallowedTools ?? [];
     this.emitTrace = options.emitTrace ?? false;
     this.env = buildProviderSubprocessEnv(options.env);
@@ -801,6 +805,10 @@ export class ClaudeProvider implements AgentProvider {
         model: this.model,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         effort: this.effort as any,
+        // §24.141 S1-1: per-run caps, set only for the sandbox (host materializes
+        // them into container.json); the owner group leaves them unset → SDK default.
+        ...(this.maxTurns !== undefined ? { maxTurns: this.maxTurns } : {}),
+        ...(this.maxBudgetUsd !== undefined ? { maxBudgetUsd: this.maxBudgetUsd } : {}),
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
         settingSources: ['project', 'user', 'local'],

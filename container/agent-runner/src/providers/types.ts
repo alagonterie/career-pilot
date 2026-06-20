@@ -50,6 +50,10 @@ export interface ProviderOptions {
    * through to the underlying SDK. If omitted, the SDK default is used.
    */
   effort?: string;
+  /** Per-run agent-turn cap (sandbox only); passed to the SDK query as maxTurns. */
+  maxTurns?: number;
+  /** Per-run spend ceiling in USD (sandbox only); passed to the SDK query as maxBudgetUsd. */
+  maxBudgetUsd?: number;
   /**
    * Per-group tool removals appended to the provider's static
    * disallow list. Used by the career-pilot-sandbox group to remove

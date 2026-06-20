@@ -18,6 +18,10 @@ export interface RunnerConfig {
   mcpServers: Record<string, { command: string; args: string[]; env: Record<string, string> }>;
   model?: string;
   effort?: string;
+  /** Per-run agent-turn cap (sandbox only); passed to the SDK query as maxTurns. */
+  maxTurns?: number;
+  /** Per-run spend ceiling in USD (sandbox only); passed to the SDK query as maxBudgetUsd. */
+  maxBudgetUsd?: number;
   /**
    * Extra tools to remove from the agent's SDK context (concatenated with
    * the static SDK_DISALLOWED_TOOLS in providers/claude.ts). Per-group
@@ -61,6 +65,8 @@ export function loadConfig(): RunnerConfig {
     mcpServers: (raw.mcpServers as RunnerConfig['mcpServers']) || {},
     model: (raw.model as string) || undefined,
     effort: (raw.effort as string) || undefined,
+    maxTurns: typeof raw.maxTurns === 'number' ? raw.maxTurns : undefined,
+    maxBudgetUsd: typeof raw.maxBudgetUsd === 'number' ? raw.maxBudgetUsd : undefined,
     disallowedTools: Array.isArray(raw.disallowedTools)
       ? (raw.disallowedTools as unknown[]).filter((x): x is string => typeof x === 'string')
       : undefined,

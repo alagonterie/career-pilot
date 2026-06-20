@@ -101,6 +101,8 @@ async function main(): Promise<void> {
     additionalDirectories: additionalDirectories.length > 0 ? additionalDirectories : undefined,
     model: config.model,
     effort: config.effort,
+    maxTurns: config.maxTurns,
+    maxBudgetUsd: config.maxBudgetUsd,
     extraDisallowedTools: config.disallowedTools,
     emitTrace: config.emitTrace,
   });

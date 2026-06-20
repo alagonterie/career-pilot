@@ -105,8 +105,8 @@ describe('checkSimulatorAllowed', () => {
     expect(checkSimulatorAllowed('1.1.1.1')).toEqual({ ok: true }); // a different IP is unaffected
   });
 
-  it('rejects when today’s spend reaches the global $-budget (default $5)', () => {
-    for (let i = 0; i < 5; i++) seedRun(null, 100); // 5 × $1.00 = the $5 cap
+  it('rejects when today’s spend reaches the global $-budget (default $10)', () => {
+    for (let i = 0; i < 10; i++) seedRun(null, 100); // 10 × $1.00 = the $10 cap
     expect(checkSimulatorAllowed()).toEqual({ ok: false, reason: 'budget_exceeded' });
   });
 
