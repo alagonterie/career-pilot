@@ -9,8 +9,25 @@ import { usePolledJson, type PollStatus } from './use-polled-json'
  * poll. Writes go through `postKnob`.
  */
 
-export type KnobType = 'boolean' | 'number' | 'cron' | 'enum'
-export type KnobGroup = 'sim' | 'pacing' | 'budget' | 'polling' | 'models' | 'sessions' | 'telemetry' | 'contact'
+export type KnobType = 'boolean' | 'number' | 'cron' | 'enum' | 'text'
+/** The knob groups (mirrors src/modules/portal/knob-registry.ts — §24.138). */
+export type KnobGroup =
+  | 'sim'
+  | 'budget'
+  | 'polling'
+  | 'models'
+  | 'sessions'
+  | 'system'
+  | 'telemetry'
+  | 'health'
+  | 'contact'
+  | 'simulator'
+  | 'briefing'
+  | 'scouting'
+  | 'curator'
+  | 'kits'
+  | 'sanitization'
+  | 'notify'
 
 /** System pause state (§24.43e). `halted` = LLM spend frozen (no container spawns). */
 export type PauseState = 'active' | 'paused' | 'halted' | 'killswitch'
@@ -31,6 +48,8 @@ export interface DevKnob {
   integer: boolean
   /** Allowed values for an `enum` knob (drives the select); null otherwise. */
   options: string[] | null
+  /** Max length for a `text` knob; null otherwise. */
+  maxLength: number | null
   note: string | null
 }
 

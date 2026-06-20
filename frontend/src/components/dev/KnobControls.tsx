@@ -3,32 +3,83 @@ import type { DevKnob, KnobGroup, KnobWriteResult } from '~/lib/use-dev-inspecto
 
 import { KnobControl } from './KnobControl'
 
-const GROUP_ORDER: KnobGroup[] = ['sim', 'pacing', 'budget', 'models', 'sessions', 'telemetry', 'polling', 'contact']
+// Operational levers first; the dev-only `sim` + `models` groups sit last (they
+// only appear on /dev — /admin's feed excludes them via ADMIN_DENY).
+const GROUP_ORDER: KnobGroup[] = [
+  'budget',
+  'simulator',
+  'contact',
+  'briefing',
+  'scouting',
+  'curator',
+  'kits',
+  'sanitization',
+  'sessions',
+  'system',
+  'telemetry',
+  'health',
+  'notify',
+  'polling',
+  'sim',
+  'models',
+]
 
 const GROUP_META: Record<KnobGroup, { title: string; blurb: string }> = {
-  sim: { title: 'Recruiter sim', blurb: 'The dev fixture that injects ATS mail into the dev mailbox.' },
-  pacing: { title: 'Loop pacing', blurb: 'Cron cadence for the proactive flows. Changes apply on the next reclone.' },
-  budget: { title: 'Cost caps', blurb: 'Daily LLM spend ceilings for the dev stack.' },
-  models: {
-    title: 'Model tier',
+  budget: { title: 'Budgets & caps', blurb: 'Daily LLM spend ceilings + per-run/per-IP caps across the system.' },
+  simulator: {
+    title: 'Public simulator',
+    blurb: 'The visitor demo (the only money-spend public path): the kill switch + per-run turn/time/result caps.',
+  },
+  contact: {
+    title: 'Contact relay',
     blurb:
-      'Drop the orchestrator + subagents off Opus for cheap dev runs (applies on the next spawn). The cost delta shows up in Portkey.',
+      'Abuse backstops for the public /contact relay (it spends no money — junk only risks Telegram spam + DB rows). Kill switch + a global flood cap behind the per-IP edge limit.',
+  },
+  briefing: {
+    title: 'Daily briefing',
+    blurb: 'The scheduled briefing: cadence, scoring threshold, size, and its host backstop.',
+  },
+  scouting: {
+    title: 'Scouting & killer-match',
+    blurb: 'The job-lead scrape + the high-score "this one’s for you" alert.',
+  },
+  curator: {
+    title: 'Pipeline curator',
+    blurb: 'The pipeline-scribe + close-detection passes — cadence, lookback, and per-pass ceilings.',
+  },
+  kits: { title: 'Interview kits', blurb: 'Auto-generation, the Drive destination, and the stale-kit cleanup.' },
+  sanitization: {
+    title: 'Sanitization & redaction',
+    blurb: 'The public-text scrub + the kit entity-redaction belt: toggles, models, thresholds, and timeouts.',
   },
   sessions: {
     title: 'Ops session',
     blurb:
-      'Transcript rotation + chat mirroring for the machine-traffic session. Rotation changes apply on its next spawn.',
+      'Transcript rotation + chat mirroring + the idle-container ceilings. Rotation changes apply on the next spawn.',
+  },
+  system: {
+    title: 'System & perf',
+    blurb: 'Container sizing + concurrency, SSE/cache timings, and host-side perf internals.',
   },
   telemetry: {
-    title: 'Telemetry & health',
-    blurb:
-      'Request-telemetry capture + retention, and the proactive health-check cadence (new criticals ping the owner once until cleared).',
+    title: 'Telemetry',
+    blurb: 'Per-request + visit telemetry capture and retention windows.',
   },
-  polling: { title: 'Polling', blurb: 'How often the host syncs Gmail / Calendar.' },
-  contact: {
-    title: 'Contact safety',
+  health: {
+    title: 'Health checks',
     blurb:
-      'Abuse backstops for the public /contact relay (it spends no money — junk only risks Telegram spam + DB rows). Kill switch + a global flood cap behind the per-IP edge limit.',
+      'The proactive health-run cadence + the per-finding thresholds (new criticals ping the owner once until cleared).',
+  },
+  notify: { title: 'Notifications', blurb: 'Quiet hours, the proactive frequency cap, and the auto-research trigger.' },
+  polling: {
+    title: 'Polling',
+    blurb: 'Intended Gmail / Calendar poll cadence (no live consumer today — kept for a future poller).',
+  },
+  sim: { title: 'Recruiter sim', blurb: 'Dev-only: the fixture that injects ATS mail into the dev mailbox.' },
+  models: {
+    title: 'Model tier',
+    blurb:
+      'Dev-only: drop the orchestrator + subagents off Opus for cheap dev runs (applies on the next spawn). The cost delta shows up in Portkey.',
   },
 }
 

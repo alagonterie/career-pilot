@@ -43,7 +43,7 @@ const KNOBS = {
       default: '30 7 * * *',
       overridden: false,
       type: 'cron',
-      group: 'pacing',
+      group: 'curator',
       label: 'Funnel cron',
       min: null,
       max: null,
@@ -156,7 +156,7 @@ test.describe('/dev — dev inspector + sim controls (§24.42c)', () => {
 
     // Grouped controls.
     await expect(page.getByTestId('knob-group-sim')).toBeVisible()
-    await expect(page.getByTestId('knob-group-pacing')).toBeVisible()
+    await expect(page.getByTestId('knob-group-curator')).toBeVisible()
     await expect(page.getByTestId('knob-recruiter_sim_enabled').getByRole('switch')).toBeVisible()
 
     // Sim panel: joined DB status + what the sim has queued next.

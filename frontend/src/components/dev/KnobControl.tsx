@@ -96,8 +96,10 @@ export function KnobControl({ knob, onWrite, onReset }: KnobControlProps) {
         <NumberInput id={knob.key} knob={knob} value={value} setValue={setValue} commit={commit} />
       ) : knob.type === 'enum' ? (
         <EnumSelect id={knob.key} options={knob.options ?? []} value={String(value)} onSelect={(v) => void commit(v)} />
-      ) : (
+      ) : knob.type === 'cron' ? (
         <CronInput id={knob.key} value={String(value)} setValue={setValue} commit={commit} />
+      ) : (
+        <TextInput id={knob.key} knob={knob} value={String(value)} setValue={setValue} commit={commit} />
       )}
 
       {knob.note ? <p className="text-[11px] leading-snug text-muted-foreground">{knob.note}</p> : null}
@@ -290,6 +292,38 @@ function CronInput({
       }}
       className="w-44 rounded-md border border-border bg-background px-2 py-1 font-mono text-xs"
       placeholder="* * * * *"
+    />
+  )
+}
+
+/** A free-text knob (quiet hours, Drive folder ids/names). Commits on blur/Enter;
+ *  the server re-validates the maxLength + any pattern. */
+function TextInput({
+  id,
+  knob,
+  value,
+  setValue,
+  commit,
+}: {
+  id: string
+  knob: DevKnob
+  value: string
+  setValue: (v: string) => void
+  commit: (v: string) => Promise<void>
+}) {
+  return (
+    <input
+      id={`knob-input-${id}`}
+      type="text"
+      spellCheck={false}
+      maxLength={knob.maxLength ?? undefined}
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={(e) => void commit(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') void commit((e.target as HTMLInputElement).value)
+      }}
+      className="w-full max-w-xs rounded-md border border-border bg-background px-2 py-1 font-mono text-xs"
     />
   )
 }

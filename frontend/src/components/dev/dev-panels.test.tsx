@@ -33,6 +33,7 @@ function knob(p: Partial<DevKnob> & { key: string; type: DevKnob['type']; group:
     max: p.max ?? null,
     integer: p.integer ?? false,
     options: p.options ?? null,
+    maxLength: p.maxLength ?? null,
     note: p.note ?? null,
   }
 }
@@ -52,7 +53,7 @@ const KNOBS: DevKnob[] = [
   knob({
     key: 'funnel_curator_cron',
     type: 'cron',
-    group: 'pacing',
+    group: 'curator',
     value: '30 7 * * *',
     label: 'Pipeline cron',
     note: 'applies next cycle',
@@ -90,7 +91,7 @@ describe('KnobControls', () => {
   it('renders one card per group present', () => {
     renderControls(KNOBS)
     expect(screen.getByTestId('knob-group-sim')).toBeInTheDocument()
-    expect(screen.getByTestId('knob-group-pacing')).toBeInTheDocument()
+    expect(screen.getByTestId('knob-group-curator')).toBeInTheDocument()
     expect(screen.getByTestId('knob-group-models')).toBeInTheDocument()
     expect(screen.queryByTestId('knob-group-polling')).not.toBeInTheDocument()
   })
