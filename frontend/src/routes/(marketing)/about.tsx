@@ -395,6 +395,17 @@ function AboutPage() {
                   Only a first-party visit log — see above. No third-party trackers, no cross-site cookies.
                 </dd>
               </div>
+              <div className="flex flex-col gap-1">
+                <dt className="font-semibold text-foreground">
+                  How do you change it without breaking the live search?
+                </dt>
+                <dd className="leading-relaxed text-muted-foreground">
+                  Changes ship through a separate, access-gated copy of the whole system first — a simulated recruiter
+                  drives it end-to-end so new behavior gets shaken out before it ever touches the real search. And on
+                  the live system, shadow mode lets it dry-run an action before that action is ever armed — the same
+                  staged-rollout discipline I’d bring to any production system.
+                </dd>
+              </div>
             </dl>
           </S>
         </LongformDoc>
