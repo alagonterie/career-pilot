@@ -67,6 +67,9 @@ const CRON_NOTE =
 const MODEL_TIER_NOTE =
   'Retargets the orchestrator + every subagent model for cost (dev only). Applies on the next container spawn (a fresh session / reset:dev), not mid-session. default = real Opus · sonnet = Opus→Sonnet (Haiku kept) · haiku = everything→Haiku.';
 
+const SANDBOX_TIER_NOTE =
+  'The model tier for the PUBLIC "Watch it work" simulator sandbox — the only visitor-facing money path (§24.140). The owner agent is unaffected (prod-safe, hence not deny-listed). Applies on the next sandbox spawn. default = Opus (max quality) · sonnet = Opus→Sonnet (the default; ~40% cheaper, abuse-resilient) · haiku = everything→Haiku.';
+
 const OPS_SPAWN_NOTE =
   'Pushed as container env when the career-pilot ops session spawns — applies on its NEXT spawn, not mid-session. Other sessions keep the upstream rotation defaults.';
 
@@ -908,6 +911,22 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     label: 'Dev model tier',
     options: ['default', 'sonnet', 'haiku'],
     note: MODEL_TIER_NOTE,
+  },
+
+  // ── §24.140 model audit: prod-safe model levers (NOT deny-listed) ──
+  sandbox_model_tier: {
+    type: 'enum',
+    group: 'models',
+    label: 'Sandbox model tier',
+    options: ['default', 'sonnet', 'haiku'],
+    note: SANDBOX_TIER_NOTE,
+  },
+  win_confidence_model: {
+    type: 'enum',
+    group: 'models',
+    label: 'Win-confidence model',
+    options: MODEL_OPTIONS,
+    note: 'The model the win-confidence scorer uses (§24.140 — Haiku by default; a heuristic 0–100 score, so Haiku is plenty). Applies to the next scoring run.',
   },
 
   // ── recruiter-sim dial (SIM_KNOB_KEYS) — ADMIN_DENY (dev-only sim) ──

@@ -136,6 +136,17 @@ export function materializeContainerJson(agentGroupId: string): ContainerConfig 
 
   const config = configFromDb(row, group);
 
+  // §24.140 sandbox cost lever: the PUBLIC "Watch it work" sandbox (the only
+  // visitor-facing money path) runs a cheaper tier than the owner agent — Sonnet
+  // by default (the `sandbox_model_tier` knob; default→Opus / sonnet / haiku).
+  // Applied in PROD too (unlike dev_model_tier's dev-only branch below) and scoped
+  // to the sandbox folder, so the owner's real search keeps Opus. Runs BEFORE the
+  // dev_model_tier branch so a dev experiment can still override it on dev; the
+  // owner-group test modes below pin their own model and are mutually exclusive.
+  if (group.folder === 'career-pilot-sandbox') {
+    applyModelTier(config, getConfig<string>(getDb(), 'sandbox_model_tier', 'sonnet'));
+  }
+
   if (process.env.OLLAMA_TEST_MODE === '1' && group.folder === 'career-pilot') {
     applyOllamaTestOverrides(config);
   } else if (process.env.CLAUDE_TEST_MODE === '1' && group.folder === 'career-pilot') {
@@ -146,7 +157,7 @@ export function materializeContainerJson(agentGroupId: string): ContainerConfig 
     // the `dev_model_tier` preference is `sonnet`/`haiku`. Applies to both groups;
     // prod (ENVIRONMENT!=='dev') never reaches this branch. The test modes above
     // take precedence (they pin a specific model for their own purposes).
-    applyDevModelTier(config, getConfig<string>(getDb(), 'dev_model_tier', 'default'));
+    applyModelTier(config, getConfig<string>(getDb(), 'dev_model_tier', 'default'));
   }
 
   // Forward fixture-mode selectors to the container so funnel-curator's
@@ -264,10 +275,11 @@ function applyClaudeTestOverrides(config: ContainerConfig): void {
 }
 
 /**
- * Apply the dev-only model-tier overlay (§24.43) in place. A runtime lever (the
- * `dev_model_tier` preference, set from the `/dev` inspector) to retarget the
- * orchestrator's own model AND every subagent's `model: opus` alias to a cheaper
- * tier so a dev session doesn't burn Opus rates — no redeploy; picked up on the
+ * Apply a model-tier overlay in place — the pure tier→config mapping behind two
+ * callers: the dev-only `dev_model_tier` lever (§24.43, both groups, set from
+ * `/dev`) and the prod-safe `sandbox_model_tier` lever (§24.140, the public
+ * sandbox group only). It retargets the orchestrator's own model AND every
+ * subagent's `model: opus` alias to a cheaper tier — no redeploy; picked up on the
  * next container spawn. Mirrors `applyClaudeTestOverrides` (env alias redirects +
  * `config.model`); the alias redirects also catch Haiku-internal calls
  * (WebFetch/WebSearch summarization). Works whether the agent hits
@@ -280,7 +292,7 @@ function applyClaudeTestOverrides(config: ContainerConfig): void {
  * - `haiku` → everything (orchestrator + all aliases) → Haiku: cheapest, for
  *   plumbing / loop runs where output quality doesn't matter.
  */
-export function applyDevModelTier(config: ContainerConfig, tier: string): void {
+export function applyModelTier(config: ContainerConfig, tier: string): void {
   const SONNET = 'claude-sonnet-4-6';
   const HAIKU = 'claude-haiku-4-5';
   if (tier === 'sonnet') {

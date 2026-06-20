@@ -20,12 +20,17 @@
  */
 import type Database from 'better-sqlite3';
 
+import { getDb } from '../../db/connection.js';
+import { getConfig } from '../../get-config.js';
 import { callPortkeyChat, portkeyConfigured } from '../../llm-fetch.js';
 import { log } from '../../log.js';
 import { upsertPublicFunnelView } from '../portal/public-funnel-view.js';
 
 import { readCandidateProfile } from './render-persona.js';
 
+// The win-confidence scorer's model (§24.140) — a heuristic 0–100 score, Haiku
+// is plenty. Knob-ified like the sanitizer/kit-redact model belts so it's tunable
+// on /admin + /dev without a redeploy; HAIKU_MODEL is the hardcoded fallback.
 const HAIKU_MODEL = 'claude-haiku-4-5';
 
 export interface WinConfidenceResult {
@@ -40,7 +45,7 @@ async function callHaikuJson(prompt: string, traceId?: string): Promise<string> 
     surface: 'win-confidence',
     messages: [{ role: 'user', content: prompt }],
     maxTokens: 1000,
-    model: HAIKU_MODEL,
+    model: getConfig<string>(getDb(), 'win_confidence_model') || HAIKU_MODEL,
     traceId,
   });
   return result.text;
