@@ -41,7 +41,16 @@ import { runHealthChecks } from '../career-pilot/health.js';
 import { loadState, simStatePath } from '../career-pilot/recruiter-sim/runner.js';
 
 import { validateAccessJwt } from './access-jwt.js';
-import { adminEnabled, buildAttributionReport } from './admin.js';
+import {
+  adminEnabled,
+  applyAdminControl,
+  applyAdminKnobWrite,
+  buildAdminContacts,
+  buildAdminKnobs,
+  buildAdminPipeline,
+  buildAdminSummary,
+  buildAttributionReport,
+} from './admin.js';
 import { relayContactSubmission, type ContactInput } from './contact-relay.js';
 import {
   applyDevControl,
@@ -317,6 +326,58 @@ function handleAttributionRedirect(
  */
 function handleAdminAttribution(res: http.ServerResponse, cors: Record<string, string>): void {
   json(res, 200, buildAttributionReport(getDb()), cors);
+}
+
+// ── §24.138: the /admin control-center read + write surface ───────────────────
+// All reachability-gated by adminEnabled() in the dispatch (dev → open; prod →
+// admin_api_enabled AND origin-JWT). Reads are owner-view (real names); the knob
+// write enforces the ADMIN_DENY deny-list with a 403, and the mode controls
+// confirm-gate the destructive actions.
+
+async function handleAdminSummary(res: http.ServerResponse, cors: Record<string, string>): Promise<void> {
+  json(res, 200, await buildAdminSummary(getDb()), cors);
+}
+
+function handleAdminPipeline(res: http.ServerResponse, cors: Record<string, string>): void {
+  json(res, 200, buildAdminPipeline(getDb()), cors);
+}
+
+function handleAdminContacts(res: http.ServerResponse, cors: Record<string, string>): void {
+  json(res, 200, buildAdminContacts(getDb()), cors);
+}
+
+function handleAdminKnobs(res: http.ServerResponse, cors: Record<string, string>): void {
+  json(res, 200, buildAdminKnobs(getDb()), cors);
+}
+
+async function handleAdminKnobsWrite(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  cors: Record<string, string>,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch {
+    return json(res, 400, { error: 'invalid JSON body' }, cors);
+  }
+  const out = applyAdminKnobWrite(getDb(), body);
+  json(res, out.status, out.body, cors);
+}
+
+async function handleAdminControl(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  cors: Record<string, string>,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch {
+    return json(res, 400, { error: 'invalid JSON body' }, cors);
+  }
+  const out = await applyAdminControl(getDb(), body);
+  json(res, out.status, out.body, cors);
 }
 
 /**
@@ -973,6 +1034,12 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
     if (path.startsWith('/api/admin/')) {
       if (!adminEnabled()) return json(res, 404, { error: 'not_found', path }, cors);
       if (method === 'GET' && path === '/api/admin/attribution') return handleAdminAttribution(res, cors);
+      if (method === 'GET' && path === '/api/admin/summary') return await handleAdminSummary(res, cors);
+      if (method === 'GET' && path === '/api/admin/pipeline') return handleAdminPipeline(res, cors);
+      if (method === 'GET' && path === '/api/admin/contacts') return handleAdminContacts(res, cors);
+      if (method === 'GET' && path === '/api/admin/knobs') return handleAdminKnobs(res, cors);
+      if (method === 'POST' && path === '/api/admin/knobs') return await handleAdminKnobsWrite(req, res, cors);
+      if (method === 'POST' && path === '/api/admin/control') return await handleAdminControl(req, res, cors);
     }
 
     // Dev inspector (§24.42b): the whole `/api/dev/*` prefix is invisible

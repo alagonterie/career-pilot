@@ -257,7 +257,7 @@ describe('buildDevKnobs', () => {
     const enabled = knobs.find((k) => k.key === 'recruiter_sim_enabled');
     expect(enabled).toMatchObject({ type: 'boolean', group: 'sim', value: false });
     const cron = knobs.find((k) => k.key === 'funnel_curator_cron');
-    expect(cron).toMatchObject({ type: 'cron', group: 'pacing' });
+    expect(cron).toMatchObject({ type: 'cron', group: 'curator' });
     expect(cron?.note).toBeTruthy();
   });
 
@@ -323,22 +323,47 @@ describe('buildDevKnobs', () => {
       .knobs.filter((k) => k.group === 'telemetry')
       .map((k) => k.key)
       .sort();
+    // §24.138: the health_* knobs moved to their own 'health' group (below); the
+    // 'telemetry' group is now capture + the retention/prune pairs.
     expect(telemetryKeys).toEqual([
-      'health_check_interval_sec',
-      'health_failure_streak_threshold',
+      'owner_subagent_trace_emit_enabled',
+      'request_telemetry_prune_interval_sec',
       'request_telemetry_retention_days',
       'telemetry_capture',
+      'visit_telemetry_prune_interval_sec',
+      'visit_telemetry_retention_days',
     ]);
 
     expect(applyKnobWrite(db, { key: 'request_telemetry_retention_days', value: 7 }).status).toBe(200);
     expect(getConfig<number>(db, 'request_telemetry_retention_days')).toBe(7);
     expect(applyKnobWrite(db, { key: 'request_telemetry_retention_days', value: 0 }).status).toBe(400); // below min
-    expect(applyKnobWrite(db, { key: 'health_check_interval_sec', value: 59 }).status).toBe(400); // below min
     expect(applyKnobWrite(db, { key: 'telemetry_capture', value: false }).status).toBe(200);
     expect(getConfig<boolean>(db, 'telemetry_capture')).toBe(false);
-    expect(applyKnobWrite(db, { key: 'health_failure_streak_threshold', value: 5 }).status).toBe(200);
     expect(applyKnobWrite(db, { key: 'telemetry_capture', reset: true }).status).toBe(200);
     expect(getConfig<boolean>(db, 'telemetry_capture')).toBe(true); // back to the default
+  });
+
+  it('exposes the §24.138 health knobs as their own group, write-validated', () => {
+    const db = getDb();
+    const healthKeys = buildDevKnobs(db)
+      .knobs.filter((k) => k.group === 'health')
+      .map((k) => k.key)
+      .sort();
+    expect(healthKeys).toEqual([
+      'health_cascade_silent_window_hours',
+      'health_check_interval_sec',
+      'health_failure_streak_threshold',
+      'health_orphan_response_warn_count',
+      'health_outbound_backlog_warn_count',
+      'health_series_overdue_threshold_sec',
+      'health_stale_pending_threshold_sec',
+      'health_surface_stale_hours',
+    ]);
+
+    expect(applyKnobWrite(db, { key: 'health_check_interval_sec', value: 59 }).status).toBe(400); // below min 60
+    expect(applyKnobWrite(db, { key: 'health_check_interval_sec', value: 7200 }).status).toBe(200);
+    expect(getConfig<number>(db, 'health_check_interval_sec')).toBe(7200);
+    expect(applyKnobWrite(db, { key: 'health_failure_streak_threshold', value: 5 }).status).toBe(200);
   });
 });
 

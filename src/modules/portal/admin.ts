@@ -16,13 +16,22 @@
  * health, contact submissions) are a follow-up. Nothing here is a writer, and
  * the recruiter-sim / dev knobs are deliberately absent (prod-safe by design).
  */
+import fs from 'fs';
+import path from 'path';
+
 import type Database from 'better-sqlite3';
 
 import { getDb, hasTable } from '../../db/connection.js';
 import { getConfig } from '../../get-config.js';
+import { type HealthFinding, runHealthChecks } from '../career-pilot/health.js';
+import { type CandidateProfile, readCandidateProfile } from '../career-pilot/render-persona.js';
 
 import { originJwtEnabled } from './access-jwt.js';
 import { isDevEnv } from './dev-inspector.js';
+import { executeControlCommand, executeKillswitch } from './kill-switch.js';
+import { ADMIN_DENY, ADMIN_KNOB_KEYS, KNOB_SPECS, applyKnobWrite, buildKnobs, type KnobView } from './knob-registry.js';
+import { getObservability } from './observability.js';
+import { getSystemStatus, setLiveMode, type SystemStatus } from './system-modes.js';
 
 /**
  * True when the owner-only admin surface may serve. Dev → always (owner-gated
@@ -130,4 +139,239 @@ export function buildAttributionReport(db: Database.Database, opts: { recentLimi
     recentVisits,
     summary: { totalLinks: links.length, totalClicks, totalUniqueVisitors, byArtifact, topCountries },
   };
+}
+
+// ── §24.138: the control-center knob surface (registry − ADMIN_DENY) ──────────
+
+/** Current value + metadata for every /admin-included knob (registry − ADMIN_DENY). */
+export function buildAdminKnobs(db: Database.Database): { knobs: KnobView[] } {
+  return { knobs: buildKnobs(db, ADMIN_KNOB_KEYS) };
+}
+
+/**
+ * Write an /admin knob. The prod surface excludes `ADMIN_DENY` (recruiter-sim,
+ * dev_model_tier): a denied key that IS a valid registry spec is refused with 403
+ * (defense-in-depth behind the not-rendered UI); everything else delegates to the
+ * shared `applyKnobWrite`, scoped to `ADMIN_KNOB_KEYS`.
+ */
+export function applyAdminKnobWrite(db: Database.Database, raw: unknown): { status: number; body: unknown } {
+  if (typeof raw === 'object' && raw !== null) {
+    const key = (raw as { key?: unknown }).key;
+    if (typeof key === 'string' && KNOB_SPECS[key] && ADMIN_DENY.has(key)) {
+      return { status: 403, body: { error: `knob not permitted on /admin: ${key}` } };
+    }
+  }
+  return applyKnobWrite(db, raw, ADMIN_KNOB_KEYS);
+}
+
+// ── §24.138: the Overview rollup (health · cost · pool · mode) ─────────────────
+
+export interface AdminSummary {
+  mode: SystemStatus;
+  health: {
+    ranAt: string;
+    counts: Record<string, number>;
+    /** The worst severity present, for the headline dot. */
+    worst: string;
+    /** Only the non-ok findings (the actionable ones), each with its next_step. */
+    findings: HealthFinding[];
+  };
+  /** 24 h spend per traffic class (microUSD) + sparkline buckets — the §24.69 cost lens. */
+  spendByClass: Awaited<ReturnType<typeof getObservability>>['spend_by_class'];
+  spendTotalMicrousd24h: number;
+  pool: { active: number; capacity: number };
+}
+
+const SEVERITY_RANK: Record<string, number> = { ok: 0, warn: 1, critical: 2 };
+
+/** The Overview rollup: live mode + health summary + 24 h cost + container pool. */
+export async function buildAdminSummary(db: Database.Database): Promise<AdminSummary> {
+  const report = await runHealthChecks({ skipLiveProbes: true });
+  const counts: Record<string, number> = {};
+  let worst = 'ok';
+  for (const f of report.findings) {
+    counts[f.severity] = (counts[f.severity] ?? 0) + 1;
+    if ((SEVERITY_RANK[f.severity] ?? 0) > (SEVERITY_RANK[worst] ?? 0)) worst = f.severity;
+  }
+  const findings = report.findings.filter((f) => f.severity !== 'ok');
+
+  const obs = await getObservability();
+  const spendTotalMicrousd24h = Object.values(obs.spend_by_class).reduce((sum, s) => sum + s.microusd_24h, 0);
+  const topo = obs.session_topology;
+
+  return {
+    mode: getSystemStatus(),
+    health: { ranAt: report.ranAt, counts, worst, findings },
+    spendByClass: obs.spend_by_class,
+    spendTotalMicrousd24h,
+    pool: {
+      active: topo.chat + topo.ops + topo.sandbox,
+      capacity: getConfig<number>(db, 'container_max_concurrent', 4),
+    },
+  };
+}
+
+// ── §24.138: the Contacts store (§24.121 inbound recruiter submissions) ───────
+
+export interface AdminContact {
+  id: string;
+  name: string | null;
+  email: string | null;
+  company: string | null;
+  role: string | null;
+  source: string | null;
+  message: string;
+  delivered: number;
+  createdAt: string;
+}
+
+/** Recent inbound `/contact` submissions (owner-only — emails are owner-private). */
+export function buildAdminContacts(db: Database.Database, opts: { limit?: number } = {}): { contacts: AdminContact[] } {
+  if (!hasTable(db, 'contact_submissions')) return { contacts: [] };
+  const limit = opts.limit ?? 100;
+  const contacts = db
+    .prepare(
+      `SELECT id, name, email, company, role, source, message, delivered, created_at AS createdAt
+         FROM contact_submissions ORDER BY created_at DESC, rowid DESC LIMIT ?`,
+    )
+    .all(limit) as AdminContact[];
+  return { contacts };
+}
+
+// ── §24.138: the Pipeline summary (owner view — REAL company names) ───────────
+
+interface AdminPipelineRow {
+  application_id: string;
+  company_name: string | null;
+  obfuscated_label: string | null;
+  role_title: string | null;
+  status: string;
+  stage: string;
+  applied_at: string | null;
+  last_activity_at: string | null;
+  win_confidence: number | null;
+}
+
+export interface AdminPipeline {
+  applications: AdminPipelineRow[];
+  stageCounts: Record<string, number>;
+}
+
+/**
+ * The owner pipeline view: the funnel read-model joined to `applications` for the
+ * REAL company name (the public surface anonymizes; /admin is owner-gated, so it
+ * shows the unredacted name). Empty on an un-migrated DB.
+ */
+export function buildAdminPipeline(db: Database.Database): AdminPipeline {
+  if (!hasTable(db, 'public_funnel_view')) return { applications: [], stageCounts: {} };
+  const applications = db
+    .prepare(
+      `SELECT v.application_id, a.company_name, a.obfuscated_label, v.role_title, v.status, v.stage,
+              v.applied_at, v.last_activity_at, v.win_confidence
+         FROM public_funnel_view v
+         LEFT JOIN applications a ON a.id = v.application_id
+        ORDER BY v.last_activity_at DESC, v.applied_at DESC`,
+    )
+    .all() as AdminPipelineRow[];
+
+  const stageCounts: Record<string, number> = {};
+  for (const r of applications) stageCounts[r.stage] = (stageCounts[r.stage] ?? 0) + 1;
+  return { applications, stageCounts };
+}
+
+// ── §24.138: the mode controls (pause/resume · kill-switch · live mode) ───────
+
+const DEFAULTS_PATH = path.join(process.cwd(), 'config', 'defaults.json');
+/** Fallback if defaults.json is unreadable — the documented live-mode prerequisites. */
+const FALLBACK_REQUIRED_FIELDS = ['full_name', 'master_resume', 'target_roles', 'bio', 'search_goals'];
+
+/** The `candidate_profile.*` fields `_required_before_live_mode` names (drift-safe — read from defaults.json). */
+function requiredLiveModeFields(): string[] {
+  try {
+    const raw = JSON.parse(fs.readFileSync(DEFAULTS_PATH, 'utf8')) as { _required_before_live_mode?: string[] };
+    const list = raw._required_before_live_mode;
+    if (Array.isArray(list) && list.length > 0) {
+      return list.map((k) => k.replace(/^candidate_profile\./, ''));
+    }
+  } catch {
+    /* fall through */
+  }
+  return FALLBACK_REQUIRED_FIELDS;
+}
+
+function fieldPopulated(profile: CandidateProfile, field: string): boolean {
+  const v = (profile as unknown as Record<string, unknown>)[field];
+  if (field === 'target_roles') {
+    if (typeof v !== 'string') return false;
+    try {
+      const arr = JSON.parse(v) as unknown;
+      return Array.isArray(arr) && arr.length > 0;
+    } catch {
+      return false;
+    }
+  }
+  return typeof v === 'string' ? v.trim().length > 0 : v != null;
+}
+
+/** The required-but-missing profile fields blocking LIVE mode (empty → ready). */
+export function liveModeBlockers(profile: CandidateProfile | null): string[] {
+  if (!profile) return requiredLiveModeFields();
+  return requiredLiveModeFields().filter((f) => !fieldPopulated(profile, f));
+}
+
+export interface AdminControlOutcome {
+  status: number;
+  body: unknown;
+}
+
+/**
+ * The /admin mode controls. Reversible states run inline; the destructive ones
+ * are confirm-gated (400 without `confirm: true`):
+ *   { action: 'pause' }                 → /halt (kills containers, freezes spend)
+ *   { action: 'resume' }                → /resume (refused while killswitch is set)
+ *   { action: 'killswitch', confirm }   → the local hard-stop (manual recovery)
+ *   { action: 'set_live_mode', on, confirm? } → flip live_mode; turning ON needs
+ *       confirm AND a complete-enough profile (the `_required_before_live_mode` gate).
+ */
+export async function applyAdminControl(db: Database.Database, raw: unknown): Promise<AdminControlOutcome> {
+  if (typeof raw !== 'object' || raw === null) {
+    return { status: 400, body: { error: 'expected a JSON object { action }' } };
+  }
+  const body = raw as { action?: unknown; confirm?: unknown; on?: unknown };
+  const action = body.action;
+
+  if (action === 'pause') {
+    const out = executeControlCommand('/halt', 'admin: pause LLM spend', 'admin');
+    return { status: 200, body: { pauseState: out.state, killed: out.killed } };
+  }
+
+  if (action === 'resume') {
+    const out = executeControlCommand('/resume', null, 'admin');
+    return { status: 200, body: { pauseState: out.state } };
+  }
+
+  if (action === 'killswitch') {
+    if (body.confirm !== true) {
+      return { status: 400, body: { error: 'killswitch requires { confirm: true }' } };
+    }
+    const out = await executeKillswitch('admin: kill switch', 'admin');
+    return { status: 200, body: { pauseState: out.state, killed: out.killed } };
+  }
+
+  if (action === 'set_live_mode') {
+    const on = body.on === true || body.on === 'true';
+    if (on) {
+      if (body.confirm !== true) {
+        return { status: 400, body: { error: 'enabling live mode requires { confirm: true }' } };
+      }
+      const blockers = liveModeBlockers(readCandidateProfile());
+      if (blockers.length > 0) {
+        return { status: 409, body: { error: 'profile incomplete for live mode', missing: blockers } };
+      }
+    }
+    setLiveMode(on, 'admin');
+    return { status: 200, body: { liveMode: on } };
+  }
+
+  return { status: 400, body: { error: `unknown action: ${String(action)}` } };
 }
