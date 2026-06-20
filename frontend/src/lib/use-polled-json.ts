@@ -7,7 +7,12 @@ export interface PolledJson<T> {
   status: PollStatus
 }
 
-const DEFAULT_POLL_MS = 4000
+// §24.137: the portal's live data moves at human pace (recruiter replies land
+// over days; the dev generator nudges stages on a similar cadence). The "alive"
+// feeling comes from the real-time SSE trace, NOT these JSON polls — so a slow
+// poll is plenty and spares the box a needless ~5×/min request on every open
+// tab. Callers that genuinely need faster pass `pollMs` explicitly.
+const DEFAULT_POLL_MS = 20000
 
 /**
  * Poll a plain-JSON GET endpoint and keep the latest snapshot. The portal's

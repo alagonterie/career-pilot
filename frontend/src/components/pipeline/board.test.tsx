@@ -72,7 +72,7 @@ describe('PipelineBoard', () => {
     for (const title of ['Applied', 'Screening', 'Tech interview', 'Final interview', 'Offer']) {
       expect(screen.getByRole('region', { name: title })).toBeInTheDocument()
     }
-    expect(screen.getByText('[fintech-a]')).toBeInTheDocument()
+    expect(screen.getByText('fintech-a')).toBeInTheDocument()
   })
 
   it('renders two applications that share an obfuscated label (distinct ids, no key/layoutId collision)', () => {
@@ -89,13 +89,14 @@ describe('PipelineBoard', () => {
       />,
     )
     const col = screen.getByTestId('funnel-col-screening')
-    expect(within(col).getAllByText('[series-b-ai]')).toHaveLength(2)
+    expect(within(col).getAllByText('series-b-ai')).toHaveLength(2)
   })
 
   it('obfuscates by default but reveals the public application with its real name', () => {
     render(<PipelineBoard apps={APPS} onSelect={() => {}} />)
-    // Obfuscated → bracketed label, no real name leaked.
-    expect(screen.getByText('[fintech-b]')).toBeInTheDocument()
+    // Obfuscated → anonymized handle chip (§24.137), no real name leaked.
+    expect(screen.getByText('fintech-b')).toBeInTheDocument()
+    expect(screen.getAllByTestId('company-handle').length).toBeGreaterThan(0)
     // Public reveal → real company name + the ◆ public marker.
     expect(screen.getByText('Wayne Enterprises')).toBeInTheDocument()
     expect(screen.getByTestId('reveal-marker')).toBeInTheDocument()
@@ -104,7 +105,7 @@ describe('PipelineBoard', () => {
   it('surfaces closed/non-pipeline applications rather than dropping them', () => {
     render(<PipelineBoard apps={APPS} onSelect={() => {}} />)
     expect(screen.getByTestId('funnel-offboard')).toBeInTheDocument()
-    expect(screen.getByText('[saas-b]')).toBeInTheDocument()
+    expect(screen.getByText('saas-b')).toBeInTheDocument()
   })
 
   it('keeps the Bookmarked & closed strip with an honest note when nothing is closed (§24.62)', () => {
@@ -117,7 +118,7 @@ describe('PipelineBoard', () => {
   it('calls onSelect with the clicked application', () => {
     const onSelect = vi.fn()
     render(<PipelineBoard apps={APPS} onSelect={onSelect} />)
-    fireEvent.click(screen.getByText('[fintech-a]'))
+    fireEvent.click(screen.getByText('fintech-a'))
     expect(onSelect).toHaveBeenCalledTimes(1)
     expect(onSelect.mock.calls[0][0].application_ref).toBe('fintech-a')
   })
@@ -130,16 +131,18 @@ describe('PipelineBoard', () => {
     const dash = within(screen.getByTestId('funnel-col-applied')).getByText('—')
     expect(dash.parentElement?.className).toContain('hidden')
     // A populated stage keeps its card (not collapsed).
-    expect(within(screen.getByTestId('funnel-col-offer')).getByText('[x]')).toBeInTheDocument()
+    expect(within(screen.getByTestId('funnel-col-offer')).getByText('x')).toBeInTheDocument()
   })
 })
 
 describe('PipelineCard win-confidence bar (§24.35 Pass D)', () => {
-  it('shows the ~N% win-confidence bar when present (not the stage position)', () => {
+  it('shows the ✦N% win-confidence bar when present (not the stage position)', () => {
     render(
       <PipelineCard app={app({ application_ref: 'x', stage: 'screening', win_confidence: 64 })} onSelect={() => {}} />,
     )
-    expect(screen.getByText('~64%')).toBeInTheDocument()
+    // §24.137: the ✦ AI-mark sits in its own aria-hidden span, so the figure's
+    // own text node is the bare `64%` (getNodeText ignores child elements).
+    expect(screen.getByText('64%')).toBeInTheDocument()
   })
 
   it('shows no bar when win_confidence is null', () => {

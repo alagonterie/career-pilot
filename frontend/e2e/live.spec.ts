@@ -123,14 +123,14 @@ test.describe('/dashboard — aggregate ops dashboard, frontend <-> backend', ()
     await page.goto('/dashboard')
     await page.getByTestId('trace-ref-link').filter({ hasText: 'fintech-a' }).first().click()
     await expect(page).toHaveURL(/\/pipeline\?app=fintech-a/)
-    await expect(page.getByRole('dialog', { name: '[fintech-a]' })).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'fintech-a' })).toBeVisible()
   })
 
   test('the /pipeline drawer round-trips into that application’s filtered /dashboard activity (§24.60)', async ({
     page,
   }) => {
     await page.goto('/pipeline?app=fintech-a')
-    await expect(page.getByRole('dialog', { name: '[fintech-a]' })).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'fintech-a' })).toBeVisible()
     await page.getByTestId('detail-live-link').click()
     await expect(page).toHaveURL(/\/dashboard\?app=fintech-a/)
 

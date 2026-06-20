@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { Menu, X } from 'lucide-react'
+import { Info, Menu, X } from 'lucide-react'
 import * as React from 'react'
 
 import { CHROME_WIDTH, PERSON_NAME } from '~/lib/site'
@@ -86,9 +86,27 @@ export function SiteHeader() {
         aria-label="Primary"
         className={cn('mx-auto flex h-14 items-center justify-between gap-6 px-6', CHROME_WIDTH)}
       >
-        <Link to="/" className="shrink-0 font-mono text-sm font-semibold tracking-tight text-foreground">
-          {PERSON_NAME}
-        </Link>
+        {/* Left anchor: the wordmark + a quiet orientation entry into /about
+            (§24.137). The "what is this?" explainer non-technical visitors found
+            most useful had only the footer link + the / deep-link before; this
+            puts a permanent, low-key way in WITH the brand — distinct from the 3
+            nav clusters, so it never competes with navigation. Gated `lg`: below
+            that the nav row is already tight against a long wordmark
+            (`VITE_PERSON_NAME`), so the pill yields the room — phones reach it via
+            the hamburger menu, the tablet band via the footer. */}
+        <div className="flex shrink-0 items-center gap-3">
+          <Link to="/" className="font-mono text-sm font-semibold tracking-tight text-foreground">
+            {PERSON_NAME}
+          </Link>
+          <Link
+            to="/about"
+            data-testid="header-about"
+            className="hidden items-center gap-1.5 rounded-full border border-border/70 py-1 pl-2 pr-2.5 font-mono text-xs text-muted-foreground transition-colors hover:border-accent-cool/50 hover:text-foreground lg:inline-flex [&.active]:border-accent-cool/60 [&.active]:text-foreground"
+          >
+            <Info className="h-3.5 w-3.5" aria-hidden="true" />
+            What is this?
+          </Link>
+        </div>
 
         {/* Tablet + desktop: the full horizontal row (≥640px, where it fits). Each
             group is its own tight cluster (gap-4); the larger gap-6 around the
@@ -131,6 +149,19 @@ export function SiteHeader() {
           className="absolute inset-x-0 top-full border-b border-border bg-background shadow-lg sm:hidden"
         >
           <ul className="mx-auto flex max-w-3xl flex-col px-4 py-1">
+            {/* §24.137: the orientation entry leads the phone menu (the header
+                pill is lg-only), so /about is reachable here on small screens. */}
+            <li>
+              <Link
+                to="/about"
+                onClick={() => setOpen(false)}
+                className={`flex items-center gap-2 rounded-md px-2 py-3 text-base ${linkClass}`}
+              >
+                <Info className="h-4 w-4 shrink-0" aria-hidden="true" />
+                What is this?
+              </Link>
+            </li>
+            <li aria-hidden="true" className="my-1 border-t border-border" />
             {NAV_GROUPS.map((group, gi) => (
               <React.Fragment key={gi}>
                 {gi > 0 ? <li aria-hidden="true" className="my-1 border-t border-border" /> : null}

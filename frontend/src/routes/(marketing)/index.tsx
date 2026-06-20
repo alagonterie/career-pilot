@@ -159,33 +159,29 @@ function Home() {
           for the interview, then do it again a hundred times. So I built an AI agent system that runs that loop for me,
           continuously, and keeps me in the driver’s seat.
         </p>
-        {/* §24.119: the four linear work-steps as numbered chips (a wrapping,
-            centered row), then the fifth — "learns from outcomes", the §24.111
-            meta-capability that closes the loop — deterministically on its OWN
-            line with a ↻ loop-back glyph. `basis-full` always wraps it to a new
-            line (never the desktop orphan the old single flex-wrap produced), and
-            the subject-less copy stays parallel with the four verb-phrase steps.
-            On mobile the chips wrap centered and the closer keeps its own line. */}
-        <ol className="mx-auto mt-7 flex max-w-xl flex-wrap items-center justify-center gap-x-4 gap-y-3 text-sm text-foreground/90">
-          {['finds roles', 'tailors my résumé', 'drafts outreach', 'builds interview prep'].map((step, i) => (
-            <li key={step} className="flex items-center gap-2">
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/15 font-mono text-[11px] font-semibold text-primary">
-                {i + 1}
-              </span>
+        {/* §24.137 / §24.119: the four things the agent does, as a balanced 2-col
+            set. A grid (not the old flex-wrap) so it never orphans — the §24.135
+            "3 on a line, 4 alone" wrap is structurally impossible now. A uniform
+            brand dot replaces the 1–4 numerals: the steps run organically, not in
+            a fixed sequence, so an ordinal implied an order that isn't real. The
+            fifth — "learns from every outcome", the §24.111 loop-closing
+            meta-capability — spans both columns on its own line with a ↻ loop-back
+            glyph, kept parallel + subject-less with the four verb phrases. */}
+        <ol className="mx-auto mt-7 grid w-fit grid-cols-2 gap-x-8 gap-y-3 text-left text-sm text-foreground/90">
+          {['finds roles', 'tailors my résumé', 'drafts outreach', 'builds interview prep'].map((step) => (
+            <li key={step} className="flex items-center gap-2.5">
+              <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
               {step}
             </li>
           ))}
-          <li className="flex basis-full items-center justify-center gap-2">
+          <li className="col-span-2 mt-1 flex items-center justify-center gap-2">
             <span aria-hidden="true" className="font-mono text-base leading-none text-primary">
               ↻
             </span>
             and learns from every outcome
           </li>
         </ol>
-        <p className="mt-6 text-balance text-sm leading-relaxed text-muted-foreground">
-          Watch it happen below — or run it on your own open role right now.
-        </p>
-        <Link to="/about" className="mt-5 inline-block text-sm text-accent-cool hover:underline">
+        <Link to="/about" className="mt-7 inline-block text-sm text-accent-cool hover:underline">
           Read the full story →
         </Link>
       </section>

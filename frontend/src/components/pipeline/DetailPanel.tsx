@@ -5,8 +5,11 @@ import * as React from 'react'
 import { AgentMark } from '~/components/AgentMark'
 import { InfoTip } from '~/components/InfoTip'
 import { useDialog } from '~/lib/use-dialog'
+import { relativeAgo } from '~/lib/hero-stats'
 import { learningKindLabel, type PipelineApplication } from '~/lib/use-pipeline'
 import { kitDate, roundLabel } from '~/lib/use-kit'
+
+import { CompanyHandle } from './CompanyHandle'
 
 function Fact({ label, value }: { label: string; value: string }) {
   return (
@@ -35,7 +38,6 @@ export function DetailPanel({ app, onClose }: { app: PipelineApplication | null;
   if (!app) return null
 
   const isPublic = app.public_state === 'public'
-  const title = isPublic ? app.application_ref : `[${app.application_ref}]`
   const win = app.win_confidence
 
   return (
@@ -67,7 +69,7 @@ export function DetailPanel({ app, onClose }: { app: PipelineApplication | null;
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h2 id="funnel-detail-title" className="truncate font-mono text-lg font-semibold text-foreground">
-              {title}
+              <CompanyHandle app={app} />
             </h2>
             {app.role_title ? <p className="mt-1 text-sm text-muted-foreground">{app.role_title}</p> : null}
             {isPublic ? <p className="mt-1 font-mono text-xs text-primary">◆ public</p> : null}
@@ -82,9 +84,18 @@ export function DetailPanel({ app, onClose }: { app: PipelineApplication | null;
           </button>
         </div>
 
+        {/* §24.137: Stage and Status usually carry the same word (one cased, one
+            not), which read as a doubled fact. When they match we collapse to one
+            and spend the freed cell on something real — when the application was
+            last active. Both show only when Status genuinely differs from Stage
+            (e.g. stage `tech` vs status `TECH_SCREEN`). */}
         <dl className="grid grid-cols-2 gap-4">
           <Fact label="Stage" value={app.stage} />
-          <Fact label="Status" value={app.status} />
+          {app.stage.trim().toLowerCase() === app.status.trim().toLowerCase() ? (
+            <Fact label="Last activity" value={app.last_activity_at ? relativeAgo(app.last_activity_at) : '—'} />
+          ) : (
+            <Fact label="Status" value={app.status} />
+          )}
           <Fact label="Days in stage" value={app.days_in_stage != null ? `${app.days_in_stage}` : '—'} />
           <Fact label="Days in pipeline" value={app.days_in_pipeline != null ? `${app.days_in_pipeline}` : '—'} />
         </dl>

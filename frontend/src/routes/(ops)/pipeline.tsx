@@ -1,6 +1,7 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import * as React from 'react'
 
+import { CompanyHandleLegend } from '~/components/pipeline/CompanyHandle'
 import { DetailPanel } from '~/components/pipeline/DetailPanel'
 import { PipelineBoard, PipelineBoardSkeleton, PipelineOffboardSkeleton } from '~/components/pipeline/PipelineBoard'
 import { StatTiles } from '~/components/pipeline/StatTiles'
@@ -73,11 +74,17 @@ function PipelinePage() {
   return (
     <>
       <main className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-12">
-        <header>
-          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">My Job Pipeline</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            The job search in motion — every application moving stage by stage toward an offer, obfuscated by default.
-          </p>
+        <header className="flex flex-col gap-3">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">My Job Pipeline</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              The job search in motion — every application moving stage by stage toward an offer, obfuscated by default.
+            </p>
+          </div>
+          {/* §24.137: decode the anonymized handles before a visitor clicks a card
+              — the chip + one line turns `[infra-e]` from "looks broken" into a
+              legible privacy choice (mirrors the /kit RedactionLegend). */}
+          <CompanyHandleLegend />
         </header>
 
         <StatTiles apps={apps} loading={status === 'loading'} />

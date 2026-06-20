@@ -34,8 +34,9 @@ test.describe('/pipeline — the funnel board, frontend <-> backend', () => {
       await expect(page.getByRole('region', { name: col })).toBeVisible()
     }
 
-    // Reveal tier: obfuscated by default; the public OFFER shows its real name.
-    await expect(page.getByText('[fintech-a]')).toBeVisible()
+    // Reveal tier: obfuscated by default (§24.137 anonymization chip — the stable
+    // handle, no longer raw `[brackets]`); the public OFFER shows its real name.
+    await expect(page.getByTestId('company-handle').filter({ hasText: 'fintech-a' })).toBeVisible()
     await expect(page.getByText('Wayne Enterprises')).toBeVisible()
     await expect(page.getByTestId('reveal-marker')).toBeVisible()
 

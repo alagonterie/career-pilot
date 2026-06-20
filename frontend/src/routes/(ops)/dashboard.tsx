@@ -78,13 +78,14 @@ function LivePage() {
           <SystemStatusStrip mode={mode} status={archStatus} />
         </header>
 
-        {/* centerpiece (trace) + right rail. Trace-first on a phone (§13): the
-            "agent working now" wow leads instead of being buried under the stat
-            tiles. It's first in the DOM (so mobile reading order == visual order),
-            and `lg:order` floats the stat row back on top at desktop. The
-            reordered stat panels are non-interactive display widgets, so the
-            desktop focus order is unaffected and the primary content leads. */}
-        <div className="order-2 grid grid-cols-1 gap-4 lg:order-3 lg:grid-cols-3">
+        {/* centerpiece (trace) + right rail — trace-FIRST at every width (§24.137).
+            The "agent working now" wow leads instead of sitting under the stat
+            tiles; this is a likely first-impression page (the prominent "See it
+            work →" on `/` lands here), so the living thing goes above the fold. DOM
+            order == visual order at all widths now — the old `lg:order` swap that
+            floated the KPI row on top at desktop is gone (the KPIs are the slower,
+            more abstract read; they follow the trace). */}
+        <div className="order-2 grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className="lg:col-span-2">
             <LogStream
               events={events}
@@ -120,11 +121,12 @@ function LivePage() {
           </div>
         </div>
 
-        {/* top stat row — `grid-auto-rows` floors every panel to the MAX loaded
+        {/* stat row — now BELOW the trace at every width (§24.137; the lg:order
+            swap is gone). `grid-auto-rows` floors every panel to the MAX loaded
             row height so loading→ok never shifts (§24.36 Tier-2). The 4th tile is
-            now LLM SPEND (the consolidated cost box, §24.69 follow-up) — an equal-
-            size sibling of LLM telemetry; system status moved to the header strip. */}
-        <div className="order-3 grid grid-cols-1 gap-4 [grid-auto-rows:minmax(196px,auto)] sm:grid-cols-2 lg:order-2 lg:grid-cols-4">
+            LLM SPEND (the consolidated cost box, §24.69 follow-up) — an equal-size
+            sibling of LLM telemetry; system status moved to the header strip. */}
+        <div className="order-3 grid grid-cols-1 gap-4 [grid-auto-rows:minmax(196px,auto)] sm:grid-cols-2 lg:grid-cols-4">
           <SessionsPanel arch={arch} status={archStatus} />
           <ContainerPoolPanel arch={arch} status={archStatus} />
           <TelemetryPanel view={view} status={telemetryStatus} />

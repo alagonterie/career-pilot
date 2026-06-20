@@ -1,5 +1,6 @@
 import type { PipelineApplication } from '~/lib/use-pipeline'
-import { cn } from '~/lib/utils'
+
+import { CompanyHandle } from './CompanyHandle'
 
 /**
  * One application on the pipeline board (PORTAL §5.4). Obfuscated label by
@@ -28,8 +29,11 @@ export function PipelineCard({ app, onSelect }: { app: PipelineApplication; onSe
       className="w-full rounded-lg border border-border bg-card p-3 text-left transition-colors hover:border-primary/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <div className="flex items-center justify-between gap-2">
-        <span className={cn('truncate font-mono text-sm', isPublic ? 'text-foreground' : 'text-muted-foreground')}>
-          {isPublic ? app.application_ref : `[${app.application_ref}]`}
+        {/* §24.137: the company identifier in the shared anonymization language —
+            an obfuscated row renders the stable handle as a muted privacy chip
+            (CompanyHandle), not raw `[infra-e]` brackets that read as a bug. */}
+        <span className="min-w-0 truncate font-mono text-sm text-foreground">
+          <CompanyHandle app={app} />
         </span>
         {isPublic ? (
           <span
@@ -75,11 +79,17 @@ export function PipelineCard({ app, onSelect }: { app: PipelineApplication; onSe
       </div>
 
       {win != null ? (
-        <div className="mt-2 flex items-center gap-1.5" title="AI-scored win confidence — a low-rigor heuristic">
+        <div className="mt-2 flex items-center gap-1.5" title="AI-generated win confidence — a low-rigor heuristic">
           <div aria-hidden="true" className="h-1 flex-1 overflow-hidden rounded-full bg-secondary">
             <div className="h-full rounded-full bg-ai/70" style={{ width: `${Math.max(0, Math.min(100, win))}%` }} />
           </div>
-          <span className="font-mono text-[10px] tabular-nums text-ai">~{win}%</span>
+          {/* §24.137: lead the % with the AI sparkle (the cast's ✦ mark) instead
+              of a bare `~`, so the figure reads as "AI-generated win odds", not an
+              approximation glyph. Glyph is aria-hidden; the title names it. */}
+          <span className="flex items-center gap-0.5 font-mono text-[10px] tabular-nums text-ai">
+            <span aria-hidden="true">✦</span>
+            {win}%
+          </span>
         </div>
       ) : null}
     </button>
