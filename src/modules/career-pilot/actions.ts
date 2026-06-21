@@ -29,6 +29,7 @@ import { getConfig } from '../../get-config.js';
 import { insertMessage } from '../../db/session-db.js';
 import { log } from '../../log.js';
 import { projectWorkProfile } from '../portal/profile.js';
+import { setSimulatorTailoredProfile } from '../portal/simulator.js';
 import { mirrorFunnelEvent, publicApplicationRef, resanitizeApplicationAuditTrail } from '../portal/public-audit.js';
 import { sanitize, sanitizeForPublic } from '../portal/sanitizer.js';
 import { pass3Active } from '../portal/sanitizer-pass3.js';
@@ -116,6 +117,34 @@ export function denyIfNotOwner(
     return true;
   }
   return false;
+}
+
+// ── emit_tailored_resume (sandbox structured tailored résumé, §24.144) ──────
+//
+// Registered PLAIN (not behind the owner gate): the sandbox is the intended
+// caller, and the handler is sandbox-safe BY CONSTRUCTION — it touches no
+// private candidate data, only stashes the agent's tailored profile into its
+// OWN in-flight simulator run (resolved by session.thread_id == the run id),
+// where persistRun runs it through the honesty guardrail before it can render.
+// For the owner group there is no simulator run on the thread, so it no-ops
+// (stored:false). The agent's tool handler already rejected a stub bio, so a
+// valid payload arriving here is complete by the time we see it.
+export async function handleEmitTailoredResume(
+  content: Record<string, unknown>,
+  session: Session,
+  inDb: Database.Database,
+): Promise<void> {
+  const profile = payload(content).profile;
+  if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
+    writeResponse(inDb, reqId(content), {
+      ok: false,
+      error: { code: 'BAD_ARGS', message: 'emit_tailored_resume requires a profile object.' },
+    });
+    return;
+  }
+  const runId = session.thread_id;
+  const stored = runId ? setSimulatorTailoredProfile(runId, profile) : false;
+  writeResponse(inDb, reqId(content), { ok: true, data: { stored } });
 }
 
 // ── update_profile_field ───────────────────────────────────────────────────

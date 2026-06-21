@@ -315,23 +315,6 @@ function fencedBlocks(output: string): FencedBlock[] {
   return out;
 }
 
-/**
- * Extract the tailored `WorkProfile` the sandbox emits as a fenced block at the
- * end of a run (transport for §24.72 D5 — the guardrail validates it host-side).
- * Robust to the agent's fence-tag variations (the live failure mode was a ```json
- * fence with `tailored-resume-json` on a label line inside). Prefers an explicitly
- * tagged block; falls back to a WorkProfile-shaped json fence. Returns the parsed
- * (unvalidated) object, or null.
- */
-export function extractTailoredResumeBlock(output: string): unknown | null {
-  if (!output) return null;
-  const blocks = fencedBlocks(output);
-  const tagged = blocks.filter((b) => b.explicitlyTagged);
-  const pool = tagged.length > 0 ? tagged : blocks.filter((b) => b.tailored);
-  for (let i = pool.length - 1; i >= 0; i--) if (pool[i].parsed != null) return pool[i].parsed;
-  return null;
-}
-
 /** Remove the tailored-résumé fence from the run's chat output so the human-facing
  *  share text (the bullets + outreach) doesn't show a raw JSON blob. Mirrors
  *  extract's selection: strips the explicitly-tagged block(s) when present, else
@@ -344,28 +327,4 @@ export function stripTailoredResumeBlock(output: string): string {
   let text = output;
   for (const b of toRemove) text = text.split(b.full).join('');
   return text.replace(/\n{3,}/g, '\n\n').trim();
-}
-
-/**
- * §24.143b: pull the visitor-facing "## Summary" prose block from the run's
- * free-text deliverable. The orchestrator reliably writes a tailored summary as
- * prose but routinely STUBS the JSON `bio` field — so this back-fills a stubbed
- * `bio` from the prose the model actually wrote (which validateTailoredResume
- * then honesty-checks like any other bio). Fenced blocks are stripped first so a
- * `## Summary` inside the résumé JSON fence is ignored. Returns the summary text
- * (≥ 80 chars, the same substance threshold the bio floor uses), or null.
- */
-export function extractSummarySection(output: string): string | null {
-  if (!output) return null;
-  const noFences = output.replace(/```[\s\S]*?```/g, '');
-  const lines = noFences.split('\n');
-  const start = lines.findIndex((l) => /^\s{0,3}#{1,6}\s*(?:tailored\s+)?summary\b/i.test(l));
-  if (start < 0) return null;
-  const body: string[] = [];
-  for (let j = start + 1; j < lines.length; j++) {
-    if (/^\s{0,3}#{1,6}\s/.test(lines[j])) break; // next heading ends the section
-    body.push(lines[j]);
-  }
-  const text = body.join(' ').replace(/\s+/g, ' ').trim();
-  return text.length >= 80 ? text : null;
 }

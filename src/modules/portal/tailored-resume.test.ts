@@ -9,12 +9,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { WorkProfile } from './profile.js';
-import {
-  extractSummarySection,
-  extractTailoredResumeBlock,
-  stripTailoredResumeBlock,
-  validateTailoredResume,
-} from './tailored-resume.js';
+import { stripTailoredResumeBlock, validateTailoredResume } from './tailored-resume.js';
 
 const MASTER: WorkProfile = {
   name: 'Jane Doe',
@@ -261,43 +256,6 @@ describe('validateTailoredResume — fabrication is rejected', () => {
   });
 });
 
-describe('extractTailoredResumeBlock', () => {
-  it('parses the tagged fence, preferring it over a plain json fence', () => {
-    const out = [
-      'Here is the pitch.',
-      '```json\n{"name":"decoy"}\n```',
-      'And the résumé:',
-      '```tailored-resume-json\n{"name":"Real","skills":["Go"]}\n```',
-    ].join('\n\n');
-    expect(extractTailoredResumeBlock(out)).toEqual({ name: 'Real', skills: ['Go'] });
-  });
-
-  it('falls back to the last json fence, and returns null when absent/malformed', () => {
-    expect(extractTailoredResumeBlock('```json\n{"name":"X"}\n```')).toEqual({ name: 'X' });
-    expect(extractTailoredResumeBlock('no fence here')).toBeNull();
-    expect(extractTailoredResumeBlock('```tailored-resume-json\n{ not json\n```')).toBeNull();
-  });
-
-  // The live failure (§24.72 9.4b-r2): the agent put `tailored-resume-json` on a
-  // LABEL LINE inside a ```json fence (or on the ```json info line) instead of
-  // tagging the fence — extraction must read it either way, not silently drop it.
-  it('parses a ```json fence whose first inner line is the tailored-resume-json label', () => {
-    const out = [
-      'Here are your bullets and outreach.',
-      '```json',
-      'tailored-resume-json',
-      '{"name":"Real","experience":[],"skills":["Go"]}',
-      '```',
-    ].join('\n');
-    expect(extractTailoredResumeBlock(out)).toEqual({ name: 'Real', experience: [], skills: ['Go'] });
-  });
-
-  it('parses the tag on the ```json info line (```json tailored-resume-json)', () => {
-    const out = '```json tailored-resume-json\n{"name":"Real","bio":["x"]}\n```';
-    expect(extractTailoredResumeBlock(out)).toEqual({ name: 'Real', bio: ['x'] });
-  });
-});
-
 describe('stripTailoredResumeBlock', () => {
   it('removes the tagged fence and collapses the gap, keeping the prose', () => {
     const out = 'Bullets + outreach.\n\n```tailored-resume-json\n{"name":"X"}\n```\n\nThanks.';
@@ -318,33 +276,5 @@ describe('stripTailoredResumeBlock', () => {
       'Thanks.',
     ].join('\n');
     expect(stripTailoredResumeBlock(out)).toBe('Bullets + outreach.\n\nThanks.');
-  });
-});
-
-describe('extractSummarySection (§24.143b — back-fill a stubbed bio from the prose)', () => {
-  it('pulls the "## Summary" prose block, stopping at the next heading', () => {
-    const out = [
-      '## Summary',
-      'A senior backend engineer who modernizes legacy platforms at scale — a strong fit for this distributed-systems role and its performance focus.',
-      '',
-      '## Tailored Resume Bullets',
-      '1. Built things.',
-    ].join('\n');
-    const s = extractSummarySection(out);
-    expect(s).toContain('modernizes legacy platforms');
-    expect(s).not.toContain('Tailored Resume Bullets');
-  });
-
-  it('returns null when there is no summary section', () => {
-    expect(extractSummarySection('## Bullets\n- a\n- b')).toBeNull();
-  });
-
-  it('ignores a "## Summary" that lives inside a code fence', () => {
-    const out = '```\n## Summary\nthis is inside a fence and must be ignored entirely by the extractor here\n```';
-    expect(extractSummarySection(out)).toBeNull();
-  });
-
-  it('returns null for a too-short summary (below the bio substance floor)', () => {
-    expect(extractSummarySection('## Summary\nToo short.')).toBeNull();
   });
 });

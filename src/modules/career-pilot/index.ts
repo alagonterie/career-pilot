@@ -12,6 +12,7 @@ import { registerDeliveryAction, type DeliveryActionHandler } from '../../delive
 import {
   denyIfNotOwner,
   handleCreateGmailDraft,
+  handleEmitTailoredResume,
   handleGetApplication,
   handleListApplications,
   handleRecordDispatch,
@@ -87,6 +88,11 @@ registerOwnerOnly('career_pilot.record_dispatch', handleRecordDispatch);
 // moved into handleRecordTurnTelemetry's branch, pinned by integration test).
 registerDeliveryAction('career_pilot.record_turn_telemetry', handleRecordTurnTelemetry);
 registerDeliveryAction('career_pilot.record_request_telemetry', handleRecordRequestTelemetry);
+// §24.144: the sandbox's structured tailored-résumé emission. PLAIN (not
+// owner-only) — sandbox-safe by construction (writes only its own in-flight
+// simulator run, validated against the public master at persist; see the
+// handler header). The owner group has no sim run for the thread → no-op.
+registerDeliveryAction('career_pilot.emit_tailored_resume', handleEmitTailoredResume);
 registerOwnerOnly('career_pilot.create_gmail_draft', handleCreateGmailDraft);
 registerOwnerOnly('career_pilot.record_job_lead', handleRecordJobLead);
 registerOwnerOnly('career_pilot.query_job_leads', handleQueryJobLeads);

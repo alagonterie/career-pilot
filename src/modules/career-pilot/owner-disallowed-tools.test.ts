@@ -52,7 +52,7 @@ const TOOLS_IN_USE = [
 ];
 
 describe('OWNER_DISALLOWED_TOOLS', () => {
-  it('is exactly the audited 13-tool trim (12 from §24.49d + Skill from §24.49e)', () => {
+  it('is exactly the audited 14-tool trim (12 from §24.49d + Skill §24.49e + emit_tailored_resume §24.144)', () => {
     expect([...OWNER_DISALLOWED_TOOLS].sort()).toEqual(
       [
         'Monitor',
@@ -67,6 +67,7 @@ describe('OWNER_DISALLOWED_TOOLS', () => {
         'TeamDelete',
         'mcp__nanoclaw__add_mcp_server',
         'mcp__nanoclaw__create_agent',
+        'mcp__nanoclaw__emit_tailored_resume',
         'mcp__nanoclaw__install_packages',
       ].sort(),
     );

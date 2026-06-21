@@ -44,6 +44,11 @@ export const OWNER_DISALLOWED_TOOLS: string[] = [
   'mcp__nanoclaw__install_packages',
   'mcp__nanoclaw__add_mcp_server',
   'mcp__nanoclaw__create_agent',
+  // §24.144: the sandbox-only structured tailored-résumé emission. Present in
+  // the shared MCP server but never invoked by the owner (the owner group runs
+  // no simulator), so it's present-but-unused — disallow to keep it out of the
+  // owner preamble.
+  'mcp__nanoclaw__emit_tailored_resume',
   // The Skill tool (§24.49e). Denying it disables ALL skills (per the CC docs),
   // dropping the ~18-skill descriptions block the owner never invokes. See header.
   'Skill',

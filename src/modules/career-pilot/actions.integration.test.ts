@@ -25,6 +25,7 @@ import type { Session } from '../../types.js';
 import { createAgentGroup } from '../../db/agent-groups.js';
 import {
   handleCreateGmailDraft,
+  handleEmitTailoredResume,
   handleGetApplication,
   handleListApplications,
   handleRecordDispatch,
@@ -127,6 +128,34 @@ function seedWake(kind: string): void {
     trigger: 1,
   });
 }
+
+// ── emit_tailored_resume (§24.144) ─────────────────────────────────────────
+
+describe('handleEmitTailoredResume', () => {
+  it('rejects a non-object profile with BAD_ARGS', async () => {
+    const c = actionContent('career_pilot.emit_tailored_resume', { profile: 'nope' });
+    await handleEmitTailoredResume(c, FAKE_SESSION, inDb);
+    const resp = readResponse(c.requestId);
+    expect(resp.frame.ok).toBe(false);
+    if (!resp.frame.ok) expect(resp.frame.error.code).toBe('BAD_ARGS');
+  });
+
+  it('responds ok with stored:false when the thread has no in-flight simulator run', async () => {
+    // FAKE_SESSION.thread_id is null → no run accumulator to stash into; the
+    // handler must answer honestly (ok, stored:false) rather than erroring the
+    // agent turn. (The stored:true path needs a live run → box-verified.)
+    const c = actionContent('career_pilot.emit_tailored_resume', {
+      profile: {
+        bio: ['A senior backend engineer well suited to this role.'],
+        experience: [{ company: 'Acme', bullets: ['x'] }],
+      },
+    });
+    await handleEmitTailoredResume(c, FAKE_SESSION, inDb);
+    const resp = readResponse(c.requestId);
+    expect(resp.frame.ok).toBe(true);
+    if (resp.frame.ok) expect(resp.frame.data.stored).toBe(false);
+  });
+});
 
 // ── update_profile_field ───────────────────────────────────────────────────
 

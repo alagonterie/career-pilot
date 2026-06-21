@@ -502,6 +502,109 @@ export const setWorkProfile: McpToolDefinition = {
   },
 };
 
+// ── emit_tailored_resume (structured tailored résumé, §24.144) ──────────────
+
+/** Min characters of real summary prose the bio must carry — the same substance
+ *  threshold the host honesty floor uses. A stub below this is rejected so the
+ *  model re-emits with a real, role-specific bio (structured output by isError). */
+const TAILORED_BIO_MIN_CHARS = 80;
+
+/** Join a bio field that may arrive as a string or an array of paragraphs. */
+function bioToText(bio: unknown): string {
+  if (Array.isArray(bio)) return bio.map((p) => (typeof p === 'string' ? p : '')).join(' ').trim();
+  return typeof bio === 'string' ? bio.trim() : '';
+}
+
+export const emitTailoredResume: McpToolDefinition = {
+  tool: {
+    name: 'emit_tailored_resume',
+    description:
+      "Emit the tailored résumé you built for THIS visitor's role as a structured object — the ONLY way the downloadable tailored PDF gets produced. Do NOT write the résumé as a JSON code block in your chat reply; call this tool instead. The host re-anchors identity, skills, education, employers, dates, and bullet wording to the candidate's real master résumé (you cannot invent any of those), so what you actually choose here is: (1) `bio` — a 1-2 sentence role-specific summary in the candidate's voice, REQUIRED and non-empty (this is the headline of the tailoring; an empty/stub bio is rejected and you must re-emit with a real one); (2) which real experience bullets to feature and their order; (3) optionally which projects to surface and a role-framed `lookingFor`. Shape: { bio: string[] (1-2 short paragraphs), experience: [{ company, role?, period?, bullets: string[] }], projects?: [{ name, description?, tags?: string[] }], lookingFor?: string[] }. Call this once, near the end, after research + tailoring.",
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        profile: {
+          type: 'object',
+          description:
+            'The tailored profile (see the tool description for the shape). `bio` is REQUIRED and must be a real role-specific summary; `experience` should feature the real bullets you chose to lead with.',
+          properties: {
+            bio: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'REQUIRED. 1-2 short paragraphs — the role-specific summary, in the candidate voice. Non-empty.',
+            },
+            experience: {
+              type: 'array',
+              description: 'The experience entries you chose to feature, in order. Each company must be a real employer from the master.',
+              items: {
+                type: 'object',
+                properties: {
+                  company: { type: 'string' },
+                  role: { type: 'string' },
+                  period: { type: 'string' },
+                  bullets: { type: 'array', items: { type: 'string' } },
+                },
+                required: ['company', 'bullets'],
+              },
+            },
+            projects: {
+              type: 'array',
+              description: 'Optional. Projects to surface for this role.',
+              items: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string' },
+                  description: { type: 'string' },
+                  tags: { type: 'array', items: { type: 'string' } },
+                },
+                required: ['name'],
+              },
+            },
+            lookingFor: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Optional. A role-framed "what I\'m looking for" list.',
+            },
+            projectsFirst: {
+              type: 'boolean',
+              description:
+                'Optional. Set true ONLY when this role values projects/portfolio over work history — moves the Projects section above Experience on the PDF. Omit (default) for conventional roles.',
+            },
+          },
+          required: ['bio', 'experience'],
+        },
+      },
+      required: ['profile'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  async handler(args) {
+    const profile = args.profile;
+    if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
+      return err('profile must be an object (see the tool description for the shape).');
+    }
+    const p = profile as { bio?: unknown; experience?: unknown };
+    // The forcing function (structured output via isError): a stub bio is
+    // rejected so the agent re-emits a real, role-specific summary — the host's
+    // honesty floor then verifies it, but the floor can only keep an HONEST bio,
+    // never invent a tailored one, so a non-stub bio has to originate here.
+    const bioText = bioToText(p.bio);
+    if (bioText.length < TAILORED_BIO_MIN_CHARS) {
+      return err(
+        `emit_tailored_resume needs a non-empty bio: a 1-2 sentence role-specific summary in the candidate's voice (at least ${TAILORED_BIO_MIN_CHARS} characters). You passed an empty or stub bio — write the tailored summary into profile.bio (an array of 1-2 short strings) and call again.`,
+      );
+    }
+    if (!Array.isArray(p.experience) || p.experience.length === 0) {
+      return err(
+        'emit_tailored_resume needs at least one experience entry — feature the real accomplishments you chose to lead with for this role (each company must be a real employer from the master résumé).',
+      );
+    }
+    const res = await sendAction<{ stored: boolean }>('career_pilot.emit_tailored_resume', { profile });
+    if (!res.ok) return actionErr('emit_tailored_resume', res.error);
+    return ok('Tailored résumé received — it will render as the downloadable PDF for this run.', res.data);
+  },
+};
+
 // ── persist_learning (rejection-as-fuel: CAPTURE, §24.107) ──────────────────
 
 export const persistLearning: McpToolDefinition = {
@@ -652,6 +755,7 @@ registerTools([
   listApplications,
   recordProgress,
   createGmailDraft,
+  emitTailoredResume,
   persistLearning,
   readLearnings,
   readContacts,
