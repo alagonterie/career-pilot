@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { applyModelTier, configFromDb, type ContainerConfig } from './container-config.js';
+import { applyModelTier, applySandboxModelSplit, configFromDb, type ContainerConfig } from './container-config.js';
 import type { AgentGroup, ContainerConfigRow } from './types.js';
 
 function row(overrides: Partial<ContainerConfigRow> = {}): ContainerConfigRow {
@@ -117,6 +117,32 @@ describe('applyModelTier (§24.43 dev tier / §24.140 sandbox tier)', () => {
     const cfg = baseConfig();
     cfg.env = { FOO: 'bar' };
     applyModelTier(cfg, 'haiku');
+    expect(cfg.env?.FOO).toBe('bar');
+    expect(cfg.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-haiku-4-5');
+  });
+});
+
+describe('applySandboxModelSplit (§24.142 — orchestrator vs subagent tiers)', () => {
+  function baseConfig(): ContainerConfig {
+    return { mcpServers: {}, packages: { apt: [], npm: [] }, additionalMounts: [], skills: 'all' };
+  }
+
+  it('orchestrator → its model; subagents (opus alias) + internal (haiku) → subagent model', () => {
+    const cfg = baseConfig();
+    applySandboxModelSplit(cfg, 'claude-sonnet-4-6', 'claude-haiku-4-5');
+    expect(cfg.model).toBe('claude-sonnet-4-6');
+    // subagents are `model: opus` → carried to the subagent tier
+    expect(cfg.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-haiku-4-5');
+    // internal WebFetch/WebSearch summarization → subagent tier (cheap)
+    expect(cfg.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('claude-haiku-4-5');
+    // sonnet alias pinned to the orchestrator so config.model resolves consistently
+    expect(cfg.env?.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('claude-sonnet-4-6');
+  });
+
+  it('preserves any pre-existing env', () => {
+    const cfg = baseConfig();
+    cfg.env = { FOO: 'bar' };
+    applySandboxModelSplit(cfg, 'claude-sonnet-4-6', 'claude-haiku-4-5');
     expect(cfg.env?.FOO).toBe('bar');
     expect(cfg.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-haiku-4-5');
   });

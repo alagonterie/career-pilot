@@ -141,35 +141,45 @@ export function materializeContainerJson(agentGroupId: string): ContainerConfig 
 
   const config = configFromDb(row, group);
 
-  // §24.140 sandbox cost lever: the PUBLIC "Watch it work" sandbox (the only
-  // visitor-facing money path) runs a cheaper tier than the owner agent — Sonnet
-  // by default (the `sandbox_model_tier` knob; default→Opus / sonnet / haiku).
-  // Applied in PROD too (unlike dev_model_tier's dev-only branch below) and scoped
-  // to the sandbox folder, so the owner's real search keeps Opus. Runs BEFORE the
-  // dev_model_tier branch so a dev experiment can still override it on dev; the
-  // owner-group test modes below pin their own model and are mutually exclusive.
+  // §24.142 sandbox model split: the PUBLIC "Watch it work" sandbox (the only
+  // visitor-facing money path) runs its ORCHESTRATOR on a capable tier (Sonnet —
+  // it writes the tailored-résumé bio, the one quality lever the visitor sees) and
+  // ALL its subagents on a cheap/fast tier (Haiku — research is retrieval +
+  // summarization; tailor-resume's bullets are snapped to the master verbatim
+  // host-side so its model barely affects output; draft is a sample email). That
+  // keeps the slow tier's footprint to the single assembly turn — near full-Haiku
+  // latency with a Sonnet-grade bio — and bounds the cost/latency a uniform Sonnet
+  // tier blew past (it stalled mid-flow at the §24.141 maxBudgetUsd cap, right
+  // after the ~$0.50 research subagent). Sandbox-only + applied on dev AND prod;
+  // dev_model_tier (below) is now owner-scoped so the sandbox runs identically in
+  // both. Knob-driven so any piece can move tiers without a redeploy.
   if (group.folder === 'career-pilot-sandbox') {
-    applyModelTier(config, getConfig<string>(getDb(), 'sandbox_model_tier', 'sonnet'));
-    // §24.141 S1-1: wire the per-run caps the cribsheet intended but never
-    // plumbed — bound a prompt-injected/runaway public run. maxTurns is the
-    // reliable bound (caps agent turns → caps expensive web ops); maxBudgetUsd
-    // enforces on the SDK's ESTIMATED cost (a weak extra layer — may under-count
-    // the Haiku web-search/fetch spend), so the 300s host hard-wall + the daily
-    // global budget stay the real backstops.
+    applySandboxModelSplit(
+      config,
+      getConfig<string>(getDb(), 'sandbox_orchestrator_model', 'claude-sonnet-4-6'),
+      getConfig<string>(getDb(), 'sandbox_subagent_model', 'claude-haiku-4-5'),
+    );
+    // §24.141 S1-1 caps: maxTurns is the reliable per-run bound (caps agent turns
+    // → caps expensive web ops); maxBudgetUsd is a coarse cost ceiling enforced on
+    // the SDK's running total, so it must sit ABOVE a full legitimate run (a
+    // uniform Sonnet run hit $0.81; a split run is well under) and catch only a
+    // runaway. The 360s host hard-wall + the daily global budget are the real
+    // backstops.
     config.maxTurns = getConfig<number>(getDb(), 'simulator_max_turns', 30);
-    config.maxBudgetUsd = getConfig<number>(getDb(), 'simulator_max_budget_usd', 0.5);
+    config.maxBudgetUsd = getConfig<number>(getDb(), 'simulator_max_budget_usd', 1.0);
   }
 
   if (process.env.OLLAMA_TEST_MODE === '1' && group.folder === 'career-pilot') {
     applyOllamaTestOverrides(config);
   } else if (process.env.CLAUDE_TEST_MODE === '1' && group.folder === 'career-pilot') {
     applyClaudeTestOverrides(config);
-  } else if (process.env.ENVIRONMENT === 'dev') {
-    // §24.43 dev model tier: a runtime, dev-only lever to drop the orchestrator +
-    // subagents off the (expensive) default Opus without a redeploy. No-op unless
-    // the `dev_model_tier` preference is `sonnet`/`haiku`. Applies to both groups;
-    // prod (ENVIRONMENT!=='dev') never reaches this branch. The test modes above
-    // take precedence (they pin a specific model for their own purposes).
+  } else if (process.env.ENVIRONMENT === 'dev' && group.folder === 'career-pilot') {
+    // §24.43 dev model tier: a runtime, dev-only lever to drop the OWNER orchestrator
+    // + subagents off the (expensive) default Opus without a redeploy. No-op unless
+    // the `dev_model_tier` preference is `sonnet`/`haiku`. Owner-scoped (§24.142): the
+    // sandbox keeps its own model split on dev so it runs identically to prod; prod
+    // (ENVIRONMENT!=='dev') never reaches this branch. The test modes above take
+    // precedence (they pin a specific model for their own purposes).
     applyModelTier(config, getConfig<string>(getDb(), 'dev_model_tier', 'default'));
   }
 
@@ -288,10 +298,10 @@ function applyClaudeTestOverrides(config: ContainerConfig): void {
 }
 
 /**
- * Apply a model-tier overlay in place — the pure tier→config mapping behind two
- * callers: the dev-only `dev_model_tier` lever (§24.43, both groups, set from
- * `/dev`) and the prod-safe `sandbox_model_tier` lever (§24.140, the public
- * sandbox group only). It retargets the orchestrator's own model AND every
+ * Apply a model-tier overlay in place — the pure tier→config mapping behind the
+ * dev-only `dev_model_tier` lever (§24.43, OWNER group only, set from `/dev`; the
+ * public sandbox uses {@link applySandboxModelSplit} per §24.142). It retargets
+ * the orchestrator's own model AND every
  * subagent's `model: opus` alias to a cheaper tier — no redeploy; picked up on the
  * next container spawn. Mirrors `applyClaudeTestOverrides` (env alias redirects +
  * `config.model`); the alias redirects also catch Haiku-internal calls
@@ -326,4 +336,31 @@ export function applyModelTier(config: ContainerConfig, tier: string): void {
     config.model = HAIKU;
   }
   // 'default'/unknown → no-op (real models).
+}
+
+/**
+ * §24.142 sandbox model split — the per-group model policy for the public
+ * simulator: the orchestrator on `orchestratorModel`, every subagent on
+ * `subagentModel`. Mirrors {@link applyModelTier}'s mechanism (config.model is
+ * the orchestrator; the ANTHROPIC_DEFAULT_*_MODEL aliases redirect each
+ * subagent's `model:` frontmatter AND the Haiku-internal WebFetch/WebSearch
+ * summarization), but splits the two tiers so the slow/capable model is spent
+ * ONLY on the bio-writing assembly turn — not on the latency-heavy research fan-
+ * out or the master-snapped tailor bullets. The subagents are all `model: opus`,
+ * so the OPUS alias carries them to the subagent tier; the SONNET alias is pinned
+ * to the orchestrator model so a literal/symbolic `config.model` resolves
+ * consistently; HAIKU → subagent tier for cheap internal summarization.
+ */
+export function applySandboxModelSplit(
+  config: ContainerConfig,
+  orchestratorModel: string,
+  subagentModel: string,
+): void {
+  config.env = {
+    ...(config.env ?? {}),
+    ANTHROPIC_DEFAULT_OPUS_MODEL: subagentModel,
+    ANTHROPIC_DEFAULT_SONNET_MODEL: orchestratorModel,
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: subagentModel,
+  };
+  config.model = orchestratorModel;
 }

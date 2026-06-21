@@ -67,8 +67,10 @@ const CRON_NOTE =
 const MODEL_TIER_NOTE =
   'Retargets the orchestrator + every subagent model for cost (dev only). Applies on the next container spawn (a fresh session / reset:dev), not mid-session. default = real Opus · sonnet = Opus→Sonnet (Haiku kept) · haiku = everything→Haiku.';
 
-const SANDBOX_TIER_NOTE =
-  'The model tier for the PUBLIC "Watch it work" simulator sandbox — the only visitor-facing money path (§24.140). The owner agent is unaffected (prod-safe, hence not deny-listed). Applies on the next sandbox spawn. default = Opus (max quality) · sonnet = Opus→Sonnet (the default; ~40% cheaper, abuse-resilient) · haiku = everything→Haiku.';
+const SANDBOX_ORCH_NOTE =
+  'Model for the PUBLIC "Watch it work" simulator ORCHESTRATOR — it writes the tailored-résumé bio, the quality the visitor sees (§24.142). The only visitor-facing money path; the owner agent is unaffected (prod-safe, not deny-listed). Applies on the next sandbox spawn. Sonnet recommended.';
+const SANDBOX_SUB_NOTE =
+  'Model for the simulator SUBAGENTS (research / tailor / draft). Research is retrieval+summarization and the latency hog; tailor bullets are snapped to the master host-side — so Haiku keeps runs fast + cheap without touching bio quality (§24.142). Applies on the next sandbox spawn.';
 
 const OPS_SPAWN_NOTE =
   'Pushed as container env when the career-pilot ops session spawns — applies on its NEXT spawn, not mid-session. Other sessions keep the upstream rotation defaults.';
@@ -913,13 +915,20 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     note: MODEL_TIER_NOTE,
   },
 
-  // ── §24.140 model audit: prod-safe model levers (NOT deny-listed) ──
-  sandbox_model_tier: {
+  // ── §24.142 sandbox model split: prod-safe model levers (NOT deny-listed) ──
+  sandbox_orchestrator_model: {
     type: 'enum',
     group: 'models',
-    label: 'Sandbox model tier',
-    options: ['default', 'sonnet', 'haiku'],
-    note: SANDBOX_TIER_NOTE,
+    label: 'Sandbox orchestrator model',
+    options: ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-8'],
+    note: SANDBOX_ORCH_NOTE,
+  },
+  sandbox_subagent_model: {
+    type: 'enum',
+    group: 'models',
+    label: 'Sandbox subagent model',
+    options: ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-8'],
+    note: SANDBOX_SUB_NOTE,
   },
   win_confidence_model: {
     type: 'enum',

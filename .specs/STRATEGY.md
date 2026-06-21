@@ -6764,6 +6764,24 @@ The fourth slice of §24.136 **Phase A**. Security as a *structured* pass, not a
 
 ---
 
+## §24.142 — A4.0: sandbox tailored-résumé quality — the model split
+
+First slice of §24.136 **Phase A** A4 (before the master-résumé content pass). Triggered by a dev smoke test where sandbox tailored résumés looked "off". The investigation (box-verified 2026-06-21) found a self-inflicted regression on top of a genuine quality gap.
+
+**Root cause — a §24.141 (A3) regression.** A3 wired `maxBudgetUsd` into the sandbox SDK query and set `simulator_max_budget_usd=$0.50`. The SDK HALTS the agent loop the instant cumulative cost crosses the cap. A Sonnet `research-company` alone costs ~$0.50, so every Sonnet sandbox run died right after research (`num_turns:1`, no tailor/draft/deliver — the visitor got a bare "On it" ack). Haiku runs (~$0.37) stayed under the cap → completed. That single number was the entire Haiku-completes-vs-Sonnet-stalls split; it was NOT a prompt problem. Confirmed by raising the cap → the full chain ran ($0.81, 299.6s — 0.4s under the 300s hard-wall).
+
+**The fix — a surgical model split (sandbox-only).** A uniform-Sonnet sandbox is too slow (~300s, at the hard-wall) and too costly (~$0.81) — the latency hog is `research-company`'s web fan-out (12 calls). So the sandbox now runs its **orchestrator on Sonnet** (it writes the `tailored_resume_json` bio — the one quality lever the visitor sees) and **all subagents on Haiku** (research = retrieval/summarization; `tailor-resume`'s bullets are snapped to the master verbatim by `validateTailoredResume` so its model barely affects output; draft = a sample email). Near full-Haiku latency, Sonnet-grade bio. Implemented as `applySandboxModelSplit(config, orchestratorModel, subagentModel)` in `container-config.ts` (config.model = orchestrator; the `ANTHROPIC_DEFAULT_*_MODEL` aliases carry the `model: opus` subagents to the subagent tier). Knob-driven: `sandbox_orchestrator_model` (default `claude-sonnet-4-6`) / `sandbox_subagent_model` (default `claude-haiku-4-5`) — replaces the §24.140 `sandbox_model_tier` knob. `dev_model_tier` is now **owner-scoped** so the sandbox runs identically on dev and prod. Caps relaxed: `simulator_max_budget_usd` `0.5 → 1.0`, `simulator_hard_wall_ms` `300000 → 360000`.
+
+**Persona hardening (kept, not the root fix).** The sandbox persona (`.claude-host-fragments/persona.md`) gained a one-shot turn-discipline guard — no status acks, "subagent dispatch doesn't end your turn", deliver once — which killed a wasteful "On it" `send_message`.
+
+**Still open (A4 remainder).** The **bio honesty-floor**: even on a fully-completed run the bio floors to master verbatim (`validateTailoredResume` reverts the bio to master when it's a stub OR cites any number not in the master — the "approximate metric" pattern; `snapBullets` forces experience bullets to master). Visible tailoring collapses to `lookingFor`. Fix candidates: bio-fallback telemetry + persona "describe impact in words, not an unverifiable number" + soften the unverified-number rule. The `projectsFirst` lever (Projects-above-Experience) is untested until delivery is reliable. Then the master-résumé content pass (real `candidate_profile`, DB-only).
+
+**Definition of done.** Sandbox delivers a full tailored résumé on the split tier within the hard-wall, box-verified for latency (target <3 min) + cost + a non-floored bio where honest; `container-config` + `knob-registry` suites green (the defaults↔registry coverage test covers the knob swap); `dev_model_tier` owner-scoping verified to not clobber the sandbox. Memory: [[a40-sandbox-tailoring-investigation]] [[status_current]].
+
+**Spec deltas.** This §24.142; the §24.136 A4 bullet gains the A4.0 sub-item. No THREAT_MODEL change.
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
