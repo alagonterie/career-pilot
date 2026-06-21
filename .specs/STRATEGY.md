@@ -6943,6 +6943,31 @@ The **evergreen showcase** — `/about`, `/experience`, `/architecture`, the sim
 
 ---
 
+## §24.150 — Simulator "degradation as a feature" (branded unavailable states)
+
+**Origin** (owner, 2026-06-21). Reviewing the `/architecture` Web-sandbox node throttling itself at the daily budget cap, the owner saw the opening: *"if we actually run out of budget and the sandbox ('watch it work') they're trying to use is no longer available, conditionally guide them to /dashboard or /architecture so they can see why — it flips that experience from disappointed to impressed; failure/degradation/unavailability as a feature."* Today the simulator's three distinct "can't run now" reasons collapse into two flat fallbacks: the kill switch → a generic *"taking a breather,"* and **both** the daily-budget cap and the per-IP cap → a generic *"that run didn't finish"* error. None of them point the dead-ended visitor at the surfaces that *explain the very cap they just hit* — which is the most on-brand content the site has.
+
+**The reframe.** A visitor who hits the cap has just learned the showcase is real enough to **cost real money and run out** — among the most credible signals the site can send. So the unavailable state shouldn't apologize; it should **show them the meter**: the live LLM-spend ledger (`/dashboard`) and the self-throttling sandbox node on the system map (`/architecture`). The thing that blocked them becomes the proof it's real.
+
+**Decisions.**
+- **D1 — Branded by *reason*, not one generic wall.** `checkSimulatorAllowed` already computes the granular gate reason (`budget_exceeded` / `rate_limited_ip` / `simulator_disabled`); it's collapsed at the `SimulatorStartResult.error.code` boundary (`budget_exceeded`+`rate_limited_ip`→`RATE_LIMITED`→429; `simulator_disabled`+backend-not-ready→`UNAVAILABLE`→503). Surface the reason through to the frontend (a `reason` field on the non-ok `/api/simulator` JSON, alongside the **unchanged** HTTP status + `code` for back-compat) so each gets tailored copy + CTAs.
+- **D2 — Three branded variants + one honest generic.**
+  - `budget_exceeded` (the showcase) → *"The agent's been busy today."* It spent today's sandbox budget running live for other visitors; resets tomorrow → **See where it went → `/dashboard`** (the spend ledger) + **Watch it throttle → `/architecture`** (the Web-sandbox node).
+  - `rate_limited_ip` (you personally) → *"You've used today's runs."* Per-visitor cap so one person can't drain it for everyone; resets tomorrow → **See the real pipeline → `/pipeline`** + the recent-runs list already surfaced below.
+  - `simulator_disabled` (paused) → *"The live sandbox is paused for review."* The rest of the system is fully live → **See the pipeline → `/pipeline`** + **System map → `/architecture`**.
+  - `backend_not_ready` / network / stream-drop → the existing honest generic ("taking a breather" / "that run didn't finish"). A real fault, not an intentional cap — no "feature" spin, no false reassurance.
+- **D3 — "Talk to me →" stays on every variant.** The always-open conversion path is never removed; the branded CTAs are *added* alongside it.
+- **D4 — Dev seam to reach the states without exhausting the budget.** A `?__sim=<reason>` URL override on `/watch`, gated to dev / `VITE_MOCK_SEAM` (mirrors `?__state` / `?__lifecycle`), short-circuits the run state to each fallback for visual/E2E coverage + the owner's screenshot. Prod ignores it (the server is the perimeter; this is a client-only render branch).
+
+**Build (DD: this is the spec commit; build follows).**
+- Backend: add `reason?: 'budget_exceeded' | 'rate_limited_ip' | 'simulator_disabled' | 'backend_not_ready'` to `SimulatorStartResult.error`; carry it in the `/api/simulator` non-ok JSON body. HTTP status + `code` unchanged.
+- Frontend: `use-simulator-run` maps the body `reason` → a `degradeReason` on the run state (429 → `budget`/`rate_limit`; 503 → `disabled`, else generic). `SimFallback` renders the per-reason title/body + tailored CTAs (typed `<Link>`s, `data-testid`-hooked). `?__sim=` dev seam on `/watch`.
+- Tests: `SimFallback.test.tsx` per-reason CTA assertions; `use-simulator-run` 429/503-reason mapping; a `@visual` baseline per branded variant via `?__sim=`.
+
+**Definition of done.** Each of the three caps renders its own headline + CTA set pointing at the surface that explains it; the generic fault path is byte-unchanged; "Talk to me →" present on all variants; `?__sim=` reaches every state in dev/E2E; host + FE tsc + prettier `--no-semi` + suites green; `@visual` branded variants blessed. Memory: [[status_current]], [[todo_backlog]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
