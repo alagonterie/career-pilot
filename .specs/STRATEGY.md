@@ -6996,6 +6996,45 @@ The **evergreen showcase** — `/about`, `/experience`, `/architecture`, the sim
 
 ---
 
+## §24.152 — Internal `funnel`→`pipeline` rename (the full sweep, half (b) of §24.151)
+
+**Origin** (owner, 2026-06-21). The visitor-facing surface has been "pipeline" since §24.77 D3, but the *internal* plumbing still says `funnel` in ~1006 places across 111 files. The owner chose the **complete** rename — "nothing says funnel internally" — explicitly justified by timing: **we have not cut over to production yet.** Dev is the only environment, so we can rename everything and verify the running system survives on dev *before* the first prod launch — which means prod launches with clean naming from the first migration of its life (no legacy `funnel` baked into the production DB, no external API consumer to protect).
+
+**Scope (the rename map).** Every internal `funnel` identifier → `pipeline` (or `pipeline-scribe`/`pipeline_scribe` for the curator agent's name). The load-bearing, contract-level renames:
+
+| Category | From → To |
+|---|---|
+| DB table (event log) | `funnel_events` → `pipeline_events` (index `idx_funnel_events_app` → `idx_pipeline_events_app`; the `proactive` column stays) |
+| DB table (read-model) | `public_funnel_view` → `public_pipeline_view` (index `idx_public_funnel_view_stage` → `idx_public_pipeline_view_stage`) |
+| Config knobs (×8) | `funnel_curator_*` → `pipeline_scribe_*` (defaults.json + knob-registry + the `preferences` rows on the box) |
+| MCP tools (×2) | `record_funnel_event` → `record_pipeline_event`; `persist_funnel_state` → `persist_pipeline_state` |
+| Curator agent | `funnel-curator` → `pipeline-scribe` (the materialized `agents/funnel-curator.md` + `funnel-curator-bootstrap.ts`; the `agents-src/pipeline-scribe.md` source is already named) |
+| HTTP route | `GET /api/funnel` → `GET /api/pipeline` (+ a thin `/api/funnel` back-compat alias for one release) |
+| Code files (~6) | `funnel-actions.ts`, `funnel-types.ts`, `funnel-apply.ts`, `funnel-fixture-loader.ts`, `funnel-curator-bootstrap.ts`, `public-funnel-view.ts` → `pipeline-*` |
+| Symbols | `FunnelEvent`, `FunnelState`, `recordFunnelEvent`, `upsertPublicFunnelView`, … → `Pipeline*` |
+| Frontend | `funnel-*` `data-testid`s, residual `funnel` refs in `use-pipeline.ts` / pipeline components / `pipeline-stages.ts`, the `SimStatePanel` "funnel board" dev-copy |
+| recruiter-sim | `funnel`-named scenario/types/templates |
+| Tests | move with their code (assertions + fixtures) |
+
+**Decisions.**
+- **D1 — Complete rename, justified by pre-prod timing.** No half-measures, no permanent aliases (beyond the one transitional route alias). The bet: a clean internal vocabulary is worth the churn *now*, while dev is the only environment and there's no prod data or external API consumer to protect.
+- **D2 — Non-destructive forward-rename migration; never edit history, never reset dev.** The dev box carries real `candidate_profile` PII + accumulated observation state (pipeline rows, kits, learnings, recruiter-sim history) that we will NOT destroy. So a NEW migration (next number, 142) does `ALTER TABLE funnel_events RENAME TO pipeline_events` + `public_funnel_view` likewise + DROP/CREATE the renamed indexes — all `IF EXISTS`/idempotent + data-preserving. The historical migrations (101/124/125/126/137/139) stay **frozen** (they created/evolved the old names and are the record); the forward migration renames on top. Prod, on first boot, applies 101→…→142 and ends at `pipeline_*` with no `funnel` table at rest.
+- **D3 — Preferences-key migration preserves overrides.** The same forward migration copies each `funnel_curator_*` row in `preferences` to its `pipeline_scribe_*` key (preserving any box-overridden value) and deletes the old key. defaults.json + knob-registry + every `getConfig('funnel_curator_*')` call site switch to the new keys. Belt: a missing box row falls back to the new defaults.json default (no silent break).
+- **D4 — MCP tools need no alias; the route keeps a transitional one.** The two MCP tools are called only by the in-container agent via the persona + subagent prompts — renaming the tool + its prompt references is atomic per spawn (the agent reads the fresh persona each wake), so no back-compat shim. `/api/funnel` is different: a cached/old frontend could still call it, so keep `/api/funnel` as a thin alias to the `/api/pipeline` handler for one release, then remove.
+- **D5 — Historical audit-row data stays display-aliased (no data change).** `public_audit_trail` rows with `agent_name='funnel-curator'` are frozen history; the §24.59 display alias already renders them `pipeline-scribe`. We do NOT rewrite that data; new rows write `pipeline-scribe`.
+- **D6 — Staged, each commit independently green; box-verify gates the destructive deploy.** The two box data migrations (table renames + preferences-key rename) only reach the box at the Stage-1 deploy, which is the checkpoint.
+
+**Build (DD: spec commit first; then staged build commits).**
+1. **DB + config layer.** The forward migration 142 (table + index + preferences-key renames); rename `public-funnel-view.ts` → `public-pipeline-view.ts` + `funnel-types.ts` → `pipeline-types.ts` + the read-model symbols; defaults.json + knob-registry knob keys; all `getConfig` call sites. Tests: migration up/idempotency, read-model, knob-registry coverage. **This stage's deploy runs the box migration → box-verify before proceeding** (data preserved; `pipeline_events`/`public_pipeline_view` exist; knob overrides survived).
+2. **MCP tools + curator agent + runtime artifacts.** Rename the two tools + registration + `funnel-actions.ts`/`funnel-apply.ts`/`funnel-curator-bootstrap.ts` → pipeline; edit persona.md + the subagent prompts + materialization so the agent calls `record_pipeline_event`/`persist_pipeline_state`; the `funnel-curator` → `pipeline-scribe` agent name end-to-end. Tests + registration/disallowed-tools tests.
+3. **API + frontend.** `/api/funnel` → `/api/pipeline` (+ alias), response field names, the frontend `funnel` refs/testids, the "funnel board" dev-copy. FE tsc + vitest + `@visual` re-bless only if a testid-bearing snapshot moves (testids don't render → likely none).
+4. **recruiter-sim + residual symbols/files + test cleanup.** The sim scenario/types/templates; sweep remaining `funnel` symbols.
+5. **Box-verify (the gate).** Deploy; the migration runs (data preserved); drive a real agent turn that records a pipeline event + persists pipeline state via the renamed tools; `/pipeline` + `/dashboard` render; `pnpm health` ok; the dispatch-trace + curator attribution read `pipeline-scribe`.
+
+**Definition of done.** `grep -ri 'funnel' src/ frontend/src/ groups/ config/ scripts/` returns only frozen-history references (the 5 historical migrations' SQL + comments-of-record); no live `funnel` table/column/knob/tool/route/symbol/testid remains. The forward migration is idempotent + data-preserving (verified on the dev box: real candidate + observation data intact, knob overrides intact). A real dev agent turn exercises `record_pipeline_event` + `persist_pipeline_state`. host + FE tsc + prettier + full suites green. Memory: [[status_current]], [[todo_backlog]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
