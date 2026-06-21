@@ -81,7 +81,7 @@ describe('RedactedText + renderInline integration', () => {
     expect(host.textContent).not.toContain('[AI_REDACTED]')
   })
 
-  it('chips a redaction token that sits INSIDE bold (§24.146 A0 — was leaking as raw text)', () => {
+  it('chips a redaction token that sits INSIDE bold (§24.147 — was leaking as raw text)', () => {
     // The exact kit shape: a bold heading whose subject is a sealed company.
     render(<div data-testid="bold">{renderInline('**[REDACTED:infra-d] alignment & vision clarity**')}</div>)
     const host = screen.getByTestId('bold')
@@ -96,7 +96,7 @@ describe('RedactedText + renderInline integration', () => {
   })
 })
 
-describe('RedactionLegend — a real titled component (§24.146 A0)', () => {
+describe('RedactionLegend — a real titled component (§24.147)', () => {
   it('renders a bordered, titled key with both honest tiers as chips', () => {
     render(<RedactionLegend />)
     const legend = screen.getByTestId('redaction-legend')

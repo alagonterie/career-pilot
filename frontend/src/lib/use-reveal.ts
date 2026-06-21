@@ -1,7 +1,7 @@
 import * as React from 'react'
 
 /**
- * Scroll-reveal engine for the `/` scroll pass (§24.146 A0) — below-the-fold
+ * Scroll-reveal engine for the `/` scroll pass (§24.147) — below-the-fold
  * sections rise into place as they enter the viewport. Transform-only (the
  * `.cp-reveal` class never touches opacity), per the §24.135 axe constraint.
  *

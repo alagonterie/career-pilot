@@ -230,12 +230,18 @@ describe('PipelineCompact + RecentOutcomes', () => {
     expect(screen.getAllByTestId('recent-outcome-link')).toHaveLength(2)
   })
 
-  it('stamps each row with the activity DAY, UTC-fixed (§24.146 A0)', () => {
+  it('stamps each row with the activity DAY in the viewer’s local time (§24.147)', () => {
     render(<RecentOutcomesPanel apps={APPS} />)
     const dates = screen.getAllByTestId('recent-outcome-date')
-    // Date-only, newest-first: devtools-b (05-25) then fintech-a (05-14). UTC-fixed
-    // so the day can't slip across the viewer's timezone.
-    expect(dates.map((d) => d.textContent)).toEqual(['May 25', 'May 14'])
+    // Date-only ("MMM D"), local time, newest-first: devtools-b (05-25) then
+    // fintech-a (05-14). Computed the same way so the assertion is timezone-robust
+    // (no pinned TZ in the vitest env) — it guards the format + ordering + the
+    // local rendering, which is the §24.147 change.
+    const localDay = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    expect(dates.map((d) => d.textContent)).toEqual([
+      localDay('2026-05-25T09:00:00Z'),
+      localDay('2026-05-14T09:00:00Z'),
+    ])
   })
 
   it('color-codes only terminal outcomes (§24.109 #12)', () => {

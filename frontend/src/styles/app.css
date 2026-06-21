@@ -143,7 +143,7 @@
 }
 
 /*
- * Scroll reveal (the `/` scroll pass — §24.146 A0). Below-the-fold sections RISE
+ * Scroll reveal (the `/` scroll pass — §24.147). Below-the-fold sections RISE
  * into place as they enter the viewport, driven by `useReveal` (IntersectionObserver).
  *
  * TRANSFORM-ONLY (translate, never opacity) — the same a11y constraint that makes

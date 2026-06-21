@@ -110,7 +110,7 @@ export function RedactedText({ text }: { text: string }) {
 
 /** A once-per-page legend that turns the chips from "what broke?" into a legible
  * feature — names the two honest tiers (§24.134d). A bordered, titled key (not a
- * loose run of text, §24.146 A0): it reads as a deliberate component the chips
+ * loose run of text, §24.147): it reads as a deliberate component the chips
  * map back to, the way a chart's legend sits apart from the chart. */
 export function RedactionLegend() {
   return (

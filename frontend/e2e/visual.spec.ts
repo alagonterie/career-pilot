@@ -8,7 +8,7 @@ import { expect, test } from '@playwright/test'
 // (font hinting differs), and the committed baseline is generated on the dev
 // OS. The semantic + a11y E2E is the cross-platform gate that runs everywhere.
 test('home page matches visual baseline', { tag: '@visual' }, async ({ page }) => {
-  // Reduced-motion makes the §24.146 scroll reveal not arm (useReveal leaves every
+  // Reduced-motion makes the §24.147 scroll reveal not arm (useReveal leaves every
   // section solid), so the fullPage capture is deterministic without depending on
   // IntersectionObserver firing for below-fold content under `captureBeyondViewport`.
   // The reveal's settled state IS this layout (opacity 1, no transform), so the
@@ -140,7 +140,7 @@ test('live page matches visual baseline', { tag: '@visual' }, async ({ page }) =
     // The local-aggregate line is wall-clock-windowed (and could shift if a
     // parallel spec pushed an audit row); the layout is the regression guard,
     // the numbers are covered by the unit + semantic tests. The Recent-outcomes
-    // day stamps (§24.146 A0) derive from a relative seed (`isoDaysAgo`) so they
+    // day stamps (§24.147) derive from a relative seed (`isoDaysAgo`) so they
     // drift daily — masked too; the date FORMAT is covered by the panels unit test.
     mask: [page.getByTestId('live-volatile'), page.getByTestId('recent-outcome-date')],
   })

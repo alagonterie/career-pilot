@@ -512,16 +512,19 @@ function OutcomeArtifactBadges({ app }: { app: PipelineApplication }) {
   )
 }
 
-/** Short UTC date for a Recent-outcomes row (§24.146 A0): "Jun 18". Date-only on
+/** Short date for a Recent-outcomes row (§24.147): "Jun 18". Date-only on
  * purpose — the precise time of a recorded outcome often just reflects when the
  * scribe processed it, not when the thing happened, so the DAY is the honest,
- * useful unit. UTC-fixed so it can't drift across the viewer's timezone. Null-safe
- * (recent rows always carry an activity ts, but guard anyway). */
+ * useful unit. Rendered in the VIEWER's local timezone (the recruiter reads it in
+ * their own day, not UTC): safe because the Recent-outcomes panel is client-only
+ * — `usePipeline` has no data on the SSR pass, so no date renders server-side and
+ * there's no hydration mismatch. Null-safe (recent rows always carry an activity
+ * ts, but guard anyway). */
 function outcomeDate(iso: string | null): string {
   if (!iso) return ''
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 export function RecentOutcomesPanel({ apps, status }: { apps: PipelineApplication[]; status?: PollStatus }) {
@@ -567,14 +570,17 @@ export function RecentOutcomesPanel({ apps, status }: { apps: PipelineApplicatio
                   className="group flex items-center justify-between gap-2 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <span className="flex min-w-0 items-center gap-2">
-                    {/* Leading day stamp (§24.146 A0) — when the outcome last moved.
-                        `shrink-0` so the date never truncates; the ref absorbs the
-                        squeeze. Drifts daily off a relative seed, so it's masked in
-                        the /dashboard visual baseline (the layout is the guard). */}
+                    {/* Leading day stamp (§24.147) — when the outcome last moved.
+                        Fixed-width (`w-12`) + `shrink-0`: a 1-digit day ("Jun 5")
+                        and a 2-digit one ("Jun 14") then occupy the same column, so
+                        every company ref starts at the same x (the date never
+                        truncates; the ref absorbs the squeeze). Drifts daily off a
+                        relative seed, so it's masked in the /dashboard visual
+                        baseline (the layout is the guard). */}
                     {dateLabel ? (
                       <span
                         data-testid="recent-outcome-date"
-                        className="shrink-0 tabular-nums text-muted-foreground/60"
+                        className="w-12 shrink-0 tabular-nums text-muted-foreground/60"
                       >
                         {dateLabel}
                       </span>

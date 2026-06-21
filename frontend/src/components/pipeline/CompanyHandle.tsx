@@ -32,19 +32,25 @@ export function CompanyHandle({ app }: { app: PipelineApplication }) {
 /**
  * A once-per-page legend that turns the anonymized handles from "what's that?"
  * into a legible privacy feature — the pipeline twin of `RedactionLegend`
- * (§24.134d). The sample handle is a generic placeholder, never a real
+ * (§24.134d), and styled to match it: a bordered, titled key, not a loose run of
+ * text (§24.147). The sample handle is a generic placeholder, never a real
  * identifier.
  */
 export function CompanyHandleLegend() {
   return (
-    <p
+    <div
       data-testid="company-handle-legend"
-      className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-relaxed text-muted-foreground"
+      className="flex max-w-xl flex-col gap-2 rounded-md border border-border bg-muted/30 px-3 py-2.5"
     >
-      <span className={ANON_HANDLE_CHIP}>infra-e</span>
-      <span>
-        a company shown as a stable handle while its hiring process is live — the real name appears once it closes.
+      <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/80">
+        Company handles
       </span>
-    </p>
+      <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px] leading-relaxed text-muted-foreground">
+        <span className={ANON_HANDLE_CHIP}>infra-e</span>
+        <span>
+          a company shown as a stable handle while its hiring process is live — the real name appears once it closes.
+        </span>
+      </p>
+    </div>
   )
 }

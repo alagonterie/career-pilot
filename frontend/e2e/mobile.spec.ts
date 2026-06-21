@@ -237,7 +237,7 @@ test('/kit TOC steppers scroll the page BOTH directions (§24.65 Δ)', async ({ 
   expect(back2).toBe(positions[0]) // lands exactly back on the first section
 })
 
-test('home below-the-fold sections rise in on scroll (§24.146 A0)', async ({ page }) => {
+test('home below-the-fold sections rise in on scroll (§24.147)', async ({ page }) => {
   await page.goto('/')
   const teaser = page.getByTestId('home-teaser')
   // The last section starts well below a phone fold → armed (translated down) after
@@ -262,7 +262,7 @@ test('key mobile surfaces are axe-clean (incl. the open nav menu)', async ({ pag
 // ── @visual mobile baselines (skipped in CI; OS-specific) ────────────────────
 
 test('mobile home matches visual baseline', { tag: '@visual' }, async ({ page }) => {
-  // Reduced-motion disables the §24.146 scroll reveal (sections stay solid), so the
+  // Reduced-motion disables the §24.147 scroll reveal (sections stay solid), so the
   // fullPage capture is deterministic — no IntersectionObserver-timing dependence.
   // See the desktop home note.
   await page.emulateMedia({ reducedMotion: 'reduce' })
@@ -316,7 +316,7 @@ test('mobile live matches visual baseline', { tag: '@visual' }, async ({ page })
   await expect(page).toHaveScreenshot('mobile-live.png', {
     animations: 'disabled',
     fullPage: true,
-    // Recent-outcomes day stamps drift off the relative seed — masked (§24.146 A0).
+    // Recent-outcomes day stamps drift off the relative seed — masked (§24.147).
     mask: [page.getByTestId('live-volatile'), page.getByTestId('recent-outcome-date')],
   })
 })

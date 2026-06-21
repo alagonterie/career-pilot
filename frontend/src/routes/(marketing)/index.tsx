@@ -60,7 +60,7 @@ function Home() {
   const shownStats = [...counts, lastActivity].filter((s): s is string => Boolean(s))
   const p = profile ?? workProfile
 
-  // Scroll reveal (the `/` scroll pass, §24.146 A0): each below-the-fold beat
+  // Scroll reveal (the `/` scroll pass, §24.147): each below-the-fold beat
   // rises into place as it enters the viewport (transform-only, §24.135). One hook
   // per section (hooks run unconditionally — the pipeline ref simply never attaches
   // in its error branch).

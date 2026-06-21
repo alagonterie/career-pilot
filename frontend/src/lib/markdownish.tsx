@@ -25,7 +25,7 @@ function unescapeMd(text: string): string {
  * and the top-level plain branch so a `[…REDACTED…]` token chips identically
  * whether or not it sits inside bold — a bold token (`**[REDACTED:infra-d] …**`)
  * was previously unescaped straight to raw text, leaking the literal token onto
- * the kit (§24.146 A0).
+ * the kit (§24.147).
  */
 function renderWithRedactions(text: string, keyPrefix: string): React.ReactNode {
   return splitRedactionParts(text).map((part, j) =>

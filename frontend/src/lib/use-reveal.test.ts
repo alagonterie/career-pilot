@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import { useReveal } from './use-reveal'
 
-describe('useReveal — the SSR/no-JS-visible contract (§24.146 A0)', () => {
+describe('useReveal — the SSR/no-JS-visible contract (§24.147)', () => {
   it('returns an empty className by default, so the element ships VISIBLE', () => {
     // First render (the SSR + hydration frame): no armed class, ever.
     const { result } = renderHook(() => useReveal())
