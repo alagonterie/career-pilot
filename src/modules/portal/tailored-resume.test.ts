@@ -9,7 +9,12 @@
 import { describe, expect, it } from 'vitest';
 
 import type { WorkProfile } from './profile.js';
-import { extractTailoredResumeBlock, stripTailoredResumeBlock, validateTailoredResume } from './tailored-resume.js';
+import {
+  extractSummarySection,
+  extractTailoredResumeBlock,
+  stripTailoredResumeBlock,
+  validateTailoredResume,
+} from './tailored-resume.js';
 
 const MASTER: WorkProfile = {
   name: 'Jane Doe',
@@ -313,5 +318,33 @@ describe('stripTailoredResumeBlock', () => {
       'Thanks.',
     ].join('\n');
     expect(stripTailoredResumeBlock(out)).toBe('Bullets + outreach.\n\nThanks.');
+  });
+});
+
+describe('extractSummarySection (§24.143b — back-fill a stubbed bio from the prose)', () => {
+  it('pulls the "## Summary" prose block, stopping at the next heading', () => {
+    const out = [
+      '## Summary',
+      'A senior backend engineer who modernizes legacy platforms at scale — a strong fit for this distributed-systems role and its performance focus.',
+      '',
+      '## Tailored Resume Bullets',
+      '1. Built things.',
+    ].join('\n');
+    const s = extractSummarySection(out);
+    expect(s).toContain('modernizes legacy platforms');
+    expect(s).not.toContain('Tailored Resume Bullets');
+  });
+
+  it('returns null when there is no summary section', () => {
+    expect(extractSummarySection('## Bullets\n- a\n- b')).toBeNull();
+  });
+
+  it('ignores a "## Summary" that lives inside a code fence', () => {
+    const out = '```\n## Summary\nthis is inside a fence and must be ignored entirely by the extractor here\n```';
+    expect(extractSummarySection(out)).toBeNull();
+  });
+
+  it('returns null for a too-short summary (below the bio substance floor)', () => {
+    expect(extractSummarySection('## Summary\nToo short.')).toBeNull();
   });
 });

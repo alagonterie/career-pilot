@@ -23,7 +23,12 @@ import { getConfig } from '../../get-config.js';
 import { log } from '../../log.js';
 import { getPublicProfile } from './profile.js';
 import { endSimulatorRun, pushSimulatorEvent, setSimulatorViewerHandler } from './sse-broadcaster.js';
-import { extractTailoredResumeBlock, stripTailoredResumeBlock, validateTailoredResume } from './tailored-resume.js';
+import {
+  extractSummarySection,
+  extractTailoredResumeBlock,
+  stripTailoredResumeBlock,
+  validateTailoredResume,
+} from './tailored-resume.js';
 
 /** Sandbox group folder — also a literal in container-config.ts + init-sandbox-group.ts. */
 const SANDBOX_FOLDER = 'career-pilot-sandbox';
@@ -529,6 +534,20 @@ function persistRun(runId: string, acc: RunAccumulator): boolean {
     const master = getPublicProfile().profile;
     const emitted = master ? extractTailoredResumeBlock(fullOutput) : null;
     if (master && emitted) {
+      // §24.143b: the orchestrator reliably writes a tailored "## Summary" as
+      // prose but routinely stubs the JSON `bio` → back-fill the bio from that
+      // prose before validation, so a stubbed bio yields the tailored summary
+      // (still honesty-checked below) instead of flooring to the generic master.
+      const rec = emitted as { bio?: unknown };
+      const bioText = Array.isArray(rec.bio)
+        ? (rec.bio as unknown[]).join(' ')
+        : typeof rec.bio === 'string'
+          ? rec.bio
+          : '';
+      if (bioText.trim().length < 80) {
+        const summary = extractSummarySection(fullOutput);
+        if (summary) rec.bio = [summary];
+      }
       const v = validateTailoredResume(emitted, master);
       if (v.ok && v.profile) tailoredResumeJson = JSON.stringify(v.profile);
       else log.info('simulator: tailored résumé failed the honesty guardrail', { runId, errors: v.errors });

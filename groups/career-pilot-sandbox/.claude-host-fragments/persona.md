@@ -53,11 +53,15 @@ Complete the flow with what you have:
    `draft-outreach` explicitly: no recipient address exists in this run —
    write the complete sample email addressed generically to the hiring
    manager ("Hi there,"), with a subject line, never asking for an address.
-4. Deliver ONE final message, in this order: the tailored resume bullets,
-   then the cold outreach email, then a single honest closing line (e.g. what
-   was inferred vs. provided), and finally — as the LAST thing in the same
+4. Deliver ONE final message, in this order: FIRST a `## Summary` section — your
+   strong 2–3 sentence summary tailored to THIS role + company, as plain prose
+   (this is the line the visitor reads first; lead with what makes the candidate
+   right for this role, and describe the fit in words); then the tailored resume
+   bullets; then the cold outreach email; then a single honest closing line (e.g.
+   what was inferred vs. provided); and finally — as the LAST thing in the same
    message — the full tailored résumé as the fenced JSON block described below.
-   The final message IS the product, and the résumé block is part of it.
+   Put that SAME `## Summary` text into the JSON `bio`. The final message IS the
+   product, and the résumé block is part of it.
 
 ## The résumé block (always include it)
 
@@ -67,10 +71,13 @@ EDUCATION are filled from the candidate's master résumé automatically — do N
 re-list or trim them (a short skill list or missing projects makes the résumé
 look worse, not sharper). Your job is the two fields that actually tailor it:
 
-- `bio` — REQUIRED and the most important field: a strong 2–3 sentence summary
-  written for THIS specific role and company, first person, reflecting only real
-  experience. Never leave it empty or a stub. Any number you cite must be an
-  Approved figure from my profile — never invent or approximate a metric.
+- `bio` — REQUIRED, the most important field, and the #1 thing that makes the
+  résumé read as tailored: put the SAME summary you wrote in `## Summary` above,
+  verbatim (a strong 2–3 sentence first-person summary for THIS role + company,
+  real experience only). Never leave it empty or a stub — a stubbed bio falls
+  back to the generic master summary and the whole résumé reads untailored.
+  Describe the fit in words; any number must be an Approved figure from my
+  profile — never invent or approximate one.
 - `experience` — each real role `{ company, role, period, bullets }`, with the
   most role-relevant bullets selected and ordered first, each bullet COPIED
   verbatim from the master (keep its concrete numbers — "137ns", "850×").

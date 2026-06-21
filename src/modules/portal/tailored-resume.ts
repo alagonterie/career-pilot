@@ -345,3 +345,27 @@ export function stripTailoredResumeBlock(output: string): string {
   for (const b of toRemove) text = text.split(b.full).join('');
   return text.replace(/\n{3,}/g, '\n\n').trim();
 }
+
+/**
+ * §24.143b: pull the visitor-facing "## Summary" prose block from the run's
+ * free-text deliverable. The orchestrator reliably writes a tailored summary as
+ * prose but routinely STUBS the JSON `bio` field — so this back-fills a stubbed
+ * `bio` from the prose the model actually wrote (which validateTailoredResume
+ * then honesty-checks like any other bio). Fenced blocks are stripped first so a
+ * `## Summary` inside the résumé JSON fence is ignored. Returns the summary text
+ * (≥ 80 chars, the same substance threshold the bio floor uses), or null.
+ */
+export function extractSummarySection(output: string): string | null {
+  if (!output) return null;
+  const noFences = output.replace(/```[\s\S]*?```/g, '');
+  const lines = noFences.split('\n');
+  const start = lines.findIndex((l) => /^\s{0,3}#{1,6}\s*(?:tailored\s+)?summary\b/i.test(l));
+  if (start < 0) return null;
+  const body: string[] = [];
+  for (let j = start + 1; j < lines.length; j++) {
+    if (/^\s{0,3}#{1,6}\s/.test(lines[j])) break; // next heading ends the section
+    body.push(lines[j]);
+  }
+  const text = body.join(' ').replace(/\s+/g, ' ').trim();
+  return text.length >= 80 ? text : null;
+}
