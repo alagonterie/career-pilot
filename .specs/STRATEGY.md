@@ -6846,6 +6846,26 @@ So the model tailors from the thin draft's weaker figure while the floor + both 
 
 ---
 
+## §24.146 — A4 #5: structured cold-outreach email (both gifts forced + surfaced)
+
+Fifth A4 slice, prompted by the §24.145 box-verify (`sb-5e7cd0d5`): the visitor's **second gift — the cold outreach email — vanished**. The orchestrator wrapped only a meta-status in its `<message>` ("Pitch delivered and PDF emitted. The deliverable leads with…") and left the real deliverable unwrapped, so the visitor got 495 chars of narration instead of the pitch. Root cause is structural, not a one-off: the **résumé is structured output** (the `emit_tailored_resume` tool — forced by construction) but the **cold email is plain free text inside the chat message** — the one deliverable nothing forces. So it is the one that drops. A persona band-aid ("always put the email in the message") was explicitly rejected — it keeps the fragile free-text path. **Do it the right way: make the email structured output too, symmetric with the résumé.**
+
+The summary + bullets are *already* structured — they live inside `emit_tailored_resume` (summary = `bio`, bullets = `experience`) for the PDF; the chat stream is just a human-readable echo of them. **The cold email is the lone remaining free-text deliverable.** Structuring it makes both gifts forced, persisted, and independently surfaceable.
+
+**Design (sandbox-only).**
+- **Container tool `emit_cold_email`** (mirrors `emit_tailored_resume`): `inputSchema` { `subject` (required, non-empty), `body` (required, ≥ a substance floor) }; the handler rejects a stub subject/body with `isError` → the agent re-emits. On pass → a PLAIN-registered, sandbox-safe `career_pilot.emit_cold_email` action (`sendAction`) — same disposition as `emit_tailored_resume` (§24.144): writes only the caller's own run, resolved via `session.thread_id == runId`, stashed into `acc.coldEmail` before `persistRun`.
+- **Persist** to the EXISTING `simulator_runs.outreach_draft` column (migration 107, `null` since 5.5c — built for exactly this) as JSON `{ subject, body }`. `handleSimulatorResult` already ships `outreach_draft` to the client.
+- **Share page** (`watch.results.$id.tsx` / the results route): render `outreach_draft` as its own **"Cold outreach email" gift card** (subject + body + copy), symmetric with the résumé-download button. The chat stream (`tailored_resume`) now carries the `## Summary` + bullets only.
+- **Persona rework (replaces the rejected band-aid).** The `<message>` carries the human-readable summary + bullets; the TWO gifts (résumé, email) go through their tools — neither is embedded in the message, and meta-narration is forbidden. Also folds in the **first-person summary** fix (the §24.145 follow-on nit: the tailored summary/bio must be in the candidate's own first-person voice, never third-person).
+
+**Out of scope (tracked).** The email **number-honesty belt** — mirroring the bio's `masterNumbers` check on the email body so a fabricated metric can't ride the free-prose email (the §24.143 S2-2 surface) — stays prompt-first per the owner's A3 lean; revisit if telemetry shows leakage. This slice is about STRUCTURE (force + surface the email), not the number floor.
+
+**Definition of done.** `emit_cold_email` forces a non-stub subject+body (handler `isError`); the host persists `{subject, body}` to `outreach_draft`; the share page renders the email as its own gift card; the chat no longer carries the email; the persona is reworked (no band-aid — calls the tool; first-person summary). Container + host + frontend tsc/lint green; agent-runner + portal suites green. Box-verified: a real no-JD run produces BOTH gifts — the downloadable PDF AND a present, non-narrated cold-email card — with a first-person summary.
+
+**Spec deltas.** This §24.146; the §24.136 A4 line gains the #5 sub-item. THREAT_MODEL: one more sandbox-reachable-but-safe action (`career_pilot.emit_cold_email`), same disposition as `emit_tailored_resume`/the §24.68 telemetry actions. No migration (the `outreach_draft` column exists).
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
