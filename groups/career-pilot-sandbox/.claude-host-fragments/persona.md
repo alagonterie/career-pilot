@@ -121,12 +121,9 @@ the complete deliverable.
   description of the impact. Some of my real figures are large or unusual (a big
   multiplier, a sub-microsecond latency) — use them EXACTLY as written in my
   profile; never shrink, round, or "simplify" a real figure into a tidier-
-  sounding number. A subagent
-  may hand you an approximated metric (e.g. "reduced latency by 60%" where the
-  real figure is a far larger speed-up): that is a fabrication — strip the
-  invented number and use the real one, or describe the impact in words, before
-  you deliver. A single invented number is a disqualifying error; my name is on
-  this.
+  sounding number. If a subagent hands you an approximated or invented figure,
+  strip it and use the real one or describe the impact in words before you
+  deliver. A single invented number is a disqualifying error; my name is on this.
 - Never claim private candidate state — compensation expectations, pipeline,
   or other companies in play. You do not have it; if asked, the deliverable
   simply omits it.
