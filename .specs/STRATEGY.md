@@ -6864,6 +6864,20 @@ The summary + bullets are *already* structured — they live inside `emit_tailor
 
 **Spec deltas.** This §24.146; the §24.136 A4 line gains the #5 sub-item. THREAT_MODEL: one more sandbox-reachable-but-safe action (`career_pilot.emit_cold_email`), same disposition as `emit_tailored_resume`/the §24.68 telemetry actions. No migration (the `outreach_draft` column exists).
 
+## §24.147 — A0 finishing touches (continuation): four frontend-polish slices
+
+The §24.136 Phase-A "A0 touch-ups" list, second batch (owner, 2026-06-21). Four small, independent frontend slices; no backend, no migration. All on `dev`.
+
+1. **Recent-outcomes day stamp.** Each `/dashboard` Recent-outcomes row gains a leading UTC **date-only** label (`outcomeDate` → "Jun 18"), sourced from `last_activity_at`. Date-only is deliberate: the precise time of a recorded outcome often just reflects when the scribe processed it, so the DAY is the honest, useful unit (the owner's steer). The seed's `last_activity_at` is relative (`isoDaysAgo`) → drifts daily → the stamp carries `data-testid="recent-outcome-date"` and is masked in the `live` + `mobile-live` visual baselines (the format is covered by the panels unit test).
+
+2. **`/` scroll reveal.** Below-the-fold home sections (pitch, pipeline strip, ticker, watch CTA, teaser) RISE into place as they enter the viewport, via a new `useReveal` IntersectionObserver hook (`src/lib/use-reveal.ts`) + `.cp-reveal` CSS. **Transform-only, never opacity** — the §24.135 constraint, reconfirmed here: a section armed at `opacity:0` is sampled by axe as a 1:1-contrast violation in a top-of-page scan (reproduced), and an opacity/`visibility` hide also breaks the smoke `toBeVisible()` ticker assertions. A translate-only rise satisfies axe, `toBeVisible`, the a11y tree, and the no-JS principle (progressive enhancement: the armed class is JS-applied; SSR / reduced-motion / no-IO render solid). The owner asked for a "fade"; this ships the codebase-consistent rise instead, grounded in the reproduced axe failure — surfaced for the owner. Visual baselines capture under `reducedMotion:'reduce'` (reveal disabled → deterministic, no IO-timing dependence under `captureBeyondViewport`); the reveal's real behavior is guarded by a mobile functional test.
+
+3. **Redaction legend as a real component.** `RedactionLegend` becomes a bordered, titled "Redaction key" box (was a loose run of text) — it reads as a deliberate legend the chips map back to.
+
+4. **Bold redaction token leak (bugfix).** `renderInline`'s `**bold**` branch only unescaped its text, so a redaction token inside bold (`**[REDACTED:infra-d] …**`) rendered as the raw literal instead of a provenance chip. The branch now runs `splitRedactionParts` (shared `renderWithRedactions` helper), so a token chips identically whether or not it sits inside bold.
+
+**Definition of done.** Frontend tsc + prettier `--no-semi` clean; the full vitest suite green (incl. new tests: bold-token chip, legend structure, recent-outcome date, the `useReveal` SSR-visible contract); mobile functional + axe green (the reveal is axe-clean); desktop smoke green (ticker `toBeVisible`); the six affected `@visual` baselines regenerated (`home`/`mobile-home` were pixel-identical; `live`, `mobile-live`, `kit-sealed`, `mobile-kit-sealed` updated).
+
 ---
 
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
