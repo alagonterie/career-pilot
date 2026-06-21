@@ -6800,6 +6800,29 @@ The floor is correct (softening it would publish the fabrication), so the fix ta
 
 ---
 
+## §24.144 — A4 #3: structured output for the tailored résumé (the `emit_tailored_resume` tool)
+
+Third A4 slice. §24.143b's `## Summary` → `bio` back-fill (`4b843f7`) **failed box-verification** (`sb-c6563a37`): the model emitted `## Summary`, the lift code deployed, yet the bio still floored `fallback_stub`. The owner's call: the hand-written-JSON-fence transport is fragile ("ghetto") — replace it with **structured output** so a non-empty `bio` is forced by construction, finishing the `emit_tailored_resume` tool migration 135 always referenced but never built (the ```tailored-resume-json fence is the shortcut that shipped).
+
+**Mechanism — tool-use structured output, NOT the Messages-API `output_config`.** Two distinct features share the name "structured output"; only one fits our architecture:
+- The Messages-API `output_config.format` / `messages.parse()` / `strict` constrains a *single direct API call's* JSON response. The sandbox is **not** one call — it's a Claude Code agent loop dispatching subagents and producing a multi-part deliverable (chat + bullets + outreach + résumé). There is no single JSON response to constrain. Inapplicable (and absent from our stack — `AGENT_SDK_PATTERNS.md` has zero `output_config` references).
+- The applicable mechanism is **a tool with a strict input schema + handler validation + the `isError` retry loop.** Verified against the authoritative Agent-SDK custom-tools doc: a handler returning `isError: true` → *"Agent loop continues. Claude sees the error as data and can retry, try a different tool, or explain the failure."* The doc's own example rejects bad input so the model corrects *"rather than treating a failure as a normal result."* A stubbed bio is **rejected and re-emitted**, not silently floored — the forcing function the fence never had.
+
+**Design (sandbox-only).**
+- **Container side** — a new `emit_tailored_resume` MCP tool (mirrors the existing `set_work_profile`, which already takes a structured `{ profile }`). `inputSchema` declares the tailored shape with `bio` **required**; the handler hard-validates (bio present + ≥80 chars of real summary, ≥1 experience) and on a stub returns `isError` with an actionable message → the model re-emits. The tool becomes the **only** path to a downloadable résumé, so the model can't stub-and-escape into free text.
+- **Host side** — replace the regex fence-parse (`extractTailoredResumeBlock`, `simulator.ts`) with reading the accepted tool call's structured input from the run stream the host already harvests (`acc.trace` captures content blocks), then run the **same** `validateTailoredResume` against the master.
+- **Wiring decision — capture-from-stream, NOT a new sandbox action.** Every `career_pilot.*` action is `registerOwnerOnly`; the sandbox is fully action-locked from §24.141 (A3). So this adds **no** sandbox action — the structured win (forced bio) happens entirely in the container-side tool handler via `isError` retry, and the host harvest merely upgrades its transport from regex-fence to structured-tool-input. The §24.141 lockdown is preserved; zero new sandbox capability. Build-time check: confirm tool_use inputs land in the simulator accumulator (if not, a small handler tweak captures them — fallback is a narrowly-scoped, validated sandbox action).
+
+**Keep / kill.**
+- **KEEP** `validateTailoredResume` — the host-side honesty backstop (employer/number checks, master-floor), unchanged. It is the safety net, not the fence: a model that exhausts retries still yields the master, never nothing.
+- **KILL** the §24.143b `## Summary` back-fill + `extractSummarySection` (`4b843f7`, superseded) and the `extractTailoredResumeBlock` / fence-parse path.
+
+**Definition of done.** The sandbox emits its tailored résumé via `emit_tailored_resume`; a stubbed/empty bio is rejected and re-emitted (handler `isError`, container-side); the host reads the structured tool input (no fence) and persists the guardrail-validated profile; the §24.143b hack + fence path are removed. Container + host tsc green; agent-runner + tailored-resume/simulator suites green (fence tests replaced by tool-input + handler-validation tests). Box-verified: a real sandbox run yields a **role-specific (non-master) bio** on the PDF, within the hard-wall, on the §24.142 split tier. Memory: [[a40-sandbox-tailoring-investigation]] [[status_current]].
+
+**Spec deltas.** This §24.144; the §24.136 A4 line gains the #3 sub-item. Migration 135's header (`emit_tailored_resume`) becomes accurate (built, not aspirational). No THREAT_MODEL change — the sandbox action surface is unchanged (capture-from-stream).
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
