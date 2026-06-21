@@ -4,13 +4,13 @@ This file tells a Claude Code session opening this repo what it needs to know to
 
 ---
 
-## Where we are (as of 2026-05-26)
+## Where we are (as of 2026-06-21)
 
-**Branch:** `nanoclaw-rebuild` (off `master`), pushed to `origin/nanoclaw-rebuild`.
+**Branch:** `dev` (off `master`); the deployed dev surface tracks `dev`.
 
-**Status:** Phase 0 complete. Phase 1 in progress but PAUSED at the persona placement step: the NanoClaw deep dive (see `.specs/NANOCLAW_INTERNALS.md`) found that `groups/<folder>/CLAUDE.md` is composer-managed (regenerated every spawn, mounted RO) — our authored persona at `groups/career-pilot/CLAUDE.md` would be destroyed on first container wake. Strategy B chosen: extend the composer to read `groups/<folder>/.claude-host-fragments/*.md` and move the persona there. Spec deltas land first (this commit set), then the composer extension + persona move, then resume Phase 1 (persona render hook + first 6 MCP tools).
+**Status:** The full system is **built and running on a Cloudflare-Access-gated dev environment** — the owner agent (`career-pilot`), the public showcase portal, the budget-capped public sandbox, and all six subagents. The NanoClaw **v2.1.17 upgrade is complete** (Agent SDK `^0.3.170`, OneCLI 2.2.1/gateway-`/v1`, MCP 1.29, Path-B bundled claude-code binary; §24.124–132). The work in flight is the **first production release — Phase 9.7 cutover prep**: dev-side hardening (the §24.136 Phase-A arc) plus the cutover runbook. Read `STRATEGY.md §24.136` + `.specs/PROD_CUTOVER.md` before any prod work; do not re-derive the plan.
 
-**Read `memory/status_current.md` first for the current detailed state.**
+**Read `memory/status_current.md` first for the current detailed state** (the `RESUME HERE` log at the top is newest-first).
 
 ---
 
@@ -40,10 +40,12 @@ Treat changes to any of these the same way: update with intent, then align imple
 | File | What it covers | Read when |
 |---|---|---|
 | `.specs/PORTAL.md` | Frontend UX specification — every page, component, interaction, anonymization model | Always first |
-| `.specs/STRATEGY.md` | Backend, infra, delivery plan (10-week phased) | After PORTAL |
+| `.specs/STRATEGY.md` | Backend, infra, delivery plan + the §-numbered change log (newest work in the §24.x sections) | After PORTAL |
 | `.specs/NANOCLAW_INTERNALS.md` | How upstream NanoClaw actually works — composer, sessions, mounts, hook surface, output protocol | Before ANY work that touches NanoClaw mechanics |
 | `.specs/AGENT_SDK_PATTERNS.md` | Claude Agent SDK canonical patterns cribsheet (written against 0.3.150; we now run `^0.3.170` — aligned, post the v2.1.17 bump) | Before any agent-runner code |
 | `.specs/CLOUDFLARE_PATTERNS.md` | Cloudflare protection patterns cribsheet | Before any Worker/infra code |
+| `.specs/THREAT_MODEL.md` | Public-surface threat model — the abuse surfaces, the hardening shipped, the red-team results (§24.141) | Before touching any public/sandbox surface or its caps |
+| `.specs/PROD_CUTOVER.md` | Operator runbook for the first production cutover (the Phase B/C steps) | Before any production-release work |
 | `.specs/RECOVERY.md` | Operator manual for kill switches + recovery | Keep open during operations |
 | `.specs/V2_IDEAS.md` | Deferred features (do NOT scope-creep into these) | When tempted to add scope |
 
@@ -152,7 +154,27 @@ This project has a persistent memory at `C:\Users\janedoe\.claude\projects\C--Pr
 
 ## What's next (the actionable to-do list)
 
-1. **Commit 1 (this commit set):** Apply spec deltas surfaced by the NanoClaw deep dive — see `.specs/NANOCLAW_INTERNALS.md` §11 for the full Δ list. Touches AGENT_SDK_PATTERNS.md, STRATEGY.md, root CLAUDE.md, decision_architecture memory, status_current memory, VERIFICATION.md. No code change.
-2. **Commit 2:** Strategy B persona-placement rework. Extend `src/claude-md-compose.ts` to discover `.claude-host-fragments/*.md` and include them in the composed import list. Move `groups/career-pilot/CLAUDE.md` content → `groups/career-pilot/.claude-host-fragments/persona.md`. Add the `<message to="name">` output-protocol section to the persona while it's open. This is our first deliberate deviation from upstream NanoClaw — track it for a future manual upstream sync.
-3. **Phase 1, continued (after Commit 2):** Render-persona hook (host-side: reads `candidate_profile`, writes `.claude-host-fragments/persona.md` before spawn), then first 6 MCP tools (`analyze_jd`, `sanitize_text`, `update_application`, `get_application`, `list_applications`, `record_funnel_event`). Goal per STRATEGY.md §V Phase 1: "I can say 'add an application for X' and it writes to the DB and confirms."
-4. **Phase 2-10** — see STRATEGY.md §V milestone plan. See `memory/status_current.md` for current detailed state across phases.
+The system is built; the work now is shipping the first production release plus
+ongoing polish. **The two living sources of truth for "what's next" are
+`memory/status_current.md` (the newest-first `RESUME HERE` log) and
+`memory/todo_backlog.md` (the owner's TODO lists + the `NEXT →` block).** Read
+those first — this list is just the orientation pointer.
+
+1. **The first production release — Phase 9.7 cutover.** The plan and its locked
+   decisions live in `STRATEGY.md §24.136`; the operator steps live in
+   `.specs/PROD_CUTOVER.md`. Three phases: **A** (dev-side hardening, nearly
+   done — only the A4 master-résumé content session + the A5 launch-state build
+   remain) → **B** (the 9.7 cutover: prod infra/DNS/Terraform/Turnstile/secrets +
+   real-identity seed + Gmail prod re-auth) → **C** (Phase 10 live-verify + soft
+   launch).
+2. **In-flight doc work — the v1.0 doc/terminology-accuracy sweep (§24.151).**
+   Half (a) refreshes README + this file + the `.specs/` orienting layer (this
+   commit set). Half (b) — the internal `funnel`→`pipeline` plumbing rename
+   (read-model + migrations + MCP tools + testids) — is a separate
+   migration-bearing slice, not yet started.
+3. **Anything new the owner raises** — work top-down through the
+   `todo_backlog.md` lists, DD cadence (spec §-section commit, then build, tests,
+   DoD, re-bless `@visual`, push).
+
+The full milestone history is in `STRATEGY.md §V` and the `§24.x` change log; the
+detailed current state is in `memory/status_current.md`.

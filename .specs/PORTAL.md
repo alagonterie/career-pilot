@@ -2,7 +2,9 @@
 
 This is the primary deliverable of the `career-pilot` project. The backend exists to feed this portal a compelling, real, live story. Every architectural decision downstream should be judged against "does this surface something undeniable to a visitor?"
 
-This document specs the portal experience end-to-end. The backend [STRATEGY.md](STRATEGY.md) (to be written next) back-derives from this spec.
+This document specs the portal experience end-to-end. The backend [STRATEGY.md](STRATEGY.md) back-derives from this spec.
+
+> **Route-name canon (§24.77, 2026-06-21).** This spec predates the public-route rename and still uses the old paths in many places. The canonical routes are now: **`/dashboard`** (was `/live` — the ops dashboard), **`/pipeline`** (was `/funnel` — the application pipeline), and **`/watch`** (was `/simulator` — "Watch it work"). The old paths (`/live`, `/simulator`) are permanent redirect stubs for old links; `/funnel` is gone. When reading a route reference below, map it forward. The comprehensive in-body rewrite rides with the §24.151 half-(b) `funnel`→`pipeline` plumbing rename (the `/funnel`→`/pipeline` route name is entangled with the internal funnel-term rename, so they move together).
 
 ---
 
@@ -1499,7 +1501,7 @@ Backend-side capabilities required:
 - **A sanitization pipeline** as described in §9.
 - **Rate limiting** on `/api/simulator` (per IP) and `/api/contact` (per IP + spam control).
 
-Detailed in `STRATEGY.md` (to be written next).
+Detailed in `STRATEGY.md`.
 
 ---
 
