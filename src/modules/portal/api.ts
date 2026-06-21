@@ -236,7 +236,13 @@ function handleFunnel(res: http.ServerResponse, cors: Record<string, string>): v
     stage_counts[r.stage] = (stage_counts[r.stage] ?? 0) + 1;
   }
 
-  json(res, 200, { applications, stage_counts }, cors);
+  // §24.149 L2: the site lifecycle rides the pipeline read-model (the one endpoint
+  // both / and /pipeline already poll), so the public retrospective needs no new
+  // fetch. A preference-tier flag, owner-flipped from /admin; default 'active'.
+  const site_lifecycle =
+    getConfig<string>(getDb(), 'site_lifecycle_state', 'active') === 'concluded' ? 'concluded' : 'active';
+
+  json(res, 200, { applications, stage_counts, site_lifecycle }, cors);
 }
 
 /**

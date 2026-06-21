@@ -2,6 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import type { CSSProperties } from 'react'
 
 import { AvailabilityBadge } from '~/components/AvailabilityBadge'
+import { ConcludedBanner } from '~/components/ConcludedBanner'
 import { InfoTip } from '~/components/InfoTip'
 import { PipelineCompact } from '~/components/live/PipelineCompact'
 import { LiveTicker } from '~/components/LiveTicker'
@@ -12,6 +13,7 @@ import { getWorkProfile } from '~/lib/profile-loader'
 import { heroStats, heroStatPhase, relativeAgo } from '~/lib/hero-stats'
 import { seo } from '~/lib/seo'
 import { useActivityStream } from '~/lib/use-activity-stream'
+import { useSiteLifecycle } from '~/lib/use-lifecycle'
 import { usePipeline } from '~/lib/use-pipeline'
 import { useReveal } from '~/lib/use-reveal'
 import { useTelemetry } from '~/lib/use-telemetry'
@@ -48,6 +50,8 @@ function Home() {
   const { data: pipeline, status: pipelineStatus } = usePipeline(API_BASE)
   const { data: telemetry, status: telemetryStatus } = useTelemetry(API_BASE)
   const apps = pipeline?.applications ?? []
+  // §24.149 L2: the concluded-search retrospective, owner-flipped from /admin.
+  const lifecycle = useSiteLifecycle(pipeline)
   // SSR-resolved candidate profile (placeholder fallback) + the hero stat SEED
   // (the whole line, pre-rendered server-side). De-`Jane Doe`s the hero.
   const { profile, heroSeed } = Route.useLoaderData()
@@ -100,6 +104,15 @@ function Home() {
         aria-hidden="true"
         className="cp-aurora pointer-events-none absolute left-1/2 top-0 -z-10 h-[26rem] w-[44rem] max-w-full -translate-x-1/2"
       />
+      {/* §24.149 L2: the concluded-search retrospective leads the page once the
+          owner flips the lifecycle from /admin; otherwise nothing renders and the
+          page is the normal live search. Client-resolved (post-mount), so it never
+          diverges the SSR'd hero. */}
+      {lifecycle === 'concluded' ? (
+        <div className="mb-10 w-full max-w-xl">
+          <ConcludedBanner apps={apps} showPipelineLink />
+        </div>
+      ) : null}
       {/*
         Viewport 1 — hero (PORTAL §5.1). Name/title SSR'd from candidate_profile
         (placeholder fallback). The hook orients first (what this is) before the

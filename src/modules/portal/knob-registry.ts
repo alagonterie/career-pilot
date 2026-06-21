@@ -250,6 +250,13 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     integer: true,
     note: 'The container-pool ceiling — the host won’t spawn past this many live containers at once. The capacity figure on the Overview pool gauge.',
   },
+  site_lifecycle_state: {
+    type: 'enum',
+    group: 'system',
+    label: 'Site lifecycle state',
+    options: ['active', 'concluded'],
+    note: 'PUBLIC-FACING — changes the face of / and /pipeline immediately. active = the normal live job search. concluded = an accepted-offer retrospective: / and /pipeline lead with a calm “search concluded” banner (the search is over). The accepted company stays anonymized until separately revealed. Set DELIBERATELY — never auto-flipped on a data read (§24.149 D3).',
+  },
   ops_bootstrap_min_interval_sec: {
     type: 'number',
     group: 'system',

@@ -14,6 +14,7 @@
     "ops_container_idle_timeout_sec": 60,
     "container_orphan_reap_grace_sec": 120,
     "container_max_concurrent": 4,
+    "site_lifecycle_state": "active",
     "sanitization_llm_review_threshold_chars": 1000,
     "sanitization_llm_review_aggressiveness": "high",
     "sanitization_pass3_enabled": false,

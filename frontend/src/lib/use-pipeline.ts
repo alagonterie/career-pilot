@@ -85,6 +85,11 @@ export function learningKindLabel(kind: string | null): string | null {
 export interface PipelineResponse {
   applications: PipelineApplication[]
   stage_counts: Record<string, number>
+  /** The site lifecycle (§24.149 L2) — `'active'` (the normal live search) or
+   *  `'concluded'` (the accepted-offer retrospective). Rides this read-model so /
+   *  and /pipeline learn it without a second poll. Absent on an older backend →
+   *  treated as `'active'`. Owner-flipped from /admin; never auto-inferred. */
+  site_lifecycle?: 'active' | 'concluded'
 }
 
 export type PipelineStatus = PollStatus

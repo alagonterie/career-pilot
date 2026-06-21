@@ -1,6 +1,7 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import * as React from 'react'
 
+import { ConcludedBanner } from '~/components/ConcludedBanner'
 import { CompanyHandleLegend } from '~/components/pipeline/CompanyHandle'
 import { DetailPanel } from '~/components/pipeline/DetailPanel'
 import { PipelineBoard, PipelineBoardSkeleton, PipelineOffboardSkeleton } from '~/components/pipeline/PipelineBoard'
@@ -8,6 +9,7 @@ import { StatTiles } from '~/components/pipeline/StatTiles'
 import { StateNote } from '~/components/states'
 import { seo } from '~/lib/seo'
 import { PERSON_NAME } from '~/lib/site'
+import { useSiteLifecycle } from '~/lib/use-lifecycle'
 import { usePipeline, type PipelineApplication } from '~/lib/use-pipeline'
 
 // The pipeline race detail (PORTAL §5.4). Visitor-facing name = "My Job Pipeline" /
@@ -36,6 +38,8 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
 function PipelinePage() {
   const { data, status } = usePipeline(API_BASE)
   const apps = data?.applications ?? []
+  // §24.149 L2: the concluded-search retrospective, owner-flipped from /admin.
+  const lifecycle = useSiteLifecycle(data)
   const { app: appParam } = Route.useSearch()
   const navigate = Route.useNavigate()
   const router = useRouter()
@@ -74,6 +78,7 @@ function PipelinePage() {
   return (
     <>
       <main className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-12">
+        {lifecycle === 'concluded' ? <ConcludedBanner apps={apps} /> : null}
         <header className="flex flex-col gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">My Job Pipeline</h1>

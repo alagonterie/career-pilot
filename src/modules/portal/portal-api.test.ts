@@ -128,10 +128,13 @@ describe('GET /api/funnel', () => {
     const body = (await res.json()) as {
       applications: Array<Record<string, unknown>>;
       stage_counts: Record<string, number>;
+      site_lifecycle: string;
     };
 
     expect(body.applications).toHaveLength(2);
     expect(body.stage_counts).toEqual({ screening: 1, offer: 1 });
+    // §24.149 L2: the lifecycle rides this read-model; defaults.json → 'active'.
+    expect(body.site_lifecycle).toBe('active');
 
     const screening = body.applications.find((a) => a.application_ref === 'fintech-a')!;
     expect(screening.days_in_stage).toBe(5);
@@ -141,6 +144,19 @@ describe('GET /api/funnel', () => {
     const offer = body.applications.find((a) => a.application_ref === 'Anthropic')!;
     expect(offer.public_state).toBe('public');
     expect(offer.days_in_stage).toBe(2);
+  });
+
+  it('reflects the site_lifecycle_state preference (§24.149 L2)', async () => {
+    seedFunnel({ id: 'app-1', ref: 'fintech-a', status: 'OFFER', stage: 'offer' });
+    getDb()
+      .prepare(
+        `INSERT INTO preferences (key, value, updated_at) VALUES (?, ?, ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      )
+      .run('site_lifecycle_state', 'concluded', new Date().toISOString());
+
+    const body = (await (await fetch(`${base}/api/funnel`)).json()) as { site_lifecycle: string };
+    expect(body.site_lifecycle).toBe('concluded');
   });
 
   it('returns null days when timestamps are missing', async () => {
