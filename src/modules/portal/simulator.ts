@@ -532,6 +532,16 @@ function persistRun(runId: string, acc: RunAccumulator): boolean {
       const v = validateTailoredResume(emitted, master);
       if (v.ok && v.profile) tailoredResumeJson = JSON.stringify(v.profile);
       else log.info('simulator: tailored résumé failed the honesty guardrail', { runId, errors: v.errors });
+      // §24.143 bio-floor telemetry: the silent revert that makes a "tailored"
+      // résumé read as the master. Surface its frequency + cause (a stub, or the
+      // offending fabricated numbers) so it's not invisible.
+      if (v.bioOutcome && v.bioOutcome !== 'tailored') {
+        log.info('simulator: tailored bio fell back to master', {
+          runId,
+          reason: v.bioOutcome,
+          unverifiedNumbers: v.bioUnverifiedNumbers,
+        });
+      }
     }
   } catch (err) {
     log.warn('simulator: tailored résumé extraction failed', { runId, err });

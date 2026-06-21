@@ -98,6 +98,16 @@ export interface TailoredValidation {
   /** Unfixable fabrications (an experience at a company not in the master) — the
    *  tool surfaces these so the agent retries within the master's bounds. */
   errors: string[];
+  /** §24.143 telemetry — how the bio was resolved: the agent's tailored bio was
+   *  kept (`tailored`), or fell back to the master because it was a stub
+   *  (`fallback_stub`) or cited a number absent from the master
+   *  (`fallback_unverified_number` — the silent-revert that makes a "tailored"
+   *  résumé read as the master). Set on every non-early return; the caller logs
+   *  the non-`tailored` cases so the floor's frequency + cause are visible. */
+  bioOutcome?: 'tailored' | 'fallback_stub' | 'fallback_unverified_number';
+  /** The bio number tokens absent from the master (the fabrication audit detail),
+   *  set only when bioOutcome is `fallback_unverified_number`. */
+  bioUnverifiedNumbers?: string[];
 }
 
 /**
@@ -192,8 +202,15 @@ export function validateTailoredResume(emitted: unknown, master: WorkProfile): T
     ),
   );
   const bioText = (tailored.bio ?? []).join(' ');
-  const bioHasUnverifiedNumber = numberTokens(bioText).some((n) => !masterNumbers.has(n));
-  if (bioText.trim().length < 80 || bioHasUnverifiedNumber) tailored.bio = [...master.bio];
+  const bioUnverifiedNumbers = numberTokens(bioText).filter((n) => !masterNumbers.has(n));
+  let bioOutcome: TailoredValidation['bioOutcome'] = 'tailored';
+  if (bioText.trim().length < 80) {
+    bioOutcome = 'fallback_stub';
+    tailored.bio = [...master.bio];
+  } else if (bioUnverifiedNumbers.length > 0) {
+    bioOutcome = 'fallback_unverified_number';
+    tailored.bio = [...master.bio];
+  }
 
   // "What I'm looking for" — keep the agent's (often role-tailored) list; fall
   // back to the master's when empty.
@@ -219,8 +236,10 @@ export function validateTailoredResume(emitted: unknown, master: WorkProfile): T
     });
   tailored.projects = keptProjects.length > 0 ? keptProjects : master.projects.map((p) => ({ ...p }));
 
-  if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, profile: tailored, errors: [] };
+  const bioTelemetry =
+    bioOutcome === 'fallback_unverified_number' ? { bioOutcome, bioUnverifiedNumbers } : { bioOutcome };
+  if (errors.length > 0) return { ok: false, errors, ...bioTelemetry };
+  return { ok: true, profile: tailored, errors: [], ...bioTelemetry };
 }
 
 /** The fence tag the sandbox is asked to use for the tailored-résumé block. */

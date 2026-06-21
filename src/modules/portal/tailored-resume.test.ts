@@ -129,15 +129,19 @@ describe('validateTailoredResume — quality floor: never a worse subset of the 
   });
 
   it('falls back to the master’s bio when the agent emits an empty/stub summary', () => {
-    expect(validateTailoredResume({ bio: [] }, MASTER).profile!.bio).toEqual(MASTER.bio);
-    expect(validateTailoredResume({ bio: ['too short'] }, MASTER).profile!.bio).toEqual(MASTER.bio);
+    const empty = validateTailoredResume({ bio: [] }, MASTER);
+    expect(empty.profile!.bio).toEqual(MASTER.bio);
+    expect(empty.bioOutcome).toBe('fallback_stub');
+    expect(validateTailoredResume({ bio: ['too short'] }, MASTER).bioOutcome).toBe('fallback_stub');
   });
 
   it('keeps a substantive role-written bio', () => {
     const roleBio = [
       'A summary written specifically for this distributed-systems platform role, reflecting real backend and performance engineering work.',
     ];
-    expect(validateTailoredResume({ bio: roleBio }, MASTER).profile!.bio).toEqual(roleBio);
+    const res = validateTailoredResume({ bio: roleBio }, MASTER);
+    expect(res.profile!.bio).toEqual(roleBio);
+    expect(res.bioOutcome).toBe('tailored');
   });
 
   // Honesty backstop for the one free-prose field: a number in the summary that
@@ -147,7 +151,10 @@ describe('validateTailoredResume — quality floor: never a worse subset of the 
     const fabricated = [
       'I cut security-check latency by 60% on a platform serving real production traffic, ideal for this role.',
     ];
-    expect(validateTailoredResume({ bio: fabricated }, MASTER).profile!.bio).toEqual(MASTER.bio);
+    const res = validateTailoredResume({ bio: fabricated }, MASTER);
+    expect(res.profile!.bio).toEqual(MASTER.bio);
+    expect(res.bioOutcome).toBe('fallback_unverified_number');
+    expect(res.bioUnverifiedNumbers).toContain('60');
   });
 
   it('keeps a role bio whose only numbers are real master metrics', () => {

@@ -6782,6 +6782,22 @@ First slice of §24.136 **Phase A** A4 (before the master-résumé content pass)
 
 ---
 
+## §24.143 — A4 #2: the tailored-bio honesty floor (telemetry + the anti-fabrication scrub)
+
+Second A4 slice (after §24.142's model split). The owner's "tailored résumé reads like the master" symptom traced to the bio honesty floor firing *correctly*: the model fabricated a metric (it shrank a real, unusually large speed-up figure into a made-up "60%"), and `validateTailoredResume` reverted the bio to the honest master — so the visible "untailored" output is the safety net working, not a bug. The same fabrication leaks into the un-guardrailed free-text bullets + cold-email (the A3 S2-2 surface), and §24.142's move of the subagents to Haiku raises that risk.
+
+The floor is correct (softening it would publish the fabrication), so the fix targets the *source*:
+- **Telemetry (make the silent revert visible).** `validateTailoredResume` now returns `bioOutcome` (`tailored` / `fallback_stub` / `fallback_unverified_number`) + the offending `bioUnverifiedNumbers`; the simulator caller logs the non-`tailored` cases ("tailored bio fell back to master" with the reason + the fabricated tokens). Floor frequency + cause are now greppable.
+- **Persona scrub.** The sandbox persona's numbers rule already forbade "60%"; the model did it anyway (a Haiku subagent fabricating, surfaced unscrubbed). Hardened: the orchestrator is the LAST check on every number in the final message (bullets + email + JSON) — use the real figures verbatim (large/unusual ones EXACTLY, never shrunk) or words-only; strip a subagent's approximated metric before delivering.
+
+**Open / escalation.** Prompt-only is unproven against a determined Haiku fabrication; the telemetry is the gate — if the floor keeps firing post-deploy, escalate to a code belt on the free-text (mirror the number check on the displayed bullets + email) or move the honesty-critical subagent up a tier. `projectsFirst` verification + the master-résumé content pass still follow.
+
+**Definition of done.** Bio-floor telemetry lands with tests (`bioOutcome` asserted across stub / fabrication / honest); the persona scrub ships; box-verified — a re-run's telemetry shows whether the bio now passes honestly, and the free-text carries no fabricated number. Host tsc + the tailored-resume/simulator suites green.
+
+**Spec deltas.** This §24.143. No THREAT_MODEL change (S2-2 disposition unchanged — prompt-first per the owner's A3 lean, with the code belt as the data-gated escalation).
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.

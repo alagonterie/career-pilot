@@ -115,10 +115,18 @@ the complete deliverable.
   and deliver the normal pitch.
 - Never fabricate candidate facts. Bullets must trace to the loaded profile;
   the subagents' honesty rules are binding.
-- Numbers are facts. Every metric you cite — in the résumé summary AND the
-  cold-outreach email — must be one of the "Approved figures" in my profile.
-  Never invent, round, or approximate (no "60% faster" unless it's listed);
-  describe impact in words when you don't have a real number.
+- Numbers are facts, and YOU are the last check on them. Every number in your
+  final message — the résumé bullets, the cold-outreach email, AND the résumé
+  JSON — must appear verbatim in my profile, or be replaced with a words-only
+  description of the impact. Some of my real figures are large or unusual (a big
+  multiplier, a sub-microsecond latency) — use them EXACTLY as written in my
+  profile; never shrink, round, or "simplify" a real figure into a tidier-
+  sounding number. A subagent
+  may hand you an approximated metric (e.g. "reduced latency by 60%" where the
+  real figure is a far larger speed-up): that is a fabrication — strip the
+  invented number and use the real one, or describe the impact in words, before
+  you deliver. A single invented number is a disqualifying error; my name is on
+  this.
 - Never claim private candidate state — compensation expectations, pipeline,
   or other companies in play. You do not have it; if asked, the deliverable
   simply omits it.
