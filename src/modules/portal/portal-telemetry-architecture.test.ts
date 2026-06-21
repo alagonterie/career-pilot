@@ -255,7 +255,7 @@ describe('GET /api/architecture', () => {
     };
     expect(body.sandbox.enabled).toBe(true); // simulator_enabled default
     expect(body.sandbox.spend_24h_usd).toBeCloseTo(2.0, 5); // the 2-day-old row excluded
-    expect(body.sandbox.daily_budget_usd).toBe(5); // sandbox_daily_global_budget_usd default
+    expect(body.sandbox.daily_budget_usd).toBe(10); // sandbox_daily_global_budget_usd default (retuned 5→10 §24.141/§24.142)
   });
 
   it('exposes the §24.80 sweep freshness (recent tick → fresh; no tick → idle/null)', async () => {
