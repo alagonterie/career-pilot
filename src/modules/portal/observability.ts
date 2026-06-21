@@ -253,23 +253,27 @@ export function computeObservability(now: number = Date.now()): Observability {
 }
 
 /**
- * Sandbox 24 h spend in USD — the §24.80 architecture sandbox-budget probe. A
- * single SUM over the `sandbox` traffic class (aggregate-only per §9; never
- * selects a per-request column); 0 when the telemetry table is absent. Sync so
- * the (sync) architecture handler can fold it without going async.
+ * Sandbox 24 h spend in USD — the §24.80 architecture sandbox-budget probe.
+ * Scoped to PUBLIC runs (`client_ip IS NOT NULL` — the ones the daily budget
+ * actually gates, matching `checkSimulatorAllowed`), so the node's "degraded"
+ * status reflects real-visitor budget pressure, not owner/CLI test runs. (Total
+ * sandbox LLM cost — incl. those internal runs — still shows in the /dashboard
+ * LLM-spend `sandbox` class via request_telemetry.) Sums the per-run rolled-up
+ * cost from `simulator_runs`; 0 when the table is absent. Sync so the (sync)
+ * architecture handler can fold it without going async.
  */
 export function sandboxSpend24hUsd(now: number = Date.now()): number {
   const db = getDb();
-  if (!hasTable(db, 'request_telemetry')) return 0;
+  if (!hasTable(db, 'simulator_runs')) return 0;
   const cutoffIso = new Date(now - WINDOW_MS).toISOString();
   const row = db
     .prepare(
-      `SELECT SUM(COALESCE(cost_microusd, 0)) AS micro
-         FROM request_telemetry
-        WHERE traffic_class = 'sandbox' AND ts >= @cutoff`,
+      `SELECT COALESCE(SUM(total_cost_cents), 0) AS cents
+         FROM simulator_runs
+        WHERE client_ip IS NOT NULL AND datetime(ts) >= datetime(@cutoff)`,
     )
-    .get({ cutoff: cutoffIso }) as { micro: number | null };
-  return (row?.micro ?? 0) / 1_000_000;
+    .get({ cutoff: cutoffIso }) as { cents: number };
+  return (row?.cents ?? 0) / 100;
 }
 
 export async function getObservability(): Promise<Observability> {

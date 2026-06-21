@@ -34,14 +34,13 @@ afterEach(async () => {
   _setLastSweepAtForTesting(null); // reset the §24.80 sweep stamp between tests
 });
 
-/** Seed a sandbox-class telemetry row carrying `microusd` of spend (§24.80). */
-function seedSandboxSpend(id: string, microusd: number, ts?: string): void {
+/** Seed a PUBLIC sandbox run (client_ip set) carrying `cents` of spend — the §24.80
+ *  budget probe is scoped to verified-public `simulator_runs` (the runs the daily
+ *  budget actually gates), NOT all sandbox telemetry. */
+function seedSandboxSpend(id: string, cents: number, ts?: string): void {
   getDb()
-    .prepare(
-      `INSERT INTO request_telemetry (id, ts, provider, surface, traffic_class, cost_microusd, latency_ms, ok)
-       VALUES (?, ?, 'portkey', 'agent-turn', 'sandbox', ?, 100, 1)`,
-    )
-    .run(id, ts ?? new Date().toISOString(), microusd);
+    .prepare(`INSERT INTO simulator_runs (id, ts, total_cost_cents, client_ip) VALUES (?, ?, ?, '203.0.113.7')`)
+    .run(id, ts ?? new Date().toISOString(), cents);
 }
 
 function seedSimRun(id: string, costCents?: number, ts?: string): void {
@@ -245,16 +244,18 @@ describe('GET /api/architecture', () => {
     expect(bc.chat + bc.ops + bc.sandbox).toBe(body.sessions.running);
   });
 
-  it('exposes the §24.80 sandbox-budget block (enabled + 24h spend vs daily cap)', async () => {
-    seedSandboxSpend('rt-1', 1_500_000); // $1.50
-    seedSandboxSpend('rt-2', 500_000); // $0.50  → $2.00 total
-    seedSandboxSpend('rt-old', 9_000_000, daysAgoIso(2)); // outside the 24h window
+  it('exposes the §24.80 sandbox-budget block — PUBLIC spend only, vs the daily cap', async () => {
+    seedSandboxSpend('rt-1', 150); // $1.50 public
+    seedSandboxSpend('rt-2', 50); // $0.50 public → $2.00 total
+    seedSandboxSpend('rt-old', 900, daysAgoIso(2)); // outside the 24h window
+    seedSimRun('dev-1', 900, new Date().toISOString()); // $9.00 internal/test run TODAY but client_ip NULL → excluded
 
     const body = (await (await fetch(`${base}/api/architecture`)).json()) as {
       sandbox: { enabled: boolean; spend_24h_usd: number; daily_budget_usd: number };
     };
     expect(body.sandbox.enabled).toBe(true); // simulator_enabled default
-    expect(body.sandbox.spend_24h_usd).toBeCloseTo(2.0, 5); // the 2-day-old row excluded
+    // $2.00 public; the 2-day-old row (window) AND the $9 null-ip test run (scope) are both excluded.
+    expect(body.sandbox.spend_24h_usd).toBeCloseTo(2.0, 5);
     expect(body.sandbox.daily_budget_usd).toBe(10); // sandbox_daily_global_budget_usd default (retuned 5→10 §24.141/§24.142)
   });
 

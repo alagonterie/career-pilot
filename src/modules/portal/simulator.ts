@@ -85,18 +85,20 @@ export function checkSimulatorAllowed(ip?: string | null): { ok: boolean; reason
   }
   if (!enabled) return { ok: false, reason: 'simulator_disabled' };
 
-  // Global daily $-budget: today's persisted cost + a reservation for in-flight
-  // (not-yet-persisted) runs, so concurrent starts can't overshoot before their
-  // costs land. Reserves the per-run ceiling (`simulator_max_budget_usd`, also
-  // wired as the in-SDK maxBudgetUsd) per in-flight run — conservative (it
-  // slightly over-reserves vs the ~$0.35 real average), the safe direction for a
-  // hard budget guard.
+  // Global daily $-budget — PUBLIC-scoped: today's persisted public-run cost + a
+  // reservation for in-flight public runs, so concurrent visitor starts can't
+  // overshoot before their costs land. Reserves the per-run ceiling
+  // (`simulator_max_budget_usd`, also wired as the in-SDK maxBudgetUsd) per
+  // in-flight public run. Both terms count only `client_ip IS NOT NULL` runs (real
+  // visitors), so the owner's own CLI/test runs don't exhaust the visitor budget
+  // (they're owner-controlled + per-run-bounded). A public run always carries the
+  // Worker-forwarded IP, so abuse is always counted.
   try {
     const budgetCents = Math.round(
       getConfig<number>(getDb(), 'sandbox_daily_global_budget_usd', DEFAULT_DAILY_BUDGET_USD) * 100,
     );
     const estimateCents = Math.max(1, Math.round(getConfig<number>(getDb(), 'simulator_max_budget_usd', 0.5) * 100));
-    if (costCentsToday() + inFlightCount() * estimateCents >= budgetCents) {
+    if (costCentsToday() + inFlightPublicCount() * estimateCents >= budgetCents) {
       return { ok: false, reason: 'budget_exceeded' };
     }
   } catch {
@@ -138,12 +140,21 @@ function runsToday(ip?: string | null): number {
   ).n;
 }
 
-/** Sum today's (UTC) persisted run cost in cents. */
+/**
+ * Sum today's (UTC) PUBLIC run cost in cents. Scoped to runs that came through the
+ * public Worker path (a CF-verified visitor IP → `client_ip IS NOT NULL`): the
+ * daily budget guards VISITOR spend, so owner/CLI/test-injected runs (null IP —
+ * unreachable by a real visitor, and each bounded by the per-run 300s hard-wall +
+ * in-SDK maxBudgetUsd) don't consume the public budget or trip the architecture
+ * "degraded" status. (Total sandbox cost — incl. those internal runs — still
+ * shows in the /dashboard LLM-spend `sandbox` class.)
+ */
 function costCentsToday(): number {
   return (
     getDb()
       .prepare(
-        `SELECT COALESCE(SUM(total_cost_cents), 0) AS c FROM simulator_runs WHERE datetime(ts) >= datetime('now', 'start of day')`,
+        `SELECT COALESCE(SUM(total_cost_cents), 0) AS c FROM simulator_runs
+          WHERE client_ip IS NOT NULL AND datetime(ts) >= datetime('now', 'start of day')`,
       )
       .get() as { c: number }
   ).c;
@@ -154,6 +165,15 @@ function inFlightCount(ip?: string | null): number {
   if (!ip) return runs.size;
   let n = 0;
   for (const acc of runs.values()) if (acc.ip === ip) n++;
+  return n;
+}
+
+/** In-flight PUBLIC runs (a verified visitor IP). The global-budget reservation
+ *  counts only these, matching `costCentsToday`'s public scope — an internal
+ *  test run in flight never reserves against the visitor budget. */
+function inFlightPublicCount(): number {
+  let n = 0;
+  for (const acc of runs.values()) if (acc.ip != null) n++;
   return n;
 }
 

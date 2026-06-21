@@ -105,9 +105,14 @@ describe('checkSimulatorAllowed', () => {
     expect(checkSimulatorAllowed('1.1.1.1')).toEqual({ ok: true }); // a different IP is unaffected
   });
 
-  it('rejects when today’s spend reaches the global $-budget (default $10)', () => {
-    for (let i = 0; i < 10; i++) seedRun(null, 100); // 10 × $1.00 = the $10 cap
+  it('rejects when today’s PUBLIC spend reaches the global $-budget (default $10)', () => {
+    for (let i = 0; i < 10; i++) seedRun('2.2.2.2', 100); // 10 × $1.00 of verified-public spend = the $10 cap
     expect(checkSimulatorAllowed()).toEqual({ ok: false, reason: 'budget_exceeded' });
+  });
+
+  it('does NOT count owner/CLI-injected runs (null client_ip) toward the visitor budget', () => {
+    for (let i = 0; i < 20; i++) seedRun(null, 100); // $20 of internal/test spend, no verified IP
+    expect(checkSimulatorAllowed()).toEqual({ ok: true });
   });
 
   it('counts only today’s runs (UTC day window) — yesterday’s don’t trip the cap', () => {
