@@ -249,6 +249,13 @@ test('home below-the-fold sections rise in on scroll (§24.147)', async ({ page 
   // Scroll it into view → the once-reveal fires and the class settles to -in.
   await teaser.scrollIntoViewIfNeeded()
   await expect(teaser).toHaveClass(/cp-reveal-in/)
+
+  // The pitch capability list is a child-stagger whose reveal is observed on the
+  // LIST, not the section — so the cascade triggers when the list enters view, not
+  // while it's still below the fold behind the intro paragraph (§24.147 fu fix).
+  const pitchList = page.getByTestId('home-pitch-list')
+  await pitchList.scrollIntoViewIfNeeded()
+  await expect(pitchList).toHaveClass(/cp-reveal-in/)
 })
 
 test('key mobile surfaces are axe-clean (incl. the open nav menu)', async ({ page }) => {

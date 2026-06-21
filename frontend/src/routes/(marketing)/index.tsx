@@ -65,7 +65,11 @@ function Home() {
   // rises into place as it enters the viewport (transform-only, §24.135). One hook
   // per section (hooks run unconditionally — the pipeline ref simply never attaches
   // in its error branch).
-  const pitchReveal = useReveal<HTMLElement>()
+  // Observed on the capability LIST, not the section: the section's top is the
+  // intro paragraph, so observing it fired the cascade while the list was still
+  // below the fold (items animated unseen). Observing the list aligns the trigger
+  // with when the items are actually entering view (§24.147 fu fix).
+  const pitchReveal = useReveal<HTMLOListElement>()
   const pipelineReveal = useReveal<HTMLElement>()
   const tickerReveal = useReveal<HTMLDivElement>()
   const watchReveal = useReveal<HTMLElement>()
@@ -163,13 +167,7 @@ function Home() {
           arrives, so a visitor isn't left reverse-engineering what's happening. Static
           prose (no per-visitor data); ends with one quiet deepener into the full story
           (/about). The less-interested scroll straight past into the proof below. */}
-      <section
-        ref={pitchReveal.ref}
-        aria-labelledby="home-pitch-heading"
-        // `cp-still`: the section delegates its motion to a child-stagger (the
-        // capability list cascades) rather than rising as one block (§24.147 fu).
-        className={cn('mt-24 w-full max-w-xl text-center cp-still', pitchReveal.className)}
-      >
+      <section aria-labelledby="home-pitch-heading" className="mt-24 w-full max-w-xl text-center">
         <h2 id="home-pitch-heading" className="sr-only">
           What this is
         </h2>
@@ -186,7 +184,17 @@ function Home() {
             fifth — "learns from every outcome", the §24.111 loop-closing
             meta-capability — spans both columns on its own line with a ↻ loop-back
             glyph, kept parallel + subject-less with the four verb phrases. */}
-        <ol className="mx-auto mt-7 grid w-fit grid-cols-2 gap-x-8 gap-y-3 text-left text-sm text-foreground/90">
+        {/* The list is the reveal element (cp-still: it triggers + carries the
+            stagger, it doesn't itself rise) so its items cascade in as the list
+            enters view, not while it's still below the fold (§24.147 fu). */}
+        <ol
+          ref={pitchReveal.ref}
+          data-testid="home-pitch-list"
+          className={cn(
+            'mx-auto mt-7 grid w-fit grid-cols-2 gap-x-8 gap-y-3 text-left text-sm text-foreground/90 cp-still',
+            pitchReveal.className,
+          )}
+        >
           {['finds roles', 'tailors my résumé', 'drafts outreach', 'builds interview prep'].map((step, i) => (
             <li
               key={step}

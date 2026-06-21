@@ -45,9 +45,11 @@ export function useReveal<T extends HTMLElement = HTMLDivElement>(): {
           io.disconnect()
         }
       },
-      // Trip a touch before the section's top edge so it's settling in as it
-      // arrives, not starting only once fully on-screen.
-      { rootMargin: '0px 0px -10% 0px', threshold: 0.04 },
+      // Fire when the element's top has risen into the lower ~20% of the viewport
+      // (not the instant it peeks past the very bottom edge) — so the reveal plays
+      // while the element is comfortably on screen, where the visitor sees it,
+      // rather than settling unseen at the fold.
+      { rootMargin: '0px 0px -20% 0px', threshold: 0.04 },
     )
     io.observe(el)
     return () => io.disconnect()
