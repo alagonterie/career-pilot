@@ -9,9 +9,12 @@ Reading order: PORTAL.md first, then this.
 | Doc | Purpose | When to read |
 |---|---|---|
 | [PORTAL.md](PORTAL.md) | Frontend UX specification — every page, component, interaction | Before STRATEGY |
-| **STRATEGY.md** (this) | Backend, infra, delivery plan | After PORTAL |
+| **STRATEGY.md** (this) | Backend, infra, delivery plan + the §-numbered change log | After PORTAL |
+| [NANOCLAW_INTERNALS.md](NANOCLAW_INTERNALS.md) | How upstream NanoClaw actually works — composer, sessions, mounts, hooks | Before any work touching NanoClaw mechanics |
 | [AGENT_SDK_PATTERNS.md](AGENT_SDK_PATTERNS.md) | Claude Agent SDK canonical patterns cribsheet | Before frontend or agent-runner code lands |
 | [CLOUDFLARE_PATTERNS.md](CLOUDFLARE_PATTERNS.md) | Cloudflare protection patterns cribsheet | Before Worker / infra code lands |
+| [THREAT_MODEL.md](THREAT_MODEL.md) | Public-surface threat model + hardening + red-team results (§24.141) | Before touching any public/sandbox surface |
+| [PROD_CUTOVER.md](PROD_CUTOVER.md) | Operator runbook for the first production cutover (§24.136 Phase B/C) | Before any production-release work |
 | [RECOVERY.md](RECOVERY.md) | Operator manual — what to do when things go sideways | Keep open during operations |
 | [V2_IDEAS.md](V2_IDEAS.md) | Deferred features tracked for later | When tempted to add scope |
 
@@ -23,7 +26,7 @@ Reading order: PORTAL.md first, then this.
 
 Career Pilot is a **clone-and-customize fork of NanoClaw v2** (`nanocoai/nanoclaw`). Per NanoClaw's explicit recommendation — and the way every meaningful NanoClaw deployment works — we don't add it as a dependency, we don't submodule it, we *vendor* it as our own working tree and customize in place.
 
-**Concrete plan on the `nanoclaw-rebuild` branch:**
+**The fork plan (since executed; the vendored tree is the repo, on `master`/`dev`):**
 
 1. Copy NanoClaw v2's full tree (currently `~16 MB`, ~150 source files) into the repo root, replacing the existing skeleton backend/frontend.
 2. Preserve our `.specs/` directory and this branch's commit history.
@@ -1377,7 +1380,9 @@ After the system is deployed:
 
 ### 23. Phase 0 cleanup checklist
 
-The current repo on `nanoclaw-rebuild` still has the old skeleton. Phase 0 fork (per Part V milestone plan) will:
+> **SUPERSEDED (2026-06-21, §24.151).** Historical record of the one-time Phase-0 fork cleanup. It was executed long ago — the old skeleton is gone and the vendored NanoClaw tree is the repo. Kept verbatim as the checklist-of-record; not a live to-do.
+
+The current repo still had the old skeleton when this was written. The Phase 0 fork (per Part V milestone plan) did:
 
 **DELETE outright:**
 ```
@@ -6968,6 +6973,29 @@ The **evergreen showcase** — `/about`, `/experience`, `/architecture`, the sim
 
 ---
 
+## §24.151 — v1.0 documentation & terminology-accuracy sweep
+
+**Origin** (owner, 2026-06-21; confirmed as the task after §24.150). The orientation layer drifted hard from reality. The two docs a fresh session reads first are flatly wrong: **README.md** opens *"Pre-Phase-0 … the actual code-on-disk fork of NanoClaw is in progress,"* and root **CLAUDE.md** opens *"Where we are (as of 2026-05-26) … Branch `nanoclaw-rebuild` … Phase 0 complete. Phase 1 in progress but PAUSED at the persona placement step."* The real state: the full system is **built and running on the Access-gated dev surface**, the v2.1.17 upgrade is complete, and the work in flight is the **Phase-9.7 production cutover prep** (§24.136 / `.specs/PROD_CUTOVER.md`). Several specs also carry future-tense framing for long-shipped foundation work and pre-§24.77 route names (`/live`, `/funnel`, `/simulator`).
+
+**Two halves (this section governs both; they ship as separate slices).**
+- **(a) — Doc-accuracy refresh** (this commit set; low-risk prose). README + root CLAUDE.md + the orienting layer of the `.specs/` set, brought to v1.0 reality.
+- **(b) — Internal `funnel`→`pipeline` plumbing rename** (its own later slice; migration-bearing). The visitor-facing surface is already "pipeline" (§24.77 D3); what remains is the *private plumbing* — the `public_funnel_view` read-model + its migrations, the `/api/funnel` route, the `record_funnel_event` / `persist_funnel_state` MCP tools, `funnel-actions.ts` / `funnel-curator.ts`, the `funnel-*` `data-testid`s, and the `SimStatePanel` "funnel board" dev-copy string. DB + tool-contract renames warrant migrations + care, so this is **not** bundled into (a).
+
+**Decisions.**
+- **D1 — Refresh orienting prose; never rewrite the append-only record.** In scope: the "where we are" headers, phase/status tables, reading-order + companion-doc tables, future-tense framing of shipped foundation work, and stale route/subagent *names* in orientation sections. Out of scope: the dated `§24.x` history blocks in STRATEGY.md and the `RESUME HERE` log in `status_current.md` — these are the spec-driven record of intent-at-the-time and stay frozen. Where a historical/forward-looking section (e.g. STRATEGY Part VII) reads as still-upcoming, prepend a dated **superseded** banner rather than rewriting the body.
+- **D2 — Half (a) leaves internal `funnel` names as `funnel`.** They match the *current* code; renaming the docs ahead of the code would make them wrong. The internal names get corrected in (b), code + docs together. Half (a) only fixes *visitor-facing route* references to the post-§24.77 canon (`/dashboard`, `/pipeline`, `/watch`; `/live` + `/simulator` are permanent redirect stubs, `/funnel` is gone).
+- **D3 — Name the runtime reality, not the filenames.** Docs describe the subagents as **pipeline-scribe** (§24.59, file-backed by `funnel-curator.md`) and **build-interview-kit** (§24.53, file-backed by `prep-interview.md`) — the display/runtime names, with the backing filename noted where it aids navigation. No subagent files are renamed in (a) (that's (b)-adjacent cleanup, deliberately deferred).
+- **D4 — Reading-order/companion tables gain the two specs written since.** `THREAT_MODEL.md` (§24.141) and `PROD_CUTOVER.md` (§24.136) are first-class spec artifacts now and must appear in every reading-order table that lists the set.
+
+**Build (DD: this is the spec commit; the doc edits follow as the build commit).**
+- README.md — rewritten to v1.0 reality (system built + running on dev; Phase-9.7 cutover prep; canonical routes; forkable framing kept; identity-free).
+- Root CLAUDE.md — "Where we are" header, "What's next" list, reading-order table, subagent/persona references brought current; the resolved Strategy-B persona-placement note retired to a one-line "done" record.
+- `.specs/` orienting layer — STRATEGY companion table (+ NANOCLAW_INTERNALS / THREAT_MODEL / PROD_CUTOVER) + fork-strategy tense + a Part VII and a §23 superseded banner; PORTAL gets a top-of-file **route-canon banner** (§24.77 old→new map) + the "to be written next" stale refs fixed — but its ~78 in-body `/live`/`/funnel`/`/simulator` occurrences are **deferred to half (b)**, because a blind replace is error-prone and `/funnel`→`/pipeline` is entangled with the funnel-term plumbing rename (they move together). Frozen per D1: the `§24.x` history, `status_current` `RESUME HERE` log, dated derivation stamps (NANOCLAW_INTERNALS provenance), and dated findings artifacts (PHASE5_PREP_FINDINGS).
+
+**Definition of done.** `git grep -nI 'Pre-Phase-0\|nanoclaw-rebuild\|Phase 1 .*PAUSED\|as of 2026-05'` returns clean in README + root CLAUDE.md (only legitimate historical `§24.x`/RESUME mentions may remain, and only inside frozen records). Every reading-order/companion table lists all current specs incl. THREAT_MODEL + PROD_CUTOVER. Visitor-route references in orienting prose use the post-§24.77 canon. Subagents named pipeline-scribe / build-interview-kit. No future-tense for built foundation work outside an explicitly-dated historical/superseded block. Half (b) tracked separately. Memory: [[status_current]], [[todo_backlog]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
@@ -6987,6 +7015,8 @@ The **evergreen showcase** — `/about`, `/experience`, `/architecture`, the sim
 ---
 
 ## Part VII: What's next after STRATEGY.md
+
+> **SUPERSEDED (2026-06-21, §24.151).** This section captured the order-of-operations *when STRATEGY.md was first written* — fork NanoClaw, schema, first MCP tools. All of it shipped long ago; the system is built and running on the dev surface, and the live work is the Phase-9.7 production cutover (§24.136, `.specs/PROD_CUTOVER.md`). Kept verbatim below as the original plan-of-record; for current state read `memory/status_current.md` and the §V milestone table.
 
 This doc is the architectural plan. The next concrete deliverables:
 
