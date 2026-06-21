@@ -336,6 +336,19 @@ test('mobile pipeline concluded retrospective matches visual baseline', { tag: '
   })
 })
 
+test('mobile simulator budget-degraded state matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  // §24.150 — the flagship "degradation as a feature" state on a phone. The three
+  // branded variants share one `flex-wrap` CTA layout, so the widest (3-CTA) budget
+  // variant is the representative responsive-stack proof; the per-IP / paused copy is
+  // covered by the desktop baselines + the unit tests.
+  await page.goto('/watch?__sim=budget')
+  await expect(page.getByTestId('sim-unavailable')).toHaveAttribute('data-degrade', 'budget')
+  await expect(page).toHaveScreenshot('mobile-simulator-degraded-budget.png', {
+    animations: 'disabled',
+    fullPage: true,
+  })
+})
+
 test('mobile kit dossier (sealed) matches visual baseline', { tag: '@visual' }, async ({ page }) => {
   await page.goto('/kit?app=ai-infra-a&round=TECH_SCREEN')
   await expect(page.getByTestId('kit-banner-sealed')).toBeVisible()

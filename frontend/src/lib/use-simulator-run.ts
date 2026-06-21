@@ -1,5 +1,6 @@
 import * as React from 'react'
 
+import { degradeReasonFromApi, simSeamOverride, type SimDegradeReason } from './sim-degrade'
 import { connectSimulatorStream } from './sse'
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
@@ -47,6 +48,10 @@ export interface SimRunState {
   /** Run start (ms epoch) while a run is active — drives the elapsed ticker. */
   startedAt: number | null
   errorMessage: string | null
+  /** §24.150 — when `status` is `unavailable`, which branded "degradation as a
+   *  feature" variant to render (budget / per-IP / paused). `null` = the honest
+   *  generic fallback (a real fault, not an intentional cap). */
+  degradeReason: SimDegradeReason | null
   /** The run produced a downloadable tailored résumé (the gift) — set from the
    *  terminal `end` event, so the done-state can offer it without a refetch. */
   hasTailoredResume: boolean
@@ -78,6 +83,7 @@ export function useSimulatorRun(): SimRunState {
   const [elapsedMs, setElapsedMs] = React.useState<number | null>(null)
   const [startedAt, setStartedAt] = React.useState<number | null>(null)
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
+  const [degradeReason, setDegradeReason] = React.useState<SimDegradeReason | null>(null)
   const [hasTailoredResume, setHasTailoredResume] = React.useState(false)
   const [coldEmail, setColdEmail] = React.useState<{ subject: string; body: string } | null>(null)
   const [input, setInput] = React.useState<SimRunInput | null>(null)
@@ -89,6 +95,16 @@ export function useSimulatorRun(): SimRunState {
 
   // Abort any open stream on unmount.
   React.useEffect(() => () => acRef.current?.abort(), [])
+
+  // Dev/E2E `?__sim=` seam (§24.150 D4) — applied AFTER mount so it never diverges
+  // the initial render from SSR; prod returns null (the seam is gated off).
+  React.useEffect(() => {
+    const seam = simSeamOverride()
+    if (!seam) return
+    setStatus(seam.status)
+    setDegradeReason(seam.degradeReason)
+    if (seam.status === 'error') setErrorMessage('The run stream dropped before finishing.')
+  }, [])
 
   const reset = React.useCallback((): void => {
     acRef.current?.abort()
@@ -102,6 +118,7 @@ export function useSimulatorRun(): SimRunState {
     setElapsedMs(null)
     setStartedAt(null)
     setErrorMessage(null)
+    setDegradeReason(null)
     setHasTailoredResume(false)
     setColdEmail(null)
     setInput(null)
@@ -119,6 +136,7 @@ export function useSimulatorRun(): SimRunState {
     setCost(null)
     setElapsedMs(null)
     setErrorMessage(null)
+    setDegradeReason(null)
     setHasTailoredResume(false)
     setColdEmail(null)
     setInput(runInput)
@@ -138,17 +156,26 @@ export function useSimulatorRun(): SimRunState {
           signal: ac.signal,
         })
         if (res.status === 503) {
+          // Kill switch (`simulator_disabled`) or a transient backend fault — brand
+          // the former, fall to the honest generic for the latter (§24.150).
+          const reason = await res
+            .json()
+            .then((d) => (d as { reason?: string }).reason)
+            .catch(() => null)
+          setDegradeReason(degradeReasonFromApi(reason))
           setStatus('unavailable')
           return
         }
         if (res.status === 429) {
-          // Daily per-IP / budget cap (§24.70) — surface the backend's honest message.
-          const msg = await res
+          // Daily per-IP cap or the global $-budget (§24.70) — both brand a distinct
+          // "degradation as a feature" fallback (§24.150). 429 is always a cap, so
+          // default to the per-IP variant if the reason is somehow absent.
+          const reason = await res
             .json()
-            .then((d) => (d as { message?: string }).message)
+            .then((d) => (d as { reason?: string }).reason)
             .catch(() => null)
-          setStatus('error')
-          setErrorMessage(msg ?? "You've reached today's run limit — try again tomorrow, or use the contact form.")
+          setDegradeReason(degradeReasonFromApi(reason) ?? 'rate_limit')
+          setStatus('unavailable')
           return
         }
         if (!res.ok) {
@@ -249,6 +276,7 @@ export function useSimulatorRun(): SimRunState {
     elapsedMs,
     startedAt,
     errorMessage,
+    degradeReason,
     hasTailoredResume,
     coldEmail,
     input,

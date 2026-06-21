@@ -255,6 +255,30 @@ test('simulator input view matches visual baseline', { tag: '@visual' }, async (
   })
 })
 
+// §24.150 — the "degradation as a feature" branded unavailable states, reached via
+// the dev/mock `?__sim=` seam (honored by the VITE_MOCK_SEAM build). Each cap the
+// visitor could hit becomes a guided tour of the surface that explains it.
+test('simulator budget-degraded state matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  await page.goto('/watch?__sim=budget')
+  await expect(page.getByTestId('sim-unavailable')).toHaveAttribute('data-degrade', 'budget')
+  await expect(page.getByText(/busy today/i)).toBeVisible()
+  await expect(page).toHaveScreenshot('simulator-degraded-budget.png', { animations: 'disabled', fullPage: true })
+})
+
+test('simulator per-IP-degraded state matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  await page.goto('/watch?__sim=rate_limit')
+  await expect(page.getByTestId('sim-unavailable')).toHaveAttribute('data-degrade', 'rate_limit')
+  await expect(page.getByText('See the real pipeline →')).toBeVisible()
+  await expect(page).toHaveScreenshot('simulator-degraded-ratelimit.png', { animations: 'disabled', fullPage: true })
+})
+
+test('simulator paused-degraded state matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  await page.goto('/watch?__sim=disabled')
+  await expect(page.getByTestId('sim-unavailable')).toHaveAttribute('data-degrade', 'disabled')
+  await expect(page.getByText('System map →')).toBeVisible()
+  await expect(page).toHaveScreenshot('simulator-degraded-paused.png', { animations: 'disabled', fullPage: true })
+})
+
 test('simulator share results matches visual baseline', { tag: '@visual' }, async ({ page }) => {
   await page.goto('/watch/results/det-sim-1')
   // The seeded, far-future-expiry shareable run — deterministic (no streaming).

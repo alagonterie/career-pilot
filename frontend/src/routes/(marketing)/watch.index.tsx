@@ -71,7 +71,9 @@ function SimulatorPage() {
       <div className="mt-10">
         {showInput ? <SimInput onRun={run.start} disabled={run.status === 'starting'} /> : null}
 
-        {run.status === 'unavailable' ? <SimFallback kind="unavailable" onReset={run.reset} /> : null}
+        {run.status === 'unavailable' ? (
+          <SimFallback kind="unavailable" reason={run.degradeReason} onReset={run.reset} />
+        ) : null}
         {run.status === 'error' ? <SimFallback kind="error" message={run.errorMessage} onReset={run.reset} /> : null}
 
         {/* Live run: the 2-pane "watch it work" grid (output stripped of the JSON). */}

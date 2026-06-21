@@ -43,10 +43,22 @@ export interface SimulatorInput {
   public_url?: unknown;
 }
 
+/** The granular gate/fault reason behind a non-ok start (STRATEGY §24.150). The
+ *  HTTP `code` collapses these (budget+per-IP→RATE_LIMITED/429, disabled+backend
+ *  →UNAVAILABLE/503); `reason` is surfaced so the frontend can brand each
+ *  "degradation-as-a-feature" fallback distinctly. `bad_args` is the validation
+ *  miss (paired with BAD_ARGS/400). */
+export type SimulatorStartReason =
+  | 'budget_exceeded'
+  | 'rate_limited_ip'
+  | 'simulator_disabled'
+  | 'backend_not_ready'
+  | 'bad_args';
+
 export interface SimulatorStartResult {
   ok: boolean;
   simulation_id?: string;
-  error?: { code: 'BAD_ARGS' | 'UNAVAILABLE' | 'RATE_LIMITED'; message: string };
+  error?: { code: 'BAD_ARGS' | 'UNAVAILABLE' | 'RATE_LIMITED'; reason?: SimulatorStartReason; message: string };
 }
 
 const DEFAULT_PER_IP_DAILY_CAP = 3;
@@ -228,6 +240,7 @@ export function startSimulatorRun(input: SimulatorInput, ip?: string | null): Si
         ok: false,
         error: {
           code: 'RATE_LIMITED',
+          reason: 'rate_limited_ip',
           message: "You've reached today's simulator limit — try again tomorrow, or reach me via the contact form.",
         },
       };
@@ -237,17 +250,21 @@ export function startSimulatorRun(input: SimulatorInput, ip?: string | null): Si
         ok: false,
         error: {
           code: 'RATE_LIMITED',
+          reason: 'budget_exceeded',
           message: "The simulator has reached today's budget — try again tomorrow, or reach me via the contact form.",
         },
       };
     }
-    return { ok: false, error: { code: 'UNAVAILABLE', message: 'The simulator is currently disabled.' } };
+    return {
+      ok: false,
+      error: { code: 'UNAVAILABLE', reason: 'simulator_disabled', message: 'The simulator is currently disabled.' },
+    };
   }
 
   const company = asTrimmed(input.company, MAX_COMPANY);
   const role = asTrimmed(input.role, MAX_ROLE);
   if (!company || !role) {
-    return { ok: false, error: { code: 'BAD_ARGS', message: 'company and role are required.' } };
+    return { ok: false, error: { code: 'BAD_ARGS', reason: 'bad_args', message: 'company and role are required.' } };
   }
   const jd = asTrimmed(input.jd, MAX_JD);
   const public_url = asTrimmed(input.public_url, MAX_URL);
@@ -296,7 +313,10 @@ export function startSimulatorRun(input: SimulatorInput, ip?: string | null): Si
     log.error('startSimulatorRun: failed to submit run', { simulationId, err });
     if (acc.hardWall) clearTimeout(acc.hardWall);
     runs.delete(simulationId);
-    return { ok: false, error: { code: 'UNAVAILABLE', message: 'The simulator backend is not ready.' } };
+    return {
+      ok: false,
+      error: { code: 'UNAVAILABLE', reason: 'backend_not_ready', message: 'The simulator backend is not ready.' },
+    };
   }
 
   log.info('Simulator run started', { simulationId, company });

@@ -31,6 +31,46 @@ describe('SimFallback (PORTAL §5.3 disabled state)', () => {
     expect(screen.getByText(/Globex/)).toBeInTheDocument()
   })
 
+  it('brands the budget cap (§24.150) with the dashboard + architecture CTAs', () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response),
+    )
+    render(<SimFallback kind="unavailable" reason="budget" onReset={() => {}} />)
+
+    expect(screen.getByTestId('sim-unavailable')).toBeInTheDocument()
+    expect(screen.getByText(/busy today/i)).toBeInTheDocument()
+    expect(screen.getByText(/see where it went/i)).toBeInTheDocument()
+    expect(screen.getByText(/watch it throttle/i)).toBeInTheDocument()
+    expect(screen.getByText(/talk to me/i)).toBeInTheDocument()
+  })
+
+  it('brands the per-IP cap (§24.150) with the pipeline CTA + the conversion path', () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response),
+    )
+    render(<SimFallback kind="unavailable" reason="rate_limit" onReset={() => {}} />)
+
+    expect(screen.getByText(/used today/i)).toBeInTheDocument()
+    expect(screen.getByText(/see the real pipeline/i)).toBeInTheDocument()
+    expect(screen.getByText(/talk to me/i)).toBeInTheDocument()
+  })
+
+  it('brands the paused kill switch (§24.150) with pipeline + system-map CTAs', () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response),
+    )
+    render(<SimFallback kind="unavailable" reason="disabled" onReset={() => {}} />)
+
+    expect(screen.getByText(/sandbox is paused/i)).toBeInTheDocument()
+    // Exact CTA text (the body also mentions "the system map", so a substring
+    // regex would match both).
+    expect(screen.getByText('See the pipeline →')).toBeInTheDocument()
+    expect(screen.getByText('System map →')).toBeInTheDocument()
+  })
+
   it('renders an error variant with the message + a Try again action', () => {
     vi.stubGlobal(
       'fetch',

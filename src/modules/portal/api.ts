@@ -604,7 +604,14 @@ async function handleSimulatorStart(
     return;
   }
   const status = result.error?.code === 'BAD_ARGS' ? 400 : result.error?.code === 'RATE_LIMITED' ? 429 : 503;
-  json(res, status, { error: result.error?.code ?? 'error', message: result.error?.message }, cors);
+  // `reason` (§24.150) brands the frontend's "degradation-as-a-feature" fallback;
+  // the HTTP status + `error` code stay unchanged for back-compat.
+  json(
+    res,
+    status,
+    { error: result.error?.code ?? 'error', reason: result.error?.reason, message: result.error?.message },
+    cors,
+  );
 }
 
 /** Contact relay (5.6) — POST /api/contact → owner channel. One-way; 200/400/503. */
