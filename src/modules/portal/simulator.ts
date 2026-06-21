@@ -250,6 +250,7 @@ export function startSimulatorRun(input: SimulatorInput, ip?: string | null): Si
     hardWall: null,
     hadViewer: false,
     tailoredProfile: null,
+    coldEmail: null,
   };
   acc.hardWall = setTimeout(() => finalizeSimulatorRun(simulationId, 'hard-wall'), hardWallMs());
   if (typeof acc.hardWall.unref === 'function') acc.hardWall.unref();
@@ -306,6 +307,10 @@ interface RunAccumulator {
    * into here, keyed by this run's thread id). The unvalidated agent payload;
    * `persistRun` runs it through `validateTailoredResume` against the master. */
   tailoredProfile: unknown | null;
+  /** §24.146 — the structured cold-outreach email (the second gift) the sandbox
+   * emitted via the `emit_cold_email` tool, round-tripped here by run thread id;
+   * `persistRun` stores it as JSON in `outreach_draft` for the share-page card. */
+  coldEmail: { subject: string; body: string } | null;
 }
 
 /** Cap on persisted dispatch-trace steps per run (keeps trace_json bounded). */
@@ -464,6 +469,21 @@ export function setSimulatorTailoredProfile(runId: string, profile: unknown): bo
 }
 
 /**
+ * §24.146: stash the structured cold-outreach email (the second gift) the sandbox
+ * emitted via the `emit_cold_email` tool into its run accumulator, so `persistRun`
+ * stores it in `outreach_draft` for the share-page card. Called by the host action
+ * handler, keyed by the run's thread id. Returns whether a matching in-flight run
+ * was found (`false` for no active run, e.g. the owner group or an already-final
+ * run) so the caller can answer without erroring the turn. Last write wins.
+ */
+export function setSimulatorColdEmail(runId: string, subject: string, body: string): boolean {
+  const acc = runs.get(runId);
+  if (!acc) return false;
+  acc.coldEmail = { subject, body };
+  return true;
+}
+
+/**
  * Persist a completed (or hard-walled) run, sweep expired rows, and tear down
  * the sandbox session. Idempotent + best-effort: the accumulator is claimed
  * (deleted) first so a task/hard-wall race finalizes exactly once; persistence
@@ -516,6 +536,10 @@ export function finalizeSimulatorRun(runId: string, reason: string): void {
       cost_usd: acc.costCents > 0 ? acc.costCents / 100 : undefined,
       latency_ms: Date.now() - acc.startedAt,
       has_tailored_resume: hasTailored,
+      // §24.146: the second gift, carried on the terminal event so the live
+      // done-state shows the cold-email card immediately (no racy refetch),
+      // mirroring has_tailored_resume. The share page reads it from outreach_draft.
+      cold_email: acc.coldEmail ?? undefined,
     });
     endSimulatorRun(runId);
   } catch (err) {
@@ -577,6 +601,10 @@ function persistRun(runId: string, acc: RunAccumulator): boolean {
   // (the structured path means the model shouldn't emit one; the PDF carries it).
   const displayText = stripTailoredResumeBlock(fullOutput) || null;
 
+  // §24.146: the second gift — the structured cold-outreach email the sandbox
+  // emitted via emit_cold_email — persisted as JSON for the share-page card.
+  const outreachDraft = acc.coldEmail ? JSON.stringify(acc.coldEmail) : null;
+
   getDb()
     .prepare(
       `INSERT OR REPLACE INTO simulator_runs (
@@ -596,7 +624,7 @@ function persistRun(runId: string, acc: RunAccumulator): boolean {
       role: acc.role,
       jd: acc.jd ? acc.jd.slice(0, JD_EXCERPT_MAX) : null,
       resume: displayText,
-      outreach: null,
+      outreach: outreachDraft,
       cost: acc.costCents,
       latency: Date.now() - acc.startedAt,
       cache: acc.cacheHits,

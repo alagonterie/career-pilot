@@ -40,6 +40,24 @@ interface SimRunRow {
   trace_json: string | null
   /** §24.72 9.4b-r2 — a downloadable tailored résumé PDF is available for this run. */
   has_tailored_resume?: boolean
+  /** §24.146 — the structured cold-outreach email (the second gift), JSON
+   *  `{subject, body}` persisted by the `emit_cold_email` tool, or null. */
+  outreach_draft?: string | null
+}
+
+/** Parse the persisted cold-email JSON (§24.146) — null-safe, shape-guarded. */
+function parseColdEmail(raw: string | null | undefined): { subject: string; body: string } | null {
+  if (!raw) return null
+  try {
+    const o = JSON.parse(raw) as unknown
+    if (o && typeof o === 'object' && typeof (o as { subject?: unknown }).subject === 'string') {
+      const e = o as { subject: string; body?: unknown }
+      return { subject: e.subject, body: typeof e.body === 'string' ? e.body : '' }
+    }
+  } catch {
+    /* not JSON — legacy/absent */
+  }
+  return null
 }
 
 /** Parse the persisted run trace (§24.31 Δ) — null-safe, shape-guarded. */
@@ -129,6 +147,7 @@ function ShareResults() {
               company={state.row.visitor_company}
               role={state.row.visitor_role}
               outputText={state.row.tailored_resume ?? ''}
+              coldEmail={parseColdEmail(state.row.outreach_draft)}
               trace={parseTrace(state.row.trace_json)}
               costUsd={state.row.total_cost_cents != null ? state.row.total_cost_cents / 100 : null}
               hasTailoredResume={!!state.row.has_tailored_resume}

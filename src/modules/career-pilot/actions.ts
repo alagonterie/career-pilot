@@ -29,7 +29,7 @@ import { getConfig } from '../../get-config.js';
 import { insertMessage } from '../../db/session-db.js';
 import { log } from '../../log.js';
 import { projectWorkProfile } from '../portal/profile.js';
-import { setSimulatorTailoredProfile } from '../portal/simulator.js';
+import { setSimulatorColdEmail, setSimulatorTailoredProfile } from '../portal/simulator.js';
 import { mirrorFunnelEvent, publicApplicationRef, resanitizeApplicationAuditTrail } from '../portal/public-audit.js';
 import { sanitize, sanitizeForPublic } from '../portal/sanitizer.js';
 import { pass3Active } from '../portal/sanitizer-pass3.js';
@@ -144,6 +144,33 @@ export async function handleEmitTailoredResume(
   }
   const runId = session.thread_id;
   const stored = runId ? setSimulatorTailoredProfile(runId, profile) : false;
+  writeResponse(inDb, reqId(content), { ok: true, data: { stored } });
+}
+
+// ── emit_cold_email (sandbox structured cold-outreach gift, §24.146) ────────
+//
+// Twin of handleEmitTailoredResume: registered PLAIN, sandbox-safe by
+// construction (writes only the caller's own in-flight simulator run, resolved
+// by session.thread_id == the run id; no private candidate state). The agent's
+// tool handler already rejected a stub subject/body, so a valid payload here is
+// complete. No-op (stored:false) when there's no run for the thread.
+export async function handleEmitColdEmail(
+  content: Record<string, unknown>,
+  session: Session,
+  inDb: Database.Database,
+): Promise<void> {
+  const p = payload(content);
+  const subject = typeof p.subject === 'string' ? p.subject.trim() : '';
+  const body = typeof p.body === 'string' ? p.body.trim() : '';
+  if (!subject || !body) {
+    writeResponse(inDb, reqId(content), {
+      ok: false,
+      error: { code: 'BAD_ARGS', message: 'emit_cold_email requires a non-empty subject and body.' },
+    });
+    return;
+  }
+  const runId = session.thread_id;
+  const stored = runId ? setSimulatorColdEmail(runId, subject, body) : false;
   writeResponse(inDb, reqId(content), { ok: true, data: { stored } });
 }
 

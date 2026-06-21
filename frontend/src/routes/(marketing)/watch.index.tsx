@@ -91,6 +91,7 @@ function SimulatorPage() {
               company={run.input?.company ?? null}
               role={run.input?.role ?? null}
               outputText={cleanOutput}
+              coldEmail={run.coldEmail}
               trace={run.trace}
               costUsd={run.cost_usd}
               hasTailoredResume={run.hasTailoredResume}

@@ -605,6 +605,51 @@ export const emitTailoredResume: McpToolDefinition = {
   },
 };
 
+// ── emit_cold_email (structured cold-outreach gift, §24.146) ────────────────
+
+/** Min characters the email body must carry — a real cold email is several
+ *  sentences; a stub below this is rejected so the second gift can't be dropped. */
+const COLD_EMAIL_BODY_MIN_CHARS = 100;
+
+export const emitColdEmail: McpToolDefinition = {
+  tool: {
+    name: 'emit_cold_email',
+    description:
+      "Emit the visitor's SECOND gift — the cold outreach email you drafted for THIS role — as a structured object. Do NOT write the email as prose in your chat reply; call this tool, exactly as you emit the résumé via emit_tailored_resume. The portal surfaces it as its own copyable card next to the downloadable résumé. The email is a complete SAMPLE addressed generically to the hiring manager (\"Hi there,\") — no recipient address exists in a simulator run. Pass the `subject` line and the full `body` (greeting, 2-3 short paragraphs making the candidate's case for this role, a soft ask, and a sign-off in the candidate's name). An empty or stub subject/body is rejected and you must re-emit. Every number in the body must be a real Approved figure from the candidate's profile, or words — never an invented metric.",
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        subject: {
+          type: 'string',
+          description: 'The email subject line — specific to this role/company, non-empty.',
+        },
+        body: {
+          type: 'string',
+          description:
+            'The full email body: greeting ("Hi there,"), 2-3 short paragraphs making the case for THIS role, a soft ask (e.g. a brief call), and a sign-off in the candidate\'s name. Real Approved figures or words only — never an invented metric.',
+        },
+      },
+      required: ['subject', 'body'],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  async handler(args) {
+    const subject = typeof args.subject === 'string' ? args.subject.trim() : '';
+    const body = typeof args.body === 'string' ? args.body.trim() : '';
+    if (!subject) {
+      return err('emit_cold_email needs a non-empty subject line specific to this role/company — re-emit with one.');
+    }
+    if (body.length < COLD_EMAIL_BODY_MIN_CHARS) {
+      return err(
+        `emit_cold_email needs a real email body (at least ${COLD_EMAIL_BODY_MIN_CHARS} characters): a greeting, 2-3 short paragraphs making the candidate's case for this role, a soft ask, and a sign-off. You passed an empty or stub body — write the full email and call again.`,
+      );
+    }
+    const res = await sendAction<{ stored: boolean }>('career_pilot.emit_cold_email', { subject, body });
+    if (!res.ok) return actionErr('emit_cold_email', res.error);
+    return ok('Cold outreach email received — it will appear as the second gift on the run.', res.data);
+  },
+};
+
 // ── persist_learning (rejection-as-fuel: CAPTURE, §24.107) ──────────────────
 
 export const persistLearning: McpToolDefinition = {
@@ -756,6 +801,7 @@ registerTools([
   recordProgress,
   createGmailDraft,
   emitTailoredResume,
+  emitColdEmail,
   persistLearning,
   readLearnings,
   readContacts,

@@ -50,6 +50,9 @@ export interface SimRunState {
   /** The run produced a downloadable tailored résumé (the gift) — set from the
    *  terminal `end` event, so the done-state can offer it without a refetch. */
   hasTailoredResume: boolean
+  /** §24.146 — the structured cold-outreach email (the second gift), carried on
+   *  the terminal `end` event so the done-state shows it without a refetch. */
+  coldEmail: { subject: string; body: string } | null
   input: SimRunInput | null
   start: (input: SimRunInput) => void
   reset: () => void
@@ -76,6 +79,7 @@ export function useSimulatorRun(): SimRunState {
   const [startedAt, setStartedAt] = React.useState<number | null>(null)
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
   const [hasTailoredResume, setHasTailoredResume] = React.useState(false)
+  const [coldEmail, setColdEmail] = React.useState<{ subject: string; body: string } | null>(null)
   const [input, setInput] = React.useState<SimRunInput | null>(null)
 
   const acRef = React.useRef<AbortController | null>(null)
@@ -99,6 +103,7 @@ export function useSimulatorRun(): SimRunState {
     setStartedAt(null)
     setErrorMessage(null)
     setHasTailoredResume(false)
+    setColdEmail(null)
     setInput(null)
   }, [])
 
@@ -115,6 +120,7 @@ export function useSimulatorRun(): SimRunState {
     setElapsedMs(null)
     setErrorMessage(null)
     setHasTailoredResume(false)
+    setColdEmail(null)
     setInput(runInput)
     startedRef.current = Date.now()
     setStartedAt(startedRef.current)
@@ -194,11 +200,21 @@ export function useSimulatorRun(): SimRunState {
             }
           } else if (ev.event === 'end') {
             // Host-pushed terminal (STRATEGY §24.21 Δ) — complete or hard-wall.
-            const end = payload as { reason?: unknown; cost_usd?: unknown; has_tailored_resume?: unknown }
+            const end = payload as {
+              reason?: unknown
+              cost_usd?: unknown
+              has_tailored_resume?: unknown
+              cold_email?: unknown
+            }
             if (typeof end.cost_usd === 'number' && end.cost_usd > 0) {
               setCost((prev) => prev ?? (end.cost_usd as number))
             }
             if (end.has_tailored_resume === true) setHasTailoredResume(true)
+            const ce = end.cold_email
+            if (ce && typeof ce === 'object' && typeof (ce as { subject?: unknown }).subject === 'string') {
+              const e = ce as { subject: string; body?: unknown }
+              setColdEmail({ subject: e.subject, body: typeof e.body === 'string' ? e.body : '' })
+            }
             setElapsedMs(Date.now() - startedRef.current)
             if (end.reason !== 'complete' && outputRef.current.length === 0) {
               setStatus('error')
@@ -234,6 +250,7 @@ export function useSimulatorRun(): SimRunState {
     startedAt,
     errorMessage,
     hasTailoredResume,
+    coldEmail,
     input,
     start,
     reset,

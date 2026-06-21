@@ -23,9 +23,13 @@ interface SimResultProps {
   runId: string
   company: string | null
   role: string | null
-  /** The run output (résumé prose + outreach email) — already stripped of the
-   *  tailored-résumé JSON block. The cold-outreach email is parsed out of it. */
+  /** The run output (the `## Summary` + bullets prose). Legacy runs also embedded
+   *  the cold-outreach email here; it's parsed out as a fallback when `coldEmail`
+   *  (the structured §24.146 emission) is absent. */
   outputText: string
+  /** §24.146 — the structured cold-outreach email (the second gift), emitted via
+   *  the `emit_cold_email` tool. Preferred over parsing it out of `outputText`. */
+  coldEmail?: { subject: string; body: string } | null
   trace: SimTraceEvent[]
   costUsd: number | null
   hasTailoredResume: boolean
@@ -122,8 +126,19 @@ function ActivitySection({ trace, costUsd }: { trace: SimTraceEvent[]; costUsd: 
   )
 }
 
-export function SimResult({ runId, company, role, outputText, trace, costUsd, hasTailoredResume }: SimResultProps) {
-  const outreach = parseOutreach(outputText)
+export function SimResult({
+  runId,
+  company,
+  role,
+  outputText,
+  coldEmail,
+  trace,
+  costUsd,
+  hasTailoredResume,
+}: SimResultProps) {
+  // §24.146: prefer the structured cold email; fall back to parsing it out of the
+  // chat text for legacy runs (pre-emit_cold_email) that embedded it there.
+  const outreach = coldEmail ?? parseOutreach(outputText)
   return (
     <div data-testid="sim-result" className="flex flex-col gap-6">
       {hasTailoredResume ? <ResumeGift runId={runId} company={company} role={role} /> : null}

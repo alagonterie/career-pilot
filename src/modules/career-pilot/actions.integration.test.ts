@@ -25,6 +25,7 @@ import type { Session } from '../../types.js';
 import { createAgentGroup } from '../../db/agent-groups.js';
 import {
   handleCreateGmailDraft,
+  handleEmitColdEmail,
   handleEmitTailoredResume,
   handleGetApplication,
   handleListApplications,
@@ -151,6 +152,29 @@ describe('handleEmitTailoredResume', () => {
       },
     });
     await handleEmitTailoredResume(c, FAKE_SESSION, inDb);
+    const resp = readResponse(c.requestId);
+    expect(resp.frame.ok).toBe(true);
+    if (resp.frame.ok) expect(resp.frame.data.stored).toBe(false);
+  });
+});
+
+// ── emit_cold_email (§24.146) ──────────────────────────────────────────────
+
+describe('handleEmitColdEmail', () => {
+  it('rejects a missing subject/body with BAD_ARGS', async () => {
+    const c = actionContent('career_pilot.emit_cold_email', { subject: '', body: '' });
+    await handleEmitColdEmail(c, FAKE_SESSION, inDb);
+    const resp = readResponse(c.requestId);
+    expect(resp.frame.ok).toBe(false);
+    if (!resp.frame.ok) expect(resp.frame.error.code).toBe('BAD_ARGS');
+  });
+
+  it('responds ok with stored:false when the thread has no in-flight simulator run', async () => {
+    const c = actionContent('career_pilot.emit_cold_email', {
+      subject: 'Your backend role',
+      body: 'Hi there, I would love to share how my systems background fits this role. Could we find fifteen minutes? — Jane',
+    });
+    await handleEmitColdEmail(c, FAKE_SESSION, inDb);
     const resp = readResponse(c.requestId);
     expect(resp.frame.ok).toBe(true);
     if (resp.frame.ok) expect(resp.frame.data.stored).toBe(false);
