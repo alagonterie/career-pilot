@@ -50,8 +50,9 @@ export function footerSocials(identity: Identity): FooterSocial[] {
  * layouts host it). Carries the persona wordmark + a static "built with" credit,
  * the candidate's socials as themed `fill-current` brand icons (SSR'd identity,
  * omit-when-null), and the two background doorways — "About" (`/about`, the second
- * framed entrance after the home beat) and "Privacy" (`/about#privacy`, the
- * visitor-privacy disclosure; no standalone `/privacy` page). Full-bleed top border
+ * framed entrance after the home beat) and "Privacy" (`/privacy`, the formal policy
+ * the OAuth consent screen points to — §24.148; it links on to the in-context
+ * /about#privacy narrative). Full-bleed top border
  * (page chrome) with the content in the shared chrome gutter (`CHROME_WIDTH px-6`), so
  * the foot frames every page on the same column as the top nav — identical on every
  * page, no resize on nav. Only the mono surfaces (/dashboard, /architecture) wear the
@@ -131,12 +132,7 @@ export function SiteFooter({ identity }: { identity: Identity }) {
           <Link to="/about" data-testid="footer-about" className="transition-colors hover:text-foreground">
             About
           </Link>
-          <Link
-            to="/about"
-            hash="privacy"
-            data-testid="footer-privacy"
-            className="transition-colors hover:text-foreground"
-          >
+          <Link to="/privacy" data-testid="footer-privacy" className="transition-colors hover:text-foreground">
             Privacy
           </Link>
         </nav>

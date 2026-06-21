@@ -14,6 +14,7 @@ const ROUTES = [
   '/about',
   '/experience',
   '/contact',
+  '/privacy',
   '/watch',
   '/watch/results/det-sim-1',
   '/pipeline',

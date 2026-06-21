@@ -28,10 +28,12 @@ Do not start Phase B until all of these are true on `dev`:
 
 These have an external clock; kick them off first.
 
-- [ ] **Gmail consent screen → Production** (Google Cloud Console). The dev box has run on a Testing-mode screen with a 7-day refresh-token lifetime → prod Gmail dies weekly without this. Publish the OAuth consent screen to **Production**.
-  - Verify the scope set is the production scope set (`gmail.readonly` / `gmail.modify` / `gmail.send`, + Calendar/Drive if wired).
-  - `TODO:` note whether Google requires verification for the sensitive scopes (review lag) vs. self-use exemption for the owner's own account.
-  - Verify after publish: the prod Gmail token no longer expires on the 7-day clock.
+- [ ] **Gmail consent screen → Production** (Google Cloud Console). The dev box has run on a Testing-mode screen with a 7-day refresh-token lifetime → Gmail dies weekly without this. **Path A — self-use, unverified** (decided §24.148; confirmed vs. Google's docs): the Gmail scopes are *restricted*, but verification is NOT required to operate self-use — publish to Production, accept the one-time "unverified app" warning, and the 100-user cap is moot. **No Google review, no CASA assessment, no cost — so there is no "review lag" to start early for; it's a ~5-min Console action that can be done any time (and fixes the dev box's weekly death too, same project).**
+  - Scope set: `gmail.readonly` / `gmail.modify` / `gmail.send` + `openid`/`userinfo.email`/`userinfo.profile`. (Drive/Calendar are NOT on this screen — the interview-kit Doc uses the claude.ai project's own connector.)
+  - Consent-screen branding: privacy-policy URL = `https://hire.<DOMAIN>/privacy` (built, §24.148); homepage = `https://hire.<DOMAIN>`; authorized domain = `<DOMAIN>` (verify in Search Console if it asks).
+  - Steps: OAuth consent screen → **Publish app / set status to In production** → re-authorize the career account once (Advanced → continue, through the unverified warning) → drop the fresh non-expiring refresh token into OneCLI (`onecli apps ...`).
+  - Verify after publish: the prod Gmail token no longer expires on the 7-day clock (re-check ~8 days later, or confirm token metadata).
+  - (Only if you later want NO warning / multi-user: full verification = Path B, brand review + a paid annual CASA security assessment + weeks of Google review. Not needed for self-use.)
 - [ ] **Domain / DNS readiness** — confirm `hire.<DOMAIN>` + `api.hire.<DOMAIN>` are available to point (Cloudflare zone holds the apex). `TODO:` record the zone + the records to add (§2).
 
 ---
