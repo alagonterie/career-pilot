@@ -53,6 +53,26 @@ export interface HeroStatInputs {
 }
 
 /**
+ * "searching since {Mon YYYY}" — the earliest application's month, the honest
+ * anchor for when the search began (§24.149, owner-requested). Absent until the
+ * first application exists (at cold-start the "warming up" line owns that moment).
+ * An ABSOLUTE date (no `now`), formatted in UTC so the SSR seed and the client
+ * hydrate the IDENTICAL string (the relative `last activity` is the only
+ * `now`-derived segment). Pure + testable; null when no application carries an
+ * `applied_at`.
+ */
+export function searchingSince(apps: PipelineApplication[]): string | null {
+  let earliest = Infinity
+  for (const a of apps) {
+    if (!a.applied_at) continue
+    const t = new Date(a.applied_at).getTime()
+    if (Number.isFinite(t) && t < earliest) earliest = t
+  }
+  if (!Number.isFinite(earliest)) return null
+  return new Date(earliest).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })
+}
+
+/**
  * Build the hero stat segments. Returns `[]` (renders nothing — the reserved
  * line collapses to its min-height) until real data lands. Pure + testable.
  */
@@ -61,6 +81,10 @@ export function heroStats({ apps, events, actionsIn24h, now = Date.now() }: Hero
 
   const active = activeApplicationCount(apps)
   if (active > 0) out.push(`${active} active job application${active === 1 ? '' : 's'}`)
+
+  // The "since when" anchor sits right after the count — "5 applications, since Mar".
+  const since = searchingSince(apps)
+  if (since) out.push(`searching since ${since}`)
 
   if (actionsIn24h != null && actionsIn24h > 0) {
     out.push(`${actionsIn24h} agent action${actionsIn24h === 1 ? '' : 's'} in 24h`)

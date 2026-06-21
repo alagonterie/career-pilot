@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { activeApplicationCount, heroStatPhase, heroStats, relativeAgo } from './hero-stats'
+import { activeApplicationCount, heroStatPhase, heroStats, relativeAgo, searchingSince } from './hero-stats'
 import type { AuditEvent } from './use-activity-stream'
 import type { PipelineApplication } from './use-pipeline'
 
-function app(stage: string): PipelineApplication {
+function app(stage: string, opts: Partial<PipelineApplication> = {}): PipelineApplication {
   return {
     application_id: `id-${stage}-${Math.random()}`,
     application_ref: 'Series-B fintech',
@@ -20,6 +20,7 @@ function app(stage: string): PipelineApplication {
     published_learning: null,
     days_in_stage: null,
     days_in_pipeline: null,
+    ...opts,
   }
 }
 
@@ -109,6 +110,45 @@ describe('heroStats', () => {
       now,
     })
     expect(segs).toEqual(['last activity 5m ago'])
+  })
+
+  it('adds the "searching since" anchor (after the count) when applications carry an applied_at (§24.149)', () => {
+    const segs = heroStats({
+      apps: [
+        app('applied', { applied_at: '2026-03-15T12:00:00Z' }),
+        app('tech', { applied_at: '2026-01-04T12:00:00Z' }),
+      ],
+      events: [event(new Date(now - 4 * 60_000).toISOString())],
+      actionsIn24h: 47,
+      now,
+    })
+    expect(segs).toEqual([
+      '2 active job applications',
+      'searching since Jan 2026',
+      '47 agent actions in 24h',
+      'last activity 4m ago',
+    ])
+  })
+})
+
+describe('searchingSince (§24.149)', () => {
+  it('returns the EARLIEST application month, formatted "Mon YYYY" in UTC', () => {
+    expect(
+      searchingSince([
+        app('applied', { applied_at: '2026-03-15T12:00:00Z' }),
+        app('offer', { applied_at: '2026-01-04T12:00:00Z' }),
+        app('rejected', { applied_at: '2026-05-20T12:00:00Z' }),
+      ]),
+    ).toBe('Jan 2026')
+  })
+
+  it('is null at cold-start — no application carries an applied_at', () => {
+    expect(searchingSince([])).toBeNull()
+    expect(searchingSince([app('applied'), app('bookmarked')])).toBeNull() // factory applied_at: null
+  })
+
+  it('ignores an unparseable applied_at', () => {
+    expect(searchingSince([app('applied', { applied_at: 'not-a-date' })])).toBeNull()
   })
 })
 

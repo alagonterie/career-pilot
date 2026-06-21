@@ -167,15 +167,17 @@ function Home() {
 
         {/* Honest stat line (PORTAL §5.1 Viewport 1) — the first-paint "this is
             real, right now" proof under the CTAs. The WHOLE line is SSR-seeded
-            (counts + "last activity X ago"), so nothing pops in; the live hooks
-            take over the same values after mount, so there's no shift. The fixed
-            height (1 line desktop / 2 lines mobile) reserves the space across all
-            four phases (§24.149 L1): live `stats`, a first-load `skeleton`, the
-            settled-empty `fresh` line (cold launch — never a perpetual skeleton),
-            or a collapsed line on a hard outage (the badge carries that signal). */}
+            (counts + "searching since" + "last activity X ago"), so nothing pops in;
+            the live hooks take over the same values after mount, so there's no shift.
+            `min-h` (not a fixed height) reserves the space across all four phases
+            (§24.149 L1): live `stats`, a first-load `skeleton`, the settled-empty
+            `fresh` line (cold launch — never a perpetual skeleton), or a collapsed
+            line on a hard outage (the badge carries that signal) — and lets the
+            stats wrap gracefully to a second line when all four segments are present
+            (§24.149 "searching since") rather than clipping a fixed height. */}
         <div
           data-testid="hero-stats"
-          className="cp-rise mt-6 flex h-9 flex-wrap items-center justify-center gap-x-2 gap-y-1 font-mono text-xs text-muted-foreground sm:h-5"
+          className="cp-rise mt-6 flex min-h-9 flex-wrap items-center justify-center gap-x-2 gap-y-1 font-mono text-xs text-muted-foreground sm:min-h-5"
           style={{ animationDelay: '0.16s' }}
           aria-live="polite"
         >
