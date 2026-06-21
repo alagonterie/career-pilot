@@ -22,6 +22,7 @@ import { GROUPS_DIR } from '../../config.js';
 import { getDb } from '../../db/connection.js';
 import { log } from '../../log.js';
 import type { AgentGroup } from '../../types.js';
+import { projectWorkProfile, type WorkProfile } from '../portal/profile.js';
 
 import { readProactiveGateConfig } from './quiet-hours.js';
 
@@ -45,6 +46,7 @@ export interface CandidateProfile {
   brand_color_hsl: string | null; // excluded (portal styling)
   gmail_account: string | null; // Phase 2.3 (migration 108) — owner's Gmail address; OAuth refresh token lives in OneCLI vault
   protected_terms: string | null; // §24.134d (migration 141) — JSON array; the candidate's own employers/projects kept un-redacted on public kits. DERIVED from the résumé (not an onboarding step).
+  work_profile_json: string | null; // migration 133 — the AI-composed /work-page WorkProfile (the canonical résumé source the download/tailored-PDF/honesty-floor all use); the public sandbox tailor reads THIS, not the thin master_resume (§24.145).
   updated_at: string;
 }
 
@@ -192,11 +194,18 @@ export function renderSandboxCandidate(profile: CandidateProfile | null): string
   const targetRoles = parseJsonArray(profile.target_roles, 'target_roles');
   const skills = parseJsonArray(profile.skills, 'skills');
   const locationPref = parseLocationPref(profile.location_pref);
+  // §24.145: the canonical résumé source. The composed /work-page WorkProfile is
+  // what the Experience-page download, the tailored PDF, AND the honesty floor all
+  // use — so the sandbox tailor reads it too (instead of the thinner, possibly
+  // inconsistent master_resume) and only ever cites figures the floor can verify.
+  // Falls back to master_resume when no /work page has been composed yet.
+  const workProfile = projectWorkProfile(profile.work_profile_json);
 
   const hasAnyContent =
     profile.full_name ||
     profile.bio ||
     targetRoles.length > 0 ||
+    workProfile ||
     profile.master_resume ||
     skills.length > 0 ||
     profile.github_url ||
@@ -228,7 +237,11 @@ export function renderSandboxCandidate(profile: CandidateProfile | null): string
     sections.push(locationSection);
   }
 
-  if (profile.master_resume) {
+  // §24.145: prefer the composed WorkProfile (the canonical source) so the tailor
+  // reads the same rich content the floor + PDFs use; fall back to master_resume.
+  if (workProfile) {
+    sections.push('## Master resume', workProfileToMarkdown(workProfile));
+  } else if (profile.master_resume) {
     sections.push('## Master resume', profile.master_resume.trim());
   }
 
@@ -239,8 +252,10 @@ export function renderSandboxCandidate(profile: CandidateProfile | null): string
   // Approved figures (§24.72 honesty): the ONLY numbers the agent may cite, drawn
   // from the real résumé. The bio is mechanically re-checked against this set
   // host-side, but the cold-outreach email is free prose — this list curbs an
-  // invented metric (the recurring "60% faster") at the source for BOTH.
-  const figures = approvedFigures(profile);
+  // invented or unverifiable metric at the source for BOTH. §24.145: when a
+  // composed WorkProfile exists, derive the list from IT (mirroring the floor's
+  // masterNumbers exactly) so the allow-list and the floor agree by construction.
+  const figures = workProfile ? approvedFiguresFromWorkProfile(workProfile) : approvedFigures(profile);
   if (figures.length > 0) {
     sections.push(
       '## Approved figures (honesty)',
@@ -268,13 +283,10 @@ export function renderSandboxCandidate(profile: CandidateProfile | null): string
   return sections.join('\n\n') + '\n';
 }
 
-/** The distinct digit-number tokens (comma-normalized) in the candidate's real
- *  résumé text — the honesty allow-list for any metric the agent cites. Mirrors
- *  the bio check's token extraction in tailored-resume.ts so the two agree. */
-function approvedFigures(profile: CandidateProfile): string[] {
-  const text = [profile.master_resume ?? '', profile.bio ?? '', profile.skills ?? '', profile.target_roles ?? ''].join(
-    ' ',
-  );
+/** Distinct digit-number tokens (comma-normalized) in a blob of text — the honesty
+ *  allow-list primitive. Mirrors the bio check's token extraction in
+ *  tailored-resume.ts so the sandbox allow-list and the host floor agree. */
+function distinctDigitTokens(text: string): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const m of text.match(/\d[\d,]*(?:\.\d+)?/g) ?? []) {
@@ -285,6 +297,56 @@ function approvedFigures(profile: CandidateProfile): string[] {
     }
   }
   return out;
+}
+
+/** Approved figures from the candidate_profile text fields — the master_resume
+ *  fallback path, used when no composed WorkProfile exists yet. */
+function approvedFigures(profile: CandidateProfile): string[] {
+  return distinctDigitTokens(
+    [profile.master_resume ?? '', profile.bio ?? '', profile.skills ?? '', profile.target_roles ?? ''].join(' '),
+  );
+}
+
+/** Approved figures from the composed WorkProfile (§24.145) — mirrors
+ *  validateTailoredResume's `masterNumbers` field-for-field, so the sandbox's
+ *  allow-list and the host honesty floor are derived from the SAME content and a
+ *  number the model reads here is one the floor will verify. */
+function approvedFiguresFromWorkProfile(wp: WorkProfile): string[] {
+  return distinctDigitTokens(
+    [
+      wp.title,
+      ...wp.bio,
+      ...wp.lookingFor,
+      ...wp.education,
+      ...wp.skills,
+      ...wp.experience.flatMap((e) => [e.role, e.company, e.period, ...e.bullets]),
+      ...wp.projects.flatMap((p) => [p.name, p.description ?? '', ...(p.tags ?? [])]),
+    ].join(' '),
+  );
+}
+
+/** Render the composed WorkProfile (the canonical résumé source — §24.145) into
+ *  the `## Master resume` body the sandbox tailor reads, so it sees the SAME rich
+ *  content the /work download + the tailored PDF + the honesty floor use. */
+function workProfileToMarkdown(wp: WorkProfile): string {
+  const parts: string[] = [];
+  if (wp.bio.length > 0) parts.push(wp.bio.join('\n\n'));
+  if (wp.experience.length > 0) {
+    parts.push('### Experience');
+    for (const e of wp.experience) {
+      const head = [e.role, e.company].filter((s) => s).join(' — ');
+      parts.push(e.period ? `**${head}** (${e.period})` : `**${head}**`);
+      if (e.bullets.length > 0) parts.push(e.bullets.map((b) => `- ${b}`).join('\n'));
+    }
+  }
+  if (wp.projects.length > 0) {
+    parts.push('### Projects');
+    parts.push(wp.projects.map((p) => `- **${p.name}**${p.description ? ` — ${p.description}` : ''}`).join('\n'));
+  }
+  if (wp.education.length > 0) {
+    parts.push('### Education', wp.education.map((ed) => `- ${ed}`).join('\n'));
+  }
+  return parts.join('\n\n');
 }
 
 interface LocationPref {

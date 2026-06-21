@@ -22,6 +22,7 @@ function profile(overrides: Partial<CandidateProfile> = {}): CandidateProfile {
     brand_color_hsl: null,
     gmail_account: null,
     protected_terms: null,
+    work_profile_json: null,
     updated_at: '2026-05-26T00:00:00Z',
     ...overrides,
   };
@@ -274,6 +275,64 @@ describe('renderSandboxCandidate (§24.54 — public simulator subset)', () => {
   it('omits the Approved-figures section when the résumé has no numbers', () => {
     const p = profile({ full_name: 'Jane Doe', master_resume: '## Experience\n\n- Built and shipped things.' });
     expect(renderSandboxCandidate(p)).not.toContain('## Approved figures');
+  });
+
+  // §24.145: when a composed WorkProfile exists, the sandbox tailor must read IT
+  // (the canonical source the download + tailored PDF + honesty floor all use),
+  // NOT the thinner master_resume — so the model only cites figures the floor can
+  // verify. Placeholder profile with DELIBERATELY different numbers in each source.
+  describe('sources from work_profile_json when present (§24.145)', () => {
+    const WP = JSON.stringify({
+      name: 'Jane Doe',
+      title: 'Staff Engineer',
+      bio: ['I build high-throughput systems that answer access checks 900x faster than the SQL they replace.'],
+      lookingFor: ['Staff backend roles'],
+      experience: [
+        {
+          role: 'Senior Engineer',
+          company: 'Acme',
+          period: '2018–2024',
+          bullets: ['Built an in-memory engine answering checks in 42ns'],
+        },
+      ],
+      projects: [{ name: 'Widget', description: 'A throughput thing' }],
+      skills: ['Go', 'Rust'],
+      education: ['BS CS, State University, 2016'],
+      links: {},
+    });
+    // master_resume carries a number (77) that does NOT appear in the WorkProfile.
+    const p = profile({
+      full_name: 'Jane Doe',
+      work_profile_json: WP,
+      master_resume: '## Experience\n\n- Cut cost by 77%.',
+    });
+
+    it('renders ## Master resume from the WorkProfile, not master_resume', () => {
+      const out = renderSandboxCandidate(p);
+      expect(out).toContain('## Master resume');
+      expect(out).toContain('answer access checks 900x faster'); // WorkProfile bio
+      expect(out).toContain('in-memory engine answering checks in 42ns'); // WorkProfile bullet
+      expect(out).not.toContain('Cut cost by 77'); // master_resume must NOT leak in
+    });
+
+    it('derives Approved figures from the WorkProfile, excluding master_resume-only numbers', () => {
+      const out = renderSandboxCandidate(p);
+      expect(out).toContain('## Approved figures');
+      expect(out).toContain('900'); // from the WorkProfile
+      expect(out).toContain('42'); // from the WorkProfile
+      expect(out).not.toContain('77'); // master_resume-only → NOT approved (the floor wouldn't verify it)
+    });
+
+    it('falls back to master_resume when no WorkProfile is composed', () => {
+      const fb = profile({
+        full_name: 'Jane Doe',
+        master_resume: '## Experience\n\n- Shipped the 88-service platform.',
+      });
+      const out = renderSandboxCandidate(fb);
+      expect(out).toContain('## Master resume');
+      expect(out).toContain('88-service platform'); // master_resume used as the fallback
+      expect(out).toContain('88'); // approved figures fall back to master_resume too
+    });
   });
 
   it('returns the sandbox sentinel (never the owner onboarding flow) for null/empty profiles', () => {

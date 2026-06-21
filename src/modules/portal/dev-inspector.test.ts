@@ -69,6 +69,7 @@ function makeProfile(overrides: Partial<CandidateProfile> = {}): CandidateProfil
     brand_color_hsl: null,
     gmail_account: null,
     protected_terms: null,
+    work_profile_json: null,
     updated_at: '2026-06-05T00:00:00Z',
     ...overrides,
   };
