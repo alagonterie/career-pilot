@@ -14,26 +14,30 @@ import { cn } from '~/lib/utils'
 export function AvailabilityBadge({
   status,
   title,
+  concluded = false,
   'data-testid': testId,
 }: {
   status: StreamStatus | 'idle'
   /** Tooltip text (the home hero passes its live event count; contact a simpler line). */
   title?: string
+  /** §24.149 L2: in the concluded-search retrospective the candidate is no longer
+   *  "open to offers" — the pill reads "Offer accepted" with a steady (un-pulsed)
+   *  brand dot. Default false → byte-identical to before for every active-mode caller. */
+  concluded?: boolean
   'data-testid'?: string
 }) {
   const live = status === 'open'
+  // Concluded → a settled, solid brand dot (no live pulse: the search is over).
+  const dotClass = concluded ? 'bg-primary' : live ? 'bg-primary cp-live-pulse' : 'bg-muted-foreground'
   return (
     <span
       data-testid={testId}
       data-status={status}
-      title={title ?? (live ? 'live' : status)}
+      title={concluded ? 'offer accepted' : (title ?? (live ? 'live' : status))}
       className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3.5 py-1.5 text-sm text-foreground"
     >
-      <span
-        aria-hidden="true"
-        className={cn('h-2 w-2 rounded-full', live ? 'bg-primary cp-live-pulse' : 'bg-muted-foreground')}
-      />
-      Open to offers
+      <span aria-hidden="true" className={cn('h-2 w-2 rounded-full', dotClass)} />
+      {concluded ? 'Offer accepted' : 'Open to offers'}
     </span>
   )
 }

@@ -136,6 +136,7 @@ function Home() {
         <div className="cp-rise mb-6 flex justify-center">
           <AvailabilityBadge
             status={status}
+            concluded={lifecycle === 'concluded'}
             title={status === 'open' ? `live — ${count} event${count === 1 ? '' : 's'} received` : status}
             data-testid="hero-status"
           />

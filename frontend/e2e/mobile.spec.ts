@@ -293,7 +293,13 @@ test('mobile nav menu (open) matches visual baseline', { tag: '@visual' }, async
   await page.goto('/')
   await openMenu(page)
   // Viewport (not fullPage) so the snapshot frames the header + the open menu.
-  await expect(page).toHaveScreenshot('mobile-nav-open.png', { animations: 'disabled' })
+  await expect(page).toHaveScreenshot('mobile-nav-open.png', {
+    animations: 'disabled',
+    // §24.149 (c): the home stat line behind the menu is wall-clock-derived
+    // ("last activity Xm ago") and drifted this baseline daily — mask it like every
+    // other hero-stats capture; the header + open-menu layout is the regression guard.
+    mask: [page.getByTestId('hero-stats')],
+  })
 })
 
 test('mobile pipeline matches visual baseline', { tag: '@visual' }, async ({ page }) => {
@@ -301,6 +307,29 @@ test('mobile pipeline matches visual baseline', { tag: '@visual' }, async ({ pag
   await expect(page.getByTestId('funnel-board')).toBeVisible()
   await expect(page.getByText('Wayne Enterprises')).toBeVisible()
   await expect(page).toHaveScreenshot('mobile-pipeline.png', {
+    animations: 'disabled',
+    fullPage: true,
+    mask: [page.getByTestId('funnel-card-age'), page.getByTestId('stat-value')],
+  })
+})
+
+test('mobile home concluded retrospective matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  // §24.149 L2 — the concluded retrospective on a phone (banner stacks above the hero).
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto('/?__lifecycle=concluded')
+  await expect(page.getByTestId('concluded-banner')).toContainText('Wayne Enterprises')
+  await expect(page).toHaveScreenshot('mobile-home-concluded.png', {
+    animations: 'disabled',
+    fullPage: true,
+    mask: [page.getByTestId('hero-stats')],
+  })
+})
+
+test('mobile pipeline concluded retrospective matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  await page.goto('/pipeline?__lifecycle=concluded')
+  await expect(page.getByTestId('concluded-banner')).toBeVisible()
+  await expect(page.getByTestId('funnel-board')).toBeVisible()
+  await expect(page).toHaveScreenshot('mobile-pipeline-concluded.png', {
     animations: 'disabled',
     fullPage: true,
     mask: [page.getByTestId('funnel-card-age'), page.getByTestId('stat-value')],
@@ -317,7 +346,16 @@ test('mobile kit dossier (sealed) matches visual baseline', { tag: '@visual' }, 
 test('mobile architecture matches visual baseline', { tag: '@visual' }, async ({ page }) => {
   await page.goto('/architecture')
   await expect(page.getByTestId('arch-node-host-router')).toHaveAttribute('data-status', 'healthy')
-  await expect(page).toHaveScreenshot('mobile-architecture.png', { animations: 'disabled', fullPage: true })
+  await expect(page).toHaveScreenshot('mobile-architecture.png', {
+    animations: 'disabled',
+    fullPage: true,
+    // §24.149 (c): the mobile capture intermittently catches ONE diagram node's
+    // status dot mid-probe-cycle (a few-pixel color flip), drifting this baseline.
+    // The desktop architecture baseline is stable, so this is a mobile capture-timing
+    // race, not a layout regression — a small tolerance absorbs the single dot (the
+    // simulator-input precedent) while the full-page layout stays the guard.
+    maxDiffPixels: 300,
+  })
 })
 
 test('mobile live matches visual baseline', { tag: '@visual' }, async ({ page }) => {

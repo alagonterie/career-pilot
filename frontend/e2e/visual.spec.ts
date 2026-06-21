@@ -30,6 +30,20 @@ test('home page matches visual baseline', { tag: '@visual' }, async ({ page }) =
   })
 })
 
+test('home concluded retrospective matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  // §24.149 L2 — the concluded retrospective, reached via the dev/mock `?__lifecycle=`
+  // seam (the VITE_MOCK_SEAM build honors it). Reduced-motion like the home test.
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto('/?__lifecycle=concluded')
+  await expect(page.getByTestId('concluded-banner')).toContainText('Wayne Enterprises')
+  await expect(page.getByTestId('hero-status')).toContainText('Offer accepted')
+  await expect(page).toHaveScreenshot('home-concluded.png', {
+    animations: 'disabled',
+    fullPage: true,
+    mask: [page.getByTestId('hero-stats')],
+  })
+})
+
 test('about page matches visual baseline', { tag: '@visual' }, async ({ page }) => {
   await page.goto('/about')
   await expect(page.getByRole('heading', { name: /why i built this/i, level: 1 })).toBeVisible()
@@ -60,6 +74,18 @@ test('funnel page matches visual baseline', { tag: '@visual' }, async ({ page })
     // Day-counts + date-windowed stat values derive from wall-clock and drift
     // daily; mask them (the layout is the regression guard, the numbers are
     // covered by the unit + semantic tests).
+    mask: [page.getByTestId('funnel-card-age'), page.getByTestId('stat-value')],
+  })
+})
+
+test('pipeline concluded retrospective matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  // §24.149 L2 — the concluded banner atop the full board.
+  await page.goto('/pipeline?__lifecycle=concluded')
+  await expect(page.getByTestId('concluded-banner')).toBeVisible()
+  await expect(page.getByTestId('funnel-board')).toBeVisible()
+  await expect(page).toHaveScreenshot('pipeline-concluded.png', {
+    animations: 'disabled',
+    fullPage: true,
     mask: [page.getByTestId('funnel-card-age'), page.getByTestId('stat-value')],
   })
 })

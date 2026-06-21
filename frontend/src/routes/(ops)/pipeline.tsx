@@ -88,8 +88,12 @@ function PipelinePage() {
           </div>
           {/* §24.137: decode the anonymized handles before a visitor clicks a card
               — the chip + one line turns `[infra-e]` from "looks broken" into a
-              legible privacy choice (mirrors the /kit RedactionLegend). */}
-          <CompanyHandleLegend />
+              legible privacy choice (mirrors the /kit RedactionLegend). §24.149 L1:
+              hidden ONLY in the settled-empty (cold-start) state — there are no
+              handles to explain yet, so the legend would be premature; kept during
+              loading (the board skeleton holds the space), on a transient error (the
+              board had cards and will again), and whenever there are apps. */}
+          {status === 'loading' || status === 'error' || apps.length > 0 ? <CompanyHandleLegend /> : null}
         </header>
 
         <StatTiles apps={apps} loading={status === 'loading'} />

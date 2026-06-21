@@ -4,11 +4,21 @@ import { describe, expect, it } from 'vitest'
 import { AvailabilityBadge } from './AvailabilityBadge'
 
 describe('AvailabilityBadge (§24.120)', () => {
-  it('always reads "Open to offers" and carries the status + testid', () => {
+  it('defaults to "Open to offers" and carries the status + testid', () => {
     render(<AvailabilityBadge status="idle" data-testid="contact-status" />)
     const badge = screen.getByTestId('contact-status')
     expect(badge).toHaveTextContent('Open to offers')
     expect(badge).toHaveAttribute('data-status', 'idle')
+  })
+
+  it('reads "Offer accepted" with a steady (un-pulsed) dot in the concluded retrospective (§24.149 L2)', () => {
+    render(<AvailabilityBadge status="open" concluded data-testid="hero-status" />)
+    const badge = screen.getByTestId('hero-status')
+    expect(badge).toHaveTextContent('Offer accepted')
+    expect(badge).not.toHaveTextContent('Open to offers')
+    expect(badge).toHaveAttribute('title', 'offer accepted')
+    // Even with the feed "open", the concluded dot does NOT pulse (the search is over).
+    expect(badge.querySelector('span[aria-hidden="true"]')?.className).not.toContain('cp-live-pulse')
   })
 
   it('pulses the dot only while the feed is connected (status="open")', () => {
