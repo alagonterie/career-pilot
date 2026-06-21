@@ -568,7 +568,7 @@ export const emitTailoredResume: McpToolDefinition = {
             projectsFirst: {
               type: 'boolean',
               description:
-                'Optional. Set true ONLY when this role values projects/portfolio over work history — moves the Projects section above Experience on the PDF. Omit (default) for conventional roles.',
+                'Optional. Set true when ONE of the candidate\'s REAL projects is a standout match for THIS role — a specific project that demonstrates exactly what this company is hiring for (e.g. they want an agent system or a polished web product and the candidate has a project that IS precisely that). Moves Projects above Experience on the PDF so the matching project leads. This is a SPECIFIC project↔role match, NOT a generic "likes side projects" signal — omit (default) when no single project is a clear standout for the role.',
             },
           },
           required: ['bio', 'experience'],

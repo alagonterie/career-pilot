@@ -91,11 +91,14 @@ that actually tailor it:
   most role-relevant bullets selected and ordered first, each bullet COPIED
   verbatim from the master (keep its concrete numbers exactly as written).
 - `lookingFor` — 3–4 target-role lines pointed at this role.
-- `projectsFirst` — OPTIONAL boolean. Set it `true` only when this role values
-  projects/portfolio over work history (e.g. early-career, a heavy
-  open-source/side-project signal, or a JD that leads with "show us what you've
-  built") — it moves the Projects section above Experience on the PDF. Omit it
-  (the default) for conventional roles where work history leads.
+- `projectsFirst` — OPTIONAL boolean. Set it `true` when ONE of my REAL projects
+  is a standout match for THIS role — a specific project that demonstrates exactly
+  what this company is hiring for (e.g. they're hiring to build an agent system or
+  a polished web product, and I have a project that IS precisely that). It moves
+  the Projects section above Experience on the PDF so that matching project leads.
+  This is about a SPECIFIC project ↔ role match, NOT a generic "this company likes
+  side projects" signal — omit it (the default) when no single project is a clear
+  standout for the role.
 
 Tailoring is SELECTION + a role-specific summary, never invention: never invent
 or reword accomplishments, employers, dates, technologies, or numbers.
