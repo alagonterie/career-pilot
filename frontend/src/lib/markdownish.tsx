@@ -19,13 +19,31 @@ function unescapeMd(text: string): string {
   return text.replace(/\\([\\`*_{}[\]()#+\-.!&>~|"'])/g, '$1')
 }
 
+/**
+ * Render a plain (non-code) string with its redaction tokens as provenance chips
+ * (§24.134d) and the rest as unescaped text. Shared by BOTH the `**bold**` branch
+ * and the top-level plain branch so a `[…REDACTED…]` token chips identically
+ * whether or not it sits inside bold — a bold token (`**[REDACTED:infra-d] …**`)
+ * was previously unescaped straight to raw text, leaking the literal token onto
+ * the kit (§24.146 A0).
+ */
+function renderWithRedactions(text: string, keyPrefix: string): React.ReactNode {
+  return splitRedactionParts(text).map((part, j) =>
+    part.token ? (
+      <Redaction key={`${keyPrefix}-${j}`} token={part.value} />
+    ) : (
+      <React.Fragment key={`${keyPrefix}-${j}`}>{unescapeMd(part.value)}</React.Fragment>
+    ),
+  )
+}
+
 export function renderInline(text: string): React.ReactNode {
   const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g)
   return parts.map((p, i) => {
     if (p.startsWith('**') && p.endsWith('**') && p.length > 4) {
       return (
         <strong key={i} className="font-semibold text-foreground">
-          {unescapeMd(p.slice(2, -2))}
+          {renderWithRedactions(p.slice(2, -2), String(i))}
         </strong>
       )
     }
@@ -38,13 +56,7 @@ export function renderInline(text: string): React.ReactNode {
     }
     // §24.134d: a plain segment may carry redaction tokens — render each as a
     // provenance-tiered chip, the rest as unescaped text.
-    return splitRedactionParts(p).map((part, j) =>
-      part.token ? (
-        <Redaction key={`${i}-${j}`} token={part.value} />
-      ) : (
-        <React.Fragment key={`${i}-${j}`}>{unescapeMd(part.value)}</React.Fragment>
-      ),
-    )
+    return renderWithRedactions(p, String(i))
   })
 }
 

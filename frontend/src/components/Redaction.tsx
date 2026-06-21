@@ -108,21 +108,33 @@ export function RedactedText({ text }: { text: string }) {
   return <>{splitRedactionParts(text).map((p, i) => (p.token ? <Redaction key={i} token={p.value} /> : p.value))}</>
 }
 
-/** A once-per-page legend that turns the chips from "what broke?" into a
- * legible feature — names the two honest tiers (§24.134d). */
+/** A once-per-page legend that turns the chips from "what broke?" into a legible
+ * feature — names the two honest tiers (§24.134d). A bordered, titled key (not a
+ * loose run of text, §24.146 A0): it reads as a deliberate component the chips
+ * map back to, the way a chart's legend sits apart from the chart. */
 export function RedactionLegend() {
   return (
-    <p
+    <div
       data-testid="redaction-legend"
-      className="flex flex-wrap items-center gap-x-3 gap-y-1.5 font-mono text-[11px] text-muted-foreground"
+      className="flex flex-col gap-2 rounded-md border border-border bg-muted/30 px-3 py-2.5"
     >
-      <span>Redactions:</span>
-      <span className="inline-flex items-center gap-1.5">
-        <Redaction token="[AI_REDACTED]" /> the agent's judgment
+      <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/80">
+        Redaction key
       </span>
-      <span className="inline-flex items-center gap-1.5">
-        <Redaction token="[EMAIL_REDACTED]" /> a deterministic scrub
-      </span>
-    </p>
+      <dl className="flex flex-wrap gap-x-5 gap-y-2 font-mono text-[11px]">
+        <div className="inline-flex items-center gap-1.5">
+          <dt>
+            <Redaction token="[AI_REDACTED]" />
+          </dt>
+          <dd className="text-muted-foreground">the agent&apos;s judgment</dd>
+        </div>
+        <div className="inline-flex items-center gap-1.5">
+          <dt>
+            <Redaction token="[EMAIL_REDACTED]" />
+          </dt>
+          <dd className="text-muted-foreground">a deterministic scrub</dd>
+        </div>
+      </dl>
+    </div>
   )
 }

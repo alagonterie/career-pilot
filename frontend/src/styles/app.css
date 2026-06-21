@@ -143,6 +143,39 @@
 }
 
 /*
+ * Scroll reveal (the `/` scroll pass — §24.146 A0). Below-the-fold sections RISE
+ * into place as they enter the viewport, driven by `useReveal` (IntersectionObserver).
+ *
+ * TRANSFORM-ONLY (translate, never opacity) — the same a11y constraint that makes
+ * the `cp-rise` hero entrance transform-only (§24.135): an opacity-faded text node
+ * is sampled by axe with a BLENDED foreground (a section armed at opacity 0 reads
+ * as a 1:1-contrast violation in a top-of-page scan), so the reveal only ever
+ * translates. The element stays fully opaque + visible throughout, which also
+ * keeps every `toBeVisible()` smoke assertion on the below-fold ticker honest.
+ *
+ * Progressive enhancement: the armed class is applied by JS only — an element with
+ * neither class sits at its settled position, so SSR / JS-disabled / reduced-motion
+ * renders are solid (the no-JS principle). Transition-based (not @keyframes) so
+ * Playwright's `animations:'disabled'` freezes it to the settled frame.
+ */
+.cp-reveal {
+  transform: translateY(1rem);
+  transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+.cp-reveal-in {
+  transform: none;
+}
+/* Belt to the JS gate: if a reveal is ever armed under reduced motion, hold it
+   settled + still (movement is the vestibular concern the user opted out of). */
+@media (prefers-reduced-motion: reduce) {
+  .cp-reveal {
+    transform: none;
+    transition: none;
+  }
+}
+
+/*
  * Ambient hero backdrop (the `/` flare pass) — two faint brand-hue radial washes
  * (signal-green + trace-cyan) that give the hero depth so it reads as a designed
  * surface, not a centered text column. Static (no drift): keeps it calm and

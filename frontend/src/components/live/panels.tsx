@@ -512,6 +512,18 @@ function OutcomeArtifactBadges({ app }: { app: PipelineApplication }) {
   )
 }
 
+/** Short UTC date for a Recent-outcomes row (§24.146 A0): "Jun 18". Date-only on
+ * purpose — the precise time of a recorded outcome often just reflects when the
+ * scribe processed it, not when the thing happened, so the DAY is the honest,
+ * useful unit. UTC-fixed so it can't drift across the viewer's timezone. Null-safe
+ * (recent rows always carry an activity ts, but guard anyway). */
+function outcomeDate(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+}
+
 export function RecentOutcomesPanel({ apps, status }: { apps: PipelineApplication[]; status?: PollStatus }) {
   const recent = apps
     .filter((a) => a.last_activity_at != null)
@@ -543,6 +555,7 @@ export function RecentOutcomesPanel({ apps, status }: { apps: PipelineApplicatio
               detail panel that already exists there. */}
           {recent.map((a) => {
             const isPublic = a.public_state === 'public'
+            const dateLabel = outcomeDate(a.last_activity_at)
             return (
               // keyed by application_id, not the ref — two PUBLIC applications
               // at one company share their company-name ref (§24.62 note)
@@ -553,8 +566,22 @@ export function RecentOutcomesPanel({ apps, status }: { apps: PipelineApplicatio
                   data-testid="recent-outcome-link"
                   className="group flex items-center justify-between gap-2 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <span className="truncate text-foreground group-hover:underline">
-                    {isPublic ? a.application_ref : `[${a.application_ref}]`}
+                  <span className="flex min-w-0 items-center gap-2">
+                    {/* Leading day stamp (§24.146 A0) — when the outcome last moved.
+                        `shrink-0` so the date never truncates; the ref absorbs the
+                        squeeze. Drifts daily off a relative seed, so it's masked in
+                        the /dashboard visual baseline (the layout is the guard). */}
+                    {dateLabel ? (
+                      <span
+                        data-testid="recent-outcome-date"
+                        className="shrink-0 tabular-nums text-muted-foreground/60"
+                      >
+                        {dateLabel}
+                      </span>
+                    ) : null}
+                    <span className="truncate text-foreground group-hover:underline">
+                      {isPublic ? a.application_ref : `[${a.application_ref}]`}
+                    </span>
                   </span>
                   <span className="flex items-center gap-2">
                     {/* §24.118: badge whether this outcome has interview kits / captured fuel. */}

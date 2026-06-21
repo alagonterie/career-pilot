@@ -12,8 +12,10 @@ import { heroStats, relativeAgo } from '~/lib/hero-stats'
 import { seo } from '~/lib/seo'
 import { useActivityStream } from '~/lib/use-activity-stream'
 import { usePipeline } from '~/lib/use-pipeline'
+import { useReveal } from '~/lib/use-reveal'
 import { useTelemetry } from '~/lib/use-telemetry'
 import { workProfile } from '~/lib/work-profile'
+import { cn } from '~/lib/utils'
 
 export const Route = createFileRoute('/(marketing)/')({
   component: Home,
@@ -57,6 +59,16 @@ function Home() {
   const lastActivity = liveLastActivity ?? heroSeed.lastActivity
   const shownStats = [...counts, lastActivity].filter((s): s is string => Boolean(s))
   const p = profile ?? workProfile
+
+  // Scroll reveal (the `/` scroll pass, §24.146 A0): each below-the-fold beat
+  // rises into place as it enters the viewport (transform-only, §24.135). One hook
+  // per section (hooks run unconditionally — the pipeline ref simply never attaches
+  // in its error branch).
+  const pitchReveal = useReveal<HTMLElement>()
+  const pipelineReveal = useReveal<HTMLElement>()
+  const tickerReveal = useReveal<HTMLDivElement>()
+  const watchReveal = useReveal<HTMLElement>()
+  const teaserReveal = useReveal<HTMLElement>()
 
   return (
     <main className="relative mx-auto flex max-w-3xl flex-col items-center overflow-x-clip px-6 py-20 sm:py-24">
@@ -150,7 +162,11 @@ function Home() {
           arrives, so a visitor isn't left reverse-engineering what's happening. Static
           prose (no per-visitor data); ends with one quiet deepener into the full story
           (/about). The less-interested scroll straight past into the proof below. */}
-      <section aria-labelledby="home-pitch-heading" className="mt-24 w-full max-w-xl text-center">
+      <section
+        ref={pitchReveal.ref}
+        aria-labelledby="home-pitch-heading"
+        className={cn('mt-24 w-full max-w-xl text-center', pitchReveal.className)}
+      >
         <h2 id="home-pitch-heading" className="sr-only">
           What this is
         </h2>
@@ -192,7 +208,11 @@ function Home() {
           space instead of popping in — there's essentially always live data here.
           A cold backend error is the one case it collapses (no stranded skeleton). */}
       {pipelineStatus !== 'error' ? (
-        <section aria-labelledby="home-pipeline-heading" className="mt-24 w-full">
+        <section
+          ref={pipelineReveal.ref}
+          aria-labelledby="home-pipeline-heading"
+          className={cn('mt-24 w-full', pipelineReveal.className)}
+        >
           <div className="mb-3 flex items-center justify-between gap-3">
             <h2
               id="home-pipeline-heading"
@@ -216,20 +236,29 @@ function Home() {
       ) : null}
 
       {/* Viewport 3 — agent-activity hook. The "see it all →" link is the
-          contextual bridge into the ops register (PORTAL §5.1 / §24.35 Pass A). */}
-      <LiveTicker
-        events={events}
-        status={status}
-        action={
-          <Link to="/dashboard" className="font-mono text-xs text-accent-cool hover:underline">
-            see it all →
-          </Link>
-        }
-      />
+          contextual bridge into the ops register (PORTAL §5.1 / §24.35 Pass A).
+          Wrapped in a full-width reveal carrier so it joins the scroll choreography
+          (LiveTicker owns its own `mt-24`, which collapses through this border-less
+          div unchanged). */}
+      <div ref={tickerReveal.ref} className={cn('w-full', tickerReveal.className)}>
+        <LiveTicker
+          events={events}
+          status={status}
+          action={
+            <Link to="/dashboard" className="font-mono text-xs text-accent-cool hover:underline">
+              see it all →
+            </Link>
+          }
+        />
+      </div>
 
       {/* Viewport 4 — the "watch me apply" pitch (PORTAL §5.1): a single high-intent
           CTA into the grippiest spoke. No form here — the form lives on /watch. */}
-      <section aria-labelledby="home-watch-heading" className="mt-24 w-full text-center">
+      <section
+        ref={watchReveal.ref}
+        aria-labelledby="home-watch-heading"
+        className={cn('mt-24 w-full text-center', watchReveal.className)}
+      >
         <h2 id="home-watch-heading" className="text-2xl font-bold tracking-tight">
           Watch me apply to your role
         </h2>
@@ -246,7 +275,12 @@ function Home() {
       </section>
 
       {/* Viewport 5 — resume + contact teaser (PORTAL §5.1). */}
-      <section aria-labelledby="home-teaser-heading" className="mt-24 grid w-full gap-10 sm:grid-cols-3">
+      <section
+        ref={teaserReveal.ref}
+        data-testid="home-teaser"
+        aria-labelledby="home-teaser-heading"
+        className={cn('mt-24 grid w-full gap-10 sm:grid-cols-3', teaserReveal.className)}
+      >
         <h2 id="home-teaser-heading" className="sr-only">
           More about me
         </h2>

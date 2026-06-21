@@ -230,6 +230,14 @@ describe('PipelineCompact + RecentOutcomes', () => {
     expect(screen.getAllByTestId('recent-outcome-link')).toHaveLength(2)
   })
 
+  it('stamps each row with the activity DAY, UTC-fixed (§24.146 A0)', () => {
+    render(<RecentOutcomesPanel apps={APPS} />)
+    const dates = screen.getAllByTestId('recent-outcome-date')
+    // Date-only, newest-first: devtools-b (05-25) then fintech-a (05-14). UTC-fixed
+    // so the day can't slip across the viewer's timezone.
+    expect(dates.map((d) => d.textContent)).toEqual(['May 25', 'May 14'])
+  })
+
   it('color-codes only terminal outcomes (§24.109 #12)', () => {
     // Pure mapping: a win is green, a loss is red, a withdrawal is dimmed,
     // in-progress stays muted (not an outcome yet).

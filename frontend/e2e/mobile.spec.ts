@@ -237,6 +237,17 @@ test('/kit TOC steppers scroll the page BOTH directions (§24.65 Δ)', async ({ 
   expect(back2).toBe(positions[0]) // lands exactly back on the first section
 })
 
+test('home below-the-fold sections rise in on scroll (§24.146 A0)', async ({ page }) => {
+  await page.goto('/')
+  const teaser = page.getByTestId('home-teaser')
+  // The last section starts well below a phone fold → armed (translated down) after
+  // mount. Transform-only (never opacity), so it stays visible the whole time.
+  await expect(teaser).not.toHaveCSS('transform', 'none')
+  // Scrolling to the bottom lands it in view → the once-reveal settles it home.
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+  await expect(teaser).toHaveCSS('transform', 'none')
+})
+
 test('key mobile surfaces are axe-clean (incl. the open nav menu)', async ({ page }) => {
   await page.goto('/')
   await openMenu(page)
@@ -251,6 +262,10 @@ test('key mobile surfaces are axe-clean (incl. the open nav menu)', async ({ pag
 // ── @visual mobile baselines (skipped in CI; OS-specific) ────────────────────
 
 test('mobile home matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+  // Reduced-motion disables the §24.146 scroll reveal (sections stay solid), so the
+  // fullPage capture is deterministic — no IntersectionObserver-timing dependence.
+  // See the desktop home note.
+  await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto('/')
   await expect(page.getByTestId('live-ticker')).toContainText('research-company')
   await expect(page.getByText('Wayne Enterprises')).toBeVisible()
@@ -301,6 +316,7 @@ test('mobile live matches visual baseline', { tag: '@visual' }, async ({ page })
   await expect(page).toHaveScreenshot('mobile-live.png', {
     animations: 'disabled',
     fullPage: true,
-    mask: [page.getByTestId('live-volatile')],
+    // Recent-outcomes day stamps drift off the relative seed — masked (§24.146 A0).
+    mask: [page.getByTestId('live-volatile'), page.getByTestId('recent-outcome-date')],
   })
 })
