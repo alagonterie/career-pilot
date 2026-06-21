@@ -71,3 +71,20 @@ export function heroStats({ apps, events, actionsIn24h, now = Date.now() }: Hero
 
   return out
 }
+
+/**
+ * Which treatment the hero stat line renders (§24.149 L1). The skeleton is for a
+ * genuine first-load ONLY; once the polls settle with no activity to show — a
+ * cold launch, or a freshly-reset pipeline — we render an honest "warming up"
+ * freshness line, never a perpetual skeleton (the cold-start "looks broken" bug).
+ * A hard backend outage collapses the line entirely (the availability badge above
+ * already carries the offline signal). Pure + testable, so the decision isn't
+ * trapped in JSX the SSR-seed path can't reach in an `?__state=empty` E2E.
+ */
+export type HeroStatPhase = 'stats' | 'loading' | 'fresh' | 'offline'
+export function heroStatPhase(opts: { hasStats: boolean; ready: boolean; offline: boolean }): HeroStatPhase {
+  if (opts.hasStats) return 'stats'
+  if (!opts.ready) return 'loading'
+  if (opts.offline) return 'offline'
+  return 'fresh'
+}

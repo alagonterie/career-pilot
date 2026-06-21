@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { activeApplicationCount, heroStats, relativeAgo } from './hero-stats'
+import { activeApplicationCount, heroStatPhase, heroStats, relativeAgo } from './hero-stats'
 import type { AuditEvent } from './use-activity-stream'
 import type { PipelineApplication } from './use-pipeline'
 
@@ -109,5 +109,24 @@ describe('heroStats', () => {
       now,
     })
     expect(segs).toEqual(['last activity 5m ago'])
+  })
+})
+
+describe('heroStatPhase (§24.149 L1 — never a perpetual skeleton on a cold launch)', () => {
+  it('shows the live stats whenever there is anything to show', () => {
+    expect(heroStatPhase({ hasStats: true, ready: false, offline: false })).toBe('stats')
+    expect(heroStatPhase({ hasStats: true, ready: true, offline: true })).toBe('stats')
+  })
+
+  it('skeletons only while the first polls are genuinely in flight', () => {
+    expect(heroStatPhase({ hasStats: false, ready: false, offline: false })).toBe('loading')
+  })
+
+  it('settles into the fresh "warming up" line when the polls land empty (cold launch)', () => {
+    expect(heroStatPhase({ hasStats: false, ready: true, offline: false })).toBe('fresh')
+  })
+
+  it('collapses (not skeleton, not fresh) when both sources are offline', () => {
+    expect(heroStatPhase({ hasStats: false, ready: true, offline: true })).toBe('offline')
   })
 })

@@ -550,7 +550,11 @@ export function RecentOutcomesPanel({ apps, status }: { apps: PipelineApplicatio
   return (
     <Panel title="Recent outcomes" className="flex-1 min-h-[188px]">
       {recent.length === 0 ? (
-        <p className="font-mono text-xs text-muted-foreground">No activity yet.</p>
+        // Launch-aware empty copy (§24.149 L1) — matches the /pipeline "warming up"
+        // register so a cold-start (or a freshly-reset pipeline) reads as fresh,
+        // not broken. Outcomes are the slowest surface to fill (replies/interviews
+        // take real-world weeks), so this line earns its honest, forward-looking tone.
+        <p className="font-mono text-xs text-muted-foreground">No activity yet — the search is warming up.</p>
       ) : (
         <ol data-testid="recent-outcomes" className="flex flex-col gap-1.5 font-mono text-xs">
           {/* Each row deep-links into the /pipeline drawer for that application

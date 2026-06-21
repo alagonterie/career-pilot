@@ -9,7 +9,7 @@ import { Button } from '~/components/ui/button'
 import { Skeleton } from '~/components/ui/skeleton'
 import { getHeroSeed } from '~/lib/hero-seed-loader'
 import { getWorkProfile } from '~/lib/profile-loader'
-import { heroStats, relativeAgo } from '~/lib/hero-stats'
+import { heroStats, heroStatPhase, relativeAgo } from '~/lib/hero-stats'
 import { seo } from '~/lib/seo'
 import { useActivityStream } from '~/lib/use-activity-stream'
 import { usePipeline } from '~/lib/use-pipeline'
@@ -35,6 +35,12 @@ export const Route = createFileRoute('/(marketing)/')({
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
 
+// The hero stat line when the polls have settled but there's no activity to show
+// yet — a cold launch or a freshly-reset pipeline (§24.149 L1 / D2). An honest,
+// forward-looking freshness line in the same mono register as the live stats; it
+// reads "fresh", never "broken", and deliberately makes no banner of being new.
+const HERO_FRESH_LINE = 'the agent is warming up — first activity incoming'
+
 function Home() {
   // Exclude turns: this 5-row teaser shows actions, not the per-turn cost seals
   // (those are the /live story) — so a stretch of turns can't blank the ticker.
@@ -59,6 +65,14 @@ function Home() {
   const liveLastActivity = events.length > 0 ? `last activity ${relativeAgo(events[events.length - 1].ts)}` : null
   const lastActivity = liveLastActivity ?? heroSeed.lastActivity
   const shownStats = [...counts, lastActivity].filter((s): s is string => Boolean(s))
+  // §24.149 L1: pick the stat-line treatment. Skeleton is for genuine first-load
+  // ONLY — once both polls settle with nothing to show (cold launch), an honest
+  // freshness line, not a perpetual skeleton. Both sources errored → collapse.
+  const statsPhase = heroStatPhase({
+    hasStats: shownStats.length > 0,
+    ready: statsReady,
+    offline: pipelineStatus === 'error' && telemetryStatus === 'error',
+  })
   const p = profile ?? workProfile
 
   // Scroll reveal (the `/` scroll pass, §24.147): each below-the-fold beat
@@ -141,23 +155,29 @@ function Home() {
             real, right now" proof under the CTAs. The WHOLE line is SSR-seeded
             (counts + "last activity X ago"), so nothing pops in; the live hooks
             take over the same values after mount, so there's no shift. The fixed
-            height (1 line desktop / 2 lines mobile) + the skeleton are only for the
-            rare empty-seed case (backend unreachable at SSR) — §24.36 + the / pass. */}
+            height (1 line desktop / 2 lines mobile) reserves the space across all
+            four phases (§24.149 L1): live `stats`, a first-load `skeleton`, the
+            settled-empty `fresh` line (cold launch — never a perpetual skeleton),
+            or a collapsed line on a hard outage (the badge carries that signal). */}
         <div
           data-testid="hero-stats"
           className="cp-rise mt-6 flex h-9 flex-wrap items-center justify-center gap-x-2 gap-y-1 font-mono text-xs text-muted-foreground sm:h-5"
           style={{ animationDelay: '0.16s' }}
           aria-live="polite"
         >
-          {shownStats.length > 0 ? (
+          {statsPhase === 'stats' ? (
             <p className="text-balance">{shownStats.join('  ·  ')}</p>
-          ) : (
+          ) : statsPhase === 'loading' ? (
             <>
               <Skeleton className="h-3 w-28 rounded-full" />
               <Skeleton className="h-3 w-32 rounded-full" />
               <Skeleton className="h-3 w-24 rounded-full" />
             </>
-          )}
+          ) : statsPhase === 'fresh' ? (
+            <p data-testid="hero-stats-fresh" className="text-balance">
+              {HERO_FRESH_LINE}
+            </p>
+          ) : null}
         </div>
       </section>
 
