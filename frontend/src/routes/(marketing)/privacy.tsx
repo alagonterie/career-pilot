@@ -8,7 +8,8 @@ import { cn } from '~/lib/utils'
 
 // The formal privacy policy (§24.148). Distinct from the visitor-privacy NARRATIVE
 // at /about#privacy: this is the disclosure Google's OAuth consent screen points to
-// for the Gmail user-data the agent processes (the Limited Use affirmation). On the
+// for the Google user-data the agent processes — Gmail / Calendar / Drive (the
+// Limited Use affirmation). On the
 // shared long-form scaffold (§24.83), like /about + /experience, so it reads as a
 // site document, not a one-off page. Footer-linked, deliberately NOT a top-nav item.
 // Identity-safe: operator = the build-time `PERSON_NAME` (placeholder in the repo),
@@ -106,21 +107,21 @@ function PrivacyPage() {
             </p>
             <ul className="flex list-disc flex-col gap-1.5 pl-5 leading-relaxed text-foreground/90">
               <li>
-                <span className="font-mono text-sm text-foreground">gmail.readonly</span> — read incoming mail to spot
-                recruiter and job-related messages.
+                <span className="font-mono text-sm text-foreground">gmail.modify</span> — read, organize, and send
+                email: spotting recruiter and job-related messages, labeling them, and drafting and sending outreach.
               </li>
               <li>
-                <span className="font-mono text-sm text-foreground">gmail.modify</span> — organize that mail (labels)
-                and prepare drafts.
+                <span className="font-mono text-sm text-foreground">calendar.events.owned</span> — create and manage
+                events on my own calendars, to schedule interviews.
               </li>
               <li>
-                <span className="font-mono text-sm text-foreground">gmail.send</span> — send outreach emails on my
-                behalf.
+                <span className="font-mono text-sm text-foreground">drive.file</span> — create and manage only the Drive
+                files the agent itself makes (for example, interview-prep documents) — never anything else in my Drive.
               </li>
               <li>
-                basic profile (<span className="font-mono text-sm text-foreground">email</span>,{' '}
-                <span className="font-mono text-sm text-foreground">profile</span>,{' '}
-                <span className="font-mono text-sm text-foreground">openid</span>) — to sign the agent in to the right
+                basic profile (<span className="font-mono text-sm text-foreground">openid</span>,{' '}
+                <span className="font-mono text-sm text-foreground">email</span>,{' '}
+                <span className="font-mono text-sm text-foreground">profile</span>) — to sign the agent in to the right
                 account.
               </li>
             </ul>
@@ -128,7 +129,7 @@ function PrivacyPage() {
             <ul className="flex list-disc flex-col gap-1.5 pl-5 leading-relaxed text-foreground/90">
               <li>
                 It is used only to operate features of this service for me — triaging job-related mail, researching
-                roles, and drafting and sending outreach.
+                roles, drafting and sending outreach, scheduling interviews, and preparing interview-prep documents.
               </li>
               <li>
                 To research and draft text, message content may be sent to an AI model (Anthropic’s Claude, via the
