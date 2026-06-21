@@ -240,12 +240,15 @@ test('/kit TOC steppers scroll the page BOTH directions (§24.65 Δ)', async ({ 
 test('home below-the-fold sections rise in on scroll (§24.147)', async ({ page }) => {
   await page.goto('/')
   const teaser = page.getByTestId('home-teaser')
-  // The last section starts well below a phone fold → armed (translated down) after
-  // mount. Transform-only (never opacity), so it stays visible the whole time.
-  await expect(teaser).not.toHaveCSS('transform', 'none')
-  // Scrolling to the bottom lands it in view → the once-reveal settles it home.
-  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
-  await expect(teaser).toHaveCSS('transform', 'none')
+  // Wait until the hook has ARMED it (the IntersectionObserver is now observing the
+  // below-fold section) but it hasn't revealed yet — then a scroll is a genuine
+  // intersection change. It's a child-stagger section, so the trigger lives in the
+  // class (its columns move, not the section block).
+  await expect(teaser).toHaveClass(/cp-reveal(\s|$)/)
+  await expect(teaser).not.toHaveClass(/cp-reveal-in/)
+  // Scroll it into view → the once-reveal fires and the class settles to -in.
+  await teaser.scrollIntoViewIfNeeded()
+  await expect(teaser).toHaveClass(/cp-reveal-in/)
 })
 
 test('key mobile surfaces are axe-clean (incl. the open nav menu)', async ({ page }) => {

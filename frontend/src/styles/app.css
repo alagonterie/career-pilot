@@ -176,6 +176,33 @@
 }
 
 /*
+ * Child-stagger reveal (§24.147 follow-up) — for the list-like sections (the home
+ * pitch's capability items, the teaser's three columns), the items CASCADE in
+ * instead of the section rising as one block. A staggering section marks itself
+ * `cp-still` (so it doesn't ALSO block-rise) and its items carry `cp-stagger-item`
+ * + an inline `--cp-i` index. Gated on the enclosing reveal state, so an
+ * in-view-at-load (unarmed) section leaves its items solid — the same principle as
+ * the block reveal. Transform-only + reduced-motion-zeroed, like everything here.
+ */
+.cp-reveal.cp-still {
+  transform: none;
+}
+.cp-reveal .cp-stagger-item {
+  transform: translateY(0.55rem);
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.cp-reveal-in .cp-stagger-item {
+  transform: none;
+  transition-delay: calc(var(--cp-i, 0) * 55ms);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cp-reveal .cp-stagger-item {
+    transform: none;
+    transition: none;
+  }
+}
+
+/*
  * Ambient hero backdrop (the `/` flare pass) — two faint brand-hue radial washes
  * (signal-green + trace-cyan) that give the hero depth so it reads as a designed
  * surface, not a centered text column. Static (no drift): keeps it calm and

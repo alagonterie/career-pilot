@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
+import type { CSSProperties } from 'react'
 
 import { AvailabilityBadge } from '~/components/AvailabilityBadge'
 import { InfoTip } from '~/components/InfoTip'
@@ -165,7 +166,9 @@ function Home() {
       <section
         ref={pitchReveal.ref}
         aria-labelledby="home-pitch-heading"
-        className={cn('mt-24 w-full max-w-xl text-center', pitchReveal.className)}
+        // `cp-still`: the section delegates its motion to a child-stagger (the
+        // capability list cascades) rather than rising as one block (§24.147 fu).
+        className={cn('mt-24 w-full max-w-xl text-center cp-still', pitchReveal.className)}
       >
         <h2 id="home-pitch-heading" className="sr-only">
           What this is
@@ -184,13 +187,20 @@ function Home() {
             meta-capability — spans both columns on its own line with a ↻ loop-back
             glyph, kept parallel + subject-less with the four verb phrases. */}
         <ol className="mx-auto mt-7 grid w-fit grid-cols-2 gap-x-8 gap-y-3 text-left text-sm text-foreground/90">
-          {['finds roles', 'tailors my résumé', 'drafts outreach', 'builds interview prep'].map((step) => (
-            <li key={step} className="flex items-center gap-2.5">
+          {['finds roles', 'tailors my résumé', 'drafts outreach', 'builds interview prep'].map((step, i) => (
+            <li
+              key={step}
+              className="cp-stagger-item flex items-center gap-2.5"
+              style={{ '--cp-i': i } as CSSProperties}
+            >
               <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
               {step}
             </li>
           ))}
-          <li className="col-span-2 mt-1 flex items-center justify-center gap-2">
+          <li
+            className="cp-stagger-item col-span-2 mt-1 flex items-center justify-center gap-2"
+            style={{ '--cp-i': 4 } as CSSProperties}
+          >
             <span aria-hidden="true" className="font-mono text-base leading-none text-primary">
               ↻
             </span>
@@ -279,12 +289,14 @@ function Home() {
         ref={teaserReveal.ref}
         data-testid="home-teaser"
         aria-labelledby="home-teaser-heading"
-        className={cn('mt-24 grid w-full gap-10 sm:grid-cols-3', teaserReveal.className)}
+        // `cp-still` + per-column `cp-stagger-item`: the three teaser columns
+        // cascade in rather than the grid rising as one block (§24.147 fu).
+        className={cn('mt-24 grid w-full gap-10 sm:grid-cols-3 cp-still', teaserReveal.className)}
       >
         <h2 id="home-teaser-heading" className="sr-only">
           More about me
         </h2>
-        <div className="flex flex-col gap-2">
+        <div className="cp-stagger-item flex flex-col gap-2" style={{ '--cp-i': 0 } as CSSProperties}>
           <h3 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Skills</h3>
           <ul className="flex flex-col gap-1 text-sm text-foreground/90">
             {p.skills.slice(0, 5).map((s) => (
@@ -292,7 +304,7 @@ function Home() {
             ))}
           </ul>
         </div>
-        <div className="flex flex-col gap-2">
+        <div className="cp-stagger-item flex flex-col gap-2" style={{ '--cp-i': 1 } as CSSProperties}>
           <h3 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Recent work</h3>
           <ul className="flex flex-col gap-1 text-sm text-foreground/90">
             {p.projects.slice(0, 2).map((proj) => (
@@ -305,7 +317,7 @@ function Home() {
             see all →
           </Link>
         </div>
-        <div className="flex flex-col gap-2">
+        <div className="cp-stagger-item flex flex-col gap-2" style={{ '--cp-i': 2 } as CSSProperties}>
           <h3 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Talk to me</h3>
           {/* Contact form only — no plain-text email (§24.83 D5): the form is the
               relay, and a public mailto invites scraping (matches the footer). */}
