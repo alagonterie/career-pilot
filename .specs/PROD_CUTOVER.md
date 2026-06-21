@@ -20,6 +20,7 @@ Do not start Phase B until all of these are true on `dev`:
 - [ ] Version/release tooling merged; dev footer shows `dev · <sha>`; a test `v*` tag cut a GitHub Release from `CHANGELOG.md` (§24.136 A2).
 - [ ] Security: threat-model doc written, `/security-review` findings triaged (fixed or accepted), sandbox prompt-injection red-team done (§24.136 A3).
 - [ ] Master résumé finalized; real `candidate_profile` staged + rendering correctly on dev (`/work` + PDF + a tailoring run); `git grep` clean of real-identity strings (§24.136 A4 / D6).
+- [ ] Launch-state polish + the concluded-mode `/admin` toggle built + owner-verified on dev: the cold-start reads fresh-not-broken on an empty pipeline (no perpetual skeleton); `site_lifecycle_state` flips `/` + `/pipeline` into the anonymized retrospective (§24.136 A5 / §24.149).
 - [ ] `dev` branch green in CI; dev box healthy (`pnpm health --json` all-ok).
 
 ---
@@ -125,11 +126,12 @@ These need the public surface to mean anything. **Record each result** (don't ju
 
 ## 7. Soft launch (Phase 10) + go/no-go
 
-- [ ] **Quiet observation window** — prod is up but the link goes nowhere yet. Watch for: stuck queues, dead recurrence chains, auth-failure streaks, budget burn, any leak in `public_*` views. `TODO:` set the window length.
+- [ ] **Quiet observation window = the pipeline warm-up window** (§24.149 D5) — prod is up but the link goes nowhere yet. Watch for: stuck queues, dead recurrence chains, auth-failure streaks, budget burn, any leak in `public_*` views. `TODO:` set the window length. **Use it to warm the pipeline honestly:** the real agent does its private/reversible work (scrape, research, draft, build pipeline rows) so by publish time the pipeline is genuinely populated — **no fake data** (§24.149 D1), just the real search run a few days ahead of the link. Keep **irreversible outreach sends gated** (the `draft`-only path / approval gate) until you're confident in the prod system. Note: *recent outcomes* are the slowest to fill (replies/interviews take real-world weeks) — confirm that surface reads fresh-not-empty.
 - [ ] **Go/no-go checklist:**
   - [ ] §6 all green + recorded.
   - [ ] Cost telemetry sane (no runaway sim/agent spend); caps confirmed enforced.
   - [ ] No real-identity leak anywhere public; anonymization holding on the pipeline/kits.
+  - [ ] Cold-start reads fresh-not-broken (empty/early states honest; no perpetual skeleton); `site_lifecycle_state` = `active` (§24.149).
   - [ ] Gmail prod token stable (consent screen published; no 7-day death).
   - [ ] Rollback (§8) rehearsed / understood.
 - [ ] **Publish** — the link goes out (résumé footer / outreach / wherever). `TODO:` record where + when (attribution will track it).
@@ -146,4 +148,4 @@ These need the public surface to mean anything. **Record each result** (don't ju
 
 ---
 
-*Cross-refs: `STRATEGY.md §24.136` (plan/decisions), `§24.70` (abuse layer), `§24.74` (attribution + `/admin`), `§24.71`/`§24.72` (identity / résumé), `RECOVERY.md` (ops + kill switches), `CLOUDFLARE_PATTERNS.md` (edge posture).*
+*Cross-refs: `STRATEGY.md §24.136` (plan/decisions), `§24.70` (abuse layer), `§24.74` (attribution + `/admin`), `§24.71`/`§24.72` (identity / résumé), `§24.149` (launch-state / lifecycle / warm-up window), `RECOVERY.md` (ops + kill switches), `CLOUDFLARE_PATTERNS.md` (edge posture).*
