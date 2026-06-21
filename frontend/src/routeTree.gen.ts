@@ -24,6 +24,7 @@ import { Route as opsCrashRouteImport } from './routes/(ops)/crash'
 import { Route as opsArchitectureRouteImport } from './routes/(ops)/architecture'
 import { Route as opsAdminRouteImport } from './routes/(ops)/admin'
 import { Route as marketingWorkRouteImport } from './routes/(marketing)/work'
+import { Route as marketingTermsRouteImport } from './routes/(marketing)/terms'
 import { Route as marketingPrivacyRouteImport } from './routes/(marketing)/privacy'
 import { Route as marketingExperienceRouteImport } from './routes/(marketing)/experience'
 import { Route as marketingContactRouteImport } from './routes/(marketing)/contact'
@@ -106,6 +107,11 @@ const marketingWorkRoute = marketingWorkRouteImport.update({
   path: '/work',
   getParentRoute: () => marketingRouteRoute,
 } as any)
+const marketingTermsRoute = marketingTermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => marketingRouteRoute,
+} as any)
 const marketingPrivacyRoute = marketingPrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
@@ -153,6 +159,7 @@ export interface FileRoutesByFullPath {
   '/contact': typeof marketingContactRoute
   '/experience': typeof marketingExperienceRoute
   '/privacy': typeof marketingPrivacyRoute
+  '/terms': typeof marketingTermsRoute
   '/work': typeof marketingWorkRoute
   '/admin': typeof opsAdminRoute
   '/architecture': typeof opsArchitectureRoute
@@ -176,6 +183,7 @@ export interface FileRoutesByTo {
   '/contact': typeof marketingContactRoute
   '/experience': typeof marketingExperienceRoute
   '/privacy': typeof marketingPrivacyRoute
+  '/terms': typeof marketingTermsRoute
   '/work': typeof marketingWorkRoute
   '/admin': typeof opsAdminRoute
   '/architecture': typeof opsArchitectureRoute
@@ -202,6 +210,7 @@ export interface FileRoutesById {
   '/(marketing)/contact': typeof marketingContactRoute
   '/(marketing)/experience': typeof marketingExperienceRoute
   '/(marketing)/privacy': typeof marketingPrivacyRoute
+  '/(marketing)/terms': typeof marketingTermsRoute
   '/(marketing)/work': typeof marketingWorkRoute
   '/(ops)/admin': typeof opsAdminRoute
   '/(ops)/architecture': typeof opsArchitectureRoute
@@ -227,6 +236,7 @@ export interface FileRouteTypes {
     | '/contact'
     | '/experience'
     | '/privacy'
+    | '/terms'
     | '/work'
     | '/admin'
     | '/architecture'
@@ -250,6 +260,7 @@ export interface FileRouteTypes {
     | '/contact'
     | '/experience'
     | '/privacy'
+    | '/terms'
     | '/work'
     | '/admin'
     | '/architecture'
@@ -275,6 +286,7 @@ export interface FileRouteTypes {
     | '/(marketing)/contact'
     | '/(marketing)/experience'
     | '/(marketing)/privacy'
+    | '/(marketing)/terms'
     | '/(marketing)/work'
     | '/(ops)/admin'
     | '/(ops)/architecture'
@@ -408,6 +420,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof marketingWorkRouteImport
       parentRoute: typeof marketingRouteRoute
     }
+    '/(marketing)/terms': {
+      id: '/(marketing)/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof marketingTermsRouteImport
+      parentRoute: typeof marketingRouteRoute
+    }
     '/(marketing)/privacy': {
       id: '/(marketing)/privacy'
       path: '/privacy'
@@ -472,6 +491,7 @@ interface marketingRouteRouteChildren {
   marketingContactRoute: typeof marketingContactRoute
   marketingExperienceRoute: typeof marketingExperienceRoute
   marketingPrivacyRoute: typeof marketingPrivacyRoute
+  marketingTermsRoute: typeof marketingTermsRoute
   marketingWorkRoute: typeof marketingWorkRoute
   marketingIndexRoute: typeof marketingIndexRoute
   marketingSimulatorIndexRoute: typeof marketingSimulatorIndexRoute
@@ -485,6 +505,7 @@ const marketingRouteRouteChildren: marketingRouteRouteChildren = {
   marketingContactRoute: marketingContactRoute,
   marketingExperienceRoute: marketingExperienceRoute,
   marketingPrivacyRoute: marketingPrivacyRoute,
+  marketingTermsRoute: marketingTermsRoute,
   marketingWorkRoute: marketingWorkRoute,
   marketingIndexRoute: marketingIndexRoute,
   marketingSimulatorIndexRoute: marketingSimulatorIndexRoute,
