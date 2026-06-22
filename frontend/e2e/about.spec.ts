@@ -56,5 +56,11 @@ test.describe('/about — story + methodology', () => {
   test('is reachable directly at /about#anonymization', async ({ page }) => {
     await page.goto('/about#anonymization')
     await expect(page.getByRole('heading', { name: /why companies are hidden/i, level: 2 })).toBeVisible()
+
+    // §24.153 item 4: the example handle renders as the shared anonymization chip
+    // (title-carrying), not a raw quoted token.
+    const chip = page.getByText('fintech-b', { exact: true })
+    await expect(chip).toBeVisible()
+    await expect(chip).toHaveAttribute('title', /anonymized/i)
   })
 })

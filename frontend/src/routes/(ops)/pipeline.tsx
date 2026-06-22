@@ -1,6 +1,7 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import * as React from 'react'
 
+import { AgentMark } from '~/components/AgentMark'
 import { ConcludedBanner } from '~/components/ConcludedBanner'
 import { CompanyHandleLegend } from '~/components/pipeline/CompanyHandle'
 import { DetailPanel } from '~/components/pipeline/DetailPanel'
@@ -63,6 +64,12 @@ function PipelinePage() {
     pushedRef.current = true
     void navigate({ search: { app: app.application_ref }, resetScroll: false })
   }
+
+  // §24.149 L1 / §24.153: the board has *something to show* (loading, error, or
+  // ≥1 application) vs. the cold-start settled-empty state. Gates both the handle
+  // legend (no handles to explain yet) and the pipeline-scribe signature (nothing
+  // curated yet) — they appear together once the board does.
+  const hasBoard = status === 'loading' || status === 'error' || apps.length > 0
   // Explicit close (Esc / backdrop / button): pop the entry we pushed so
   // history doesn't accumulate; a direct deep-link arrival (no in-app entry to
   // pop) clears via replace so back still exits the site correctly.
@@ -93,7 +100,7 @@ function PipelinePage() {
               handles to explain yet, so the legend would be premature; kept during
               loading (the board skeleton holds the space), on a transient error (the
               board had cards and will again), and whenever there are apps. */}
-          {status === 'loading' || status === 'error' || apps.length > 0 ? <CompanyHandleLegend /> : null}
+          {hasBoard ? <CompanyHandleLegend /> : null}
         </header>
 
         <StatTiles apps={apps} loading={status === 'loading'} />
@@ -123,9 +130,17 @@ function PipelinePage() {
           <PipelineBoard apps={apps} onSelect={select} />
         )}
 
-        <footer className="border-t border-border pt-6 text-[11px] leading-relaxed text-muted-foreground">
-          State changes are detected from Gmail (recruiter replies, scheduling) and Google Calendar (interview events).
-          All companies obfuscated by default; revealed only post-close with the company&apos;s awareness.
+        <footer className="flex flex-col gap-3 border-t border-border pt-6 text-[11px] leading-relaxed text-muted-foreground">
+          <p>
+            State changes are detected from Gmail (recruiter replies, scheduling) and Google Calendar (interview
+            events). All companies obfuscated by default; revealed only post-close with the company&apos;s awareness.
+          </p>
+          {/* §24.153 item 1: the board IS the pipeline-scribe subagent's curated
+              output — sign it like every other AI-authored surface (the ✦
+              provenance mark, §24.73). Same board-has-content gate as the legend:
+              nothing is curated yet at cold-start, so the signature would be
+              premature (the "warming up" empty state owns that moment). */}
+          {hasBoard ? <AgentMark actor="pipeline-scribe" lead="Curated by" /> : null}
         </footer>
       </main>
 

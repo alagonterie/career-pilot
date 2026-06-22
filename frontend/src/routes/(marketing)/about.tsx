@@ -3,6 +3,7 @@ import * as React from 'react'
 
 import { AgentMark } from '~/components/AgentMark'
 import { LONGFORM_SCROLL_MT, LongformDoc } from '~/components/longform/LongformDoc'
+import { HandleChip } from '~/components/pipeline/CompanyHandle'
 import { AI_ACTORS } from '~/lib/ai-actors'
 import { seo } from '~/lib/seo'
 import { getWorkProfile } from '~/lib/profile-loader'
@@ -264,11 +265,11 @@ function AboutPage() {
 
           <S meta={M.anonymization}>
             <p className="text-balance leading-relaxed text-foreground/90">
-              While a hiring process is live, the company shows as a category label — “fintech-b”, not the real name.
-              That’s deliberate. I reveal a name only when it’s appropriate: a closed process the company is fine making
-              public, or a lesson worth sharing. And no personal details — recruiter names, email addresses, scheduling
-              links — ever appear anywhere; they’re stripped before anything is shown. It protects the companies and the
-              people I’m actually talking to, and being upfront about it is itself the point.
+              While a hiring process is live, the company shows as a category label — <HandleChip label="fintech-b" />,
+              not the real name. That’s deliberate. I reveal a name only when it’s appropriate: a closed process the
+              company is fine making public, or a lesson worth sharing. And no personal details — recruiter names, email
+              addresses, scheduling links — ever appear anywhere; they’re stripped before anything is shown. It protects
+              the companies and the people I’m actually talking to, and being upfront about it is itself the point.
             </p>
           </S>
 

@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+
 import type { PipelineApplication } from '~/lib/use-pipeline'
 import { cn } from '~/lib/utils'
 
@@ -20,13 +22,25 @@ const ANON_TITLE = 'Company anonymized — a stable handle kept while this hirin
 export const ANON_HANDLE_CHIP =
   'inline-flex max-w-full items-center rounded bg-muted px-1.5 align-baseline font-mono text-[0.92em] leading-snug text-muted-foreground ring-1 ring-inset ring-border'
 
-export function CompanyHandle({ app }: { app: PipelineApplication }) {
-  if (app.public_state === 'public') return <>{app.application_ref}</>
+/**
+ * The shared anonymization chip (§24.153) — the ONE presentational component
+ * behind every "company shown as a stable handle" pill: the live board (via
+ * `CompanyHandle`), the legend sample, and the `/about` explainer. Carries the
+ * chip styling + the explanatory `title` + `cursor-help`; the canonical
+ * `company-handle` testid is opt-in (`testId`) so illustrative uses (legend,
+ * /about) don't inflate the board's chip count.
+ */
+export function HandleChip({ label, testId, className }: { label: ReactNode; testId?: string; className?: string }) {
   return (
-    <span data-testid="company-handle" title={ANON_TITLE} className={cn(ANON_HANDLE_CHIP, 'cursor-help')}>
-      {app.application_ref}
+    <span data-testid={testId} title={ANON_TITLE} className={cn(ANON_HANDLE_CHIP, 'cursor-help', className)}>
+      {label}
     </span>
   )
+}
+
+export function CompanyHandle({ app }: { app: PipelineApplication }) {
+  if (app.public_state === 'public') return <>{app.application_ref}</>
+  return <HandleChip label={app.application_ref} testId="company-handle" />
 }
 
 /**
@@ -46,7 +60,7 @@ export function CompanyHandleLegend() {
         Company handles
       </span>
       <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px] leading-relaxed text-muted-foreground">
-        <span className={ANON_HANDLE_CHIP}>infra-e</span>
+        <HandleChip label="infra-e" />
         <span>
           a company shown as a stable handle while its hiring process is live — the real name appears once it closes.
         </span>

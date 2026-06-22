@@ -182,7 +182,23 @@ function Home() {
           aria-live="polite"
         >
           {statsPhase === 'stats' ? (
-            <p className="text-balance">{shownStats.join('  ·  ')}</p>
+            // §24.153 item 2: each segment is its own `whitespace-nowrap` flex
+            // child so the container's `flex flex-wrap` wraps *between* whole
+            // segments (a phrase like "4 active job applications" never splits
+            // mid-words), and the `·` separator is glued to the front of its
+            // following segment so it can never orphan to a line start. The old
+            // single `<p>{join('  ·  ')}</p>` defeated the flex-wrap (one child)
+            // and word-wrapped instead.
+            shownStats.map((seg, i) => (
+              <span key={seg} className="whitespace-nowrap">
+                {i > 0 ? (
+                  <span aria-hidden="true" className="mr-2 select-none text-muted-foreground/50">
+                    ·
+                  </span>
+                ) : null}
+                {seg}
+              </span>
+            ))
           ) : statsPhase === 'loading' ? (
             <>
               <Skeleton className="h-3 w-28 rounded-full" />

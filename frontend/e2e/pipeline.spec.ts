@@ -87,6 +87,12 @@ test.describe('/pipeline — the pipeline board, frontend <-> backend', () => {
     await expect(page.getByText('Wayne Enterprises')).toBeVisible()
     await expect(page.getByTestId('reveal-marker')).toBeVisible()
 
+    // §24.153 item 1: the board is signed by its curator — the pipeline-scribe ✦
+    // provenance mark sits in the footer (the board has content here, so it shows).
+    const curatorMark = page.locator('[data-testid="agent-mark"][data-actor="pipeline-scribe"]')
+    await expect(curatorMark).toContainText('Curated by')
+    await expect(curatorMark.getByTestId('agent-ref')).toHaveAttribute('data-actor', 'pipeline-scribe')
+
     // Click a card → the detail side-panel opens, then closes.
     await page.getByText('Wayne Enterprises').click()
     const panel = page.getByRole('dialog', { name: 'Wayne Enterprises' })
