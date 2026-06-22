@@ -7102,6 +7102,18 @@ The contracts live in two committed places: `groups/_shared-subagents/{research-
 
 ---
 
+## §24.155 — Killer-match cron: investigated (HEALTHY) + de-noised the idle-reap log
+
+**Origin** (owner, 2026-06-22 — the "separate finding" flagged in §24.154's correction; owner: "we should also look into and maybe fix that"). I'd flagged the killer-match cron as a likely recurrence bug (its `next_run` appeared to step by ~1 day + a "5-day catch-up storm"). **A deeper dig found it is NOT broken** — the earlier read was a log-grep artifact: `nanoclaw.log`'s `[HH:MM:SS]` prefix carries no date, so six `Inserted next recurrence … 15:30Z` lines across six days (each = 09:30 Denver, the next `*/30` slot after a 09:00-Denver tick) looked like one storm. **Ground truth** from the ops session's inbound DB (`messages_in`): `killer-match` = **318 completed** (+1 pending) — every-30-min firing over ~10 days, exactly as designed; the recurrence (`*/30 7-22`, default cron unset-overridden, `cron-parser.next()`-after-now in `America/Denver`) is correct. job-scrape / pipeline-scribe / daily-briefing show 10 completions each = correct daily cadence.
+
+**So the only real problem is misleading logging.** The "Killing container past absolute ceiling" WARN flood is the *intended* fast-reap of the ops container after each cron turn — the 60s ops idle ceiling fires only when **no tool is in flight** (an in-flight tool extends it to 30 min, §24.114), so a finished-turn idle container is reaped at ~60s by design. Logging that at WARN is what made a healthy system read as broken.
+
+**Fix (pure log-level split, zero behavior change).** `decideStuckAction`'s `kill-ceiling` decision now carries `expected = (no tool was in flight)`; `enforceRunningContainerSla` logs the **expected** idle-reap at **info** ("Reaped idle container at its idle ceiling (expected post-turn cleanup)") and keeps **WARN** only for a reap *while a tool is in flight* (a genuinely stuck tool past its generous ceiling). The container is still reaped + claims reset identically. (Separately, the §24.154 rate-limit fix removes the "expired orphaned action responses" the rate-limited `record_progress` responses were generating.)
+
+**Definition of done.** The expected idle-reap logs at info; a stuck-in-flight-tool reap still WARNs; `decideStuckAction` returns `expected` (unit-tested both ways); host tsc + suite green. No functional change to reaping or recurrence. Memory: [[status_current]], [[todo_backlog]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
