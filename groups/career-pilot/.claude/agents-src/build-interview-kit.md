@@ -218,8 +218,8 @@ Pass `subagent_name: "build-interview-kit"`. Reasonable stages:
 - `building-quick-reference` — when composing Part 2
 - `persisting-kit` — just before the `persist_interview_kit` call
 
-Keep `detail` short (≤80 chars), candidate-friendly, no PII. **Keep it
-company-generic** — this mirrors to the PUBLIC activity feed, so say what you're
+Keep `detail` short (≤80 chars), spectator-readable (a visitor's watching —
+see the preamble), no PII. **Keep it company-generic** — this mirrors to the PUBLIC activity feed, so say what you're
 *doing* ("building the scoring rubric"), not *who* ("building the rubric for
 Acme's MI300 screen"). Don't name the company, its products, the role, people,
 or events. The host sanitizes downstream as a safety net — don't lean on it. The

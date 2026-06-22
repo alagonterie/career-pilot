@@ -38,6 +38,7 @@ import {
   handleSetWorkProfile,
   handleUpdateApplication,
   handleUpdateProfileField,
+  PROGRESS_PER_SESSION_CAP,
 } from './actions.js';
 
 // ── Setup ──────────────────────────────────────────────────────────────────
@@ -1011,6 +1012,66 @@ describe('proactive trace-capture (§24.24)', () => {
     expect(pub.application_ref).toBeNull();
     // The unresolvable id is not recorded either — the row is today's shape.
     expect(JSON.parse(pub.details_json).application_id).toBeUndefined();
+  });
+
+  // §24.154 — the rate-limit is a per-RUN burst cap (a recent window), NOT a
+  // session-LIFETIME count. The lifetime count silently RATE_LIMITED every trace
+  // once the long-lived §24.67 ops session accumulated past the cap (box: 10–11
+  // rows in `sess-…kd5tyv`). These three pin the corrected scoping.
+  function seedProgressRow(agent: string, summary: string, ageMin: number): void {
+    const ts = new Date(Date.now() - ageMin * 60_000).toISOString();
+    getDb()
+      .prepare(
+        `INSERT INTO public_audit_trail (id, seq, ts, category, agent_name, proactive, summary, details_json)
+         VALUES (@id, (SELECT COALESCE(MAX(seq), 0) + 1 FROM public_audit_trail),
+                 @ts, 'subagent_progress', @agent, 0, @summary, json_object('session_id', @sid))`,
+      )
+      .run({ id: `prog-${Math.random().toString(36).slice(2, 8)}`, ts, agent, summary, sid: FAKE_SESSION.id });
+  }
+
+  it('record_progress cap is a recent window — old session rows do NOT block a fresh run (§24.154)', async () => {
+    // A long-lived ops session's historical rows (20 min old) must fall outside
+    // the window — the exact regression: those rows used to pin the cap forever.
+    for (let i = 0; i < PROGRESS_PER_SESSION_CAP + 4; i++) seedProgressRow('scrape-jobs', `old narration ${i}`, 20);
+    const c = {
+      requestId: `req-${Math.random().toString(36).slice(2, 8)}`,
+      payload: { subagent_name: 'scrape-jobs', stage: 'planning', detail: 'fresh narration after the old batch' },
+    };
+    await handleRecordProgress(c, FAKE_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
+    const fresh = getDb()
+      .prepare(
+        `SELECT COUNT(*) AS n FROM public_audit_trail
+          WHERE category = 'subagent_progress' AND agent_name = 'scrape-jobs' AND summary LIKE 'fresh narration%'`,
+      )
+      .get() as { n: number };
+    expect(fresh.n).toBe(1);
+  });
+
+  it('record_progress still caps a burst WITHIN the window — the 7th call is rate-limited (§24.154)', async () => {
+    for (let i = 0; i < PROGRESS_PER_SESSION_CAP; i++) seedProgressRow('pipeline-scribe', `recent narration ${i}`, 1);
+    const c = {
+      requestId: `req-${Math.random().toString(36).slice(2, 8)}`,
+      payload: { subagent_name: 'pipeline-scribe', stage: 'sweeping', detail: 'the over-cap call' },
+    };
+    await handleRecordProgress(c, FAKE_SESSION, inDb);
+    const frame = readResponse(c.requestId).frame as { ok: boolean; error?: { code?: string } };
+    expect(frame.ok).toBe(false);
+    expect(frame.error?.code).toBe('RATE_LIMITED');
+  });
+
+  it('dispatch-marker rows do NOT consume the record_progress cap (§24.154)', async () => {
+    // Recent dispatch markers (written by handleRecordDispatch, not a real
+    // record_progress call) must be excluded from the count.
+    for (let i = 0; i < PROGRESS_PER_SESSION_CAP; i++) {
+      seedProgressRow('research-company', 'Dispatched by the orchestrator.', 1);
+    }
+    const c = {
+      requestId: `req-${Math.random().toString(36).slice(2, 8)}`,
+      payload: { subagent_name: 'research-company', stage: 'start', detail: 'a real progress note' },
+    };
+    await handleRecordProgress(c, FAKE_SESSION, inDb);
+    expect(readResponse(c.requestId).frame.ok).toBe(true);
   });
 
   it('defaults to reactive (proactive=0) when no wake message is present', async () => {

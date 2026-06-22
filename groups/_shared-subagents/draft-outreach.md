@@ -246,8 +246,8 @@ texture. Pass `subagent_name: "draft-outreach"`. Reasonable stages:
 - `drafting-body` — during body composition
 - `final-pass` — final trim/check before returning
 
-Keep `detail` short (≤80 chars), candidate-friendly, no PII (the email
-address gets regex-sanitized regardless). The host caps you at 6 calls
+Keep `detail` short (≤80 chars), spectator-readable (a visitor's watching —
+see the preamble), no PII (the email address gets regex-sanitized regardless). The host caps you at 6 calls
 per session-subagent run — over-call returns a RATE_LIMITED error you
 can safely ignore.
 

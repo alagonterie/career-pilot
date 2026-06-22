@@ -443,7 +443,16 @@ export function deriveProactive(inDb: Database.Database): boolean {
 // ── record_progress ────────────────────────────────────────────────────────
 
 const PROGRESS_DETAIL_CAP = 200;
-const PROGRESS_PER_SESSION_CAP = 6;
+export const PROGRESS_PER_SESSION_CAP = 6;
+// §24.154: the cap counts only `record_progress` rows inside this recent window,
+// NOT the session's whole lifetime. The original per-session count assumed
+// short-lived (~5 min) sessions as a "per-run" proxy — true for owner/chat
+// sessions, but the §24.67 *ops* session is one synthetic session alive for days,
+// so a lifetime count accumulated past the cap (box: 10–11 rows) and then
+// silently RATE_LIMITED every scheduled subagent's traces. A run's burst lands
+// inside minutes; the scheduled dispatches are hours apart — so a 15-min window
+// bounds one run yet resets between dispatches, restoring the per-run intent.
+const PROGRESS_RATE_WINDOW_MS = 15 * 60 * 1000;
 
 /**
  * INSERT one `subagent_progress` row into the public mirror. `seq = MAX+1` under
@@ -600,20 +609,30 @@ export async function handleRecordProgress(
   try {
     const db = getDb();
 
-    // Per-(session, subagent) soft rate-limit. Approximates "per-run" — a
-    // single Task call doesn't have a stable run_id exposed to MCP handlers,
-    // and sessions are short-lived (~5 min ceiling), so per-session counting
-    // is a workable proxy. Spec calls for 7th-call rejection (cap=6 prior).
+    // Per-(session, subagent) soft rate-limit, scoped to a recent WINDOW so it
+    // approximates "per-run" without assuming short-lived sessions (§24.154 — the
+    // long-lived §24.67 ops session broke the old lifetime count). Excludes the
+    // deterministic dispatch-marker rows (they're written by handleRecordDispatch,
+    // not a real record_progress call, so they must not consume the cap). Spec
+    // calls for 7th-call rejection (cap=6 prior).
     const sessionLike = `%"session_id":"${session.id}"%`;
+    const windowStart = new Date(Date.now() - PROGRESS_RATE_WINDOW_MS).toISOString();
     const count = (
       db
         .prepare(
           `SELECT COUNT(*) AS n FROM public_audit_trail
             WHERE category = 'subagent_progress'
               AND agent_name = @agent
-              AND details_json LIKE @sessionLike`,
+              AND details_json LIKE @sessionLike
+              AND summary <> @dispatchSummary
+              AND ts >= @windowStart`,
         )
-        .get({ agent: subagent_name, sessionLike }) as { n: number }
+        .get({
+          agent: subagent_name,
+          sessionLike,
+          dispatchSummary: SUBAGENT_DISPATCH_SUMMARY,
+          windowStart,
+        }) as { n: number }
     ).n;
     if (count >= PROGRESS_PER_SESSION_CAP) {
       writeResponse(inDb, requestId, {

@@ -182,7 +182,8 @@ inflection points so the public agent-activity stream has texture. Pass
 - `ranking-bullets` — when selecting which master-resume bullets to adapt
 - `rewriting-top-5` — during the actual adaptation pass
 
-Keep `detail` short (≤80 chars), candidate-friendly. The host caps you at 6
+Keep `detail` short (≤80 chars), spectator-readable (a visitor's watching — see
+the preamble). The host caps you at 6
 calls per session-subagent run — over-call returns RATE_LIMITED, ignore.
 
 **If your brief includes an `application_id`, pass it on every
