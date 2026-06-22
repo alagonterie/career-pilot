@@ -24,14 +24,14 @@ import { nextEvenSeq } from '../../db/session-db.js';
 import { log } from '../../log.js';
 import type { AgentGroup, Session } from '../../types.js';
 
-// SERIES_ID deliberately keeps the pre-rename literal 'funnel-curator'
-// (§24.59 / §24.152 D7): it is the recurring task's series_id in NanoClaw's
-// live `messages_in` queue (a separate inbound DB the central-DB migration
-// system does not manage), so renaming it would orphan the live series on
-// deployed boxes for zero visitor-facing benefit. The PROMPT follows the
-// subagent's rename to pipeline-scribe, and ensure() reconciles the live row's
-// stored prompt when this constant changes.
-const SERIES_ID = 'funnel-curator';
+// SERIES_ID is the recurring task's series_id in NanoClaw's `messages_in` queue
+// (a per-session inbound DB the central-DB migration system does not manage).
+// §24.152 renamed it from the legacy 'funnel-curator'; deployed boxes' live rows
+// are migrated in lockstep by reconcileLegacySeriesIds (ops-session.ts), which
+// runs before this bootstrap reads the series — so readLiveTask finds the
+// renamed row rather than spawning a duplicate. The PROMPT tracks this name, and
+// ensure() reconciles a live row's stored prompt when this constant changes.
+const SERIES_ID = 'pipeline-scribe';
 const TASK_PROMPT = '[scheduled trigger: pipeline-scribe]';
 
 export interface BootstrapPreferences {

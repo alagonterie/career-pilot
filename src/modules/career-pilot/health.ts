@@ -239,9 +239,7 @@ function checkOpsSeries(handles: SessionHandle[], now: number, findings: HealthF
  * a COMPLETED occurrence whose due time is in-window, so it never fires on a fresh
  * or paused install (nothing fired ⇒ nothing to be silent about).
  */
-// 'funnel-curator' is the pipeline-scribe recurring task's messages_in series-id,
-// deliberately unchanged per §24.152 D7 (see pipeline-scribe-bootstrap.ts).
-const TRACE_EMITTING_SERIES = ['job-scrape', 'funnel-curator'] as const;
+const TRACE_EMITTING_SERIES = ['job-scrape', 'pipeline-scribe'] as const;
 
 function checkCascadeSilent(handles: SessionHandle[], now: number, findings: HealthFinding[]): void {
   const db = getDb();

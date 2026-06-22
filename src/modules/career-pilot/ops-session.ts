@@ -48,12 +48,13 @@ export const OPS_THREAD_ID = `${INTERNAL_THREAD_PREFIX}career-pilot-ops`;
 export const OWNER_GROUP_FOLDER = 'career-pilot';
 
 /** The five host-bootstrapped series that belong in the ops session. The
- *  pipeline-scribe series keeps the literal 'funnel-curator' series-id per
- *  §24.152 D7 (its live messages_in rows are deliberately unchanged). */
+ *  pipeline-scribe series-id was migrated from the legacy 'funnel-curator' per
+ *  §24.152 (see reconcileLegacySeriesIds, which renames deployed boxes' live
+ *  messages_in rows in lockstep). */
 export const OPS_SERIES_IDS = [
   'daily-briefing',
   'killer-match',
-  'funnel-curator',
+  'pipeline-scribe',
   'close-detection',
   'job-scrape',
 ] as const;
@@ -117,6 +118,25 @@ export function retireMisplacedSeries(inDb: Database.Database): number {
   return result.changes;
 }
 
+/**
+ * §24.152: rename the legacy 'funnel-curator' series-id → 'pipeline-scribe' in a
+ * session's messages_in queue. The series-id was the last internal "funnel"
+ * name; it lives in the per-session inbound DB (which the central-DB migration
+ * system does not manage), so this host-side reconciliation does the rename
+ * instead — idempotent (0 rows after the first run) and data-preserving (the
+ * recurring task's id + schedule are untouched, only its series_id changes).
+ * Shipped in the same deploy as the SERIES_ID constant flip, so there is never a
+ * half-renamed window: readLiveTask(SERIES_ID='pipeline-scribe') finds the
+ * renamed row. Runs before bootstrap/retire on every inbound DB the topology
+ * keeper touches.
+ */
+export function reconcileLegacySeriesIds(inDb: Database.Database): number {
+  const result = inDb
+    .prepare("UPDATE messages_in SET series_id = 'pipeline-scribe' WHERE series_id = 'funnel-curator'")
+    .run();
+  return result.changes;
+}
+
 /** Run the five series bootstraps against the ops session's inbound.db. */
 export function bootstrapOpsSeries(
   centralDb: Database.Database,
@@ -127,7 +147,7 @@ export function bootstrapOpsSeries(
   const results = {
     'daily-briefing': ensureDailyBriefingTask(centralDb, inDb, agentGroup, opsSession),
     'killer-match': ensureKillerMatchTask(centralDb, inDb, agentGroup, opsSession),
-    'funnel-curator': ensurePipelineScribeTask(centralDb, inDb, agentGroup, opsSession),
+    'pipeline-scribe': ensurePipelineScribeTask(centralDb, inDb, agentGroup, opsSession),
     'close-detection': ensureCloseDetectionTask(centralDb, inDb, agentGroup, opsSession),
     'job-scrape': ensureJobScrapeTask(centralDb, inDb, agentGroup, opsSession),
   };
@@ -179,6 +199,7 @@ export function ensureOpsTopology(): void {
 
     const opsDb = openInboundDb(agentGroup.id, opsSession.id);
     try {
+      reconcileLegacySeriesIds(opsDb);
       bootstrapOpsSeries(centralDb, opsDb, agentGroup, opsSession);
     } finally {
       opsDb.close();
@@ -191,6 +212,7 @@ export function ensureOpsTopology(): void {
       try {
         const otherDb = openInboundDb(agentGroup.id, other.id);
         try {
+          reconcileLegacySeriesIds(otherDb);
           const retired = retireMisplacedSeries(otherDb);
           if (retired > 0) {
             log.info('career-pilot: retired misplaced ops series rows', { sessionId: other.id, retired });

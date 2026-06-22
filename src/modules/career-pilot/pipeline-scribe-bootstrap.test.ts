@@ -81,7 +81,7 @@ function setPreference(key: string, value: string): void {
 
 function insertSampleTask(opts: { id?: string; status: string; recurrence?: string | null }): void {
   insertTask(inDb, {
-    id: opts.id ?? 'funnel-curator',
+    id: opts.id ?? 'pipeline-scribe',
     processAfter: '2099-01-01T08:00:00.000Z',
     recurrence: opts.recurrence ?? '30 7 * * *',
     platformId: null,
@@ -93,7 +93,7 @@ function insertSampleTask(opts: { id?: string; status: string; recurrence?: stri
     content: JSON.stringify({ prompt: '[scheduled trigger: funnel-curator]', script: null }),
   });
   if (opts.status !== 'pending') {
-    inDb.prepare('UPDATE messages_in SET status = ? WHERE id = ?').run(opts.status, opts.id ?? 'funnel-curator');
+    inDb.prepare('UPDATE messages_in SET status = ? WHERE id = ?').run(opts.status, opts.id ?? 'pipeline-scribe');
   }
 }
 
@@ -148,9 +148,9 @@ describe('hasLivePipelineScribeTask', () => {
   });
 
   it('matches by series_id, not just id', () => {
-    insertSampleTask({ id: 'funnel-curator', status: 'completed' });
+    insertSampleTask({ id: 'pipeline-scribe', status: 'completed' });
     insertSampleTask({ id: 'task-clone-1', status: 'pending' });
-    inDb.prepare("UPDATE messages_in SET series_id = 'funnel-curator' WHERE id = 'task-clone-1'").run();
+    inDb.prepare("UPDATE messages_in SET series_id = 'pipeline-scribe' WHERE id = 'task-clone-1'").run();
     expect(hasLivePipelineScribeTask(inDb)).toBe(true);
   });
 
@@ -189,7 +189,7 @@ describe('ensurePipelineScribeTask', () => {
 
     const row = inDb
       .prepare(
-        "SELECT id, kind, status, recurrence, content, series_id FROM messages_in WHERE series_id = 'funnel-curator'",
+        "SELECT id, kind, status, recurrence, content, series_id FROM messages_in WHERE series_id = 'pipeline-scribe'",
       )
       .get() as {
       id: string;
@@ -202,8 +202,8 @@ describe('ensurePipelineScribeTask', () => {
     expect(row.kind).toBe('task');
     expect(row.status).toBe('pending');
     expect(row.recurrence).toBe('30 7 * * *');
-    expect(row.series_id).toBe('funnel-curator');
-    expect(row.id).not.toBe('funnel-curator');
+    expect(row.series_id).toBe('pipeline-scribe');
+    expect(row.id).not.toBe('pipeline-scribe');
     const content = JSON.parse(row.content) as { prompt: string; script: string | null };
     expect(content.prompt).toBe('[scheduled trigger: pipeline-scribe]');
     expect(content.script).toBeNull();
@@ -215,7 +215,7 @@ describe('ensurePipelineScribeTask', () => {
     expect(res2.action).toBe('skipped_exists');
 
     const count = (
-      inDb.prepare("SELECT COUNT(*) AS n FROM messages_in WHERE series_id = 'funnel-curator'").get() as { n: number }
+      inDb.prepare("SELECT COUNT(*) AS n FROM messages_in WHERE series_id = 'pipeline-scribe'").get() as { n: number }
     ).n;
     expect(count).toBe(1);
   });
@@ -235,7 +235,7 @@ describe('ensurePipelineScribeTask', () => {
     expect(res.action).toBe('inserted');
     expect(res.recurrence).toBe('0 */6 * * *');
 
-    const row = inDb.prepare("SELECT recurrence FROM messages_in WHERE series_id = 'funnel-curator'").get() as {
+    const row = inDb.prepare("SELECT recurrence FROM messages_in WHERE series_id = 'pipeline-scribe'").get() as {
       recurrence: string;
     };
     expect(row.recurrence).toBe('0 */6 * * *');
@@ -249,7 +249,7 @@ describe('ensurePipelineScribeTask', () => {
     const liveCount = (
       inDb
         .prepare(
-          "SELECT COUNT(*) AS n FROM messages_in WHERE series_id = 'funnel-curator' AND status IN ('pending', 'paused')",
+          "SELECT COUNT(*) AS n FROM messages_in WHERE series_id = 'pipeline-scribe' AND status IN ('pending', 'paused')",
         )
         .get() as { n: number }
     ).n;
@@ -261,15 +261,15 @@ describe('ensurePipelineScribeTask', () => {
     // prompt — exactly what a deployed box holds across the rename deploy.
     insertSampleTask({ status: 'pending' });
     const before = inDb
-      .prepare("SELECT process_after, recurrence FROM messages_in WHERE id = 'funnel-curator'")
+      .prepare("SELECT process_after, recurrence FROM messages_in WHERE id = 'pipeline-scribe'")
       .get() as { process_after: string; recurrence: string };
 
     const res = ensurePipelineScribeTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION);
     expect(res.action).toBe('reconciled_prompt');
-    expect(res.taskId).toBe('funnel-curator');
+    expect(res.taskId).toBe('pipeline-scribe');
 
     const row = inDb
-      .prepare("SELECT content, process_after, recurrence FROM messages_in WHERE id = 'funnel-curator'")
+      .prepare("SELECT content, process_after, recurrence FROM messages_in WHERE id = 'pipeline-scribe'")
       .get() as { content: string; process_after: string; recurrence: string };
     const content = JSON.parse(row.content) as { prompt: string; script: string | null };
     expect(content.prompt).toBe('[scheduled trigger: pipeline-scribe]');
@@ -280,7 +280,7 @@ describe('ensurePipelineScribeTask', () => {
 
     // No duplicate row, and the next pass is a plain skip.
     const count = (
-      inDb.prepare("SELECT COUNT(*) AS n FROM messages_in WHERE series_id = 'funnel-curator'").get() as { n: number }
+      inDb.prepare("SELECT COUNT(*) AS n FROM messages_in WHERE series_id = 'pipeline-scribe'").get() as { n: number }
     ).n;
     expect(count).toBe(1);
     expect(ensurePipelineScribeTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION).action).toBe('skipped_exists');
@@ -290,7 +290,7 @@ describe('ensurePipelineScribeTask', () => {
     insertSampleTask({ status: 'paused' });
     const res = ensurePipelineScribeTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION);
     expect(res.action).toBe('reconciled_prompt');
-    const row = inDb.prepare("SELECT status, content FROM messages_in WHERE id = 'funnel-curator'").get() as {
+    const row = inDb.prepare("SELECT status, content FROM messages_in WHERE id = 'pipeline-scribe'").get() as {
       status: string;
       content: string;
     };

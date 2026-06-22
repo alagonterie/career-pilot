@@ -11,6 +11,7 @@
 import fs from 'fs';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import Database from 'better-sqlite3';
 
 import type { ContainerConfig } from '../../container-config.js';
 import { createAgentGroup } from '../../db/agent-groups.js';
@@ -30,6 +31,7 @@ import {
   mirrorOpsDeliveryToChat,
   OPS_SERIES_IDS,
   OPS_THREAD_ID,
+  reconcileLegacySeriesIds,
   retireMisplacedSeries,
 } from './ops-session.js';
 
@@ -480,5 +482,26 @@ describe('writeSessionRouting — internal thread ids (§24.67)', () => {
     } finally {
       db.close();
     }
+  });
+});
+
+describe('reconcileLegacySeriesIds (§24.152)', () => {
+  it('renames legacy funnel-curator series rows to pipeline-scribe, leaves others, idempotent', () => {
+    const db = new Database(':memory:');
+    db.exec('CREATE TABLE messages_in (id TEXT PRIMARY KEY, series_id TEXT)');
+    db.prepare('INSERT INTO messages_in (id, series_id) VALUES (?, ?)').run('task-1', 'funnel-curator');
+    db.prepare('INSERT INTO messages_in (id, series_id) VALUES (?, ?)').run('task-2', 'job-scrape');
+
+    expect(reconcileLegacySeriesIds(db)).toBe(1);
+    expect(
+      (db.prepare("SELECT series_id FROM messages_in WHERE id = 'task-1'").get() as { series_id: string }).series_id,
+    ).toBe('pipeline-scribe');
+    // a different series is untouched
+    expect(
+      (db.prepare("SELECT series_id FROM messages_in WHERE id = 'task-2'").get() as { series_id: string }).series_id,
+    ).toBe('job-scrape');
+    // idempotent — a second pass renames nothing
+    expect(reconcileLegacySeriesIds(db)).toBe(0);
+    db.close();
   });
 });

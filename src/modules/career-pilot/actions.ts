@@ -453,17 +453,16 @@ const PROGRESS_PER_SESSION_CAP = 6;
  * /api/activity never delivers details_json) so policy flips can re-derive.
  */
 /**
- * §24.78 / §24.77: the public-facing subagent name. Legacy dispatch records (and
- * the `prep-interview` subagent definition) carry pre-rename ids; the portal
- * renamed them (§24.59 / §24.53 / §24.152) and the FE display alias was retired
- * (§24.77) — so the canonical name is applied at the single write point
- * (`insertProgressRow`) for BOTH the model-driven `record_progress` rows and the
- * deterministic §24.78 lifecycle rows. Mirrors migration 137's map (which renamed
- * the historical rows); this keeps every NEW row natively new. The `funnel-curator`
- * key stays per §24.152 D7 — the legacy id; the `messages_in` series-id is unchanged.
+ * §24.78 / §24.77: the public-facing subagent name. The `prep-interview` subagent
+ * definition still carries its pre-rename id; the portal renamed it (§24.53) and
+ * the FE display alias was retired (§24.77) — so the canonical name is applied at
+ * the single write point (`insertProgressRow`) for BOTH the model-driven
+ * `record_progress` rows and the deterministic §24.78 lifecycle rows. The former
+ * pipeline-scribe (legacy `funnel-curator`) entry was dropped in §24.152: migration
+ * 137 migrated its audit data and the series-id was renamed, so no live dispatch
+ * produces the legacy id.
  */
 const SUBAGENT_DISPLAY_NAME: Record<string, string> = {
-  'funnel-curator': 'pipeline-scribe',
   'prep-interview': 'build-interview-kit',
 };
 export function publicSubagentName(subagentType: string): string {
