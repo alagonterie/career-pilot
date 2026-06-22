@@ -80,7 +80,11 @@ export function heroStats({ apps, events, actionsIn24h, now = Date.now() }: Hero
   const out: string[] = []
 
   const active = activeApplicationCount(apps)
-  if (active > 0) out.push(`${active} active job application${active === 1 ? '' : 's'}`)
+  // §24.156: "active applications" (not "active job applications") — drops the
+  // redundant "job" so the headline fits two clean lines down to the narrowest
+  // phones (the hook one line up already frames it as the job search). Still
+  // fully clear, never cryptic.
+  if (active > 0) out.push(`${active} active application${active === 1 ? '' : 's'}`)
 
   // The "since when" anchor sits right after the count — "5 applications, since Mar".
   const since = searchingSince(apps)
@@ -94,6 +98,31 @@ export function heroStats({ apps, events, actionsIn24h, now = Date.now() }: Hero
   if (last) out.push(`last activity ${relativeAgo(last.ts, now)}`)
 
   return out
+}
+
+/**
+ * §24.156: split the flat hero segments into the two DELIBERATE display lines —
+ * a headline (the search identity: active count + "searching since") and a dimmer
+ * freshness line (the live signals: agent actions + last activity). Four
+ * `·`-separated segments never fit the `max-w-xl` hero on one row, so they used to
+ * wrap into a lop-sided bullet stack with an orphaned leading `·`; a designed
+ * two-line split keeps every `·` *inside* a line, where it can't orphan. The flat
+ * `counts` arrive in heroStats order (`[active?, since?, actions?]`); the agent-
+ * actions count is the only one that belongs to the freshness line, and
+ * `lastActivity` always does. Pure + testable so the SSR seed stays a flat array.
+ */
+export function heroStatLines(
+  counts: string[],
+  lastActivity: string | null,
+): { headline: string[]; freshness: string[] } {
+  const headline: string[] = []
+  const freshness: string[] = []
+  for (const c of counts) {
+    if (/agent action/.test(c)) freshness.push(c)
+    else headline.push(c)
+  }
+  if (lastActivity) freshness.push(lastActivity)
+  return { headline, freshness }
 }
 
 /**

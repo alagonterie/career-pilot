@@ -10,7 +10,7 @@ import { Button } from '~/components/ui/button'
 import { Skeleton } from '~/components/ui/skeleton'
 import { getHeroSeed } from '~/lib/hero-seed-loader'
 import { getWorkProfile } from '~/lib/profile-loader'
-import { heroStats, heroStatPhase, relativeAgo } from '~/lib/hero-stats'
+import { heroStats, heroStatLines, heroStatPhase, relativeAgo } from '~/lib/hero-stats'
 import { seo } from '~/lib/seo'
 import { useActivityStream } from '~/lib/use-activity-stream'
 import { useSiteLifecycle } from '~/lib/use-lifecycle'
@@ -69,6 +69,9 @@ function Home() {
   const liveLastActivity = events.length > 0 ? `last activity ${relativeAgo(events[events.length - 1].ts)}` : null
   const lastActivity = liveLastActivity ?? heroSeed.lastActivity
   const shownStats = [...counts, lastActivity].filter((s): s is string => Boolean(s))
+  // §24.156: split into the two deliberate display lines (headline + dimmer
+  // freshness) so the four segments never wrap into an orphaned-`·` bullet stack.
+  const { headline, freshness } = heroStatLines(counts, lastActivity)
   // §24.149 L1: pick the stat-line treatment. Skeleton is for genuine first-load
   // ONLY — once both polls settle with nothing to show (cold launch), an honest
   // freshness line, not a perpetual skeleton. Both sources errored → collapse.
@@ -177,28 +180,56 @@ function Home() {
             (§24.149 "searching since") rather than clipping a fixed height. */}
         <div
           data-testid="hero-stats"
-          className="cp-rise mt-6 flex min-h-9 flex-wrap items-center justify-center gap-x-2 gap-y-1 font-mono text-xs text-muted-foreground sm:min-h-5"
+          className="cp-rise mt-6 flex min-h-9 flex-wrap items-center justify-center gap-x-2 gap-y-1 font-mono text-[11px] text-muted-foreground sm:text-xs"
           style={{ animationDelay: '0.16s' }}
           aria-live="polite"
         >
           {statsPhase === 'stats' ? (
-            // §24.153 item 2: each segment is its own `whitespace-nowrap` flex
-            // child so the container's `flex flex-wrap` wraps *between* whole
-            // segments (a phrase like "4 active job applications" never splits
-            // mid-words), and the `·` separator is glued to the front of its
-            // following segment so it can never orphan to a line start. The old
-            // single `<p>{join('  ·  ')}</p>` defeated the flex-wrap (one child)
-            // and word-wrapped instead.
-            shownStats.map((seg, i) => (
-              <span key={seg} className="whitespace-nowrap">
-                {i > 0 ? (
-                  <span aria-hidden="true" className="mr-2 select-none text-muted-foreground/50">
-                    ·
-                  </span>
-                ) : null}
-                {seg}
-              </span>
-            ))
+            // §24.156: two DELIBERATE lines — a headline (the search identity) and
+            // a dimmer freshness line (the live signals) — so the four
+            // `·`-separated segments never wrap into the orphaned-`·` bullet stack
+            // §24.153 couldn't avoid (four segments simply don't fit the max-w-xl
+            // hero on one row). Each `·` now lives INSIDE a line, where it can't
+            // lead or dangle; segments stay `whitespace-nowrap` so a phrase never
+            // splits mid-words. Wording stays FULL (no cryptic abbreviations — these
+            // are the recruiter-legible proof, §24.71).
+            <div className="flex flex-col items-center gap-y-1">
+              {[headline, freshness].map((line, li) =>
+                line.length > 0 ? (
+                  // Each line is a centered flex row; the `·` is a SIBLING flex item
+                  // so `gap-x-2` spaces it evenly on both sides. The 11px mobile font
+                  // (container) keeps both full-wording lines on a single row even on
+                  // a narrow phone, so the `·` never wraps (no orphan). The freshness
+                  // line (li===1) sits dimmer.
+                  <p
+                    key={li}
+                    className={`flex flex-wrap items-center justify-center gap-x-2${
+                      li === 1 ? ' text-muted-foreground/70' : ''
+                    }`}
+                  >
+                    {line.flatMap((seg, i) => {
+                      const segSpan = (
+                        <span key={seg} className="whitespace-nowrap">
+                          {seg}
+                        </span>
+                      )
+                      return i === 0
+                        ? [segSpan]
+                        : [
+                            <span
+                              key={`${seg}-sep`}
+                              aria-hidden="true"
+                              className="select-none text-muted-foreground/50"
+                            >
+                              ·
+                            </span>,
+                            segSpan,
+                          ]
+                    })}
+                  </p>
+                ) : null,
+              )}
+            </div>
           ) : statsPhase === 'loading' ? (
             <>
               <Skeleton className="h-3 w-28 rounded-full" />

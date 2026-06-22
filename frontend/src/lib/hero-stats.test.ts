@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { activeApplicationCount, heroStatPhase, heroStats, relativeAgo, searchingSince } from './hero-stats'
+import {
+  activeApplicationCount,
+  heroStatLines,
+  heroStatPhase,
+  heroStats,
+  relativeAgo,
+  searchingSince,
+} from './hero-stats'
 import type { AuditEvent } from './use-activity-stream'
 import type { PipelineApplication } from './use-pipeline'
 
@@ -89,7 +96,7 @@ describe('heroStats', () => {
       actionsIn24h: 47,
       now,
     })
-    expect(segs).toEqual(['2 active job applications', '47 agent actions in 24h', 'last activity 4m ago'])
+    expect(segs).toEqual(['2 active applications', '47 agent actions in 24h', 'last activity 4m ago'])
   })
 
   it('omits each segment whose number is empty/null/zero (never faked)', () => {
@@ -99,7 +106,7 @@ describe('heroStats', () => {
 
   it('singularizes counts of one', () => {
     const segs = heroStats({ apps: [app('applied')], events: [], actionsIn24h: 1, now })
-    expect(segs).toEqual(['1 active job application', '1 agent action in 24h'])
+    expect(segs).toEqual(['1 active application', '1 agent action in 24h'])
   })
 
   it('uses the newest event (last in the ascending buffer) for last-activity', () => {
@@ -123,7 +130,7 @@ describe('heroStats', () => {
       now,
     })
     expect(segs).toEqual([
-      '2 active job applications',
+      '2 active applications',
       'searching since Jan 2026',
       '47 agent actions in 24h',
       'last activity 4m ago',
@@ -168,5 +175,26 @@ describe('heroStatPhase (§24.149 L1 — never a perpetual skeleton on a cold la
 
   it('collapses (not skeleton, not fresh) when both sources are offline', () => {
     expect(heroStatPhase({ hasStats: false, ready: true, offline: true })).toBe('offline')
+  })
+})
+
+describe('heroStatLines (§24.156 — the two deliberate display lines)', () => {
+  it('splits into headline (search identity) + freshness (live signals)', () => {
+    const counts = ['5 active applications', 'searching since May 2026', '2 agent actions in 24h']
+    const { headline, freshness } = heroStatLines(counts, 'last activity 2h ago')
+    expect(headline).toEqual(['5 active applications', 'searching since May 2026'])
+    expect(freshness).toEqual(['2 agent actions in 24h', 'last activity 2h ago'])
+  })
+
+  it('omits absent segments (cold-start partial → only what exists)', () => {
+    const { headline, freshness } = heroStatLines(['3 active applications'], null)
+    expect(headline).toEqual(['3 active applications'])
+    expect(freshness).toEqual([])
+  })
+
+  it('routes agent-actions to the freshness line even with no last-activity', () => {
+    const { headline, freshness } = heroStatLines(['1 agent action in 24h'], null)
+    expect(headline).toEqual([])
+    expect(freshness).toEqual(['1 agent action in 24h'])
   })
 })
