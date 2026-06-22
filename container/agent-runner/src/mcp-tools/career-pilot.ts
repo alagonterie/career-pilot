@@ -6,7 +6,7 @@
  *
  *   - update_profile_field   — UPSERT candidate_profile (onboarding-critical)
  *   - update_application     — UPSERT applications (the "add an application" path)
- *   - record_funnel_event    — INSERT funnel_events
+ *   - record_pipeline_event    — INSERT pipeline_events
  *   - get_application        — SELECT one
  *   - list_applications      — SELECT filtered
  *
@@ -101,7 +101,7 @@ export const updateApplication: McpToolDefinition = {
   tool: {
     name: 'update_application',
     description:
-      "UPSERT an application row. If `id` doesn't exist, INSERT (requires company_name + role_title + status in patch; host assigns obfuscated_label deterministically). If `id` exists, UPDATE only the fields present in patch. Use to bookmark a new role, update status after a signal, or correct mistaken fields. Always follow with record_funnel_event to log the transition.",
+      "UPSERT an application row. If `id` doesn't exist, INSERT (requires company_name + role_title + status in patch; host assigns obfuscated_label deterministically). If `id` exists, UPDATE only the fields present in patch. Use to bookmark a new role, update status after a signal, or correct mistaken fields. Always follow with record_pipeline_event to log the transition.",
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -171,9 +171,9 @@ export const updateApplication: McpToolDefinition = {
   },
 };
 
-// ── record_funnel_event ────────────────────────────────────────────────────
+// ── record_pipeline_event ────────────────────────────────────────────────────
 
-const FUNNEL_EVENT_KINDS = [
+const PIPELINE_EVENT_KINDS = [
   'status_change',
   'agent_action',
   'gmail_signal',
@@ -184,16 +184,16 @@ const FUNNEL_EVENT_KINDS = [
   'interview_scheduled',
 ] as const;
 
-export const recordFunnelEvent: McpToolDefinition = {
+export const recordPipelineEvent: McpToolDefinition = {
   tool: {
-    name: 'record_funnel_event',
+    name: 'record_pipeline_event',
     description:
-      'Log a funnel event for an application. Always call this alongside any state-changing tool — record the transition (with from/to status if applicable) plus a short payload describing what triggered the event. Phase 3 will add automatic sanitization mirror to public_audit_trail.',
+      'Log a pipeline event for an application. Always call this alongside any state-changing tool — record the transition (with from/to status if applicable) plus a short payload describing what triggered the event. Phase 3 will add automatic sanitization mirror to public_audit_trail.',
     inputSchema: {
       type: 'object' as const,
       properties: {
         application_id: { type: 'string', description: 'The applications.id this event belongs to.' },
-        kind: { type: 'string', enum: [...FUNNEL_EVENT_KINDS] },
+        kind: { type: 'string', enum: [...PIPELINE_EVENT_KINDS] },
         from_status: {
           type: 'string',
           description: 'Previous status (only for kind="status_change").',
@@ -219,18 +219,18 @@ export const recordFunnelEvent: McpToolDefinition = {
     if (!application_id || !kind || !payload) {
       return err('application_id, kind, and payload are required');
     }
-    if (!FUNNEL_EVENT_KINDS.includes(kind as (typeof FUNNEL_EVENT_KINDS)[number])) {
-      return err(`kind must be one of: ${FUNNEL_EVENT_KINDS.join(', ')}`);
+    if (!PIPELINE_EVENT_KINDS.includes(kind as (typeof PIPELINE_EVENT_KINDS)[number])) {
+      return err(`kind must be one of: ${PIPELINE_EVENT_KINDS.join(', ')}`);
     }
-    const res = await sendAction<{ event_id: string }>('career_pilot.record_funnel_event', {
+    const res = await sendAction<{ event_id: string }>('career_pilot.record_pipeline_event', {
       application_id,
       kind,
       from_status: args.from_status ?? null,
       to_status: args.to_status ?? null,
       payload,
     });
-    if (!res.ok) return actionErr('record_funnel_event', res.error);
-    return ok(`Funnel event recorded: ${res.data.event_id} (${kind})`, res.data);
+    if (!res.ok) return actionErr('record_pipeline_event', res.error);
+    return ok(`Pipeline event recorded: ${res.data.event_id} (${kind})`, res.data);
   },
 };
 
@@ -269,7 +269,7 @@ export const listApplications: McpToolDefinition = {
   tool: {
     name: 'list_applications',
     description:
-      'List applications, optionally filtered by status. Returns up to `limit` rows ordered by last_activity_at DESC (most recent activity first). Pass no filter to see the full funnel.',
+      'List applications, optionally filtered by status. Returns up to `limit` rows ordered by last_activity_at DESC (most recent activity first). Pass no filter to see the full pipeline.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -795,7 +795,7 @@ registerTools([
   setWorkProfile,
   setPreference,
   updateApplication,
-  recordFunnelEvent,
+  recordPipelineEvent,
   getApplication,
   listApplications,
   recordProgress,

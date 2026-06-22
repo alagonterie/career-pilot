@@ -57,7 +57,7 @@ export interface DevKnobsResponse {
   knobs: DevKnob[]
 }
 
-/** A simulated application walking the funnel, from the sim's sidecar state. */
+/** A simulated application walking the pipeline, from the sim's sidecar state. */
 export interface DevSimApp {
   appId: string
   company: string
@@ -65,7 +65,7 @@ export interface DevSimApp {
   obfuscatedLabel: string
   threadId: string | null
   stageIndex: number
-  /** Total linear funnel stages before the terminal email (for an "i/N" read). */
+  /** Total linear pipeline stages before the terminal email (for an "i/N" read). */
   totalStages: number
   /** The next email this app has queued (classification), or its end state. */
   upcoming: string
@@ -233,7 +233,7 @@ export function postDevControl(baseUrl: string, action: 'pause' | 'resume'): Pro
 
 /**
  * Enqueue an on-demand pipeline-scribe sweep (§24.43c) — the orchestrator wakes,
- * classifies the sim's inbound mail, and applies the moves to the funnel board,
+ * classifies the sim's inbound mail, and applies the moves to the pipeline board,
  * instead of waiting for the daily cron. 409 if there's no active owner session.
  */
 export function postDevSweep(baseUrl: string): Promise<KnobWriteResult> {
@@ -243,7 +243,7 @@ export function postDevSweep(baseUrl: string): Promise<KnobWriteResult> {
 // ── reset controls (§24.48) ────────────────────────────────────────────────
 
 /** The four grouped reset scopes (one of these OR a single profile field). */
-export type DevResetScope = 'funnel-data' | 'conversation' | 'profile' | 'everything'
+export type DevResetScope = 'pipeline-data' | 'conversation' | 'profile' | 'everything'
 
 /** Reset request: exactly one of a grouped `scope` or a single onboarding `field`. */
 export type DevResetBody = { scope: DevResetScope } | { field: string }
@@ -259,8 +259,8 @@ export interface ResetScopeMeta {
 export const RESET_SCOPES: ResetScopeMeta[] = [
   {
     // `scope` is the wire value the backend reset endpoint matches on — kept
-    // `funnel-data` (internal plumbing, §24.77 D3); the visitor copy is "pipeline".
-    scope: 'funnel-data',
+    // `pipeline-data` (internal plumbing, §24.77 D3); the visitor copy is "pipeline".
+    scope: 'pipeline-data',
     label: 'Pipeline data',
     clears: 'Applications, pipeline, leads, email events. Keeps your profile + chat.',
     halts: false,

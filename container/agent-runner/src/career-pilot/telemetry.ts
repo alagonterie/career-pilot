@@ -2,7 +2,7 @@
  * Container-side request-telemetry reporter.
  *
  * Container code that fetches external APIs directly (rank-leads Haiku,
- * SerpApi search, funnel-curator Gmail/Calendar) cannot write the host's
+ * SerpApi search, pipeline-scribe Gmail/Calendar) cannot write the host's
  * central DB — the one-writer invariant. Instead each call site fires a
  * `career_pilot.record_request_telemetry` system action (fire-and-forget,
  * same transport as per-turn telemetry); the host handler derives the

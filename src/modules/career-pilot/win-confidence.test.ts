@@ -67,7 +67,7 @@ describe('scoreWinConfidence', () => {
     expect(res).toEqual({ scored: 2, closed: 1 });
     // the closed app is projected into the board too
     const view = getDb()
-      .prepare('SELECT win_confidence FROM public_funnel_view WHERE application_id = ?')
+      .prepare('SELECT win_confidence FROM public_pipeline_view WHERE application_id = ?')
       .get('a-reject') as { win_confidence: number };
     expect(view.win_confidence).toBe(0);
   });

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { closeDb, getDb, initTestDb } from '../../db/connection.js';
 import { runMigrations } from '../../db/migrations/index.js';
 
-import { applyFunnelFromEmailEvents } from './funnel-apply.js';
+import { applyPipelineFromEmailEvents } from './pipeline-apply.js';
 
 beforeEach(() => {
   closeDb();
@@ -39,11 +39,11 @@ function seedEvent(app: string | null, classification: string, receivedAt: strin
 const statusOf = (id: string) =>
   (getDb().prepare('SELECT status FROM applications WHERE id = ?').get(id) as { status: string }).status;
 const viewOf = (id: string) =>
-  getDb().prepare('SELECT status, stage FROM public_funnel_view WHERE application_id = ?').get(id) as
+  getDb().prepare('SELECT status, stage FROM public_pipeline_view WHERE application_id = ?').get(id) as
     | { status: string; stage: string }
     | undefined;
 
-describe('applyFunnelFromEmailEvents', () => {
+describe('applyPipelineFromEmailEvents', () => {
   it('converges each application to its furthest classification + projects the board', () => {
     seedApp('a-offer', 'APPLIED');
     seedApp('a-onsite', 'APPLIED');
@@ -65,7 +65,7 @@ describe('applyFunnelFromEmailEvents', () => {
     // noise-only: no mapped classification → untouched
     seedEvent('a-noise', 'noise', '2026-05-03T00:00:00Z');
 
-    const res = applyFunnelFromEmailEvents(getDb());
+    const res = applyPipelineFromEmailEvents(getDb());
 
     expect(statusOf('a-offer')).toBe('OFFER');
     expect(statusOf('a-onsite')).toBe('TECH_SCREEN'); // the onsite, not the trailing noise
@@ -82,13 +82,13 @@ describe('applyFunnelFromEmailEvents', () => {
   it('is idempotent — a second run makes no further changes', () => {
     seedApp('a1', 'APPLIED');
     seedEvent('a1', 'offer', '2026-05-15T00:00:00Z');
-    expect(applyFunnelFromEmailEvents(getDb()).converted).toBe(1);
-    expect(applyFunnelFromEmailEvents(getDb()).converted).toBe(0); // already OFFER
+    expect(applyPipelineFromEmailEvents(getDb()).converted).toBe(1);
+    expect(applyPipelineFromEmailEvents(getDb()).converted).toBe(0); // already OFFER
   });
 
   it('ignores email_events with no linked application', () => {
     seedApp('a1', 'APPLIED');
     seedEvent(null, 'offer', '2026-05-15T00:00:00Z'); // unlinked (e.g. a lead, not an application)
-    expect(applyFunnelFromEmailEvents(getDb()).converted).toBe(0);
+    expect(applyPipelineFromEmailEvents(getDb()).converted).toBe(0);
   });
 });

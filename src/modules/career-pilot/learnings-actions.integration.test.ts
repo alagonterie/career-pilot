@@ -8,7 +8,7 @@
  *   - handleReadLearnings  — FUEL: returns reflections filtered by role_category
  *     (newest first), parses JSON reflections back to objects; sandbox FORBIDDEN.
  *
- * Mirrors the harness in funnel-actions.integration.test.ts.
+ * Mirrors the harness in pipeline-actions.integration.test.ts.
  */
 import fs from 'fs';
 import os from 'os';

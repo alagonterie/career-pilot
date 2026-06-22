@@ -1,18 +1,18 @@
 /**
  * src/modules/portal/public-audit.ts — Sub-milestone 4.1 mirror writer.
  *
- * `mirrorFunnelEvent(db, eventId)` reads a freshly-inserted funnel_events
+ * `mirrorPipelineEvent(db, eventId)` reads a freshly-inserted pipeline_events
  * row, joins to the originating application, runs the payload through the
  * sanitizer, applies a defense-in-depth check for surviving real company
  * names, and INSERTs a sanitized row into public_audit_trail.
  *
- * Called by `handleRecordFunnelEvent` AFTER `writeResponse` returns the
+ * Called by `handleRecordPipelineEvent` AFTER `writeResponse` returns the
  * ok-frame to the container, so mirror latency never blocks the agent's
  * MCP call. All errors are logged and swallowed — public mirror is
  * best-effort. The private write is already committed by the time the
  * mirror runs.
  *
- * Naming boundary (§24.77 D3): the PRIVATE source is still `funnel_events`
+ * Naming boundary (§24.77 D3): the PRIVATE source is still `pipeline_events`
  * (the internal domain term — table unrenamed), but the PUBLIC projection
  * uses the visitor-facing 'pipeline' category. The mirror is exactly where
  * that internal→public rename happens.
@@ -20,9 +20,9 @@
  * Sub-milestone 4.3 adds `resanitizeApplicationAuditTrail` (below): when an
  * application's obfuscation policy changes (public_state flip, or an edit to
  * obfuscated_label / company_name / company_aliases), the past audit rows
- * derived from that application's funnel_events are deleted and re-mirrored
- * from the still-canonical `funnel_events` truth. The link is
- * `public_audit_trail.source_funnel_event_id` (migration 122).
+ * derived from that application's pipeline_events are deleted and re-mirrored
+ * from the still-canonical `pipeline_events` truth. The link is
+ * `public_audit_trail.source_pipeline_event_id` (migration 122).
  */
 import type Database from 'better-sqlite3';
 
@@ -60,7 +60,7 @@ function readBoolPref(db: Database.Database, key: string, fallback: boolean): bo
 }
 
 interface JoinedRow {
-  // funnel_events
+  // pipeline_events
   id: string;
   application_id: string;
   kind: string;
@@ -77,13 +77,13 @@ interface JoinedRow {
 /**
  * Outcome of a single mirror attempt. Returned so callers (notably
  * resanitizeApplicationAuditTrail) can count rows actually written vs
- * dropped by the defense-in-depth scan. handleRecordFunnelEvent ignores
+ * dropped by the defense-in-depth scan. handleRecordPipelineEvent ignores
  * the return — the mirror is best-effort there.
  */
 export type MirrorOutcome = 'inserted' | 'dropped' | 'skipped' | 'error' | 'withheld';
 
 /**
- * The human-readable text to mirror publicly for a funnel event (§24.89). Funnel
+ * The human-readable text to mirror publicly for a pipeline event (§24.89). Pipeline
  * payloads are often structured JSON carrying the agent's own one-line prose — a
  * status-change ships `{ summary, source, confidence }`, where `summary` already
  * describes the transition ("Rejection email received from … — applied X,
@@ -93,7 +93,9 @@ export type MirrorOutcome = 'inserted' | 'dropped' | 'skipped' | 'error' | 'with
  * {…}") — the unreadable rows the owner caught. Either branch is sanitized
  * downstream (this only chooses the source text, never the trust boundary).
  */
-export function funnelEventPublicText(row: Pick<JoinedRow, 'kind' | 'from_status' | 'to_status' | 'payload'>): string {
+export function pipelineEventPublicText(
+  row: Pick<JoinedRow, 'kind' | 'from_status' | 'to_status' | 'payload'>,
+): string {
   if (row.payload) {
     try {
       const parsed = JSON.parse(row.payload) as { summary?: unknown };
@@ -109,7 +111,7 @@ export function funnelEventPublicText(row: Pick<JoinedRow, 'kind' | 'from_status
 
 /**
  * The public-safe display ref for an application — the real company name when
- * revealed, else the obfuscated label (the same rule mirrorFunnelEvent applies
+ * revealed, else the obfuscated label (the same rule mirrorPipelineEvent applies
  * inline from its join). §24.61: this is the HOST-side derivation that lets a
  * container pass only the internal application_id — a subagent never authors
  * the public label, because an echo of the real company name on a non-public
@@ -132,45 +134,45 @@ export function publicApplicationRef(db: Database.Database, applicationId: strin
   }
 }
 
-export async function mirrorFunnelEvent(db: Database.Database, eventId: string): Promise<MirrorOutcome> {
+export async function mirrorPipelineEvent(db: Database.Database, eventId: string): Promise<MirrorOutcome> {
   let row: JoinedRow | undefined;
   try {
     row = db
       .prepare(
         `SELECT fe.id, fe.application_id, fe.kind, fe.from_status, fe.to_status, fe.payload, fe.proactive,
                 a.company_name, a.obfuscated_label, a.public_state
-           FROM funnel_events fe
+           FROM pipeline_events fe
            LEFT JOIN applications a ON fe.application_id = a.id
           WHERE fe.id = ?`,
       )
       .get(eventId) as JoinedRow | undefined;
   } catch (err) {
-    log.error('mirrorFunnelEvent: load failed', { eventId, err });
+    log.error('mirrorPipelineEvent: load failed', { eventId, err });
     return 'error';
   }
 
   if (!row) {
-    log.warn('mirrorFunnelEvent: funnel_event not found', { eventId });
+    log.warn('mirrorPipelineEvent: pipeline_event not found', { eventId });
     return 'skipped';
   }
 
-  // application_id is NOT NULL on funnel_events (migration 101 FK), but the
+  // application_id is NOT NULL on pipeline_events (migration 101 FK), but the
   // LEFT JOIN can produce null application cols if the FK target is gone
   // (shouldn't happen given the constraint). Skip defensively.
   if (!row.application_id || !row.company_name) {
     return 'skipped';
   }
 
-  const payloadText = funnelEventPublicText(row);
+  const payloadText = pipelineEventPublicText(row);
   const { text: sanitized, ok } = await sanitizeForPublic(payloadText, {
     application_id: row.application_id,
     db,
     obfuscatedLabel: row.obfuscated_label ?? undefined,
   });
   // Fail-safe (§24.12): Pass 3 was active but failed → withhold the public row
-  // rather than risk a leak. The private funnel_events truth is untouched.
+  // rather than risk a leak. The private pipeline_events truth is untouched.
   if (!ok) {
-    log.warn('mirrorFunnelEvent: Pass 3 unavailable — withholding public row', { eventId });
+    log.warn('mirrorPipelineEvent: Pass 3 unavailable — withholding public row', { eventId });
     return 'withheld';
   }
 
@@ -209,7 +211,7 @@ export async function mirrorFunnelEvent(db: Database.Database, eventId: string):
         }
         const leaked = needles.find((n) => sanitizedLower.includes(n.toLowerCase()));
         if (leaked) {
-          log.warn('mirrorFunnelEvent: real company name survived sanitization — dropping row', {
+          log.warn('mirrorPipelineEvent: real company name survived sanitization — dropping row', {
             eventId,
             leaked,
           });
@@ -217,7 +219,7 @@ export async function mirrorFunnelEvent(db: Database.Database, eventId: string):
         }
       }
     } catch (err) {
-      log.error('mirrorFunnelEvent: defense-in-depth scan failed', { eventId, err });
+      log.error('mirrorPipelineEvent: defense-in-depth scan failed', { eventId, err });
       // Continue — better to potentially leak than to silently fail closed
       // when the operator hasn't configured strict mode. (Toggle this
       // by setting sanitization_audit_drop_on_unmatched_company=false.)
@@ -239,22 +241,22 @@ export async function mirrorFunnelEvent(db: Database.Database, eventId: string):
   try {
     db.prepare(
       `INSERT INTO public_audit_trail
-         (id, seq, ts, category, proactive, application_ref, summary, details_json, source_funnel_event_id)
+         (id, seq, ts, category, proactive, application_ref, summary, details_json, source_pipeline_event_id)
        VALUES (@id, (SELECT COALESCE(MAX(seq), 0) + 1 FROM public_audit_trail),
-               @ts, @category, @proactive, @application_ref, @summary, @details_json, @source_funnel_event_id)`,
+               @ts, @category, @proactive, @application_ref, @summary, @details_json, @source_pipeline_event_id)`,
     ).run({
       id: generateId(),
       ts: new Date().toISOString(),
-      // Public-facing category (§24.77 D3) — the private source is funnel_events.
+      // Public-facing category (§24.77 D3) — the private source is pipeline_events.
       category: 'pipeline',
       proactive: row.proactive ? 1 : 0,
       application_ref: applicationRef,
       summary,
       details_json: details,
-      source_funnel_event_id: row.id,
+      source_pipeline_event_id: row.id,
     });
   } catch (err) {
-    log.error('mirrorFunnelEvent: INSERT failed', { eventId, err });
+    log.error('mirrorPipelineEvent: INSERT failed', { eventId, err });
     return 'error';
   }
   return 'inserted';
@@ -268,11 +270,11 @@ export interface ResanitizeResult {
 }
 
 /**
- * Delete and re-mirror every funnel-category audit row derived from an
- * application's funnel_events. Call after the application's obfuscation
+ * Delete and re-mirror every pipeline-category audit row derived from an
+ * application's pipeline_events. Call after the application's obfuscation
  * policy changes — a public_state flip, or an edit to obfuscated_label /
  * company_name / company_aliases — so the public rows reflect current
- * intent. Truth lives in funnel_events (never deleted); the audit trail is
+ * intent. Truth lives in pipeline_events (never deleted); the audit trail is
  * a derived projection, so "rewriting history" here is intended.
  *
  * Runs in a single IMMEDIATE transaction. The host is the sole writer to
@@ -284,9 +286,9 @@ export interface ResanitizeResult {
  * Defensive: never throws. On failure logs and returns { rewritten: 0,
  * deleted: 0 }. Callers (the handleUpdateApplication hook and the operator
  * script) treat a failed re-mirror as non-fatal — the application UPDATE is
- * already committed and funnel_events truth is untouched.
+ * already committed and pipeline_events truth is untouched.
  *
- * Note: legacy audit rows with a NULL source_funnel_event_id (pre-migration
+ * Note: legacy audit rows with a NULL source_pipeline_event_id (pre-migration
  * 122; none in practice) are NOT matched by the DELETE and are left as-is.
  */
 export async function resanitizeApplicationAuditTrail(
@@ -297,7 +299,7 @@ export async function resanitizeApplicationAuditTrail(
   // runs async OUTSIDE the transaction: better-sqlite3 transactions cannot span
   // `await`s, and Pass 3 (when active) is an async LLM call (§24.12). We lose
   // single-transaction atomicity but correctness holds — truth lives in
-  // funnel_events (never deleted), so a partial re-mirror just leaves some
+  // pipeline_events (never deleted), so a partial re-mirror just leaves some
   // public rows missing until the next mirror, consistent with the
   // best-effort/never-throws contract. Withheld rows (Pass 3 unavailable) are
   // intentionally not re-inserted.
@@ -307,8 +309,8 @@ export async function resanitizeApplicationAuditTrail(
       .prepare(
         `DELETE FROM public_audit_trail
           WHERE category = 'pipeline'
-            AND source_funnel_event_id IN (
-              SELECT id FROM funnel_events WHERE application_id = ?
+            AND source_pipeline_event_id IN (
+              SELECT id FROM pipeline_events WHERE application_id = ?
             )`,
       )
       .run(applicationId);
@@ -321,10 +323,10 @@ export async function resanitizeApplicationAuditTrail(
   let rewritten = 0;
   try {
     const events = db
-      .prepare('SELECT id FROM funnel_events WHERE application_id = ? ORDER BY ts ASC')
+      .prepare('SELECT id FROM pipeline_events WHERE application_id = ? ORDER BY ts ASC')
       .all(applicationId) as Array<{ id: string }>;
     for (const { id } of events) {
-      if ((await mirrorFunnelEvent(db, id)) === 'inserted') rewritten++;
+      if ((await mirrorPipelineEvent(db, id)) === 'inserted') rewritten++;
     }
   } catch (err) {
     log.error('resanitizeApplicationAuditTrail: re-mirror failed', { applicationId, err });

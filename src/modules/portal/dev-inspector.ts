@@ -30,14 +30,14 @@ import { nextEvenSeq } from '../../db/session-db.js';
 import { getConfig } from '../../get-config.js';
 import { log } from '../../log.js';
 import { openInboundDb } from '../../session-manager.js';
-import { applyFunnelFromEmailEvents } from '../career-pilot/funnel-apply.js';
+import { applyPipelineFromEmailEvents } from '../career-pilot/pipeline-apply.js';
 import { findOpsSession } from '../career-pilot/ops-session.js';
 import { scoreWinConfidence } from '../career-pilot/win-confidence.js';
 import { type CandidateProfile, readCandidateProfile, renderPersona } from '../career-pilot/render-persona.js';
 import { reconcileState } from '../career-pilot/recruiter-sim/runner.js';
 import { STAGE_CLASSIFICATIONS } from '../career-pilot/recruiter-sim/templates.js';
 import type { SimApp, SimState } from '../career-pilot/recruiter-sim/types.js';
-import { FUNNEL_DATA_TABLES, SESSION_TABLES, clearSessionTranscripts, wipeTables } from './dev/app-data-reset.js';
+import { PIPELINE_DATA_TABLES, SESSION_TABLES, clearSessionTranscripts, wipeTables } from './dev/app-data-reset.js';
 import { executeControlCommand } from './kill-switch.js';
 import { ALL_KNOB_KEYS, buildKnobs, writePreference, type KnobView } from './knob-registry.js';
 import { getPauseState, type PauseState } from './system-modes.js';
@@ -73,7 +73,7 @@ interface SimApplicationRow {
 
 /** Each sim app + the NEXT email it has queued (so the page shows what's coming). */
 export type SimAppView = SimApp & {
-  /** Total funnel stages before the terminal email (for an "i/N" progress read). */
+  /** Total pipeline stages before the terminal email (for an "i/N" progress read). */
   totalStages: number;
   /** The classification of the next email this app will inject — or its end state. */
   upcoming: string;
@@ -94,8 +94,8 @@ export function simUpcoming(app: SimApp): string {
 
 /**
  * The sim's live scenario state (from the sidecar) joined to the `applications`
- * rows it seeded — so the page can show both the sim's internal funnel walk
- * (incl. what's queued next) and the real funnel position the curator advanced
+ * rows it seeded — so the page can show both the sim's internal pipeline walk
+ * (incl. what's queued next) and the real pipeline position the curator advanced
  * the rows to.
  */
 export function buildDevState(
@@ -111,7 +111,7 @@ export function buildDevState(
 } {
   const enabled = getConfig<boolean>(db, 'recruiter_sim_enabled');
   // Drop sidecar apps whose `applications` row is gone (e.g. just after an
-  // /api/dev/reset funnel-data/everything wipe, §24.48) so the panel shows the
+  // /api/dev/reset pipeline-data/everything wipe, §24.48) so the panel shows the
   // sim's real working set — the same reconcile `runOneTick` applies before it
   // acts, so the display matches behavior instead of showing ghost rows until the
   // next tick re-saves the sidecar.
@@ -184,9 +184,9 @@ export function applyDevControl(db: Database.Database, raw: unknown): DevControl
 
 // ── dev reset controls (§24.48) ──────────────────────────────────────────────
 
-export type DevResetScope = 'funnel-data' | 'conversation' | 'profile' | 'everything';
+export type DevResetScope = 'pipeline-data' | 'conversation' | 'profile' | 'everything';
 
-const RESET_SCOPES: DevResetScope[] = ['funnel-data', 'conversation', 'profile', 'everything'];
+const RESET_SCOPES: DevResetScope[] = ['pipeline-data', 'conversation', 'profile', 'everything'];
 
 export interface DevResetOutcome {
   status: number;
@@ -220,11 +220,11 @@ function nullProfileField(db: Database.Database, field: string): number {
 /**
  * The dev "Reset" control (§24.48). Takes EXACTLY ONE of `{ scope }` / `{ field }`:
  *
- *   scope: 'funnel-data'  → clear the funnel/app tables (keeps profile + chat). No halt.
+ *   scope: 'pipeline-data'  → clear the pipeline/app tables (keeps profile + chat). No halt.
  *   scope: 'conversation' → halt + kill container, clear `sessions` + transcripts,
  *                           sim off. Leaves halted (the crons re-bootstrap next session).
  *   scope: 'profile'      → DELETE candidate_profile → onboarding restarts. No halt.
- *   scope: 'everything'   → funnel-data + profile + conversation (true pre-bootstrap). Halts.
+ *   scope: 'everything'   → pipeline-data + profile + conversation (true pre-bootstrap). Halts.
  *   field: <onboarding>   → NULL that one profile field (re-test one onboarding step). No halt.
  *
  * Session-clearing scopes HALT FIRST so no container is mid-write when its session
@@ -271,7 +271,7 @@ export function applyDevReset(db: Database.Database, raw: unknown): DevResetOutc
   }
 
   const tables: string[] = [];
-  if (s === 'funnel-data' || s === 'everything') tables.push(...FUNNEL_DATA_TABLES);
+  if (s === 'pipeline-data' || s === 'everything') tables.push(...PIPELINE_DATA_TABLES);
   if (clearsSessions) tables.push(...SESSION_TABLES);
 
   const cleared: Record<string, number> = tables.length > 0 ? wipeTables(db, tables) : {};
@@ -294,7 +294,7 @@ export interface DevSweepOutcome {
  * Insert a ONE-SHOT pipeline-scribe trigger row into an inbound DB: the same
  * sentinel the daily cron fires, but `recurrence=NULL` + `process_after=now` so
  * it runs once, immediately. `series_id` is the row's own id (a one-shot series,
- * so it never collides with the recurring `funnel-curator` series or its clone
+ * so it never collides with the recurring `pipeline-scribe` series or its clone
  * logic). Takes the inbound DB → unit-testable. Returns the row id.
  */
 export function enqueueSweepTask(inDb: Database.Database): string {
@@ -310,13 +310,13 @@ export function enqueueSweepTask(inDb: Database.Database): string {
 
 /**
  * The dev "Sweep & convert now" action (§24.43c). Two parts:
- *   1. CONVERT (immediate, deterministic, host-side) — `applyFunnelFromEmailEvents`
- *      converges the funnel board from the mail the curator has ALREADY classified
+ *   1. CONVERT (immediate, deterministic, host-side) — `applyPipelineFromEmailEvents`
+ *      converges the pipeline board from the mail the curator has ALREADY classified
  *      into `email_events`, without waiting for (or re-fetching) anything. This is
  *      what makes already-consumed mail (the cursor has moved past it) show up.
  *   2. SWEEP (async, best-effort) — enqueue a fresh `[scheduled trigger:
  *      pipeline-scribe]` task so the orchestrator fetches any NEW mail; that run's
- *      persist auto-converts via the same path (funnel-actions hook). Targets the
+ *      persist auto-converts via the same path (pipeline-actions hook). Targets the
  *      OPS session (§24.67 — where the pipeline-scribe series lives; the previous
  *      findSessionByAgentGroup picked the *newest* active session, which post-split
  *      is the wrong one). Skipped (no error) when the ops session doesn't exist
@@ -324,7 +324,7 @@ export function enqueueSweepTask(inDb: Database.Database): string {
  */
 export async function applyDevSweep(): Promise<DevSweepOutcome> {
   const db = getDb();
-  const applied = applyFunnelFromEmailEvents(db);
+  const applied = applyPipelineFromEmailEvents(db);
   // Score win_confidence with intelligence AFTER the convert (it reads the
   // just-applied stages). Best-effort + Portkey-gated — never throws.
   const wc = await scoreWinConfidence(db);

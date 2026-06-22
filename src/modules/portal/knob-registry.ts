@@ -83,7 +83,7 @@ const OUTCOME_SPLIT_NOTE =
 // them — inbound mail is pulled by the pipeline-scribe cron + the on-demand
 // sweep, not a fixed poll loop. The notes say so honestly (§24.105).
 const ORPHAN_POLL_NOTE =
-  'No live consumer today — inbound mail is pulled by the pipeline-scribe cron (funnel_curator_cron) + the on-demand sweep, not a fixed poll loop. Kept as a tunable for a future host poller; changing it currently has no effect.';
+  'No live consumer today — inbound mail is pulled by the pipeline-scribe cron (pipeline_scribe_cron) + the on-demand sweep, not a fixed poll loop. Kept as a tunable for a future host poller; changing it currently has no effect.';
 
 /** The current model IDs the redaction belts may target (an enum keeps a typo from breaking the call). */
 const MODEL_OPTIONS = ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-8'];
@@ -690,23 +690,23 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
   },
 
   // ── pipeline curator + close detection ──
-  funnel_curator_enabled: {
+  pipeline_scribe_enabled: {
     type: 'boolean',
     group: 'curator',
-    label: 'Funnel curator enabled',
-    note: 'Master toggle for the pipeline-scribe (funnel curator) scheduled pass.',
+    label: 'Pipeline curator enabled',
+    note: 'Master toggle for the pipeline-scribe (pipeline curator) scheduled pass.',
   },
-  funnel_curator_cron: { type: 'cron', group: 'curator', label: 'Funnel curator cron', note: CRON_NOTE },
-  funnel_curator_gmail_lookback_days: {
+  pipeline_scribe_cron: { type: 'cron', group: 'curator', label: 'Pipeline curator cron', note: CRON_NOTE },
+  pipeline_scribe_gmail_lookback_days: {
     type: 'number',
     group: 'curator',
     label: 'Curator Gmail lookback (days)',
     min: 1,
     max: 365,
     integer: true,
-    note: 'How far back the curator queries Gmail for funnel-relevant mail.',
+    note: 'How far back the curator queries Gmail for pipeline-relevant mail.',
   },
-  funnel_curator_max_narratives: {
+  pipeline_scribe_max_narratives: {
     type: 'number',
     group: 'curator',
     label: 'Curator max narratives',
@@ -715,7 +715,7 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     integer: true,
     note: 'Ceiling on narrative rows the curator writes per pass.',
   },
-  funnel_curator_max_attention_items: {
+  pipeline_scribe_max_attention_items: {
     type: 'number',
     group: 'curator',
     label: 'Curator max attention items',
@@ -724,13 +724,13 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     integer: true,
     note: 'Ceiling on "needs attention" items the curator surfaces per pass.',
   },
-  funnel_curator_skip_if_no_deltas: {
+  pipeline_scribe_skip_if_no_deltas: {
     type: 'boolean',
     group: 'curator',
     label: 'Curator skips on no deltas',
     note: 'When on, a curator pass with no new mail exits early instead of re-running the LLM over an unchanged board.',
   },
-  funnel_curator_skip_classified_messages: {
+  pipeline_scribe_skip_classified_messages: {
     type: 'boolean',
     group: 'curator',
     label: 'Curator skips classified mail',
@@ -1045,7 +1045,7 @@ export const UNSPEC_KNOBS: Record<string, string> = {
   channel_pref_by_class: 'object — per-class channel routing; needs a structured editor (Telegram/DB).',
   approval_scope: 'object — per-action approval policy; structured editor (Telegram/DB).',
   briefing_schedule: 'object — morning/evening times; the daily_briefing_time cron is the scalar lever.',
-  funnel_curator_ghosting_thresholds_days: 'object — per-stage ghosting thresholds; structured editor.',
+  pipeline_scribe_ghosting_thresholds_days: 'object — per-stage ghosting thresholds; structured editor.',
   killer_match_source_allow_list: 'array — lead-source allow-list; structured editor.',
   llm_pricing_usd_per_mtok: 'object — model pricing map; structured editor.',
   recruiter_sim_pace_presets: 'object — dev-only sim pacing presets.',

@@ -5,7 +5,7 @@
  *   - career_pilot.record_job_lead       — host computes fingerprint +
  *                                          rules_score, UPSERTs into job_leads
  *   - career_pilot.query_job_leads       — typed-args SELECT
- *   - career_pilot.update_job_lead_status — funnel-state UPDATE
+ *   - career_pilot.update_job_lead_status — pipeline-state UPDATE
  *   - career_pilot.discover_ats_board    — regex-detect ATS provider+token
  *                                          from a careers page URL
  *   - career_pilot.fetch_source          — aggregate ATS list across
@@ -628,7 +628,7 @@ function readKillerMatchActionPrefs(db: Database.Database): KillerMatchPreferenc
  * `now` is injected so the cutoff and the caller's claim-stamp share one instant.
  *
  * §24.9 suppression: skip leads with any inbox activity already linked to them
- * (the candidate has engaged — re-alerting would be noisy). The funnel-curator
+ * (the candidate has engaged — re-alerting would be noisy). The pipeline-scribe
  * writes those linkages into email_events.
  */
 export function buildKillerMatchEligibilityClause(

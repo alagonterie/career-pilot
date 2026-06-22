@@ -49,9 +49,9 @@ export interface ActivityStreamOptions {
 /**
  * The visitor-facing source label for an event (the subagent name, else the
  * category). No mapping layer: the public audit data is natively visitor-facing
- * — migration 137 (§24.77 D3) rewrote the legacy `'funnel'` category → `'pipeline'`
- * and the `'funnel-curator'` agent_name → `'pipeline-scribe'`, so a raw row
- * already reads right and nothing says "funnel" on the public surface.
+ * — migration 137 (§24.77 D3) rewrote the legacy `'pipeline'` category → `'pipeline'`
+ * and the `'pipeline-scribe'` agent_name → `'pipeline-scribe'`, so a raw row
+ * already reads right and nothing says "pipeline" on the public surface.
  */
 export function eventSourceLabel(e: AuditEvent): string {
   return e.agent_name ?? e.category

@@ -1,18 +1,18 @@
 /**
- * funnel-curator MCP tools (Phase 3.2 §24.9).
+ * pipeline-scribe MCP tools (Phase 3.2 §24.9).
  *
  * Five tools wired through the container → host system-action contract
  * (see ../career-pilot/action.ts + src/modules/career-pilot/
- * funnel-actions.ts):
+ * pipeline-actions.ts):
  *
- *   funnel-curator subagent palette (read inputs, write output):
+ *   pipeline-scribe subagent palette (read inputs, write output):
  *     - query_gmail_delta       — fetch new Gmail messages since last sync
  *     - query_calendar_delta    — fetch new Calendar events since last sync
- *     - persist_funnel_state    — single transactional write of the
+ *     - persist_pipeline_state    — single transactional write of the
  *                                 curator's run output
  *
  *   Shared with orchestrator (on-demand persona reads):
- *     - read_funnel_state       — return latest curator output (cached)
+ *     - read_pipeline_state       — return latest curator output (cached)
  *     - read_email_events       — filtered query against email_events
  *
  * Kept separate from scrape-jobs.ts (Phase 2.5) and career-pilot.ts
@@ -109,7 +109,7 @@ async function gmailFetch<T>(path: string): Promise<T> {
   const tel = (ok: boolean, statusCode: number | null, error?: string): void => {
     void reportRequestTelemetry({
       provider: 'gmail',
-      surface: 'funnel-curator-gmail',
+      surface: 'pipeline-scribe-gmail',
       ok,
       latencyMs: Date.now() - t0,
       statusCode,
@@ -324,7 +324,7 @@ export const queryGmailDelta: McpToolDefinition = {
   tool: {
     name: 'query_gmail_delta',
     description:
-      'Fetch new Gmail messages since the last sync. Returns `{ messages, history_id, full_sync_performed, fixture_mode }` where messages is an array of `{ id, thread_id, labels, from_addr, to_addr, subject, received_at, body_text }`. In real mode: container-side direct HTTPS to gmail.googleapis.com through the OneCLI gateway (which injects the OAuth bearer transparently). In fixture mode (GMAIL_FIXTURE env set): the host serves the named fixture from tests/fixtures/gmail/. Read-only — does NOT write any state. Intended for the funnel-curator subagent only; do NOT call from orchestrator turns.',
+      'Fetch new Gmail messages since the last sync. Returns `{ messages, history_id, full_sync_performed, fixture_mode }` where messages is an array of `{ id, thread_id, labels, from_addr, to_addr, subject, received_at, body_text }`. In real mode: container-side direct HTTPS to gmail.googleapis.com through the OneCLI gateway (which injects the OAuth bearer transparently). In fixture mode (GMAIL_FIXTURE env set): the host serves the named fixture from tests/fixtures/gmail/. Read-only — does NOT write any state. Intended for the pipeline-scribe subagent only; do NOT call from orchestrator turns.',
     inputSchema: {
       type: 'object' as const,
       properties: {},
@@ -363,7 +363,7 @@ export const queryGmailDelta: McpToolDefinition = {
       const priorHistoryId =
         rawHistoryId && rawHistoryId !== 'null' && rawHistoryId !== 'undefined' ? rawHistoryId : null;
 
-      const lookbackDays = Number(process.env.FUNNEL_CURATOR_GMAIL_LOOKBACK_DAYS) || DEFAULT_LOOKBACK_DAYS;
+      const lookbackDays = Number(process.env.PIPELINE_CURATOR_GMAIL_LOOKBACK_DAYS) || DEFAULT_LOOKBACK_DAYS;
 
       let messageIds: string[] = [];
       let newHistoryId: string | null = null;
@@ -430,7 +430,7 @@ export const queryGmailDelta: McpToolDefinition = {
       // classified on a prior run (present in email_events) BEFORE fetching their
       // content, so a full-sync doesn't re-fetch + re-hand the same already-noise
       // emails to the LLM every run. The host gates this on
-      // funnel_curator_skip_classified_messages. Best-effort: a failed filter
+      // pipeline_scribe_skip_classified_messages. Best-effort: a failed filter
       // call leaves the list untouched (never drops genuinely-new mail).
       let skippedClassified = 0;
       if (messageIds.length > 0) {
@@ -484,7 +484,7 @@ export const queryCalendarDelta: McpToolDefinition = {
   tool: {
     name: 'query_calendar_delta',
     description:
-      'Fetch new Calendar events since the last sync. Returns `{ events, sync_tokens, full_sync_performed, fixture_mode }` where events is an array of `{ id, calendar_id, summary, start_at, end_at, organizer, attendees, meet_link }`. In real mode: container-side direct HTTPS to www.googleapis.com/calendar/... through the OneCLI gateway. In fixture mode (CALENDAR_FIXTURE env set): the host serves the named fixture from tests/fixtures/calendar/. Read-only — does NOT write any state. Intended for the funnel-curator subagent only.',
+      'Fetch new Calendar events since the last sync. Returns `{ events, sync_tokens, full_sync_performed, fixture_mode }` where events is an array of `{ id, calendar_id, summary, start_at, end_at, organizer, attendees, meet_link }`. In real mode: container-side direct HTTPS to www.googleapis.com/calendar/... through the OneCLI gateway. In fixture mode (CALENDAR_FIXTURE env set): the host serves the named fixture from tests/fixtures/calendar/. Read-only — does NOT write any state. Intended for the pipeline-scribe subagent only.',
     inputSchema: {
       type: 'object' as const,
       properties: {},
@@ -519,7 +519,7 @@ export const queryCalendarDelta: McpToolDefinition = {
       if (!stateRes.ok) return actionErr('query_calendar_delta (sync state)', stateRes.error);
       const priorSyncTokens = stateRes.data.sync_tokens ?? {};
 
-      const lookbackDays = Number(process.env.FUNNEL_CURATOR_GMAIL_LOOKBACK_DAYS) || DEFAULT_LOOKBACK_DAYS;
+      const lookbackDays = Number(process.env.PIPELINE_CURATOR_GMAIL_LOOKBACK_DAYS) || DEFAULT_LOOKBACK_DAYS;
 
       // v1: poll the 'primary' calendar only. Multi-calendar fits cleanly later.
       const calendarId = 'primary';
@@ -533,7 +533,7 @@ export const queryCalendarDelta: McpToolDefinition = {
         const tel = (ok: boolean, statusCode: number | null, error?: string): void => {
           void reportRequestTelemetry({
             provider: 'calendar',
-            surface: 'funnel-curator-calendar',
+            surface: 'pipeline-scribe-calendar',
             ok,
             latencyMs: Date.now() - t0,
             statusCode,
@@ -619,13 +619,13 @@ export const queryCalendarDelta: McpToolDefinition = {
   },
 };
 
-// ── persist_funnel_state ───────────────────────────────────────────────────
+// ── persist_pipeline_state ───────────────────────────────────────────────────
 
-export const persistFunnelState: McpToolDefinition = {
+export const persistPipelineState: McpToolDefinition = {
   tool: {
-    name: 'persist_funnel_state',
+    name: 'persist_pipeline_state',
     description:
-      "Single transactional write of the curator's run output. UPSERTs new email_events rows (keyed by gmail_msg_id — re-classifications overwrite), INSERTs a funnel_curator_output row, and updates the gmail/calendar sync-state pointers. Returns `{ run_id, events_written }`. Call this EXACTLY ONCE per curator spawn, at the end of reasoning, with the full run payload. Set cheap_out=true when both Gmail + Calendar deltas were empty AND no ghosting-threshold transitions are due — emits an audit row without doing classification work. Intended for the funnel-curator subagent only.",
+      "Single transactional write of the curator's run output. UPSERTs new email_events rows (keyed by gmail_msg_id — re-classifications overwrite), INSERTs a pipeline_scribe_output row, and updates the gmail/calendar sync-state pointers. Returns `{ run_id, events_written }`. Call this EXACTLY ONCE per curator spawn, at the end of reasoning, with the full run payload. Set cheap_out=true when both Gmail + Calendar deltas were empty AND no ghosting-threshold transitions are due — emits an audit row without doing classification work. Intended for the pipeline-scribe subagent only.",
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -638,13 +638,13 @@ export const persistFunnelState: McpToolDefinition = {
         narratives: {
           type: 'array',
           description:
-            'One per active application/company. Each: { company, application_id?, lead_id?, current_state, last_event_at?, timeline_excerpt[] }. Capped at the funnel_curator_max_narratives preference.',
+            'One per active application/company. Each: { company, application_id?, lead_id?, current_state, last_event_at?, timeline_excerpt[] }. Capped at the pipeline_scribe_max_narratives preference.',
           items: { type: 'object' },
         },
         attention: {
           type: 'array',
           description:
-            "Prioritized list of items needing the candidate's attention. Each: { priority (one of same_day/action_owed/fyi), reason, application_id?, company?, action_hint? }. Capped at funnel_curator_max_attention_items.",
+            "Prioritized list of items needing the candidate's attention. Each: { priority (one of same_day/action_owed/fyi), reason, application_id?, company?, action_hint? }. Capped at pipeline_scribe_max_attention_items.",
           items: { type: 'object' },
         },
         suggestions: {
@@ -678,23 +678,23 @@ export const persistFunnelState: McpToolDefinition = {
     annotations: { readOnlyHint: false },
   },
   async handler(args) {
-    const res = await sendAction<{ run_id: string; events_written: number }>('career_pilot.persist_funnel_state', args);
-    if (!res.ok) return actionErr('persist_funnel_state', res.error);
+    const res = await sendAction<{ run_id: string; events_written: number }>('career_pilot.persist_pipeline_state', args);
+    if (!res.ok) return actionErr('persist_pipeline_state', res.error);
     const { run_id, events_written } = res.data;
     return ok(
-      `persist_funnel_state: run ${run_id} written (${events_written} event row${events_written === 1 ? '' : 's'}).`,
+      `persist_pipeline_state: run ${run_id} written (${events_written} event row${events_written === 1 ? '' : 's'}).`,
       res.data,
     );
   },
 };
 
-// ── read_funnel_state ──────────────────────────────────────────────────────
+// ── read_pipeline_state ──────────────────────────────────────────────────────
 
-export const readFunnelState: McpToolDefinition = {
+export const readPipelineState: McpToolDefinition = {
   tool: {
-    name: 'read_funnel_state',
+    name: 'read_pipeline_state',
     description:
-      "Read the most-recent funnel_curator_output (the materialized read-model). Returns `{ state }` where state is `{ id, run_at, gmail_history_id, calendar_sync_tokens, narratives, attention, suggestions, cheap_out, cost_usd }` — or `{ state: null }` when no curator runs have happened yet. Cheap DB read, no LLM. Use this in two places: (1) the orchestrator's funnel-curator handler after the subagent returns; (2) on-demand persona pattern when the candidate asks 'what's the state of X?' or 'what needs attention?' — pull from cache rather than re-spawning the curator.",
+      "Read the most-recent pipeline_scribe_output (the materialized read-model). Returns `{ state }` where state is `{ id, run_at, gmail_history_id, calendar_sync_tokens, narratives, attention, suggestions, cheap_out, cost_usd }` — or `{ state: null }` when no curator runs have happened yet. Cheap DB read, no LLM. Use this in two places: (1) the orchestrator's pipeline-scribe handler after the subagent returns; (2) on-demand persona pattern when the candidate asks 'what's the state of X?' or 'what needs attention?' — pull from cache rather than re-spawning the curator.",
     inputSchema: {
       type: 'object' as const,
       properties: {},
@@ -702,14 +702,14 @@ export const readFunnelState: McpToolDefinition = {
     annotations: { readOnlyHint: true },
   },
   async handler() {
-    const res = await sendAction<{ state: unknown }>('career_pilot.read_funnel_state', {});
-    if (!res.ok) return actionErr('read_funnel_state', res.error);
+    const res = await sendAction<{ state: unknown }>('career_pilot.read_pipeline_state', {});
+    if (!res.ok) return actionErr('read_pipeline_state', res.error);
     const { state } = res.data as { state: { run_at?: string; narratives?: unknown[]; attention?: unknown[] } | null };
-    if (!state) return ok('read_funnel_state: no curator runs yet.', { state: null });
+    if (!state) return ok('read_pipeline_state: no curator runs yet.', { state: null });
     const narrativeCount = Array.isArray(state.narratives) ? state.narratives.length : 0;
     const attentionCount = Array.isArray(state.attention) ? state.attention.length : 0;
     return ok(
-      `read_funnel_state: ${narrativeCount} narrative${narrativeCount === 1 ? '' : 's'}, ${attentionCount} attention item${attentionCount === 1 ? '' : 's'} (run_at ${state.run_at}).`,
+      `read_pipeline_state: ${narrativeCount} narrative${narrativeCount === 1 ? '' : 's'}, ${attentionCount} attention item${attentionCount === 1 ? '' : 's'} (run_at ${state.run_at}).`,
       res.data as unknown as Record<string, unknown>,
     );
   },
@@ -762,4 +762,4 @@ export const readEmailEvents: McpToolDefinition = {
   },
 };
 
-registerTools([queryGmailDelta, queryCalendarDelta, persistFunnelState, readFunnelState, readEmailEvents]);
+registerTools([queryGmailDelta, queryCalendarDelta, persistPipelineState, readPipelineState, readEmailEvents]);

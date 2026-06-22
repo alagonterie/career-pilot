@@ -106,7 +106,7 @@ describe('DEV_INSPECTOR_WRITABLE_KEYS', () => {
 
   it('contains the dev-loop pacing + budget + polling keys the owner asked for', () => {
     for (const key of [
-      'funnel_curator_cron',
+      'pipeline_scribe_cron',
       'close_detection_cron',
       'killer_match_cron',
       'daily_briefing_time',
@@ -147,11 +147,11 @@ describe('validateKnobWrite', () => {
   });
 
   it('validates cron expressions structurally', () => {
-    expect(validateKnobWrite('funnel_curator_cron', '*/2 * * * *')).toMatchObject({ ok: true, value: '*/2 * * * *' });
+    expect(validateKnobWrite('pipeline_scribe_cron', '*/2 * * * *')).toMatchObject({ ok: true, value: '*/2 * * * *' });
     expect(validateKnobWrite('daily_briefing_time', '0 8 * * *')).toMatchObject({ ok: true });
-    expect(validateKnobWrite('funnel_curator_cron', 'not a cron').ok).toBe(false);
-    expect(validateKnobWrite('funnel_curator_cron', '* * * *').ok).toBe(false); // 4 fields
-    expect(validateKnobWrite('funnel_curator_cron', 42).ok).toBe(false); // not a string
+    expect(validateKnobWrite('pipeline_scribe_cron', 'not a cron').ok).toBe(false);
+    expect(validateKnobWrite('pipeline_scribe_cron', '* * * *').ok).toBe(false); // 4 fields
+    expect(validateKnobWrite('pipeline_scribe_cron', 42).ok).toBe(false); // not a string
   });
 
   it('validates an enum against its options (dev_model_tier)', () => {
@@ -185,8 +185,8 @@ describe('applyKnobWrite', () => {
   it('persists a number and a cron', () => {
     applyKnobWrite(getDb(), { key: 'recruiter_sim_max_concurrent', value: 5 });
     expect(getConfig<number>(getDb(), 'recruiter_sim_max_concurrent')).toBe(5);
-    applyKnobWrite(getDb(), { key: 'funnel_curator_cron', value: '*/3 * * * *' });
-    expect(getConfig<string>(getDb(), 'funnel_curator_cron')).toBe('*/3 * * * *');
+    applyKnobWrite(getDb(), { key: 'pipeline_scribe_cron', value: '*/3 * * * *' });
+    expect(getConfig<string>(getDb(), 'pipeline_scribe_cron')).toBe('*/3 * * * *');
   });
 
   it('rejects an unknown key without writing (400)', () => {
@@ -257,7 +257,7 @@ describe('buildDevKnobs', () => {
     expect(knobs).toHaveLength(DEV_INSPECTOR_WRITABLE_KEYS.length);
     const enabled = knobs.find((k) => k.key === 'recruiter_sim_enabled');
     expect(enabled).toMatchObject({ type: 'boolean', group: 'sim', value: false });
-    const cron = knobs.find((k) => k.key === 'funnel_curator_cron');
+    const cron = knobs.find((k) => k.key === 'pipeline_scribe_cron');
     expect(cron).toMatchObject({ type: 'cron', group: 'curator' });
     expect(cron?.note).toBeTruthy();
   });
@@ -520,7 +520,7 @@ describe('applyDevControl (§24.43e pause LLM spend)', () => {
 });
 
 describe('on-demand sweep (§24.43c)', () => {
-  it('enqueueSweepTask inserts a one-shot funnel-curator trigger row', () => {
+  it('enqueueSweepTask inserts a one-shot pipeline-scribe trigger row', () => {
     const tmpDir = path.join(os.tmpdir(), `nanoclaw-cp-sweep-test-${process.pid}`);
     const inboundPath = path.join(tmpDir, 'inbound.db');
     fs.mkdirSync(tmpDir, { recursive: true });
@@ -535,7 +535,7 @@ describe('on-demand sweep (§24.43c)', () => {
       expect(row.kind).toBe('task');
       expect(row.status).toBe('pending');
       expect(row.recurrence).toBeNull(); // one-shot — won't clone
-      expect(row.series_id).toBe(id); // its own series, not 'funnel-curator'
+      expect(row.series_id).toBe(id); // its own series, not 'pipeline-scribe'
       expect((JSON.parse(row.content) as { prompt: string }).prompt).toBe('[scheduled trigger: pipeline-scribe]');
     } finally {
       inDb.close();
@@ -644,14 +644,14 @@ describe('applyDevReset (§24.48 dev reset controls)', () => {
   const appCount = (): number => (getDb().prepare('SELECT count(*) AS n FROM applications').get() as { n: number }).n;
   const sessionCount = (): number => (getDb().prepare('SELECT count(*) AS n FROM sessions').get() as { n: number }).n;
 
-  it("'funnel-data' clears the board but keeps profile + sessions, no halt", () => {
+  it("'pipeline-data' clears the board but keeps profile + sessions, no halt", () => {
     seedProfile();
     seedApplication();
     seedSession();
 
-    const out = applyDevReset(getDb(), { scope: 'funnel-data' });
+    const out = applyDevReset(getDb(), { scope: 'pipeline-data' });
     expect(out.status).toBe(200);
-    expect(out.body).toMatchObject({ scope: 'funnel-data', halted: false });
+    expect(out.body).toMatchObject({ scope: 'pipeline-data', halted: false });
     expect((out.body as { cleared: Record<string, number> }).cleared.applications).toBe(1);
     expect(appCount()).toBe(0);
     expect(profileExists()).toBe(true); // persona preserved
@@ -659,7 +659,7 @@ describe('applyDevReset (§24.48 dev reset controls)', () => {
     expect(getPauseState()).toBe('active'); // no halt
   });
 
-  it("'profile' deletes the candidate_profile row (onboarding restarts), no halt, funnel intact", () => {
+  it("'profile' deletes the candidate_profile row (onboarding restarts), no halt, pipeline intact", () => {
     seedProfile();
     seedApplication();
 
@@ -668,7 +668,7 @@ describe('applyDevReset (§24.48 dev reset controls)', () => {
     expect(out.body).toMatchObject({ scope: 'profile', halted: false });
     expect((out.body as { cleared: Record<string, number> }).cleared.candidate_profile).toBe(1);
     expect(profileExists()).toBe(false);
-    expect(appCount()).toBe(1); // funnel untouched
+    expect(appCount()).toBe(1); // pipeline untouched
     expect(getPauseState()).toBe('active');
   });
 
@@ -689,7 +689,7 @@ describe('applyDevReset (§24.48 dev reset controls)', () => {
     expect(getConfig<boolean>(getDb(), 'recruiter_sim_enabled')).toBe(false); // sim off
   });
 
-  it("'everything' is true pre-bootstrap — clears funnel + profile + sessions, halts", () => {
+  it("'everything' is true pre-bootstrap — clears pipeline + profile + sessions, halts", () => {
     seedProfile();
     seedApplication();
     seedSession();

@@ -29,7 +29,7 @@
  * `public_kit_view`, so it can never reach the wire. No kit title and no
  * drive_url either — both carry the real company name.
  *
- * Best-effort discipline (same as upsertPublicFunnelView): never throws; call
+ * Best-effort discipline (same as upsertPublicPipelineView): never throws; call
  * AFTER the private write commits. Re-run on kit persist, kit archive, and
  * BOTH directions of an obfuscation-policy flip.
  */
@@ -93,7 +93,7 @@ function sealed(section: ParsedKitSection, override?: { id: string; title: strin
 }
 
 /**
- * mirrorFunnelEvent's defense-in-depth net, alias-aware (§24.65 Δ): did a
+ * mirrorPipelineEvent's defense-in-depth net, alias-aware (§24.65 Δ): did a
  * non-public real company name — OR any of its aliases — survive? The alias
  * leg is load-bearing: a kit naturally says "AMD" while the stored
  * company_name is "Advanced Micro Devices, Inc" (found live on dev during the

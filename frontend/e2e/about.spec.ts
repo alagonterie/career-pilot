@@ -26,7 +26,7 @@ test.describe('/about — story + methodology', () => {
     await expect(cast).toContainText('research-company')
     await expect(cast).toContainText('win-confidence-scorer')
 
-    // The #anonymization anchor target (deep-linked from /experience + the funnel note).
+    // The #anonymization anchor target (deep-linked from /experience + the pipeline note).
     await expect(page.locator('#anonymization')).toBeVisible()
 
     // The shared long-form scaffold (§24.83): a sticky scroll-spy TOC over the

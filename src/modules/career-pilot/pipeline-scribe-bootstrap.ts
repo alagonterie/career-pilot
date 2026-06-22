@@ -1,5 +1,5 @@
 /**
- * Idempotent host-side bootstrap for the funnel-curator recurring task
+ * Idempotent host-side bootstrap for the pipeline-scribe recurring task
  * (Phase 3.2 §24.9 component 2).
  *
  * Mirrors killer-match-bootstrap.ts. Single daily fire at 07:30 (TZ-local)
@@ -12,8 +12,8 @@
  * the cron default.
  *
  * Defaults (overridable via the `preferences` table):
- *   - `funnel_curator_enabled` = true
- *   - `funnel_curator_cron`    = "30 7 * * *"
+ *   - `pipeline_scribe_enabled` = true
+ *   - `pipeline_scribe_cron`    = "30 7 * * *"
  */
 import { CronExpressionParser } from 'cron-parser';
 import type Database from 'better-sqlite3';
@@ -24,11 +24,13 @@ import { nextEvenSeq } from '../../db/session-db.js';
 import { log } from '../../log.js';
 import type { AgentGroup, Session } from '../../types.js';
 
-// SERIES_ID is internal plumbing and deliberately keeps the pre-rename name
-// (§24.59): renaming it would orphan the live series on deployed boxes for
-// zero visitor-facing benefit. The PROMPT is what the persona handles — it
-// follows the subagent's rename to pipeline-scribe, and ensure() reconciles
-// the live row's stored prompt when this constant changes.
+// SERIES_ID deliberately keeps the pre-rename literal 'funnel-curator'
+// (§24.59 / §24.152 D7): it is the recurring task's series_id in NanoClaw's
+// live `messages_in` queue (a separate inbound DB the central-DB migration
+// system does not manage), so renaming it would orphan the live series on
+// deployed boxes for zero visitor-facing benefit. The PROMPT follows the
+// subagent's rename to pipeline-scribe, and ensure() reconciles the live row's
+// stored prompt when this constant changes.
 const SERIES_ID = 'funnel-curator';
 const TASK_PROMPT = '[scheduled trigger: pipeline-scribe]';
 
@@ -44,12 +46,12 @@ export interface BootstrapResult {
   recurrence?: string;
 }
 
-export function readFunnelCuratorPreferences(centralDb: Database.Database): BootstrapPreferences {
-  // Defaults (funnel_curator_enabled=true, funnel_curator_cron=30 7 * * *) live
+export function readPipelineScribePreferences(centralDb: Database.Database): BootstrapPreferences {
+  // Defaults (pipeline_scribe_enabled=true, pipeline_scribe_cron=30 7 * * *) live
   // in config/defaults.json; getConfig resolves env > preferences table > defaults.
   return {
-    enabled: getConfig<boolean>(centralDb, 'funnel_curator_enabled'),
-    cronExpr: getConfig<string>(centralDb, 'funnel_curator_cron'),
+    enabled: getConfig<boolean>(centralDb, 'pipeline_scribe_enabled'),
+    cronExpr: getConfig<string>(centralDb, 'pipeline_scribe_cron'),
   };
 }
 
@@ -61,7 +63,7 @@ function readLiveTask(inDb: Database.Database): { id: string; content: string } 
     .get(SERIES_ID) as { id: string; content: string } | undefined;
 }
 
-export function hasLiveFunnelCuratorTask(inDb: Database.Database): boolean {
+export function hasLivePipelineScribeTask(inDb: Database.Database): boolean {
   return readLiveTask(inDb) !== undefined;
 }
 
@@ -78,13 +80,13 @@ export function computeNextFireTime(cronExpr: string): string {
   return next;
 }
 
-export function ensureFunnelCuratorTask(
+export function ensurePipelineScribeTask(
   centralDb: Database.Database,
   inDb: Database.Database,
   _agentGroup: AgentGroup,
   _session: Session,
 ): BootstrapResult {
-  const prefs = readFunnelCuratorPreferences(centralDb);
+  const prefs = readPipelineScribePreferences(centralDb);
   if (!prefs.enabled) {
     return { action: 'skipped_disabled' };
   }
@@ -102,7 +104,7 @@ export function ensureFunnelCuratorTask(
         inDb
           .prepare('UPDATE messages_in SET content = @content WHERE id = @id')
           .run({ content: JSON.stringify({ ...parsed, prompt: TASK_PROMPT }), id: live.id });
-        log.info('funnel-curator task prompt reconciled', {
+        log.info('pipeline-scribe task prompt reconciled', {
           rowId: live.id,
           seriesId: SERIES_ID,
           prompt: TASK_PROMPT,
@@ -130,7 +132,7 @@ export function ensureFunnelCuratorTask(
       content: JSON.stringify({ prompt: TASK_PROMPT, script: null }),
       seriesId: SERIES_ID,
     });
-  log.info('funnel-curator task inserted', {
+  log.info('pipeline-scribe task inserted', {
     rowId: newId,
     seriesId: SERIES_ID,
     recurrence: prefs.cronExpr,

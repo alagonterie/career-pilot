@@ -16,7 +16,7 @@ test('home page matches visual baseline', { tag: '@visual' }, async ({ page }) =
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Jane Doe', level: 1 })).toBeVisible()
-  // Wait for the seeded backlog (ticker) + the funnel strip (the public OFFER)
+  // Wait for the seeded backlog (ticker) + the pipeline strip (the public OFFER)
   // to render so the snapshot is deterministic.
   await expect(page.getByTestId('live-ticker')).toContainText('research-company')
   await expect(page.getByText('Wayne Enterprises')).toBeVisible()
@@ -62,19 +62,19 @@ test('work page matches visual baseline', { tag: '@visual' }, async ({ page }) =
   })
 })
 
-test('funnel page matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+test('pipeline page matches visual baseline', { tag: '@visual' }, async ({ page }) => {
   await page.goto('/pipeline')
   await expect(page.getByRole('heading', { name: 'My Job Pipeline', level: 1 })).toBeVisible()
   // Wait for the board to render from the seeded API so the snapshot is stable.
-  await expect(page.getByTestId('funnel-board')).toBeVisible()
+  await expect(page.getByTestId('pipeline-board')).toBeVisible()
   await expect(page.getByText('Wayne Enterprises')).toBeVisible()
-  await expect(page).toHaveScreenshot('funnel.png', {
+  await expect(page).toHaveScreenshot('pipeline.png', {
     animations: 'disabled',
     fullPage: true,
     // Day-counts + date-windowed stat values derive from wall-clock and drift
     // daily; mask them (the layout is the regression guard, the numbers are
     // covered by the unit + semantic tests).
-    mask: [page.getByTestId('funnel-card-age'), page.getByTestId('stat-value')],
+    mask: [page.getByTestId('pipeline-card-age'), page.getByTestId('stat-value')],
   })
 })
 
@@ -82,11 +82,11 @@ test('pipeline concluded retrospective matches visual baseline', { tag: '@visual
   // §24.149 L2 — the concluded banner atop the full board.
   await page.goto('/pipeline?__lifecycle=concluded')
   await expect(page.getByTestId('concluded-banner')).toBeVisible()
-  await expect(page.getByTestId('funnel-board')).toBeVisible()
+  await expect(page.getByTestId('pipeline-board')).toBeVisible()
   await expect(page).toHaveScreenshot('pipeline-concluded.png', {
     animations: 'disabled',
     fullPage: true,
-    mask: [page.getByTestId('funnel-card-age'), page.getByTestId('stat-value')],
+    mask: [page.getByTestId('pipeline-card-age'), page.getByTestId('stat-value')],
   })
 })
 
@@ -119,7 +119,7 @@ test('architecture page matches visual baseline', { tag: '@visual' }, async ({ p
   await expect(page.getByRole('heading', { name: 'Architecture', level: 1 })).toBeVisible()
   // Wait for the map to render from the seeded endpoints; every value is fixed
   // (seeded sessions + a fixed container count + seeded modes), so unlike the
-  // funnel there's nothing wall-clock-derived to mask.
+  // pipeline there's nothing wall-clock-derived to mask.
   await expect(page.getByTestId('arch-diagram')).toBeVisible()
   await expect(page.getByTestId('arch-node-host-router')).toHaveAttribute('data-status', 'healthy')
   await expect(page).toHaveScreenshot('architecture.png', {
@@ -151,15 +151,15 @@ test('live page matches visual baseline', { tag: '@visual' }, async ({ page }) =
   await page.goto('/dashboard')
   await expect(page.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeVisible()
   // Wait for the SSE trace to replay the seeded backlog so the centerpiece is
-  // populated before the snapshot (mirrors the home-ticker wait). The funnel,
+  // populated before the snapshot (mirrors the home-ticker wait). The pipeline,
   // sessions, container, and recent-outcomes panels are fixed-seed deterministic;
   // Portkey is unmocked here so telemetry/cost render the honest empty state.
   await expect(page.getByTestId('trace-stream')).toBeVisible()
   await expect(page.getByTestId('trace-stream').getByText('research-company')).toBeVisible()
-  // Wait for the funnel poll so the right-rail compact funnel + recent outcomes
+  // Wait for the pipeline poll so the right-rail compact pipeline + recent outcomes
   // are populated before the snapshot (the anon demo moved to /architecture's
   // sanitizer-node modal in §24.35 Pass B).
-  await expect(page.getByTestId('funnel-compact-reveal')).toContainText('Wayne Enterprises')
+  await expect(page.getByTestId('pipeline-compact-reveal')).toContainText('Wayne Enterprises')
   await expect(page).toHaveScreenshot('live.png', {
     animations: 'disabled',
     fullPage: true,
@@ -176,22 +176,22 @@ test('live page matches visual baseline', { tag: '@visual' }, async ({ page }) =
 // override. These are the regression guard for the shared loading/empty/error
 // language; `animations:'disabled'` freezes the skeleton pulse + the connecting
 // cursor at a deterministic frame.
-test('funnel loading state matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+test('pipeline loading state matches visual baseline', { tag: '@visual' }, async ({ page }) => {
   await page.goto('/pipeline?__state=loading')
-  await expect(page.getByTestId('funnel-skeleton')).toBeVisible()
-  await expect(page).toHaveScreenshot('funnel-loading.png', { animations: 'disabled', fullPage: true })
+  await expect(page.getByTestId('pipeline-skeleton')).toBeVisible()
+  await expect(page).toHaveScreenshot('pipeline-loading.png', { animations: 'disabled', fullPage: true })
 })
 
-test('funnel empty state matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+test('pipeline empty state matches visual baseline', { tag: '@visual' }, async ({ page }) => {
   await page.goto('/pipeline?__state=empty')
-  await expect(page.getByTestId('funnel-empty')).toBeVisible()
-  await expect(page).toHaveScreenshot('funnel-empty.png', { animations: 'disabled', fullPage: true })
+  await expect(page.getByTestId('pipeline-empty')).toBeVisible()
+  await expect(page).toHaveScreenshot('pipeline-empty.png', { animations: 'disabled', fullPage: true })
 })
 
-test('funnel error state matches visual baseline', { tag: '@visual' }, async ({ page }) => {
+test('pipeline error state matches visual baseline', { tag: '@visual' }, async ({ page }) => {
   await page.goto('/pipeline?__state=error')
-  await expect(page.getByTestId('funnel-error')).toBeVisible()
-  await expect(page).toHaveScreenshot('funnel-error.png', { animations: 'disabled', fullPage: true })
+  await expect(page.getByTestId('pipeline-error')).toBeVisible()
+  await expect(page).toHaveScreenshot('pipeline-error.png', { animations: 'disabled', fullPage: true })
 })
 
 test('architecture loading state matches visual baseline', { tag: '@visual' }, async ({ page }) => {

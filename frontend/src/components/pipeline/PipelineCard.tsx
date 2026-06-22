@@ -6,7 +6,7 @@ import { CompanyHandle } from './CompanyHandle'
  * One application on the pipeline board (PORTAL §5.4). Obfuscated label by
  * default; the real company name + a `◆ public` marker when the reveal tier is
  * set. A `<button>` so it's keyboard-operable and axe-clean. The day-count
- * carries `data-testid="funnel-card-age"` so the visual baseline can mask it
+ * carries `data-testid="pipeline-card-age"` so the visual baseline can mask it
  * (it drifts with wall-clock; the semantic E2E asserts the time-independent
  * stage/label instead).
  */
@@ -25,7 +25,7 @@ export function PipelineCard({ app, onSelect }: { app: PipelineApplication; onSe
     <button
       type="button"
       onClick={onSelect}
-      data-testid="funnel-card"
+      data-testid="pipeline-card"
       className="w-full rounded-lg border border-border bg-card p-3 text-left transition-colors hover:border-primary/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <div className="flex items-center justify-between gap-2">
@@ -49,7 +49,7 @@ export function PipelineCard({ app, onSelect }: { app: PipelineApplication; onSe
       {app.role_title ? <p className="mt-1 truncate text-xs text-muted-foreground">{app.role_title}</p> : null}
 
       <div className="mt-2 flex items-center justify-between gap-2">
-        <p data-testid="funnel-card-age" className="font-mono text-[11px] tabular-nums text-muted-foreground">
+        <p data-testid="pipeline-card-age" className="font-mono text-[11px] tabular-nums text-muted-foreground">
           {app.days_in_stage != null ? `${app.days_in_stage}d in stage` : '—'}
         </p>
         {/* §24.117 Δ2: COMPACT chips — glyph + count only (the noun lives in the
@@ -60,7 +60,7 @@ export function PipelineCard({ app, onSelect }: { app: PipelineApplication; onSe
           <span className="flex shrink-0 items-center gap-2 font-mono text-[10px] text-ai">
             {kitCount > 0 ? (
               <span
-                data-testid="funnel-card-kit"
+                data-testid="pipeline-card-kit"
                 title={`${kitCount} AI-built interview ${kitCount === 1 ? 'kit' : 'kits'} — open the card for details`}
               >
                 ▤{kitCount > 1 ? ` ${kitCount}` : ''}
@@ -68,7 +68,7 @@ export function PipelineCard({ app, onSelect }: { app: PipelineApplication; onSe
             ) : null}
             {lessonCount > 0 ? (
               <span
-                data-testid="funnel-card-lesson"
+                data-testid="pipeline-card-lesson"
                 title={`${lessonCount} published ${lessonCount === 1 ? 'lesson' : 'lessons'} — open the card for details`}
               >
                 ✎{lessonCount > 1 ? ` ${lessonCount}` : ''}

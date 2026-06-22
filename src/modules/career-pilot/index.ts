@@ -17,7 +17,7 @@ import {
   handleGetApplication,
   handleListApplications,
   handleRecordDispatch,
-  handleRecordFunnelEvent,
+  handleRecordPipelineEvent,
   handleRecordProgress,
   handleRecordRequestTelemetry,
   handleRecordTurnTelemetry,
@@ -47,10 +47,10 @@ import {
   handleGmailQueryDelta,
   handleLoadCalendarFixture,
   handleLoadGmailFixture,
-  handlePersistFunnelState,
+  handlePersistPipelineState,
   handleReadEmailEvents,
-  handleReadFunnelState,
-} from './funnel-actions.js';
+  handleReadPipelineState,
+} from './pipeline-actions.js';
 import { handlePersistInterviewKit } from './interview-kit-actions.js';
 import { handleReadContacts } from './contacts-actions.js';
 import { handlePersistLearning, handleReadLearnings } from './learnings-actions.js';
@@ -76,7 +76,7 @@ registerOwnerOnly('career_pilot.update_profile_field', handleUpdateProfileField)
 registerOwnerOnly('career_pilot.set_work_profile', handleSetWorkProfile);
 registerOwnerOnly('career_pilot.set_preference', handleSetPreference);
 registerOwnerOnly('career_pilot.update_application', handleUpdateApplication);
-registerOwnerOnly('career_pilot.record_funnel_event', handleRecordFunnelEvent);
+registerOwnerOnly('career_pilot.record_pipeline_event', handleRecordPipelineEvent);
 registerOwnerOnly('career_pilot.get_application', handleGetApplication);
 registerOwnerOnly('career_pilot.list_applications', handleListApplications);
 registerOwnerOnly('career_pilot.record_progress', handleRecordProgress);
@@ -110,8 +110,8 @@ registerOwnerOnly('career_pilot.close_stale_leads', handleCloseStaleLeads);
 registerOwnerOnly('career_pilot.check_trigger_eligibility', handleCheckTriggerEligibility);
 registerOwnerOnly('career_pilot.gmail_query_delta', handleGmailQueryDelta);
 registerOwnerOnly('career_pilot.calendar_query_delta', handleCalendarQueryDelta);
-registerOwnerOnly('career_pilot.persist_funnel_state', handlePersistFunnelState);
-registerOwnerOnly('career_pilot.read_funnel_state', handleReadFunnelState);
+registerOwnerOnly('career_pilot.persist_pipeline_state', handlePersistPipelineState);
+registerOwnerOnly('career_pilot.read_pipeline_state', handleReadPipelineState);
 registerOwnerOnly('career_pilot.persist_interview_kit', handlePersistInterviewKit);
 registerOwnerOnly('career_pilot.read_email_events', handleReadEmailEvents);
 registerOwnerOnly('career_pilot.load_gmail_fixture', handleLoadGmailFixture);

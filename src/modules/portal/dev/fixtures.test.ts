@@ -2,7 +2,7 @@
  * Unit tests for the dev fixture/demo data harness (STRATEGY §24.26):
  *   - seedRichFixture populates the four dynamic-page surfaces
  *   - the synthetic generator emits valid rows + bumps seq
- *   - maybeAdvanceFunnel advances an in-flight application to a valid stage
+ *   - maybeAdvancePipeline advances an in-flight application to a valid stage
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
@@ -10,17 +10,17 @@ import type Database from 'better-sqlite3';
 import { closeDb, initTestDb } from '../../../db/connection.js';
 import { runMigrations } from '../../../db/migrations/index.js';
 import { getActiveSessions, getRunningSessions } from '../../../db/sessions.js';
-import { APPLICATION_STATUSES, deriveFunnelStage } from '../public-funnel-view.js';
+import { APPLICATION_STATUSES, derivePipelineStage } from '../public-pipeline-view.js';
 import { getSimulatorResult } from '../simulator.js';
 
 import { buildSimulatorScript } from './mock-simulator.js';
 import {
   buildSyntheticEvent,
   insertSyntheticEvent,
-  maybeAdvanceFunnel,
+  maybeAdvancePipeline,
   newGeneratorState,
   seedDeterministicBacklog,
-  seedDeterministicFunnel,
+  seedDeterministicPipeline,
   seedDeterministicSimulatorRun,
   seedRichFixture,
   seedSessions,
@@ -48,11 +48,11 @@ describe('seedRichFixture', () => {
     expect(count('public_audit_trail')).toBeGreaterThan(20);
     expect(count('simulator_runs')).toBeGreaterThan(0);
 
-    // Funnel view: one row per seeded application, spanning multiple stages.
-    const stages = (db.prepare('SELECT DISTINCT stage FROM public_funnel_view').all() as { stage: string }[]).map(
+    // Pipeline view: one row per seeded application, spanning multiple stages.
+    const stages = (db.prepare('SELECT DISTINCT stage FROM public_pipeline_view').all() as { stage: string }[]).map(
       (r) => r.stage,
     );
-    expect(count('public_funnel_view')).toBeGreaterThan(4);
+    expect(count('public_pipeline_view')).toBeGreaterThan(4);
     expect(stages).toEqual(expect.arrayContaining(['applied', 'offer']));
 
     // Sessions feed /api/architecture's active/running counts.
@@ -63,7 +63,7 @@ describe('seedRichFixture', () => {
   it('keeps the public OFFER application showing a real company (obfuscated otherwise)', () => {
     seedRichFixture(db);
     const offer = db
-      .prepare(`SELECT application_ref, public_state FROM public_funnel_view WHERE stage = 'offer'`)
+      .prepare(`SELECT application_ref, public_state FROM public_pipeline_view WHERE stage = 'offer'`)
       .get() as { application_ref: string; public_state: string } | undefined;
     expect(offer?.public_state).toBe('public');
     expect(offer?.application_ref).toBe('Wayne Enterprises');
@@ -98,14 +98,14 @@ describe('synthetic generator', () => {
 
     const state = newGeneratorState();
     state.tick = 5; // 5 % 5 === 0 → advance fires
-    maybeAdvanceFunnel(db, state);
+    maybeAdvancePipeline(db, state);
 
     const after = db.prepare('SELECT status FROM applications WHERE id = ?').get(target.id) as { status: string };
     expect(after.status).not.toBe(target.status);
-    const view = db.prepare('SELECT stage FROM public_funnel_view WHERE application_id = ?').get(target.id) as {
+    const view = db.prepare('SELECT stage FROM public_pipeline_view WHERE application_id = ?').get(target.id) as {
       stage: string;
     };
-    expect(view.stage).toBe(deriveFunnelStage(after.status));
+    expect(view.stage).toBe(derivePipelineStage(after.status));
   });
 
   it('does nothing on a non-multiple-of-5 tick', () => {
@@ -113,40 +113,40 @@ describe('synthetic generator', () => {
     const before = db.prepare('SELECT status FROM applications ORDER BY id').all();
     const state = newGeneratorState();
     state.tick = 3;
-    maybeAdvanceFunnel(db, state);
+    maybeAdvancePipeline(db, state);
     expect(db.prepare('SELECT status FROM applications ORDER BY id').all()).toEqual(before);
   });
 });
 
-describe('seedDeterministicFunnel', () => {
-  it('populates public_funnel_view across the pipeline stages with one public OFFER', () => {
-    seedDeterministicFunnel(db);
+describe('seedDeterministicPipeline', () => {
+  it('populates public_pipeline_view across the pipeline stages with one public OFFER', () => {
+    seedDeterministicPipeline(db);
 
-    const stages = (db.prepare('SELECT stage FROM public_funnel_view').all() as { stage: string }[]).map(
+    const stages = (db.prepare('SELECT stage FROM public_pipeline_view').all() as { stage: string }[]).map(
       (r) => r.stage,
     );
     expect(stages).toEqual(expect.arrayContaining(['applied', 'screening', 'tech', 'final', 'offer']));
 
     const offer = db
-      .prepare(`SELECT application_ref, public_state FROM public_funnel_view WHERE stage = 'offer'`)
+      .prepare(`SELECT application_ref, public_state FROM public_pipeline_view WHERE stage = 'offer'`)
       .get() as { application_ref: string; public_state: string } | undefined;
     expect(offer?.public_state).toBe('public');
     expect(offer?.application_ref).toBe('Wayne Enterprises');
   });
 
   it('composes with seedDeterministicBacklog without conflicting on system_modes', () => {
-    // The E2E server calls both; the funnel seed must not re-write system_modes.
+    // The E2E server calls both; the pipeline seed must not re-write system_modes.
     expect(() => {
       seedDeterministicBacklog(db);
-      seedDeterministicFunnel(db);
+      seedDeterministicPipeline(db);
     }).not.toThrow();
-    expect(count('public_funnel_view')).toBe(5);
-    expect(count('public_audit_trail')).toBe(4); // 3 funnel/progress + 1 turn row (§24.34)
+    expect(count('public_pipeline_view')).toBe(5);
+    expect(count('public_audit_trail')).toBe(4); // 3 pipeline/progress + 1 turn row (§24.34)
   });
 });
 
 describe('telemetry lives on category=turn rows (§24.34 shape)', () => {
-  it('seedDeterministicBacklog: the turn row carries the lanes; funnel/progress rows are NULL', () => {
+  it('seedDeterministicBacklog: the turn row carries the lanes; pipeline/progress rows are NULL', () => {
     seedDeterministicBacklog(db);
     const turn = db
       .prepare(
@@ -204,16 +204,16 @@ describe('seedSessions (architecture feed — §24.28)', () => {
     expect(getRunningSessions().length).toBeGreaterThan(0);
   });
 
-  it('composes with the E2E backlog + funnel seeds without conflict', () => {
+  it('composes with the E2E backlog + pipeline seeds without conflict', () => {
     // The E2E server (scripts/portal-e2e-server.ts) calls all three so the
     // architecture page renders deterministic, non-idle node badges.
     expect(() => {
       seedDeterministicBacklog(db);
-      seedDeterministicFunnel(db);
+      seedDeterministicPipeline(db);
       seedSessions(db);
     }).not.toThrow();
     expect(getActiveSessions().length).toBeGreaterThan(0);
-    expect(count('public_funnel_view')).toBe(5);
+    expect(count('public_pipeline_view')).toBe(5);
   });
 });
 

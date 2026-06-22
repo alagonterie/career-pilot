@@ -21,7 +21,7 @@ describe('SANDBOX_DISALLOWED_TOOLS — the sandbox tool lockdown (§24.141 S2-0)
       'mcp__nanoclaw__create_gmail_draft',
       'mcp__nanoclaw__update_application',
       'mcp__nanoclaw__record_job_lead',
-      'mcp__nanoclaw__persist_funnel_state',
+      'mcp__nanoclaw__persist_pipeline_state',
     ]) {
       expect(SANDBOX_DISALLOWED_TOOLS).toContain(tool);
     }

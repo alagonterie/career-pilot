@@ -7,7 +7,7 @@
  * Poll-based tail (locked in §24.16): the broadcaster learns of new
  * public_audit_trail rows by polling by the monotonic `seq` cursor on an
  * interval — NOT by event hooks from the writers. This keeps SSE decoupled
- * from mirrorFunnelEvent/handleRecordProgress (the broadcaster only reads),
+ * from mirrorPipelineEvent/handleRecordProgress (the broadcaster only reads),
  * stays consistent with the host's poll-everywhere model, and handles the
  * §24.14 resanitize delete+re-insert for free. The tail timer is client-gated:
  * it runs only while ≥1 client is connected, and is `.unref()`'d so it never

@@ -76,11 +76,11 @@ describe('subagentDispatchesFromMessage (§24.78)', () => {
 
   it('handles the Task alias and multiple dispatches in one message', () => {
     const msg = assistant([
-      { type: 'tool_use', name: 'Task', input: { subagent_type: 'funnel-curator', prompt: 'sweep' } },
+      { type: 'tool_use', name: 'Task', input: { subagent_type: 'pipeline-scribe', prompt: 'sweep' } },
       { type: 'text', text: 'and also' },
       { type: 'tool_use', name: 'Agent', input: { subagent_type: 'research-company', prompt: 'x' } },
     ]);
-    expect(subagentDispatchesFromMessage(msg)).toEqual(['funnel-curator', 'research-company']);
+    expect(subagentDispatchesFromMessage(msg)).toEqual(['pipeline-scribe', 'research-company']);
   });
 
   it('reads ONLY subagent_type — never the prompt/input (the PII-safety guarantee)', () => {
@@ -121,7 +121,7 @@ describe('collectTurnSignals (§24.115 — per-block dedup, dispatch every emiss
 
   it('counts a record_* tool_use ONCE per block id even when the SDK re-emits the same block', () => {
     const rec = asst('msg_Y', [
-      { type: 'tool_use', id: 'toolu_r', name: 'mcp__nanoclaw__record_funnel_event', input: {} },
+      { type: 'tool_use', id: 'toolu_r', name: 'mcp__nanoclaw__record_pipeline_event', input: {} },
     ]);
     expect(collectTurnSignals([rec, rec]).recordCalls).toBe(1);
   });

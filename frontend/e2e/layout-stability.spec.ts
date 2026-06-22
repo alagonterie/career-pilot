@@ -21,7 +21,7 @@ test.describe('§24.62 — root scrollbar gutter holds layouts still', () => {
 
   test('opening the pipeline drawer does not shift the page sideways', async ({ page }) => {
     await page.goto('/pipeline')
-    await expect(page.getByTestId('funnel-board')).toBeVisible()
+    await expect(page.getByTestId('pipeline-board')).toBeVisible()
 
     const before = await brandX(page)
     await page.getByText('Wayne Enterprises').click()

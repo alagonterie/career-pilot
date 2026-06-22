@@ -66,8 +66,8 @@ describe('getConfig — defaults.json tier', () => {
   });
 
   it('returns nested objects as objects', () => {
-    // defaults.json: funnel_curator_ghosting_thresholds_days = { applied:21, screen:10, onsite:7 }
-    expect(getConfig<Record<string, number>>(db, 'funnel_curator_ghosting_thresholds_days')).toEqual({
+    // defaults.json: pipeline_scribe_ghosting_thresholds_days = { applied:21, screen:10, onsite:7 }
+    expect(getConfig<Record<string, number>>(db, 'pipeline_scribe_ghosting_thresholds_days')).toEqual({
       applied: 21,
       screen: 10,
       onsite: 7,

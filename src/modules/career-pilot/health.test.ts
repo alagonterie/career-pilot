@@ -109,7 +109,7 @@ function insertInboundRow(sessionId: string, row: TaskRow): void {
 function seedHealthyOps(sessionId = 'sess-ops'): void {
   seedSession(sessionId, OPS_THREAD_ID);
   const future = new Date(NOW + 3_600_000).toISOString();
-  for (const series of ['daily-briefing', 'killer-match', 'funnel-curator', 'close-detection', 'job-scrape']) {
+  for (const series of ['daily-briefing', 'killer-match', 'pipeline-scribe', 'close-detection', 'job-scrape']) {
     insertInboundRow(sessionId, { id: `task-${series}`, seriesId: series, processAfter: future });
   }
 }

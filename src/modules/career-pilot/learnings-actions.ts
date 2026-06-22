@@ -2,7 +2,7 @@
  * Learnings host actions (STRATEGY.md §24.107 — rejection-as-fuel).
  *
  * The two halves that turn a post-outcome reflection into durable, reusable
- * signal (mirrors the funnel-curator / interview-kit internal-writer pattern):
+ * signal (mirrors the pipeline-scribe / interview-kit internal-writer pattern):
  *
  *  - career_pilot.persist_learning — CAPTURE. After a reflection conversation,
  *    the orchestrator saves the signal as a `learnings` row. `publish:true` opts
@@ -15,7 +15,7 @@
  * Both are owner-only (registered behind the §24.19 Layer-2 gate): the `learnings`
  * table is the candidate's private post-mortem signal — the sandbox must never
  * touch it. Real candidate PII never leaves these handlers (the public projection
- * is sanitized downstream by public-funnel-view).
+ * is sanitized downstream by public-pipeline-view).
  */
 import type Database from 'better-sqlite3';
 
@@ -23,10 +23,10 @@ import { getAgentGroup } from '../../db/agent-groups.js';
 import { getDb } from '../../db/connection.js';
 import { insertMessage } from '../../db/session-db.js';
 import { log } from '../../log.js';
-import { upsertPublicFunnelView } from '../portal/public-funnel-view.js';
+import { upsertPublicPipelineView } from '../portal/public-pipeline-view.js';
 import type { Session } from '../../types.js';
 
-// ── response writer (mirrors funnel-actions.ts / interview-kit-actions.ts) ────
+// ── response writer (mirrors pipeline-actions.ts / interview-kit-actions.ts) ────
 
 type ActionFrame =
   | { ok: true; data: Record<string, unknown> }
@@ -55,7 +55,7 @@ function payload(content: Record<string, unknown>): Record<string, unknown> {
   return (content.payload as Record<string, unknown>) ?? {};
 }
 
-/** Defense-in-depth twin of the registerOwnerOnly gate (mirrors funnel-actions):
+/** Defense-in-depth twin of the registerOwnerOnly gate (mirrors pipeline-actions):
  *  the `learnings` table is private candidate signal — a sandbox session must
  *  never read or write it. Returns true (and writes FORBIDDEN) when blocked. */
 function rejectIfSandbox(inDb: Database.Database, requestId: string, session: Session, action: string): boolean {
@@ -74,7 +74,7 @@ function rejectIfSandbox(inDb: Database.Database, requestId: string, session: Se
 }
 
 /** Stringify a reflections value for storage: a structured object → JSON (so
- *  public-funnel-view's excerpt builder can pull labelled answers), a string →
+ *  public-pipeline-view's excerpt builder can pull labelled answers), a string →
  *  itself. The column is TEXT NOT NULL, so empty/whitespace is rejected upstream. */
 function serializeReflections(v: unknown): string | null {
   if (typeof v === 'string') {
@@ -127,8 +127,8 @@ export async function handlePersistLearning(
     });
 
     // A published learning is public metadata on the /pipeline detail — re-project
-    // AFTER the response frame (best-effort; upsertPublicFunnelView never throws).
-    if (publish && applicationId) upsertPublicFunnelView(db, applicationId);
+    // AFTER the response frame (best-effort; upsertPublicPipelineView never throws).
+    if (publish && applicationId) upsertPublicPipelineView(db, applicationId);
   } catch (err) {
     log.error('handlePersistLearning failed', { err });
     writeResponse(inDb, requestId, {

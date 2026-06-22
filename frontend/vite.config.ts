@@ -12,7 +12,7 @@ export default defineConfig({
     port: 3000,
   },
   // Pre-bundle motion/react at server start. Without this, `vite dev` optimizes
-  // it lazily on the first request that imports it (the funnel/architecture
+  // it lazily on the first request that imports it (the pipeline/architecture
   // pages), triggering a mid-session reload that transiently null-dispatchers
   // React and SSR-errors the page on a cold `dev:mock` start. Pre-including it
   // removes that first-request reload. No effect on the built CI/prod bundle.

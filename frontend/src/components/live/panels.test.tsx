@@ -173,23 +173,23 @@ describe('Panel', () => {
 describe('PipelineCompact + RecentOutcomes', () => {
   it('counts stages (short labels — §24.79 D2) + reveals a public offer', () => {
     render(<PipelineCompact apps={APPS} />)
-    const applied = within(screen.getByTestId('funnel-compact-applied'))
+    const applied = within(screen.getByTestId('pipeline-compact-applied'))
     expect(applied.getByText('1')).toBeInTheDocument()
     // The compact strip links to the board → short stage codes, not long names.
     expect(applied.getByText('APP')).toBeInTheDocument()
-    expect(within(screen.getByTestId('funnel-compact-offer')).getByText('1')).toBeInTheDocument()
-    expect(screen.getByTestId('funnel-compact-offer')).toHaveTextContent('OFFER')
-    expect(screen.getByTestId('funnel-compact-reveal')).toHaveTextContent('devtools-b')
+    expect(within(screen.getByTestId('pipeline-compact-offer')).getByText('1')).toBeInTheDocument()
+    expect(screen.getByTestId('pipeline-compact-offer')).toHaveTextContent('OFFER')
+    expect(screen.getByTestId('pipeline-compact-reveal')).toHaveTextContent('devtools-b')
   })
 
   it('holds its shape with skeletons while loading (no counts, no reveal)', () => {
     render(<PipelineCompact apps={[]} loading />)
     // all 5 stage cells still render (the strip keeps its shape) …
-    expect(screen.getByTestId('funnel-compact-applied')).toBeInTheDocument()
-    expect(screen.getByTestId('funnel-compact-offer')).toBeInTheDocument()
+    expect(screen.getByTestId('pipeline-compact-applied')).toBeInTheDocument()
+    expect(screen.getByTestId('pipeline-compact-offer')).toBeInTheDocument()
     // … but as skeletons, not counts, and the reveal line is suppressed
-    expect(within(screen.getByTestId('funnel-compact-applied')).queryByText('0')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('funnel-compact-reveal')).not.toBeInTheDocument()
+    expect(within(screen.getByTestId('pipeline-compact-applied')).queryByText('0')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('pipeline-compact-reveal')).not.toBeInTheDocument()
     expect(document.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(5)
   })
 
@@ -201,15 +201,15 @@ describe('PipelineCompact + RecentOutcomes', () => {
         apps={[app({ application_ref: 'a', stage: 'applied' }), app({ application_ref: 'b', stage: 'tech' })]}
       />,
     )
-    expect(screen.getByTestId('funnel-compact-tech')).toHaveAttribute('data-leading-edge', 'true')
-    expect(screen.getByTestId('funnel-compact-applied')).not.toHaveAttribute('data-leading-edge')
-    expect(screen.getByTestId('funnel-compact-offer')).not.toHaveAttribute('data-leading-edge')
+    expect(screen.getByTestId('pipeline-compact-tech')).toHaveAttribute('data-leading-edge', 'true')
+    expect(screen.getByTestId('pipeline-compact-applied')).not.toHaveAttribute('data-leading-edge')
+    expect(screen.getByTestId('pipeline-compact-offer')).not.toHaveAttribute('data-leading-edge')
   })
 
   it('marks OFFER as the leading edge once an application reaches it (§24.119)', () => {
     // APPS' devtools-b is a public offer → OFFER is the furthest reached.
     render(<PipelineCompact apps={APPS} />)
-    expect(screen.getByTestId('funnel-compact-offer')).toHaveAttribute('data-leading-edge', 'true')
+    expect(screen.getByTestId('pipeline-compact-offer')).toHaveAttribute('data-leading-edge', 'true')
   })
 
   it('renders no leading edge while loading — the ring is data-dependent (§24.119)', () => {

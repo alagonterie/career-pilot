@@ -1,5 +1,5 @@
 /**
- * Unit tests for the funnel fixture loader (Phase 3.2 §24.9 component 2).
+ * Unit tests for the pipeline fixture loader (Phase 3.2 §24.9 component 2).
  *
  * Verifies relative-date resolution, single-vs-jsonl handling, error paths,
  * and shape conformance to the parsed Gmail/Calendar types the host
@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { loadCalendarFixture, loadGmailFixture } from './funnel-fixture-loader.js';
+import { loadCalendarFixture, loadGmailFixture } from './pipeline-fixture-loader.js';
 
 const TEST_NOW = new Date('2026-05-28T12:00:00.000Z');
 

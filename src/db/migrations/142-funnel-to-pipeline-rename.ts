@@ -7,8 +7,10 @@
  * `funnel` table at rest). See §24.152 for the full rename map + decisions.
  *
  * Renames (data-preserving + idempotent — each step guarded for re-run safety):
- *   - table  funnel_events       → pipeline_events       (+ its index)
- *   - table  public_funnel_view  → public_pipeline_view  (+ its index)
+ *   - table  funnel_events         → pipeline_events        (+ its index)
+ *   - table  public_funnel_view    → public_pipeline_view   (+ its index)
+ *   - table  funnel_curator_output → pipeline_scribe_output (+ its index)
+ *   - column public_audit_trail.source_funnel_event_id → source_pipeline_event_id
  *   - preferences keys  funnel_curator_*  → pipeline_scribe_*  (override-preserving)
  *
  * NOT renamed (§24.152 D7): the `funnel-curator` messages_in series-id — a
@@ -21,6 +23,12 @@ import type { Migration } from './index.js';
 
 function tableExists(db: Database.Database, name: string): boolean {
   return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
+}
+
+function columnNames(db: Database.Database, table: string): Set<string> {
+  return new Set(
+    (db.prepare('SELECT name FROM pragma_table_info(?)').all(table) as Array<{ name: string }>).map((c) => c.name),
+  );
 }
 
 const PREFERENCE_KEY_RENAMES: ReadonlyArray<readonly [string, string]> = [
@@ -54,6 +62,24 @@ export const migration142: Migration = {
     db.exec('DROP INDEX IF EXISTS idx_public_funnel_view_stage;');
     if (tableExists(db, 'public_pipeline_view')) {
       db.exec('CREATE INDEX IF NOT EXISTS idx_public_pipeline_view_stage ON public_pipeline_view(stage);');
+    }
+
+    // --- table: funnel_curator_output → pipeline_scribe_output ---
+    if (tableExists(db, 'funnel_curator_output') && !tableExists(db, 'pipeline_scribe_output')) {
+      db.exec('ALTER TABLE funnel_curator_output RENAME TO pipeline_scribe_output;');
+    }
+    db.exec('DROP INDEX IF EXISTS idx_funnel_curator_output_run_at;');
+    if (tableExists(db, 'pipeline_scribe_output')) {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_pipeline_scribe_output_run_at ON pipeline_scribe_output(run_at DESC);');
+    }
+
+    // --- column: public_audit_trail.source_funnel_event_id → source_pipeline_event_id ---
+    // RENAME COLUMN auto-updates the index (idx_audit_source_fe) that references it.
+    if (tableExists(db, 'public_audit_trail')) {
+      const cols = columnNames(db, 'public_audit_trail');
+      if (cols.has('source_funnel_event_id') && !cols.has('source_pipeline_event_id')) {
+        db.exec('ALTER TABLE public_audit_trail RENAME COLUMN source_funnel_event_id TO source_pipeline_event_id;');
+      }
     }
 
     // --- preferences keys: funnel_curator_* → pipeline_scribe_* ---

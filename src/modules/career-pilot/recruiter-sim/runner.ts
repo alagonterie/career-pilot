@@ -10,7 +10,7 @@
  * then execute the intents — seed `applications` rows, and inject emails
  * (Haiku-enriched or deterministic) + Calendar invites through the gateway.
  * Scenario bookkeeping lives in a dev-only sidecar JSON file; the seeded
- * applications are real DB rows the funnel-curator links against.
+ * applications are real DB rows the pipeline-scribe links against.
  */
 import fs from 'fs';
 import path from 'path';

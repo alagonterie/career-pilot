@@ -2,7 +2,7 @@
  * Idempotent host-side bootstrap for the job-scrape recurring task
  * (Phase 9 §24.51 — the pool-replenishment cron / Phase-3 scrape foundation).
  *
- * Mirrors funnel-curator-bootstrap.ts. Reuses NanoClaw's `messages_in` task
+ * Mirrors pipeline-scribe-bootstrap.ts. Reuses NanoClaw's `messages_in` task
  * storage + host-sweep poll loop + recurrence cloning — the only shape
  * differences vs the curator are SERIES_ID, the prompt sentinel, and the cron
  * default. A daily fire wakes the orchestrator with `[scheduled trigger:

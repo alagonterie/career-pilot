@@ -1,7 +1,7 @@
 /**
  * Tests for the job-scrape bootstrap (Phase 9 §24.51).
  *
- * Mirrors funnel-curator-bootstrap.test.ts — same harness, same idempotency
+ * Mirrors pipeline-scribe-bootstrap.test.ts — same harness, same idempotency
  * cases, different SERIES_ID + cron defaults.
  */
 import fs from 'fs';

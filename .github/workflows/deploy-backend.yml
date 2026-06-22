@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       reset:
-        description: 'Clean app-data reset before provisioning (wipes applications/funnel/sessions; PRESERVES the OneCLI vault, Telegram pairing, config + persona). Dev only.'
+        description: 'Clean app-data reset before provisioning (wipes applications/pipeline/sessions; PRESERVES the OneCLI vault, Telegram pairing, config + persona). Dev only.'
         type: boolean
         default: false
   push:
@@ -179,7 +179,7 @@ jobs:
 
           # Optional CLEAN APP-DATA RESET (workflow_dispatch -f reset=true) BEFORE
           # provisioning: stop the host unit so the DB is quiescent, then run
-          # scripts/reset-dev.ts — it wipes app-data only (applications/funnel/
+          # scripts/reset-dev.ts — it wipes app-data only (applications/pipeline/
           # sessions) and PRESERVES the OneCLI vault, Telegram pairing, config +
           # persona. Falls through to the bootstrap below, which re-migrates +
           # restarts. Destructive → CI-only, never a web button (§24.41).

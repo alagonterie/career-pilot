@@ -23,7 +23,7 @@ export default defineConfig({
     baseURL: `http://localhost:${FRONTEND_PORT}`,
     trace: 'on-first-retry',
   },
-  // Note on motion determinism: the funnel board's `motion/react` `layout`
+  // Note on motion determinism: the pipeline board's `motion/react` `layout`
   // animations only fire when a card changes column, which needs the seed to
   // mutate. The E2E server serves a *static* deterministic seed (never runs the
   // generator), so cards never move during a test → no layout animation → the
@@ -42,7 +42,7 @@ export default defineConfig({
   // `devices['Pixel 5']` is a viewport/touch preset, not a browser).
   //
   // NAMING IS LOAD-BEARING: the default snapshot path embeds the project name
-  // (`funnel-chromium-win32.png`), so the project that OWNS visual.spec.ts must
+  // (`pipeline-chromium-win32.png`), so the project that OWNS visual.spec.ts must
   // stay named `chromium` or every baseline silently forks to a new filename
   // (auto-created, while the old ones rot as orphans — learned the hard way).
   //

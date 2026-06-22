@@ -1,23 +1,23 @@
 /**
- * src/modules/career-pilot/funnel-apply.ts — deterministic funnel conversion.
+ * src/modules/career-pilot/pipeline-apply.ts — deterministic pipeline conversion.
  *
- * The funnel-curator classifies inbox mail into `email_events` (one row per
+ * The pipeline-scribe classifies inbox mail into `email_events` (one row per
  * message, linked to an application). This module turns those classifications
- * into the candidate's funnel board: for each application, the FURTHEST
+ * into the candidate's pipeline board: for each application, the FURTHEST
  * classification it has received maps to an application status, which is written
- * to `applications.status` and projected into `public_funnel_view`.
+ * to `applications.status` and projected into `public_pipeline_view`.
  *
  * Host-side + deterministic (no LLM, no approval gate) — "accurate
  * representation by default" (§24.43): the board reflects what recruiters
  * actually sent. Idempotent: only applications whose derived status differs are
- * touched. Invoked (a) after every non-cheap funnel-curator persist (so the
+ * touched. Invoked (a) after every non-cheap pipeline-scribe persist (so the
  * scheduled curator auto-converts), and (b) by the dev "Sweep & convert now"
  * button (to converge from already-classified mail without a re-fetch).
  */
 import type Database from 'better-sqlite3';
 
 import { log } from '../../log.js';
-import { type ApplicationStatus, upsertPublicFunnelView } from '../portal/public-funnel-view.js';
+import { type ApplicationStatus, upsertPublicPipelineView } from '../portal/public-pipeline-view.js';
 
 /**
  * Email classification → application status. Mirrors the recruiter progression
@@ -34,25 +34,25 @@ const STATUS_BY_CLASSIFICATION: Record<string, ApplicationStatus> = {
   screen_rejection: 'REJECTED',
 };
 
-export interface FunnelApplyChange {
+export interface PipelineApplyChange {
   application_id: string;
   from: string;
   to: ApplicationStatus;
 }
 
-export interface FunnelApplyResult {
+export interface PipelineApplyResult {
   converted: number;
-  changes: FunnelApplyChange[];
+  changes: PipelineApplyChange[];
 }
 
 /**
  * Converge each application's status to the furthest mapped classification in
- * `email_events`, then refresh `public_funnel_view`. Returns the applied
+ * `email_events`, then refresh `public_pipeline_view`. Returns the applied
  * changes. Never throws — a failure for one application is logged and skipped.
  */
-export function applyFunnelFromEmailEvents(db: Database.Database): FunnelApplyResult {
+export function applyPipelineFromEmailEvents(db: Database.Database): PipelineApplyResult {
   // Rows ASC by received_at: the LAST write into the map per app wins, i.e. the
-  // most recent email that maps to a funnel status (a later rejection beats an
+  // most recent email that maps to a pipeline status (a later rejection beats an
   // earlier onsite; trailing `noise` is skipped, leaving the prior real stage).
   let rows: Array<{ app_id: string; classification: string }>;
   try {
@@ -65,7 +65,7 @@ export function applyFunnelFromEmailEvents(db: Database.Database): FunnelApplyRe
       )
       .all() as Array<{ app_id: string; classification: string }>;
   } catch (err) {
-    log.error('applyFunnelFromEmailEvents: email_events read failed', { err });
+    log.error('applyPipelineFromEmailEvents: email_events read failed', { err });
     return { converted: 0, changes: [] };
   }
 
@@ -75,7 +75,7 @@ export function applyFunnelFromEmailEvents(db: Database.Database): FunnelApplyRe
     if (status) target.set(r.app_id, status);
   }
 
-  const changes: FunnelApplyChange[] = [];
+  const changes: PipelineApplyChange[] = [];
   for (const [appId, status] of target) {
     try {
       const cur = db.prepare('SELECT status FROM applications WHERE id = ?').get(appId) as
@@ -87,15 +87,15 @@ export function applyFunnelFromEmailEvents(db: Database.Database): FunnelApplyRe
         status,
         appId,
       );
-      upsertPublicFunnelView(db, appId);
+      upsertPublicPipelineView(db, appId);
       changes.push({ application_id: appId, from: cur.status ?? '', to: status });
     } catch (err) {
-      log.error('applyFunnelFromEmailEvents: failed to convert one application', { appId, status, err });
+      log.error('applyPipelineFromEmailEvents: failed to convert one application', { appId, status, err });
     }
   }
 
   if (changes.length > 0) {
-    log.info('applyFunnelFromEmailEvents: board converged from email_events', { converted: changes.length });
+    log.info('applyPipelineFromEmailEvents: board converged from email_events', { converted: changes.length });
   }
   return { converted: changes.length, changes };
 }

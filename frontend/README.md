@@ -11,7 +11,7 @@
 - **Tailwind v4** with `@theme` directive
 - **shadcn/ui** (new-york variant)
 - **motion/react** for animation
-- **@tanstack/react-virtual** for the funnel race scroller and audit-trail list
+- **@tanstack/react-virtual** for the pipeline race scroller and audit-trail list
 
 See PORTAL.md §3.5 ("Frontend stack — locked") for the full rationale and
 non-negotiables.
@@ -21,7 +21,7 @@ non-negotiables.
 - `routes/` — file-based routes (TanStack Router conventions)
   - `(marketing)/_layout.tsx` + `index.tsx`, `simulator/`, `work.tsx`,
     `contact.tsx`, `about.tsx`
-  - `(ops)/_layout.tsx` + `live.tsx`, `funnel.tsx`, `architecture.tsx`
+  - `(ops)/_layout.tsx` + `live.tsx`, `pipeline.tsx`, `architecture.tsx`
 - `components/` — shadcn + custom
 - `lib/` — SSE client, API client wrappers, formatting helpers
 - `e2e/` — Playwright dual-server harness (seeded portal API + frontend), fixtures, trace-replay util

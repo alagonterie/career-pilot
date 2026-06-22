@@ -160,7 +160,10 @@ export function applyPass2(text: string, db: Database.Database): string {
 /**
  * Deterministic vocab swap applied to every public-bound string (§24.59):
  * nothing on the public surface says "funnel" (the PORTAL §8.1 rule), enforced
- * at the mirror seam instead of trusting each writer's prompt. Token priority
+ * at the mirror seam instead of trusting each writer's prompt. Post-§24.152 the
+ * internal code says "pipeline" natively, so this is now a safety net for any
+ * stray "funnel" an LLM emits as plain English (the funnel match-source is a
+ * deliberate exception to the otherwise-complete §24.152 rename). Token priority
  * matters — the full subagent id maps first so `funnel-curator` becomes
  * `pipeline-scribe`, not `pipeline-curator`. Word-boundary `\b` deliberately
  * leaves snake_case internals (`funnel_curator_output`) alone: an identifier

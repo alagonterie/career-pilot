@@ -3,7 +3,7 @@
  * backstop (§24.134b).
  *
  * Box-observed gap: the 08:00 daily-briefing wake fired + completed, the
- * funnel-curator had written a non-empty attention[] (an `action_owed` item),
+ * pipeline-scribe had written a non-empty attention[] (an `action_owed` item),
  * yet the orchestrator emitted NO owner-facing message — a silent skip against
  * its own persona rule ("attention[] non-empty → you still emit"). Same
  * fragility class as §24.78: a load-bearing behavior left to the model's
@@ -148,7 +148,7 @@ function ownerMessagesInWindow(outDb: Database.Database, fireIso: string, window
 
 function readLatestAttention(centralDb: Database.Database): AttentionItem[] {
   const row = centralDb
-    .prepare('SELECT attention_json FROM funnel_curator_output ORDER BY run_at DESC LIMIT 1')
+    .prepare('SELECT attention_json FROM pipeline_scribe_output ORDER BY run_at DESC LIMIT 1')
     .get() as { attention_json: string } | undefined;
   return parseAttention(row?.attention_json);
 }

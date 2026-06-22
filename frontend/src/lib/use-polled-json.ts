@@ -16,7 +16,7 @@ const DEFAULT_POLL_MS = 20000
 
 /**
  * Poll a plain-JSON GET endpoint and keep the latest snapshot. The portal's
- * read endpoints (`/api/funnel`, `/api/architecture`, `/api/system-status`) are
+ * read endpoints (`/api/pipeline`, `/api/architecture`, `/api/system-status`) are
  * plain JSON, not SSE, and the system mutates over time, so a short poll
  * surfaces the change. Client-only: SSR renders the loading shell (`data: null`),
  * the effect fetches + re-polls. A transient blip keeps the last-good data

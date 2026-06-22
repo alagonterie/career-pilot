@@ -105,7 +105,7 @@ describe('LogStream', () => {
 
   it('matches a subagent chip on the native agent_name (§24.77 — legacy alias retired)', () => {
     // Post-migration the audit data carries the real names; the single Scribe
-    // chip matches 'pipeline-scribe' rows directly (no 'funnel-curator' fan-out).
+    // chip matches 'pipeline-scribe' rows directly (no 'pipeline-scribe' fan-out).
     const events = [
       ev({ seq: 1, category: 'subagent_progress', agent_name: 'pipeline-scribe', summary: 'classified 2 messages' }),
       ev({ seq: 2, category: 'subagent_progress', agent_name: 'pipeline-scribe', summary: 'persisted state' }),

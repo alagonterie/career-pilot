@@ -2,12 +2,12 @@
  * Recruiter-sim — domain types (Sub-milestone 9.3b, STRATEGY.md §24.40).
  *
  * A DEV-ONLY fixture (D13): the deterministic backbone that drives the
- * candidate agent's proactive funnel by injecting realistic recruiter/ATS email
+ * candidate agent's proactive pipeline by injecting realistic recruiter/ATS email
  * into the single dev mailbox (D14). These types describe the pure scenario
  * model; the Gmail/Calendar injection + Haiku prose are decoupled adapters
  * (later commits). Nothing here performs I/O.
  */
-import type { EmailClassification } from '../funnel-types.js';
+import type { EmailClassification } from '../pipeline-types.js';
 
 /** Tunable knobs — the `recruiter_sim_*` config keys (D13). */
 export interface SimKnobs {
@@ -20,7 +20,7 @@ export interface SimKnobs {
   /** How often a new simulated application is seeded (while below maxConcurrent). */
   seedIntervalSec: number;
   maxConcurrent: number;
-  /** Top-of-funnel: chance a seeded app advances past the confirmation to a screen
+  /** Top-of-pipeline: chance a seeded app advances past the confirmation to a screen
    * (the rest get an early `screen_rejection` and close — the realistic attrition). */
   screenPassRate: number;
   /** Terminal-branch split: chance of offer vs rejection (normalized over the two). */
@@ -35,7 +35,7 @@ export interface SimKnobs {
   /** Job source (D16): 'real' seeds from the job_leads pool, 'synthetic' from the fictional set. */
   jobSource: 'real' | 'synthetic';
   /** Pace-preset date behavior (D17): true → backdate email dates (fast — compressed but
-   *  realistic-looking); false → real-time dates (realistic — the funnel unfolds in real wall-clock). */
+   *  realistic-looking); false → real-time dates (realistic — the pipeline unfolds in real wall-clock). */
   backdate: boolean;
 }
 
@@ -49,7 +49,7 @@ export interface SeedJob {
 export type SimAppStatus = 'active' | 'ghosted' | 'closed';
 export type SimOutcome = 'offer' | 'rejection';
 
-/** One simulated application walking the funnel. Persisted in the sidecar state. */
+/** One simulated application walking the pipeline. Persisted in the sidecar state. */
 export interface SimApp {
   appId: string;
   company: string;
@@ -62,7 +62,7 @@ export interface SimApp {
   threadId: string | null;
   /** The prior email's Message-ID, for In-Reply-To threading — runner-owned. */
   lastMessageId: string | null;
-  /** Index of the NEXT funnel email to emit. `>= STAGES.length` → the terminal email. */
+  /** Index of the NEXT pipeline email to emit. `>= STAGES.length` → the terminal email. */
   stageIndex: number;
   status: SimAppStatus;
   /** Decided when the terminal email is emitted. */
@@ -111,7 +111,7 @@ export interface InjectEmailIntent {
   calendar: SimCalendarInvite | null;
 }
 
-/** Create a new application row so the funnel-curator has something to link to. */
+/** Create a new application row so the pipeline-scribe has something to link to. */
 export interface SeedApplicationIntent {
   type: 'seed_application';
   appId: string;

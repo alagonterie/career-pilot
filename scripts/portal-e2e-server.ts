@@ -6,7 +6,7 @@
  * deterministic, so it runs in hosted CI on every push.
  *
  * Playwright's `webServer` launches this; it seeds the deterministic backlog +
- * funnel rows (shared from src/modules/portal/dev/fixtures.ts — §24.26/§24.27),
+ * pipeline rows (shared from src/modules/portal/dev/fixtures.ts — §24.26/§24.27),
  * starts the API
  * on PORTAL_E2E_PORT (default 3099), starts a tiny test-only CONTROL server on
  * PORTAL_E2E_CONTROL_PORT (default 3098), and stays up until SIGTERM/SIGINT.
@@ -33,7 +33,7 @@ import {
   nextAuditSeq,
   seedCandidateProfileIdentity,
   seedDeterministicBacklog,
-  seedDeterministicFunnel,
+  seedDeterministicPipeline,
   seedDeterministicKits,
   seedDeterministicSimulatorRun,
   seedRequestTelemetry,
@@ -102,7 +102,7 @@ async function main(): Promise<void> {
   runMigrations(db);
 
   seedDeterministicBacklog(db);
-  seedDeterministicFunnel(db);
+  seedDeterministicPipeline(db);
   await seedDeterministicKits(db);
   seedDeterministicSimulatorRun(db);
   seedSessions(db);

@@ -1,7 +1,7 @@
 /**
- * Funnel-curator delivery action handlers (host side, Phase 3.2 §24.9).
+ * Pipeline-curator delivery action handlers (host side, Phase 3.2 §24.9).
  *
- * Five handlers wired into the delivery sweep for the funnel-curator
+ * Five handlers wired into the delivery sweep for the pipeline-scribe
  * subagent's tool palette and the orchestrator's on-demand consumer path:
  *   - career_pilot.gmail_query_delta      — Gmail incremental fetch
  *                                           (historyId-driven; 404 → window
@@ -11,11 +11,11 @@
  *                                           (per-calendar syncToken; 410 →
  *                                           full re-sync). CALENDAR_FIXTURE
  *                                           env routes to a fixture file.
- *   - career_pilot.persist_funnel_state   — single transactional write:
+ *   - career_pilot.persist_pipeline_state   — single transactional write:
  *                                           UPSERT new email_events rows +
- *                                           INSERT funnel_curator_output +
+ *                                           INSERT pipeline_scribe_output +
  *                                           update sync-state pointers.
- *   - career_pilot.read_funnel_state      — most-recent funnel_curator_output
+ *   - career_pilot.read_pipeline_state      — most-recent pipeline_scribe_output
  *                                           row (JSON-parsed). Consumer reads.
  *   - career_pilot.read_email_events      — filtered query against
  *                                           email_events for narrative pulls.
@@ -34,7 +34,7 @@ import type Database from 'better-sqlite3';
 import { getAgentGroup } from '../../db/agent-groups.js';
 import { getDb } from '../../db/connection.js';
 import { getConfig } from '../../get-config.js';
-import { applyFunnelFromEmailEvents } from './funnel-apply.js';
+import { applyPipelineFromEmailEvents } from './pipeline-apply.js';
 import { getActiveKitUrlsByApplication } from './interview-kit-store.js';
 import { reactToStatusTransitions } from './interview-kit-trigger.js';
 import { scoreWinConfidence } from './win-confidence.js';
@@ -42,13 +42,13 @@ import { insertMessage } from '../../db/session-db.js';
 import { log } from '../../log.js';
 import type { Session } from '../../types.js';
 
-import { loadCalendarFixture, loadGmailFixture } from './funnel-fixture-loader.js';
+import { loadCalendarFixture, loadGmailFixture } from './pipeline-fixture-loader.js';
 import {
   EMAIL_CLASSIFICATIONS,
   type EmailClassification,
-  type FunnelCuratorOutput,
+  type PipelineScribeOutput,
   type NewEmailEvent,
-} from './funnel-types.js';
+} from './pipeline-types.js';
 
 // ── Response writer (mirrors job-lead-actions.ts) ─────────────────────────
 
@@ -88,7 +88,7 @@ function rejectIfSandbox(inDb: Database.Database, requestId: string, session: Se
       ok: false,
       error: {
         code: 'FORBIDDEN',
-        message: `${action} is not available in this agent group (sandbox sessions cannot read or write funnel data).`,
+        message: `${action} is not available in this agent group (sandbox sessions cannot read or write pipeline data).`,
       },
     });
     return true;
@@ -282,7 +282,7 @@ export async function handleGetCalendarSyncState(
 // LLM context. On a full-sync (frequent when the historyId invalidates) this is
 // what stops the same already-noise emails being re-processed every run.
 //
-// Gated by `funnel_curator_skip_classified_messages` (default true); disabled →
+// Gated by `pipeline_scribe_skip_classified_messages` (default true); disabled →
 // `seen: []` (no filtering, a full re-classification pass). Empty input →
 // `seen: []`. The container falls back to no-filtering if this errors, so a bad
 // response never drops genuinely-new mail.
@@ -297,7 +297,7 @@ export async function handleFilterSeenEmailEvents(
   try {
     const rawIds = payload(content).gmail_msg_ids;
     const ids = Array.isArray(rawIds) ? rawIds.filter((x): x is string => typeof x === 'string') : [];
-    const enabled = getConfig<boolean>(getDb(), 'funnel_curator_skip_classified_messages');
+    const enabled = getConfig<boolean>(getDb(), 'pipeline_scribe_skip_classified_messages');
     if (!enabled || ids.length === 0) {
       writeResponse(inDb, requestId, { ok: true, data: { seen: [], enabled } });
       return;
@@ -351,7 +351,7 @@ export async function handleLoadCalendarFixture(
   }
 }
 
-// ── 3. handlePersistFunnelState ───────────────────────────────────────────
+// ── 3. handlePersistPipelineState ───────────────────────────────────────────
 
 function truncateExcerpt(text: string | null | undefined): string | null {
   if (text == null) return null;
@@ -366,15 +366,15 @@ function validateClassification(value: unknown): EmailClassification {
   return value as EmailClassification;
 }
 
-export async function handlePersistFunnelState(
+export async function handlePersistPipelineState(
   content: Record<string, unknown>,
   session: Session,
   inDb: Database.Database,
 ): Promise<void> {
   const requestId = reqId(content);
-  if (rejectIfSandbox(inDb, requestId, session, 'persist_funnel_state')) return;
+  if (rejectIfSandbox(inDb, requestId, session, 'persist_pipeline_state')) return;
 
-  const p = payload(content) as Partial<FunnelCuratorOutput>;
+  const p = payload(content) as Partial<PipelineScribeOutput>;
 
   if (!Array.isArray(p.new_email_events)) {
     writeResponse(inDb, requestId, {
@@ -470,7 +470,7 @@ export async function handlePersistFunnelState(
 
       db.prepare(
         `
-        INSERT INTO funnel_curator_output (
+        INSERT INTO pipeline_scribe_output (
           id, run_at, gmail_history_id, calendar_sync_tokens,
           narratives_json, attention_json, suggestions_json,
           cheap_out, cost_usd
@@ -519,7 +519,7 @@ export async function handlePersistFunnelState(
       }
     })();
 
-    log.info('funnel_curator_output persisted', {
+    log.info('pipeline_scribe_output persisted', {
       runId,
       events: events.length,
       narratives: p.narratives.length,
@@ -533,21 +533,21 @@ export async function handlePersistFunnelState(
       data: { run_id: runId, events_written: events.length },
     });
 
-    // §24.43: converge the funnel board from the just-classified mail —
+    // §24.43: converge the pipeline board from the just-classified mail —
     // deterministic, host-side, no approval gate ("accurate representation by
     // default"). Best-effort AFTER writeResponse so it never blocks or fails the
     // persist; skipped on cheap-out (no new events to apply).
     if (!p.cheap_out) {
       try {
-        const applied = applyFunnelFromEmailEvents(db);
+        const applied = applyPipelineFromEmailEvents(db);
         if (applied.converted > 0) {
-          log.info('funnel board converged after curator persist', { converted: applied.converted });
+          log.info('pipeline board converged after curator persist', { converted: applied.converted });
         }
         // §24.53: interview-stage entries → enqueue a kit wake; terminal entries →
         // archive kits. Best-effort, inside the same try (never fails the persist).
         reactToStatusTransitions(db, inDb, applied.changes);
       } catch (applyErr) {
-        log.error('applyFunnelFromEmailEvents after persist threw', { applyErr });
+        log.error('applyPipelineFromEmailEvents after persist threw', { applyErr });
       }
       // Re-score win_confidence with intelligence — fire-and-forget so the LLM
       // call never blocks or fails the persist response.
@@ -556,7 +556,7 @@ export async function handlePersistFunnelState(
       });
     }
   } catch (err) {
-    log.error('handlePersistFunnelState failed', { err });
+    log.error('handlePersistPipelineState failed', { err });
     writeResponse(inDb, requestId, {
       ok: false,
       error: { code: 'PERSIST_ERROR', message: err instanceof Error ? err.message : String(err) },
@@ -564,9 +564,9 @@ export async function handlePersistFunnelState(
   }
 }
 
-// ── 4. handleReadFunnelState ──────────────────────────────────────────────
+// ── 4. handleReadPipelineState ──────────────────────────────────────────────
 
-interface FunnelCuratorOutputRow {
+interface PipelineScribeOutputRow {
   id: string;
   run_at: string;
   gmail_history_id: string | null;
@@ -578,13 +578,13 @@ interface FunnelCuratorOutputRow {
   cost_usd: number | null;
 }
 
-export async function handleReadFunnelState(
+export async function handleReadPipelineState(
   content: Record<string, unknown>,
   session: Session,
   inDb: Database.Database,
 ): Promise<void> {
   const requestId = reqId(content);
-  if (rejectIfSandbox(inDb, requestId, session, 'read_funnel_state')) return;
+  if (rejectIfSandbox(inDb, requestId, session, 'read_pipeline_state')) return;
 
   try {
     const db = getDb();
@@ -593,11 +593,11 @@ export async function handleReadFunnelState(
         `SELECT id, run_at, gmail_history_id, calendar_sync_tokens,
                 narratives_json, attention_json, suggestions_json,
                 cheap_out, cost_usd
-         FROM funnel_curator_output
+         FROM pipeline_scribe_output
          ORDER BY run_at DESC
          LIMIT 1`,
       )
-      .get() as FunnelCuratorOutputRow | undefined;
+      .get() as PipelineScribeOutputRow | undefined;
 
     if (!row) {
       writeResponse(inDb, requestId, { ok: true, data: { state: null } });
@@ -637,7 +637,7 @@ export async function handleReadFunnelState(
       },
     });
   } catch (err) {
-    log.error('handleReadFunnelState failed', { err });
+    log.error('handleReadPipelineState failed', { err });
     writeResponse(inDb, requestId, {
       ok: false,
       error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },

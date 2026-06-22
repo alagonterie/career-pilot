@@ -183,7 +183,7 @@ export function materializeContainerJson(agentGroupId: string): ContainerConfig 
     applyModelTier(config, getConfig<string>(getDb(), 'dev_model_tier', 'default'));
   }
 
-  // Forward fixture-mode selectors to the container so funnel-curator's
+  // Forward fixture-mode selectors to the container so pipeline-scribe's
   // container-side MCP tools (queryGmailDelta / queryCalendarDelta) can
   // branch to fixture mode without a separate config-passing channel.
   // Real-API mode is what runs when these are unset.

@@ -174,7 +174,7 @@ describe('buildAdminContacts (§24.121 store)', () => {
 });
 
 describe('buildAdminPipeline (owner view — real names)', () => {
-  it('joins the funnel read-model to applications for the real company name', () => {
+  it('joins the pipeline read-model to applications for the real company name', () => {
     getDb()
       .prepare(
         `INSERT INTO applications (id, company_name, obfuscated_label, role_title, status, applied_at, created_at)
@@ -183,7 +183,7 @@ describe('buildAdminPipeline (owner view — real names)', () => {
       .run();
     getDb()
       .prepare(
-        `INSERT INTO public_funnel_view (application_id, application_ref, public_state, role_title, status, stage, applied_at, last_activity_at, updated_at)
+        `INSERT INTO public_pipeline_view (application_id, application_ref, public_state, role_title, status, stage, applied_at, last_activity_at, updated_at)
          VALUES ('app-1', 'infra-e', 'obfuscated', 'Staff Engineer', 'screening', 'screen', '2026-06-10T00:00:00Z', '2026-06-12T00:00:00Z', '2026-06-12T00:00:00Z')`,
       )
       .run();

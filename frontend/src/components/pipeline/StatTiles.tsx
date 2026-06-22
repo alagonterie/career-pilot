@@ -15,7 +15,7 @@ import { deriveStatTiles, type PipelineApplication } from '~/lib/use-pipeline'
 export function StatTiles({ apps, loading = false }: { apps: PipelineApplication[]; loading?: boolean }) {
   const tiles = deriveStatTiles(apps)
   return (
-    <div data-testid="funnel-stats" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div data-testid="pipeline-stats" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       {tiles.map((t) => (
         <div key={t.label} className="rounded-lg border border-border bg-card p-4">
           <p className="flex items-center gap-1.5 font-mono text-xs uppercase tracking-widest text-muted-foreground">

@@ -258,17 +258,17 @@ export interface AdminPipeline {
 }
 
 /**
- * The owner pipeline view: the funnel read-model joined to `applications` for the
+ * The owner pipeline view: the pipeline read-model joined to `applications` for the
  * REAL company name (the public surface anonymizes; /admin is owner-gated, so it
  * shows the unredacted name). Empty on an un-migrated DB.
  */
 export function buildAdminPipeline(db: Database.Database): AdminPipeline {
-  if (!hasTable(db, 'public_funnel_view')) return { applications: [], stageCounts: {} };
+  if (!hasTable(db, 'public_pipeline_view')) return { applications: [], stageCounts: {} };
   const applications = db
     .prepare(
       `SELECT v.application_id, a.company_name, a.obfuscated_label, v.role_title, v.status, v.stage,
               v.applied_at, v.last_activity_at, v.win_confidence
-         FROM public_funnel_view v
+         FROM public_pipeline_view v
          LEFT JOIN applications a ON a.id = v.application_id
         ORDER BY v.last_activity_at DESC, v.applied_at DESC`,
     )

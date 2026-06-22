@@ -311,7 +311,7 @@ describe('handleClaimKillerMatches', () => {
     expect(stillUnclaimed.map((r) => r.id)).toEqual(['low-eligible']);
   });
 
-  it('suppresses leads with any prior email_events linkage (§24.9 funnel-curator integration)', async () => {
+  it('suppresses leads with any prior email_events linkage (§24.9 pipeline-scribe integration)', async () => {
     seedLead({
       id: 'engaged',
       company: 'Acme',
@@ -321,7 +321,7 @@ describe('handleClaimKillerMatches', () => {
     });
     seedLead({ id: 'fresh', company: 'Stripe', source: 'lever', rules_score: 92, source_posted_at: freshTimestamp(1) });
 
-    // Funnel-curator has linked an inbox event to the Acme lead — the
+    // Pipeline-curator has linked an inbox event to the Acme lead — the
     // candidate has already engaged with that thread, so killer-match
     // should not re-push it even though it otherwise qualifies.
     getDb()

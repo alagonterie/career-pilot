@@ -6,20 +6,20 @@
  * side-effect INTENTS for this tick (seed a new application / inject an email)
  * plus the next state. No I/O, no LLM — the runner executes the intents.
  *
- * Each simulated application walks the funnel:
+ * Each simulated application walks the pipeline:
  *   seed (apply) → application_confirmation → screen_invite → onsite_invite (+Calendar)
  *               → next_round_update → terminal { offer | rejection }
  * with a per-step ghost chance (the thread goes quiet — close-detection's trigger).
- * Most applications never get a screen, though: a top-of-funnel `screenPassRate`
+ * Most applications never get a screen, though: a top-of-pipeline `screenPassRate`
  * gate sends an early `screen_rejection` right after the confirmation (the
  * realistic cull — applied, auto-confirmed, then passed over), so only a minority
  * reach the deeper stages.
  *
  * The wall-clock pace is compressed (steps seconds/minutes apart — the speed
  * knob) while each email's Date header is BACKDATED along a realistic multi-week
- * timeline, so the funnel's days-in-stage looks real on the portal.
+ * timeline, so the pipeline's days-in-stage looks real on the portal.
  */
-import type { EmailClassification } from '../funnel-types.js';
+import type { EmailClassification } from '../pipeline-types.js';
 import { STAGE_CLASSIFICATIONS, buildEmailContent, buildNoiseContent } from './templates.js';
 import type {
   InjectEmailIntent,
@@ -69,7 +69,7 @@ const ROLES = [
 
 // A short synthetic JD ("what the role asks") per role archetype, seeded onto the
 // application so win_confidence can score *fit* (candidate profile vs the role),
-// not just funnel momentum. Deliberately varied so a backend/infra candidate fits
+// not just pipeline momentum. Deliberately varied so a backend/infra candidate fits
 // some roles better than others (Full-Stack is the weakest match).
 const JD_BY_ROLE: Record<string, string> = {
   'Senior Software Engineer':
@@ -229,10 +229,10 @@ function stepApp(app: SimApp, knobs: SimKnobs, nowMs: number, rng: () => number)
     return buildAppInject(app, outcome === 'offer' ? 'offer' : 'rejection', internalDateMs);
   }
 
-  // Top-of-funnel attrition: most applications are passed over right after the
+  // Top-of-pipeline attrition: most applications are passed over right after the
   // confirmation. At the screen step, only `screenPassRate` advance to an intro
   // call; the rest get an early rejection and close — the realistic cull that
-  // keeps the deep funnel sparse. (The very first email, the confirmation at
+  // keeps the deep pipeline sparse. (The very first email, the confirmation at
   // stage 0, always sends.)
   if (stage === 1 && rng() >= knobs.screenPassRate) {
     app.status = 'closed';

@@ -11,7 +11,7 @@ import { runMigrations } from '../../db/migrations/index.js';
 import { ensureSchema, openInboundDb } from '../../db/session-db.js';
 import type { Session } from '../../types.js';
 
-import { handleReadFunnelState } from './funnel-actions.js';
+import { handleReadPipelineState } from './pipeline-actions.js';
 import { upsertInterviewKit } from './interview-kit-store.js';
 
 const tmpDir = path.join(os.tmpdir(), `nanoclaw-cp-kit-readjoin-${process.pid}`);
@@ -71,7 +71,7 @@ function seedApp(id: string, status = 'TECH_SCREEN'): void {
 function insertCuratorOutput(narratives: unknown[], attention: unknown[]): void {
   getDb()
     .prepare(
-      `INSERT INTO funnel_curator_output
+      `INSERT INTO pipeline_scribe_output
          (id, run_at, gmail_history_id, calendar_sync_tokens, narratives_json, attention_json, suggestions_json, cheap_out, cost_usd)
        VALUES ('run-1', datetime('now'), NULL, '{}', @n, @a, '[]', 0, NULL)`,
     )
@@ -94,7 +94,7 @@ function readState(): ReadResp {
   return JSON.parse(row.content) as ReadResp;
 }
 
-describe('read_funnel_state — kit_url join (§24.53)', () => {
+describe('read_pipeline_state — kit_url join (§24.53)', () => {
   it('hangs the active kit_url on narratives + attention by application_id; leaves kit-less apps bare', async () => {
     seedApp('app-1');
     seedApp('app-2');
@@ -122,7 +122,7 @@ describe('read_funnel_state — kit_url join (§24.53)', () => {
       ],
     );
 
-    await handleReadFunnelState({ requestId: 'r1' }, FAKE_SESSION, inDb);
+    await handleReadPipelineState({ requestId: 'r1' }, FAKE_SESSION, inDb);
     const resp = readState();
     expect(resp.frame.ok).toBe(true);
     if (!resp.frame.ok) return;
@@ -141,7 +141,7 @@ describe('read_funnel_state — kit_url join (§24.53)', () => {
       [{ company: 'Co app-1', application_id: 'app-1', current_state: 'applied', timeline_excerpt: [] }],
       [],
     );
-    await handleReadFunnelState({ requestId: 'r1' }, FAKE_SESSION, inDb);
+    await handleReadPipelineState({ requestId: 'r1' }, FAKE_SESSION, inDb);
     const resp = readState();
     expect(resp.frame.ok).toBe(true);
     if (!resp.frame.ok) return;

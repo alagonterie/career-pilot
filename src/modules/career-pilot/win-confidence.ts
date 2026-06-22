@@ -1,7 +1,7 @@
 /**
  * src/modules/career-pilot/win-confidence.ts — LLM-assessed win confidence.
  *
- * `win_confidence` (0–100, "how likely this becomes an offer") is the one funnel
+ * `win_confidence` (0–100, "how likely this becomes an offer") is the one pipeline
  * field that's a judgment, not data — so it's set with *intelligence*: a
  * host-side Portkey (Haiku) call blends two factors — FIT (the candidate's
  * profile vs what the role asks for, the prior, knowable from day one) and
@@ -24,7 +24,7 @@ import { getDb } from '../../db/connection.js';
 import { getConfig } from '../../get-config.js';
 import { callPortkeyChat, portkeyConfigured } from '../../llm-fetch.js';
 import { log } from '../../log.js';
-import { upsertPublicFunnelView } from '../portal/public-funnel-view.js';
+import { upsertPublicPipelineView } from '../portal/public-pipeline-view.js';
 
 import { readCandidateProfile } from './render-persona.js';
 
@@ -100,7 +100,7 @@ export async function scoreWinConfidence(db: Database.Database): Promise<WinConf
       db.prepare(
         "UPDATE applications SET win_confidence = 0, win_confidence_rationale = 'Application closed — no longer active.' WHERE id = ?",
       ).run(r.id);
-      upsertPublicFunnelView(db, r.id);
+      upsertPublicPipelineView(db, r.id);
       closed++;
     }
   } catch (err) {
@@ -140,7 +140,7 @@ export async function scoreWinConfidence(db: Database.Database): Promise<WinConf
   const lines = active.map((a) => {
     const sig = (evidence.get(a.id) ?? []).join(', ') || 'no recruiter emails yet';
     const jd = a.jd_text ? a.jd_text.replace(/\s+/g, ' ').trim().slice(0, 300) : 'role details unavailable';
-    return `- id "${a.id}": role "${a.role_title ?? 'unknown'}". The role asks: ${jd}. Funnel: stage ${a.status}, recruiter signals: ${sig}.`;
+    return `- id "${a.id}": role "${a.role_title ?? 'unknown'}". The role asks: ${jd}. Pipeline: stage ${a.status}, recruiter signals: ${sig}.`;
   });
   const profile = candidateProfileLines();
   const prompt = [
@@ -148,7 +148,7 @@ export async function scoreWinConfidence(db: Database.Database): Promise<WinConf
     'Rate each application’s likelihood of an OFFER (0–100) by combining TWO factors:',
     '1. FIT — how well the candidate’s profile matches what the role asks for (the prior, knowable from day one).',
     '2. MOMENTUM — the stage reached + recruiter signals (the evidence that updates the prior).',
-    'A strong-fit application early in the funnel can still be moderate; a weak-fit one late in the funnel is buoyed by its momentum. An offer in hand is ~95–100; a quiet early application is low.',
+    'A strong-fit application early in the pipeline can still be moderate; a weak-fit one late in the pipeline is buoyed by its momentum. An offer in hand is ~95–100; a quiet early application is low.',
     'Return ONLY a JSON object mapping each id to {"score": <integer 0–100>, "reason": "<one sentence (~160 chars) citing BOTH the fit and the momentum. Do NOT name the company or any person.>"}.',
     'No prose outside the JSON object, no code fence.',
     '',
@@ -179,7 +179,7 @@ export async function scoreWinConfidence(db: Database.Database): Promise<WinConf
         reason,
         a.id,
       );
-      upsertPublicFunnelView(db, a.id);
+      upsertPublicPipelineView(db, a.id);
       scored++;
     } catch (err) {
       log.error('scoreWinConfidence: update failed', { id: a.id, err });

@@ -6,11 +6,11 @@ afterEach(() => resetSurfaceStates())
 
 describe('withState (§24.36 36.1)', () => {
   it('is a no-op for the normal state', () => {
-    expect(withState('http://x/api/funnel', 'normal')).toBe('http://x/api/funnel')
+    expect(withState('http://x/api/pipeline', 'normal')).toBe('http://x/api/pipeline')
   })
 
   it('appends ?__state with a fresh query string', () => {
-    expect(withState('http://x/api/funnel', 'loading')).toBe('http://x/api/funnel?__state=loading')
+    expect(withState('http://x/api/pipeline', 'loading')).toBe('http://x/api/pipeline?__state=loading')
   })
 
   it('appends &__state when the url already has a query', () => {

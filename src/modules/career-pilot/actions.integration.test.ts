@@ -30,7 +30,7 @@ import {
   handleGetApplication,
   handleListApplications,
   handleRecordDispatch,
-  handleRecordFunnelEvent,
+  handleRecordPipelineEvent,
   handleRecordProgress,
   handleRecordRequestTelemetry,
   handleRecordTurnTelemetry,
@@ -446,8 +446,8 @@ describe('handleUpdateApplication', () => {
 // ── update_application → §24.11 resanitization hook ─────────────────────────
 
 describe('handleUpdateApplication — §24.11 resanitization hook', () => {
-  // Seed an obfuscated application + one funnel event mentioning the real
-  // company name. The mirror runs via handleRecordFunnelEvent's own hook, so
+  // Seed an obfuscated application + one pipeline event mentioning the real
+  // company name. The mirror runs via handleRecordPipelineEvent's own hook, so
   // after this helper there is exactly one redacted public_audit_trail row.
   async function seedObfuscatedAppWithEvent(note = 'jane wrote on behalf of Acme Corp'): Promise<string> {
     await handleUpdateApplication(
@@ -463,8 +463,8 @@ describe('handleUpdateApplication — §24.11 resanitization hook', () => {
         obfuscated_label: string;
       }
     ).obfuscated_label;
-    await handleRecordFunnelEvent(
-      actionContent('career_pilot.record_funnel_event', {
+    await handleRecordPipelineEvent(
+      actionContent('career_pilot.record_pipeline_event', {
         application_id: 'app-r',
         kind: 'recruiter_email',
         payload: { note },
@@ -579,7 +579,7 @@ describe('handleUpdateApplication — §24.11 resanitization hook', () => {
     expect(after[0].summary).toContain(`[REDACTED:${label}]`);
   });
 
-  it('keeps audit count == funnel_events count across an update then a new event', async () => {
+  it('keeps audit count == pipeline_events count across an update then a new event', async () => {
     await handleUpdateApplication(
       actionContent('career_pilot.update_application', {
         id: 'app-r',
@@ -589,8 +589,8 @@ describe('handleUpdateApplication — §24.11 resanitization hook', () => {
       inDb,
     );
     // Event 1 (obfuscated → redacted audit row).
-    await handleRecordFunnelEvent(
-      actionContent('career_pilot.record_funnel_event', {
+    await handleRecordPipelineEvent(
+      actionContent('career_pilot.record_pipeline_event', {
         application_id: 'app-r',
         kind: 'recruiter_email',
         payload: { note: 'first from Acme Corp' },
@@ -605,8 +605,8 @@ describe('handleUpdateApplication — §24.11 resanitization hook', () => {
       inDb,
     );
     // Event 2 (mirrors as public).
-    await handleRecordFunnelEvent(
-      actionContent('career_pilot.record_funnel_event', {
+    await handleRecordPipelineEvent(
+      actionContent('career_pilot.record_pipeline_event', {
         application_id: 'app-r',
         kind: 'recruiter_email',
         payload: { note: 'second from Acme Corp' },
@@ -616,7 +616,7 @@ describe('handleUpdateApplication — §24.11 resanitization hook', () => {
     );
 
     const eventCount = (
-      getDb().prepare("SELECT COUNT(*) AS n FROM funnel_events WHERE application_id = 'app-r'").get() as {
+      getDb().prepare("SELECT COUNT(*) AS n FROM pipeline_events WHERE application_id = 'app-r'").get() as {
         n: number;
       }
     ).n;
@@ -663,8 +663,8 @@ describe('handleUpdateApplication — §24.11 resanitization hook', () => {
     ).obfuscated_label;
 
     for (const note of ['first call with Acme Corp', 'second note from Acme Corp', 'third Acme Corp update']) {
-      await handleRecordFunnelEvent(
-        actionContent('career_pilot.record_funnel_event', {
+      await handleRecordPipelineEvent(
+        actionContent('career_pilot.record_pipeline_event', {
           application_id: 'app-r',
           kind: 'recruiter_email',
           payload: { note },
@@ -703,21 +703,21 @@ describe('handleUpdateApplication — §24.11 resanitization hook', () => {
   });
 });
 
-// ── record_funnel_event ────────────────────────────────────────────────────
+// ── record_pipeline_event ────────────────────────────────────────────────────
 
-describe('handleRecordFunnelEvent', () => {
+describe('handleRecordPipelineEvent', () => {
   beforeEach(async () => {
-    // Seed an application so funnel_events FK resolves.
+    // Seed an application so pipeline_events FK resolves.
     const c = actionContent('career_pilot.update_application', {
-      id: 'app-funnel',
+      id: 'app-pipeline',
       patch: { company_name: 'Acme', role_title: 'Backend', status: 'BOOKMARKED' },
     });
     await handleUpdateApplication(c, FAKE_SESSION, inDb);
   });
 
-  it('INSERTs a funnel event row + bumps last_activity_at', async () => {
+  it('INSERTs a pipeline event row + bumps last_activity_at', async () => {
     const before = (
-      getDb().prepare('SELECT last_activity_at FROM applications WHERE id = ?').get('app-funnel') as {
+      getDb().prepare('SELECT last_activity_at FROM applications WHERE id = ?').get('app-pipeline') as {
         last_activity_at: string;
       }
     ).last_activity_at;
@@ -725,14 +725,14 @@ describe('handleRecordFunnelEvent', () => {
     // Give it a tick so the timestamp comparison is observable.
     await new Promise((r) => setTimeout(r, 50));
 
-    const c = actionContent('career_pilot.record_funnel_event', {
-      application_id: 'app-funnel',
+    const c = actionContent('career_pilot.record_pipeline_event', {
+      application_id: 'app-pipeline',
       kind: 'status_change',
       from_status: 'BOOKMARKED',
       to_status: 'APPLIED',
       payload: { summary: 'submitted application', source: 'candidate_message' },
     });
-    await handleRecordFunnelEvent(c, FAKE_SESSION, inDb);
+    await handleRecordPipelineEvent(c, FAKE_SESSION, inDb);
 
     const resp = readResponse(c.requestId);
     expect(resp.frame.ok).toBe(true);
@@ -741,17 +741,16 @@ describe('handleRecordFunnelEvent', () => {
       expect(data.event_id).toMatch(/^fe-/);
     }
 
-    const event = getDb().prepare('SELECT * FROM funnel_events WHERE application_id = ?').get('app-funnel') as Record<
-      string,
-      unknown
-    >;
+    const event = getDb()
+      .prepare('SELECT * FROM pipeline_events WHERE application_id = ?')
+      .get('app-pipeline') as Record<string, unknown>;
     expect(event.kind).toBe('status_change');
     expect(event.from_status).toBe('BOOKMARKED');
     expect(event.to_status).toBe('APPLIED');
     expect(event.source).toBe('agent');
 
     const after = (
-      getDb().prepare('SELECT last_activity_at FROM applications WHERE id = ?').get('app-funnel') as {
+      getDb().prepare('SELECT last_activity_at FROM applications WHERE id = ?').get('app-pipeline') as {
         last_activity_at: string;
       }
     ).last_activity_at;
@@ -759,12 +758,12 @@ describe('handleRecordFunnelEvent', () => {
   });
 
   it('returns NOT_FOUND when application_id does not exist', async () => {
-    const c = actionContent('career_pilot.record_funnel_event', {
+    const c = actionContent('career_pilot.record_pipeline_event', {
       application_id: 'ghost-app',
       kind: 'status_change',
       payload: { summary: 'nope' },
     });
-    await handleRecordFunnelEvent(c, FAKE_SESSION, inDb);
+    await handleRecordPipelineEvent(c, FAKE_SESSION, inDb);
 
     const resp = readResponse(c.requestId);
     expect(resp.frame.ok).toBe(false);
@@ -778,16 +777,16 @@ describe('handleRecordFunnelEvent', () => {
     // deterministic regardless of how update_application sequenced labels.
     getDb()
       .prepare(`UPDATE applications SET company_name = 'Acme Corp', obfuscated_label = 'fintech-a' WHERE id = ?`)
-      .run('app-funnel');
+      .run('app-pipeline');
 
-    const c = actionContent('career_pilot.record_funnel_event', {
-      application_id: 'app-funnel',
+    const c = actionContent('career_pilot.record_pipeline_event', {
+      application_id: 'app-pipeline',
       kind: 'recruiter_email',
       payload: {
         note: 'jane@acme.com from Acme Corp wrote about the $220k offer',
       },
     });
-    await handleRecordFunnelEvent(c, FAKE_SESSION, inDb);
+    await handleRecordPipelineEvent(c, FAKE_SESSION, inDb);
 
     // Action response is ok and references the new event_id.
     const resp = readResponse(c.requestId);
@@ -795,7 +794,7 @@ describe('handleRecordFunnelEvent', () => {
 
     // Private write preserves the truth.
     const privateRow = getDb()
-      .prepare(`SELECT payload FROM funnel_events WHERE application_id = 'app-funnel' AND kind = 'recruiter_email'`)
+      .prepare(`SELECT payload FROM pipeline_events WHERE application_id = 'app-pipeline' AND kind = 'recruiter_email'`)
       .get() as { payload: string } | undefined;
     expect(privateRow).toBeDefined();
     expect(privateRow!.payload).toContain('Acme Corp');
@@ -832,18 +831,18 @@ describe('proactive trace-capture (§24.24)', () => {
     );
   });
 
-  it('record_funnel_event → proactive=1 on a scheduled-task wake (funnel_events + public mirror)', async () => {
+  it('record_pipeline_event → proactive=1 on a scheduled-task wake (pipeline_events + public mirror)', async () => {
     seedWake('task');
-    const c = actionContent('career_pilot.record_funnel_event', {
+    const c = actionContent('career_pilot.record_pipeline_event', {
       application_id: 'app-pro',
       kind: 'status_change',
       to_status: 'SCREENING',
       payload: { summary: 'auto-advanced after recruiter email' },
     });
-    await handleRecordFunnelEvent(c, FAKE_SESSION, inDb);
+    await handleRecordPipelineEvent(c, FAKE_SESSION, inDb);
     expect(readResponse(c.requestId).frame.ok).toBe(true);
 
-    const fe = getDb().prepare(`SELECT proactive FROM funnel_events WHERE application_id = 'app-pro'`).get() as {
+    const fe = getDb().prepare(`SELECT proactive FROM pipeline_events WHERE application_id = 'app-pro'`).get() as {
       proactive: number;
     };
     expect(fe.proactive).toBe(1);
@@ -853,18 +852,18 @@ describe('proactive trace-capture (§24.24)', () => {
     expect(pub.proactive).toBe(1);
   });
 
-  it('record_funnel_event → proactive=0 on a direct chat wake', async () => {
+  it('record_pipeline_event → proactive=0 on a direct chat wake', async () => {
     seedWake('chat');
-    const c = actionContent('career_pilot.record_funnel_event', {
+    const c = actionContent('career_pilot.record_pipeline_event', {
       application_id: 'app-pro',
       kind: 'status_change',
       to_status: 'SCREENING',
       payload: { summary: 'logged after the candidate asked me to' },
     });
-    await handleRecordFunnelEvent(c, FAKE_SESSION, inDb);
+    await handleRecordPipelineEvent(c, FAKE_SESSION, inDb);
     expect(readResponse(c.requestId).frame.ok).toBe(true);
 
-    const fe = getDb().prepare(`SELECT proactive FROM funnel_events WHERE application_id = 'app-pro'`).get() as {
+    const fe = getDb().prepare(`SELECT proactive FROM pipeline_events WHERE application_id = 'app-pro'`).get() as {
       proactive: number;
     };
     expect(fe.proactive).toBe(0);
@@ -1016,15 +1015,15 @@ describe('proactive trace-capture (§24.24)', () => {
 
   it('defaults to reactive (proactive=0) when no wake message is present', async () => {
     // No seedWake — only the beforeEach's trigger=0 response row exists.
-    const c = actionContent('career_pilot.record_funnel_event', {
+    const c = actionContent('career_pilot.record_pipeline_event', {
       application_id: 'app-pro',
       kind: 'note',
       payload: { summary: 'no wake row in the inbound db' },
     });
-    await handleRecordFunnelEvent(c, FAKE_SESSION, inDb);
+    await handleRecordPipelineEvent(c, FAKE_SESSION, inDb);
     expect(readResponse(c.requestId).frame.ok).toBe(true);
 
-    const fe = getDb().prepare(`SELECT proactive FROM funnel_events WHERE application_id = 'app-pro'`).get() as {
+    const fe = getDb().prepare(`SELECT proactive FROM pipeline_events WHERE application_id = 'app-pro'`).get() as {
       proactive: number;
     };
     expect(fe.proactive).toBe(0);
@@ -1356,9 +1355,9 @@ describe('handleRecordDispatch', () => {
     expect(rows[0].seq).toBeLessThan(rows[1].seq);
   });
 
-  it('normalizes a renamed subagent name (funnel-curator → pipeline-scribe)', async () => {
+  it('normalizes a renamed subagent name (pipeline-scribe → pipeline-scribe)', async () => {
     await handleRecordDispatch(
-      actionContent('career_pilot.record_dispatch', { subagent_name: 'funnel-curator' }),
+      actionContent('career_pilot.record_dispatch', { subagent_name: 'pipeline-scribe' }),
       OWNER_SESSION,
       inDb,
     );
@@ -1473,7 +1472,7 @@ describe('handleRecordRequestTelemetry', () => {
       .run();
     const c = actionContent('career_pilot.record_request_telemetry', {
       provider: 'gmail',
-      surface: 'funnel-curator-gmail',
+      surface: 'pipeline-scribe-gmail',
       ok: true,
       latency_ms: 10,
     });

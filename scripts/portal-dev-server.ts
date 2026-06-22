@@ -7,7 +7,7 @@
  * the SSE tail streams continuous activity), and spawns `vite dev` pointed at
  * it — one command (`pnpm dev:mock`) for a live, animating local portal.
  *
- * MOCK MODE — every surface is faked, transparently: the audit/funnel/simulator
+ * MOCK MODE — every surface is faked, transparently: the audit/pipeline/simulator
  * data is seeded (the telemetry panels read the seeded turn rows directly —
  * §24.47); the `docker ps` container count is faked through the env-gated
  * PORTAL_MOCK_CONTAINERS seam so every UI element renders populated. This is a
@@ -24,7 +24,7 @@ import { closeDb, getDb, initTestDb } from '../src/db/connection.js';
 import { runMigrations } from '../src/db/migrations/index.js';
 import {
   insertSyntheticEvent,
-  maybeAdvanceFunnel,
+  maybeAdvancePipeline,
   mockContainerCount,
   newGeneratorState,
   seedDeterministicSimulatorRun,
@@ -64,7 +64,7 @@ async function main(): Promise<void> {
   const generator = setInterval(() => {
     try {
       insertSyntheticEvent(getDb(), state);
-      maybeAdvanceFunnel(getDb(), state);
+      maybeAdvancePipeline(getDb(), state);
     } catch (err) {
       console.error('[dev:mock] generator tick failed', err);
     }

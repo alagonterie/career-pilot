@@ -14,9 +14,9 @@ import { usePipeline, type PipelineApplication } from '~/lib/use-pipeline'
 
 // The pipeline race detail (PORTAL §5.4). Visitor-facing name = "My Job Pipeline" /
 // the `/pipeline` route (§24.59 — supersedes "Momentum"; `/momentum` redirects
-// here). §24.77 D3 retired the "funnel" naming everywhere visitor-facing (the
+// here). §24.77 D3 retired the "pipeline" naming everywhere visitor-facing (the
 // components are `Pipeline*`, the hook `usePipeline`); only the internal
-// `/api/funnel` fetch URL keeps its name. `(ops)` is a pathless group → the URL
+// `/api/pipeline` fetch URL keeps its name. `(ops)` is a pathless group → the URL
 // is `/pipeline`.
 export const Route = createFileRoute('/(ops)/pipeline')({
   component: PipelinePage,
@@ -109,13 +109,13 @@ function PipelinePage() {
           </>
         ) : status === 'error' ? (
           <div className="flex min-h-[16rem] items-center justify-center">
-            <StateNote data-testid="funnel-error" tone="error">
+            <StateNote data-testid="pipeline-error" tone="error">
               The board is offline — retrying…
             </StateNote>
           </div>
         ) : apps.length === 0 ? (
           <div className="flex min-h-[16rem] items-center justify-center">
-            <StateNote data-testid="funnel-empty">
+            <StateNote data-testid="pipeline-empty">
               No applications in the search yet — the first agents are warming up.
             </StateNote>
           </div>

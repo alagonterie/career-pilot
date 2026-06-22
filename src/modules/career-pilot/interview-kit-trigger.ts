@@ -3,8 +3,8 @@
  *
  * The seam that turns "an interview now exists" into a kit. Called from the two
  * places application status transitions:
- *   - the deterministic converter (`applyFunnelFromEmailEvents` → its `changes[]`,
- *     invoked from `handlePersistFunnelState`), the primary path the recruiter-sim
+ *   - the deterministic converter (`applyPipelineFromEmailEvents` → its `changes[]`,
+ *     invoked from `handlePersistPipelineState`), the primary path the recruiter-sim
  *     exercises; and
  *   - the agent-driven `handleUpdateApplication` path.
  *
@@ -24,7 +24,7 @@ import { hasActiveKit, isInterviewRoundStatus, isTerminalStatus } from './interv
 
 /**
  * A status transition to react to. Structurally a superset of
- * `funnel-apply.ts`'s `FunnelApplyChange` (so its `changes[]` is assignable) and
+ * `pipeline-apply.ts`'s `PipelineApplyChange` (so its `changes[]` is assignable) and
  * of the inline change the `update_application` path builds. Only `to` +
  * `application_id` are read.
  */

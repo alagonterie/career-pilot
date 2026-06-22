@@ -16,7 +16,7 @@
  *   - .env, installed deps, the agent container image.
  *
  * This deliberately reverses the Phase-0 stub's "clear the vault + force re-pair"
- * intent: §24.41 makes a reset cheap to run repeatedly (drive a funnel, reset,
+ * intent: §24.41 makes a reset cheap to run repeatedly (drive a pipeline, reset,
  * repeat) without the painful OAuth/pairing re-do each time.
  *
  * Safety-guarded against production. Triggered two ways (§24.41):

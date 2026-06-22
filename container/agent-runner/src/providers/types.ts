@@ -142,7 +142,7 @@ export interface TraceEvent {
  * The honest unit is one `query()` call — the SDK resolves cost only per-turn
  * (`total_cost_usd`), with no per-subagent/per-tool breakdown (subagent usage
  * rolls up into the parent result). `record_calls` counts this turn's
- * `record_funnel_event` / `record_progress` dispatches: the poll-loop emits a
+ * `record_pipeline_event` / `record_progress` dispatches: the poll-loop emits a
  * turn-telemetry row only when `> 0` (the "portal-worthy" gate). All numeric
  * fields are JSON-serializable for the fire-and-forget host action payload.
  */

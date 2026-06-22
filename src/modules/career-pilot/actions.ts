@@ -30,10 +30,10 @@ import { insertMessage } from '../../db/session-db.js';
 import { log } from '../../log.js';
 import { projectWorkProfile } from '../portal/profile.js';
 import { setSimulatorColdEmail, setSimulatorTailoredProfile } from '../portal/simulator.js';
-import { mirrorFunnelEvent, publicApplicationRef, resanitizeApplicationAuditTrail } from '../portal/public-audit.js';
+import { mirrorPipelineEvent, publicApplicationRef, resanitizeApplicationAuditTrail } from '../portal/public-audit.js';
 import { sanitize, sanitizeForPublic } from '../portal/sanitizer.js';
 import { pass3Active } from '../portal/sanitizer-pass3.js';
-import { isKnownApplicationStatus, upsertPublicFunnelView } from '../portal/public-funnel-view.js';
+import { isKnownApplicationStatus, upsertPublicPipelineView } from '../portal/public-pipeline-view.js';
 import { upsertPublicKitView } from '../portal/public-kit-view.js';
 import { priceTokensMicrousd, recordRequestTelemetry, type TrafficClass } from '../../request-telemetry.js';
 import type { Session } from '../../types.js';
@@ -79,7 +79,7 @@ function generateId(prefix: string): string {
  * Warn (do not reject) when an application status is outside the canonical
  * vocabulary (APPLICATION_STATUSES). Prod is pre-LIVE_MODE with no real rows;
  * a hard reject risks breaking an in-flight agent turn on an unforeseen
- * status. The funnel read-model's deriveFunnelStage handles unknowns gracefully.
+ * status. The pipeline read-model's derivePipelineStage handles unknowns gracefully.
  */
 function warnUnknownStatus(status: unknown, where: string): void {
   if (typeof status === 'string' && status && !isKnownApplicationStatus(status)) {
@@ -453,13 +453,14 @@ const PROGRESS_PER_SESSION_CAP = 6;
  * /api/activity never delivers details_json) so policy flips can re-derive.
  */
 /**
- * §24.78 / §24.77: the public-facing subagent name. The subagent definitions
- * still carry their original ids (`funnel-curator`, `prep-interview`) in
- * frontmatter, but the portal renamed them (§24.59 / §24.53) and the FE display
- * alias was retired (§24.77) — so the canonical name is applied at the single
- * write point (`insertProgressRow`) for BOTH the model-driven `record_progress`
- * rows and the deterministic §24.78 lifecycle rows. Mirrors migration 137's map
- * (which renamed the historical rows); this keeps every NEW row natively new.
+ * §24.78 / §24.77: the public-facing subagent name. Legacy dispatch records (and
+ * the `prep-interview` subagent definition) carry pre-rename ids; the portal
+ * renamed them (§24.59 / §24.53 / §24.152) and the FE display alias was retired
+ * (§24.77) — so the canonical name is applied at the single write point
+ * (`insertProgressRow`) for BOTH the model-driven `record_progress` rows and the
+ * deterministic §24.78 lifecycle rows. Mirrors migration 137's map (which renamed
+ * the historical rows); this keeps every NEW row natively new. The `funnel-curator`
+ * key stays per §24.152 D7 — the legacy id; the `messages_in` series-id is unchanged.
  */
 const SUBAGENT_DISPLAY_NAME: Record<string, string> = {
   'funnel-curator': 'pipeline-scribe',
@@ -773,7 +774,7 @@ function sumModelUsage(details: Record<string, unknown>): {
  * The honest unit is one query() call: the SDK resolves cost only per-turn
  * (no per-subagent/per-tool breakdown — subagent usage rolls up into the
  * parent result), so this row carries the turn's real model/tokens/cost/cache/
- * latency on a turn-level row, while the funnel/progress writers stay
+ * latency on a turn-level row, while the pipeline/progress writers stay
  * untouched. The container's poll-loop fires it fire-and-forget on EVERY turn
  * (§24.55 lifted the original record_*-only gate so /live's spend is a total,
  * not a sample). Gated by the `telemetry_capture` preference (default true) —
@@ -786,7 +787,7 @@ function sumModelUsage(details: Record<string, unknown>): {
  * invariant now lives in the branch below, pinned by an integration test.
  *
  * The public row carries no free text (numbers + a fixed summary), so it
- * needs no sanitization and is exempt from the funnel-only resanitization hooks.
+ * needs no sanitization and is exempt from the pipeline-only resanitization hooks.
  */
 export async function handleRecordTurnTelemetry(
   content: Record<string, unknown>,
@@ -878,7 +879,7 @@ const TELEMETRY_SLUG_RE = /^[a-z0-9_-]{1,64}$/;
 
 /**
  * Land a container-side request-telemetry report (§24.68): rank-leads Haiku,
- * SerpApi search, funnel-curator Gmail/Calendar fetches. Registered PLAIN —
+ * SerpApi search, pipeline-scribe Gmail/Calendar fetches. Registered PLAIN —
  * the row is private, numbers-only, and classed host-side (deriveTrafficClass),
  * so a sandbox emission is safe by construction. provider/surface are
  * validated as slugs; cost is priced here from tokens+model — the container
@@ -1176,7 +1177,7 @@ export async function handleUpdateApplication(
         ok: true,
         data: { id, created: true, obfuscated_label },
       });
-      upsertPublicFunnelView(db, id);
+      upsertPublicPipelineView(db, id);
       // §24.53: a new application created straight into an interview stage
       // (rare, but possible) should still get a kit.
       if (patch.status) {
@@ -1196,7 +1197,7 @@ export async function handleUpdateApplication(
         ok: true,
         data: { id, created: false, obfuscated_label: existing.obfuscated_label },
       });
-      upsertPublicFunnelView(db, id);
+      upsertPublicPipelineView(db, id);
       return;
     }
 
@@ -1245,9 +1246,9 @@ export async function handleUpdateApplication(
       await upsertPublicKitView(db, id);
     }
 
-    // Refresh the public funnel read-model (application_ref / stage / activity
+    // Refresh the public pipeline read-model (application_ref / stage / activity
     // may have changed). Best-effort; the function catches + never throws.
-    upsertPublicFunnelView(db, id);
+    upsertPublicPipelineView(db, id);
 
     // §24.53: an agent-driven status move into an interview stage enqueues a kit
     // wake; into a terminal stage archives kits. Only when status actually changed.
@@ -1324,9 +1325,9 @@ function encodeSuffix(n: number): string {
   }
 }
 
-// ── record_funnel_event ────────────────────────────────────────────────────
+// ── record_pipeline_event ────────────────────────────────────────────────────
 
-export async function handleRecordFunnelEvent(
+export async function handleRecordPipelineEvent(
   content: Record<string, unknown>,
   _session: Session,
   inDb: Database.Database,
@@ -1338,7 +1339,7 @@ export async function handleRecordFunnelEvent(
   const payloadJson = p.payload as Record<string, unknown> | undefined;
   const from_status = (p.from_status as string | null) ?? null;
   const to_status = (p.to_status as string | null) ?? null;
-  warnUnknownStatus(to_status, 'handleRecordFunnelEvent');
+  warnUnknownStatus(to_status, 'handleRecordPipelineEvent');
 
   if (!application_id || !kind || !payloadJson) {
     writeResponse(inDb, requestId, {
@@ -1362,7 +1363,7 @@ export async function handleRecordFunnelEvent(
     const event_id = generateId('fe');
     const now = new Date().toISOString();
     db.prepare(
-      `INSERT INTO funnel_events
+      `INSERT INTO pipeline_events
          (id, application_id, kind, from_status, to_status, payload, source, proactive, ts)
        VALUES (@id, @application_id, @kind, @from_status, @to_status, @payload, 'agent', @proactive, @ts)`,
     ).run({
@@ -1381,23 +1382,23 @@ export async function handleRecordFunnelEvent(
       ts: now,
     });
 
-    log.info('Funnel event recorded', { event_id, application_id, kind });
+    log.info('Pipeline event recorded', { event_id, application_id, kind });
     writeResponse(inDb, requestId, { ok: true, data: { event_id } });
 
     // Phase 4 §24.10 public mirror. Runs after writeResponse so mirror
     // latency never blocks the agent's MCP call. Errors are logged and
     // swallowed — the private write is committed regardless.
     try {
-      await mirrorFunnelEvent(db, event_id);
+      await mirrorPipelineEvent(db, event_id);
     } catch (mirrorErr) {
-      log.error('mirrorFunnelEvent threw despite internal try/catch', { event_id, mirrorErr });
+      log.error('mirrorPipelineEvent threw despite internal try/catch', { event_id, mirrorErr });
     }
 
-    // Refresh the public funnel read-model (status / stage_entered_at /
+    // Refresh the public pipeline read-model (status / stage_entered_at /
     // last_activity_at changed). Best-effort; the function never throws.
-    upsertPublicFunnelView(db, application_id);
+    upsertPublicPipelineView(db, application_id);
   } catch (err) {
-    log.error('handleRecordFunnelEvent failed', { application_id, err });
+    log.error('handleRecordPipelineEvent failed', { application_id, err });
     writeResponse(inDb, requestId, {
       ok: false,
       error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },

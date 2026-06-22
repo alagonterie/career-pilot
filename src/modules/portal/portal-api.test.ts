@@ -2,7 +2,7 @@
  * Integration tests for the Sub-milestone 5.1 read-only portal API
  * (STRATEGY.md §24.15). Binds an ephemeral 127.0.0.1 port and drives the real
  * server over `fetch`:
- *   - GET /api/funnel       rows + computed days + stage_counts (public table only)
+ *   - GET /api/pipeline       rows + computed days + stage_counts (public table only)
  *   - GET /api/activity     seq-cursor pagination + next_since
  *   - GET /api/system-status modes (+ defaults)
  *   - CORS allow-list + OPTIONS preflight
@@ -34,7 +34,7 @@ afterEach(async () => {
 
 // ── seed helpers ───────────────────────────────────────────────────────────
 
-function seedFunnel(opts: {
+function seedPipeline(opts: {
   id: string;
   ref: string;
   public_state?: string;
@@ -45,7 +45,7 @@ function seedFunnel(opts: {
   win_confidence?: number | null;
   published_learning?: string | null;
 }): void {
-  // Parent applications row (public_funnel_view.application_id is a FK). The API
+  // Parent applications row (public_pipeline_view.application_id is a FK). The API
   // reads only the view; the parent's content is irrelevant to these tests.
   getDb()
     .prepare(
@@ -56,7 +56,7 @@ function seedFunnel(opts: {
 
   getDb()
     .prepare(
-      `INSERT INTO public_funnel_view (
+      `INSERT INTO public_pipeline_view (
          application_id, application_ref, public_state, role_title, status, stage,
          applied_at, stage_entered_at, last_activity_at, win_confidence,
          published_learning, updated_at
@@ -99,11 +99,11 @@ function isoDaysAgo(n: number): string {
   return new Date(Date.now() - n * 86_400_000).toISOString();
 }
 
-// ── /api/funnel ────────────────────────────────────────────────────────────
+// ── /api/pipeline ────────────────────────────────────────────────────────────
 
-describe('GET /api/funnel', () => {
+describe('GET /api/pipeline', () => {
   it('returns rows with computed days + stage_counts', async () => {
-    seedFunnel({
+    seedPipeline({
       id: 'app-1',
       ref: 'fintech-a',
       status: 'SCREENING',
@@ -112,7 +112,7 @@ describe('GET /api/funnel', () => {
       stage_entered_at: isoDaysAgo(5),
       win_confidence: 60,
     });
-    seedFunnel({
+    seedPipeline({
       id: 'app-2',
       ref: 'Anthropic',
       public_state: 'public',
@@ -123,7 +123,7 @@ describe('GET /api/funnel', () => {
       win_confidence: 88,
     });
 
-    const res = await fetch(`${base}/api/funnel`);
+    const res = await fetch(`${base}/api/pipeline`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       applications: Array<Record<string, unknown>>;
@@ -147,7 +147,7 @@ describe('GET /api/funnel', () => {
   });
 
   it('reflects the site_lifecycle_state preference (§24.149 L2)', async () => {
-    seedFunnel({ id: 'app-1', ref: 'fintech-a', status: 'OFFER', stage: 'offer' });
+    seedPipeline({ id: 'app-1', ref: 'fintech-a', status: 'OFFER', stage: 'offer' });
     getDb()
       .prepare(
         `INSERT INTO preferences (key, value, updated_at) VALUES (?, ?, ?)
@@ -155,23 +155,23 @@ describe('GET /api/funnel', () => {
       )
       .run('site_lifecycle_state', 'concluded', new Date().toISOString());
 
-    const body = (await (await fetch(`${base}/api/funnel`)).json()) as { site_lifecycle: string };
+    const body = (await (await fetch(`${base}/api/pipeline`)).json()) as { site_lifecycle: string };
     expect(body.site_lifecycle).toBe('concluded');
   });
 
   it('returns null days when timestamps are missing', async () => {
-    seedFunnel({ id: 'app-1', ref: 'fintech-a', status: 'BOOKMARKED', stage: 'bookmarked' });
-    const res = await fetch(`${base}/api/funnel`);
+    seedPipeline({ id: 'app-1', ref: 'fintech-a', status: 'BOOKMARKED', stage: 'bookmarked' });
+    const res = await fetch(`${base}/api/pipeline`);
     const body = (await res.json()) as { applications: Array<Record<string, unknown>> };
     expect(body.applications[0].days_in_stage).toBeNull();
     expect(body.applications[0].days_in_pipeline).toBeNull();
   });
 
   it('carries interview_kits metadata from kits_json (§24.65); empty array when none', async () => {
-    seedFunnel({ id: 'app-1', ref: 'fintech-a', status: 'TECH_SCREEN', stage: 'tech' });
-    seedFunnel({ id: 'app-2', ref: 'ai-infra-a', status: 'APPLIED', stage: 'applied' });
+    seedPipeline({ id: 'app-1', ref: 'fintech-a', status: 'TECH_SCREEN', stage: 'tech' });
+    seedPipeline({ id: 'app-2', ref: 'ai-infra-a', status: 'APPLIED', stage: 'applied' });
     getDb()
-      .prepare(`UPDATE public_funnel_view SET kits_json = @kits WHERE application_id = 'app-1'`)
+      .prepare(`UPDATE public_pipeline_view SET kits_json = @kits WHERE application_id = 'app-1'`)
       .run({
         kits: JSON.stringify([
           {
@@ -185,7 +185,7 @@ describe('GET /api/funnel', () => {
         ]),
       });
 
-    const body = (await (await fetch(`${base}/api/funnel`)).json()) as {
+    const body = (await (await fetch(`${base}/api/pipeline`)).json()) as {
       applications: Array<{ application_ref: string; interview_kits: Array<Record<string, unknown>> }>;
     };
     const withKit = body.applications.find((a) => a.application_ref === 'fintech-a')!;
@@ -195,18 +195,18 @@ describe('GET /api/funnel', () => {
   });
 
   it('carries learnings from learnings_json; synthesizes from published_learning; empty when none (§24.117)', async () => {
-    seedFunnel({ id: 'app-1', ref: 'fintech-a', status: 'OFFER', stage: 'offer' });
+    seedPipeline({ id: 'app-1', ref: 'fintech-a', status: 'OFFER', stage: 'offer' });
     // Legacy row: only published_learning set, learnings_json NULL (deploy gap).
-    seedFunnel({
+    seedPipeline({
       id: 'app-2',
       ref: 'ai-infra-a',
       status: 'REJECTED',
       stage: 'rejected',
       published_learning: 'A legacy single note.',
     });
-    seedFunnel({ id: 'app-3', ref: 'devtools-a', status: 'APPLIED', stage: 'applied' });
+    seedPipeline({ id: 'app-3', ref: 'devtools-a', status: 'APPLIED', stage: 'applied' });
     getDb()
-      .prepare(`UPDATE public_funnel_view SET learnings_json = @j WHERE application_id = 'app-1'`)
+      .prepare(`UPDATE public_pipeline_view SET learnings_json = @j WHERE application_id = 'app-1'`)
       .run({
         j: JSON.stringify([
           { kind: 'offer', created_at: '2026-05-20T00:00:00Z', excerpt: 'What unlocked the offer.' },
@@ -214,7 +214,7 @@ describe('GET /api/funnel', () => {
         ]),
       });
 
-    const body = (await (await fetch(`${base}/api/funnel`)).json()) as {
+    const body = (await (await fetch(`${base}/api/pipeline`)).json()) as {
       applications: Array<{ application_ref: string; learnings: Array<Record<string, unknown>> }>;
     };
     const byRef = (r: string) => body.applications.find((a) => a.application_ref === r)!;
@@ -244,7 +244,7 @@ function seedKitView(opts: { application_id: string; round: string; sections: un
 
 describe('GET /api/kit', () => {
   it('serves the public projection by ref + round, reading only public tables', async () => {
-    seedFunnel({ id: 'app-1', ref: 'fintech-a', status: 'TECH_SCREEN', stage: 'tech' });
+    seedPipeline({ id: 'app-1', ref: 'fintech-a', status: 'TECH_SCREEN', stage: 'tech' });
     seedKitView({
       application_id: 'app-1',
       round: 'TECH_SCREEN',
@@ -282,7 +282,7 @@ describe('GET /api/kit', () => {
   });
 
   it('404s for an unknown ref, an unknown round, and a kit-less application; 400 without params', async () => {
-    seedFunnel({ id: 'app-1', ref: 'fintech-a', status: 'TECH_SCREEN', stage: 'tech' });
+    seedPipeline({ id: 'app-1', ref: 'fintech-a', status: 'TECH_SCREEN', stage: 'tech' });
     expect((await fetch(`${base}/api/kit?app=nope&round=TECH_SCREEN`)).status).toBe(404);
     expect((await fetch(`${base}/api/kit?app=fintech-a&round=FINAL`)).status).toBe(404);
     expect((await fetch(`${base}/api/kit?app=fintech-a&round=TECH_SCREEN`)).status).toBe(404);
@@ -507,7 +507,7 @@ describe('the __state override seam (mock-only)', () => {
 
   it('is ignored unless the mock seam env is set (production safety)', async () => {
     // No PORTAL_MOCK_STATE_SEAM → `__state` is just an unknown query param.
-    const res = await fetch(`${base}/api/funnel?__state=error`);
+    const res = await fetch(`${base}/api/pipeline?__state=error`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { applications: unknown[] };
     expect(Array.isArray(body.applications)).toBe(true);
@@ -515,15 +515,15 @@ describe('the __state override seam (mock-only)', () => {
 
   it('forces a 500 for __state=error when enabled', async () => {
     process.env.PORTAL_MOCK_STATE_SEAM = '1';
-    const res = await fetch(`${base}/api/funnel?__state=error`);
+    const res = await fetch(`${base}/api/pipeline?__state=error`);
     expect(res.status).toBe(500);
   });
 
   it('serves a valid-but-empty payload for __state=empty (overriding real rows)', async () => {
     process.env.PORTAL_MOCK_STATE_SEAM = '1';
     // Seed a real row so "empty" provably overrides non-empty data.
-    seedFunnel({ id: 'app-1', ref: 'fintech-a', status: 'SCREENING', stage: 'screening' });
-    const body = (await (await fetch(`${base}/api/funnel?__state=empty`)).json()) as {
+    seedPipeline({ id: 'app-1', ref: 'fintech-a', status: 'SCREENING', stage: 'screening' });
+    const body = (await (await fetch(`${base}/api/pipeline?__state=empty`)).json()) as {
       applications: unknown[];
       stage_counts: Record<string, number>;
     };
@@ -561,7 +561,7 @@ describe('CORS + routing', () => {
   });
 
   it('handles an OPTIONS preflight with 204 + CORS headers', async () => {
-    const res = await fetch(`${base}/api/funnel`, {
+    const res = await fetch(`${base}/api/pipeline`, {
       method: 'OPTIONS',
       headers: { Origin: 'http://localhost:3000' },
     });
@@ -578,8 +578,8 @@ describe('CORS + routing', () => {
   });
 
   it('returns a JSON 500 (never throws out) when a query fails', async () => {
-    getDb().exec('DROP TABLE public_funnel_view');
-    const res = await fetch(`${base}/api/funnel`);
+    getDb().exec('DROP TABLE public_pipeline_view');
+    const res = await fetch(`${base}/api/pipeline`);
     expect(res.status).toBe(500);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe('internal_error');

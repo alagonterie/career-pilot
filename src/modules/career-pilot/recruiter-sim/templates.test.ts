@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { EMAIL_CLASSIFICATIONS } from '../funnel-types.js';
+import { EMAIL_CLASSIFICATIONS } from '../pipeline-types.js';
 import { STAGE_CLASSIFICATIONS, buildEmailContent, buildNoiseContent } from './templates.js';
 
 describe('recruiter-sim templates', () => {
@@ -13,7 +13,7 @@ describe('recruiter-sim templates', () => {
     }
   });
 
-  it('funnel-stage emails name the company and role', () => {
+  it('pipeline-stage emails name the company and role', () => {
     for (const c of STAGE_CLASSIFICATIONS) {
       const content = buildEmailContent(c, { company: 'Northwind Systems', role: 'Platform Engineer' });
       const blob = `${content.subject}\n${content.deterministicBody}`;
@@ -22,7 +22,7 @@ describe('recruiter-sim templates', () => {
     }
   });
 
-  it('the stage sequence is the linear funnel walk', () => {
+  it('the stage sequence is the linear pipeline walk', () => {
     expect(STAGE_CLASSIFICATIONS).toEqual([
       'application_confirmation',
       'screen_invite',

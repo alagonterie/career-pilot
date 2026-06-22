@@ -9,7 +9,7 @@
  *
  * Everything here is fictional/generic (the project's no-real-identifiers rule).
  */
-import type { EmailClassification } from '../funnel-types.js';
+import type { EmailClassification } from '../pipeline-types.js';
 
 export interface EmailContext {
   company: string;
@@ -24,7 +24,7 @@ export interface EmailContent {
 
 const SIGNOFF = 'Talent Team';
 
-/** The funnel stages the scenario walks (pre-terminal), in order. */
+/** The pipeline stages the scenario walks (pre-terminal), in order. */
 export const STAGE_CLASSIFICATIONS: EmailClassification[] = [
   'application_confirmation',
   'screen_invite',
@@ -142,7 +142,7 @@ const NOISE_SUBJECTS = [
   'New courses in your area of interest',
 ];
 
-/** A standalone, non-funnel email — realism filler that tests classifier precision. */
+/** A standalone, non-pipeline email — realism filler that tests classifier precision. */
 export function buildNoiseContent(index = 0): EmailContent {
   const subject = NOISE_SUBJECTS[index % NOISE_SUBJECTS.length];
   return {

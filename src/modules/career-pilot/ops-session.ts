@@ -39,7 +39,7 @@ import type { AgentGroup, Session } from '../../types.js';
 
 import { ensureCloseDetectionTask } from './close-detection-bootstrap.js';
 import { ensureDailyBriefingTask } from './daily-briefing-bootstrap.js';
-import { ensureFunnelCuratorTask } from './funnel-curator-bootstrap.js';
+import { ensurePipelineScribeTask } from './pipeline-scribe-bootstrap.js';
 import { ensureKillerMatchTask } from './killer-match-bootstrap.js';
 import { ensureJobScrapeTask } from './scrape-jobs-bootstrap.js';
 
@@ -47,7 +47,9 @@ export const OPS_THREAD_ID = `${INTERNAL_THREAD_PREFIX}career-pilot-ops`;
 
 export const OWNER_GROUP_FOLDER = 'career-pilot';
 
-/** The five host-bootstrapped series that belong in the ops session. */
+/** The five host-bootstrapped series that belong in the ops session. The
+ *  pipeline-scribe series keeps the literal 'funnel-curator' series-id per
+ *  §24.152 D7 (its live messages_in rows are deliberately unchanged). */
 export const OPS_SERIES_IDS = [
   'daily-briefing',
   'killer-match',
@@ -125,7 +127,7 @@ export function bootstrapOpsSeries(
   const results = {
     'daily-briefing': ensureDailyBriefingTask(centralDb, inDb, agentGroup, opsSession),
     'killer-match': ensureKillerMatchTask(centralDb, inDb, agentGroup, opsSession),
-    'funnel-curator': ensureFunnelCuratorTask(centralDb, inDb, agentGroup, opsSession),
+    'funnel-curator': ensurePipelineScribeTask(centralDb, inDb, agentGroup, opsSession),
     'close-detection': ensureCloseDetectionTask(centralDb, inDb, agentGroup, opsSession),
     'job-scrape': ensureJobScrapeTask(centralDb, inDb, agentGroup, opsSession),
   };

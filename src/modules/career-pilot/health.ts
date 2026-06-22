@@ -239,6 +239,8 @@ function checkOpsSeries(handles: SessionHandle[], now: number, findings: HealthF
  * a COMPLETED occurrence whose due time is in-window, so it never fires on a fresh
  * or paused install (nothing fired ⇒ nothing to be silent about).
  */
+// 'funnel-curator' is the pipeline-scribe recurring task's messages_in series-id,
+// deliberately unchanged per §24.152 D7 (see pipeline-scribe-bootstrap.ts).
 const TRACE_EMITTING_SERIES = ['job-scrape', 'funnel-curator'] as const;
 
 function checkCascadeSilent(handles: SessionHandle[], now: number, findings: HealthFinding[]): void {
@@ -287,7 +289,7 @@ function checkCascadeSilent(handles: SessionHandle[], now: number, findings: Hea
       severity: 'warn',
       title: `The cascade fired but recorded no subagent-progress traces in ${windowHours}h`,
       detail: `Series '${fired.series_id}' completed an occurrence due ${fired.process_after}, but public_audit_trail has zero 'subagent_progress' rows in the window. Since §24.78 every dispatched subagent emits a deterministic lifecycle trace host-side — so this means EITHER the deterministic emit is off (owner_subagent_trace_emit_enabled=false) OR the series completed without dispatching a subagent (the orchestrator inlined the work, or the turn no-op'd). It is NOT a model-tier issue — that was the disproven June-16 hypothesis (§24.78).`,
-      next_step: `${Q_TS} data/v2.db "SELECT value FROM preferences WHERE key='owner_subagent_trace_emit_enabled'" (NULL or 1 = on); confirm the subagent actually ran — ${Q_TS} data/v2.db "SELECT substr(first_seen_at,1,10) d, count(*) FROM job_leads WHERE first_seen_at >= '${cutoff}' GROUP BY 1" and ${Q_TS} data/v2.db "SELECT run_at FROM funnel_curator_output WHERE run_at >= '${cutoff}'"; then ${Q_TS} data/v2.db "SELECT substr(ts,1,16) AS t, category, agent_name FROM public_audit_trail WHERE ts >= '${cutoff}' ORDER BY ts DESC LIMIT 20" and tail the host log for the ops turn (sessionId="${opsHandle.session.id}").`,
+      next_step: `${Q_TS} data/v2.db "SELECT value FROM preferences WHERE key='owner_subagent_trace_emit_enabled'" (NULL or 1 = on); confirm the subagent actually ran — ${Q_TS} data/v2.db "SELECT substr(first_seen_at,1,10) d, count(*) FROM job_leads WHERE first_seen_at >= '${cutoff}' GROUP BY 1" and ${Q_TS} data/v2.db "SELECT run_at FROM pipeline_scribe_output WHERE run_at >= '${cutoff}'"; then ${Q_TS} data/v2.db "SELECT substr(ts,1,16) AS t, category, agent_name FROM public_audit_trail WHERE ts >= '${cutoff}' ORDER BY ts DESC LIMIT 20" and tail the host log for the ops turn (sessionId="${opsHandle.session.id}").`,
     });
     return;
   }

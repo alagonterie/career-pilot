@@ -1,8 +1,8 @@
 /**
  * Integration + unit tests for the Phase 5 BFF-readiness read-model
  * (STRATEGY.md §24.14):
- *   - deriveFunnelStage / isKnownApplicationStatus (pure)
- *   - upsertPublicFunnelView (projection: obfuscated vs public application_ref,
+ *   - derivePipelineStage / isKnownApplicationStatus (pure)
+ *   - upsertPublicPipelineView (projection: obfuscated vs public application_ref,
  *     stage mapping, stage_entered_at, sanitized published_learning, refresh)
  *   - public_audit_trail.seq monotonic cursor (across both writers + resanitize)
  *   - migration 123 backfill
@@ -22,8 +22,8 @@ import type { Session } from '../../types.js';
 
 import { handleRecordProgress } from '../career-pilot/actions.js';
 
-import { mirrorFunnelEvent, resanitizeApplicationAuditTrail } from './public-audit.js';
-import { deriveFunnelStage, isKnownApplicationStatus, upsertPublicFunnelView } from './public-funnel-view.js';
+import { mirrorPipelineEvent, resanitizeApplicationAuditTrail } from './public-audit.js';
+import { derivePipelineStage, isKnownApplicationStatus, upsertPublicPipelineView } from './public-pipeline-view.js';
 
 // ── Fixture ──────────────────────────────────────────────────────────────
 
@@ -110,7 +110,7 @@ function seedEvent(opts: {
   proactive?: 0 | 1;
 }): void {
   db.prepare(
-    `INSERT INTO funnel_events (id, application_id, kind, from_status, to_status, payload, source, proactive, ts)
+    `INSERT INTO pipeline_events (id, application_id, kind, from_status, to_status, payload, source, proactive, ts)
      VALUES (@id, @application_id, 'status_change', NULL, @to_status, @payload, 'agent', @proactive, @ts)`,
   ).run({
     id: opts.id,
@@ -145,7 +145,7 @@ function seedLearning(opts: {
 
 function readLearningsJson(applicationId: string): Array<{ kind: string; created_at: string; excerpt: string }> | null {
   const raw = (
-    db.prepare('SELECT learnings_json FROM public_funnel_view WHERE application_id = ?').get(applicationId) as
+    db.prepare('SELECT learnings_json FROM public_pipeline_view WHERE application_id = ?').get(applicationId) as
       | { learnings_json: string | null }
       | undefined
   )?.learnings_json;
@@ -168,7 +168,7 @@ interface ViewRow {
 }
 
 function readView(applicationId: string): ViewRow | undefined {
-  return db.prepare('SELECT * FROM public_funnel_view WHERE application_id = ?').get(applicationId) as
+  return db.prepare('SELECT * FROM public_pipeline_view WHERE application_id = ?').get(applicationId) as
     | ViewRow
     | undefined;
 }
@@ -177,9 +177,9 @@ function progressContent(payload: Record<string, unknown>): Record<string, unkno
   return { requestId: `req-${Math.random().toString(36).slice(2, 8)}`, payload };
 }
 
-// ── deriveFunnelStage (pure) ─────────────────────────────────────────────
+// ── derivePipelineStage (pure) ─────────────────────────────────────────────
 
-describe('deriveFunnelStage', () => {
+describe('derivePipelineStage', () => {
   it.each([
     ['BOOKMARKED', 'bookmarked'],
     ['APPLIED', 'applied'],
@@ -191,21 +191,21 @@ describe('deriveFunnelStage', () => {
     ['REJECTED', 'rejected'],
     ['WITHDRAWN', 'withdrawn'],
   ])('maps %s → %s', (status, stage) => {
-    expect(deriveFunnelStage(status)).toBe(stage);
+    expect(derivePipelineStage(status)).toBe(stage);
   });
 
   it('is case-insensitive', () => {
-    expect(deriveFunnelStage('applied')).toBe('applied');
+    expect(derivePipelineStage('applied')).toBe('applied');
   });
 
   it('passes an unknown status through lowercased (never null/empty)', () => {
-    expect(deriveFunnelStage('SOMETHING_NEW')).toBe('something_new');
+    expect(derivePipelineStage('SOMETHING_NEW')).toBe('something_new');
   });
 
   it('falls back to "applied" for null/empty', () => {
-    expect(deriveFunnelStage(null)).toBe('applied');
-    expect(deriveFunnelStage('')).toBe('applied');
-    expect(deriveFunnelStage(undefined)).toBe('applied');
+    expect(derivePipelineStage(null)).toBe('applied');
+    expect(derivePipelineStage('')).toBe('applied');
+    expect(derivePipelineStage(undefined)).toBe('applied');
   });
 });
 
@@ -219,12 +219,12 @@ describe('isKnownApplicationStatus', () => {
   });
 });
 
-// ── upsertPublicFunnelView ───────────────────────────────────────────────
+// ── upsertPublicPipelineView ───────────────────────────────────────────────
 
-describe('upsertPublicFunnelView', () => {
+describe('upsertPublicPipelineView', () => {
   it('projects an obfuscated application with the derived stage', () => {
     seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a', status: 'SCREENING' });
-    upsertPublicFunnelView(db, 'app-1');
+    upsertPublicPipelineView(db, 'app-1');
 
     const v = readView('app-1');
     expect(v).toBeDefined();
@@ -243,7 +243,7 @@ describe('upsertPublicFunnelView', () => {
       public_state: 'public',
       status: 'OFFER',
     });
-    upsertPublicFunnelView(db, 'app-1');
+    upsertPublicPipelineView(db, 'app-1');
 
     const v = readView('app-1');
     expect(v!.application_ref).toBe('Acme Corp');
@@ -252,14 +252,14 @@ describe('upsertPublicFunnelView', () => {
 
   it('carries win_confidence', () => {
     seedApp({ id: 'app-1', company_name: 'Acme', obfuscated_label: 'fintech-a', win_confidence: 72 });
-    upsertPublicFunnelView(db, 'app-1');
+    upsertPublicPipelineView(db, 'app-1');
     expect(readView('app-1')!.win_confidence).toBe(72);
   });
 
-  it('derives stage_entered_at from the latest matching funnel_event', () => {
+  it('derives stage_entered_at from the latest matching pipeline_event', () => {
     seedApp({ id: 'app-1', company_name: 'Acme', obfuscated_label: 'fintech-a', status: 'APPLIED' });
     seedEvent({ id: 'fe-1', application_id: 'app-1', to_status: 'APPLIED', ts: '2026-05-05T00:00:00Z' });
-    upsertPublicFunnelView(db, 'app-1');
+    upsertPublicPipelineView(db, 'app-1');
     expect(readView('app-1')!.stage_entered_at).toBe('2026-05-05T00:00:00Z');
   });
 
@@ -271,7 +271,7 @@ describe('upsertPublicFunnelView', () => {
       status: 'FINAL',
       last_activity_at: '2026-05-18T00:00:00Z',
     });
-    upsertPublicFunnelView(db, 'app-1');
+    upsertPublicPipelineView(db, 'app-1');
     expect(readView('app-1')!.stage_entered_at).toBe('2026-05-18T00:00:00Z');
   });
 
@@ -286,7 +286,7 @@ describe('upsertPublicFunnelView', () => {
         what_didnt: 'Reach me at jane@acme.com next time.',
       }),
     });
-    upsertPublicFunnelView(db, 'app-1');
+    upsertPublicPipelineView(db, 'app-1');
 
     const v = readView('app-1');
     expect(v!.published_learning).toBeTruthy();
@@ -303,17 +303,17 @@ describe('upsertPublicFunnelView', () => {
       published: false,
       reflections: JSON.stringify({ what_worked: 'private note' }),
     });
-    upsertPublicFunnelView(db, 'app-1');
+    upsertPublicPipelineView(db, 'app-1');
     expect(readView('app-1')!.published_learning).toBeNull();
   });
 
   it('refreshes application_ref after a public_state flip (re-upsert)', () => {
     seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a' });
-    upsertPublicFunnelView(db, 'app-1');
+    upsertPublicPipelineView(db, 'app-1');
     expect(readView('app-1')!.application_ref).toBe('fintech-a');
 
     db.prepare("UPDATE applications SET public_state = 'public' WHERE id = 'app-1'").run();
-    upsertPublicFunnelView(db, 'app-1');
+    upsertPublicPipelineView(db, 'app-1');
 
     const v = readView('app-1');
     expect(v!.application_ref).toBe('Acme Corp');
@@ -321,7 +321,7 @@ describe('upsertPublicFunnelView', () => {
   });
 
   it('is a no-op (no throw, no row) when the application does not exist', () => {
-    expect(() => upsertPublicFunnelView(db, 'missing')).not.toThrow();
+    expect(() => upsertPublicPipelineView(db, 'missing')).not.toThrow();
     expect(readView('missing')).toBeUndefined();
   });
 });
@@ -347,7 +347,7 @@ describe('learnings_json', () => {
       created_at: '2026-05-20T00:00:00Z',
       reflections: JSON.stringify({ unlock: 'The fast follow-up. Reach me at jane@acme.com.' }),
     });
-    upsertPublicFunnelView(db, 'app-1');
+    upsertPublicPipelineView(db, 'app-1');
 
     const learnings = readLearningsJson('app-1');
     expect(learnings).toHaveLength(2);
@@ -378,7 +378,7 @@ describe('learnings_json', () => {
       published: false,
       reflections: JSON.stringify({ x: 'private one' }),
     });
-    upsertPublicFunnelView(db, 'app-1');
+    upsertPublicPipelineView(db, 'app-1');
 
     const learnings = readLearningsJson('app-1');
     expect(learnings).toHaveLength(1);
@@ -389,7 +389,7 @@ describe('learnings_json', () => {
 
   it('leaves learnings_json null when no published learnings exist', () => {
     seedApp({ id: 'app-1', company_name: 'Acme', obfuscated_label: 'fintech-a' });
-    upsertPublicFunnelView(db, 'app-1');
+    upsertPublicPipelineView(db, 'app-1');
     expect(readLearningsJson('app-1')).toBeNull();
   });
 });
@@ -397,43 +397,43 @@ describe('learnings_json', () => {
 // ── public_audit_trail.proactive (§24.24) ────────────────────────────────
 
 describe('public_audit_trail.proactive', () => {
-  it('mirrorFunnelEvent copies funnel_events.proactive onto the public row', async () => {
+  it('mirrorPipelineEvent copies pipeline_events.proactive onto the public row', async () => {
     seedApp({ id: 'app-1', company_name: 'Acme', obfuscated_label: 'fintech-a' });
     seedEvent({ id: 'fe-1', application_id: 'app-1', payload: JSON.stringify({ note: 'auto' }), proactive: 1 });
     seedEvent({ id: 'fe-2', application_id: 'app-1', payload: JSON.stringify({ note: 'manual' }), proactive: 0 });
 
-    expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
-    expect(await mirrorFunnelEvent(db, 'fe-2')).toBe('inserted');
+    expect(await mirrorPipelineEvent(db, 'fe-1')).toBe('inserted');
+    expect(await mirrorPipelineEvent(db, 'fe-2')).toBe('inserted');
 
-    const p1 = db.prepare(`SELECT proactive FROM public_audit_trail WHERE source_funnel_event_id = 'fe-1'`).get() as {
+    const p1 = db.prepare(`SELECT proactive FROM public_audit_trail WHERE source_pipeline_event_id = 'fe-1'`).get() as {
       proactive: number;
     };
-    const p2 = db.prepare(`SELECT proactive FROM public_audit_trail WHERE source_funnel_event_id = 'fe-2'`).get() as {
+    const p2 = db.prepare(`SELECT proactive FROM public_audit_trail WHERE source_pipeline_event_id = 'fe-2'`).get() as {
       proactive: number;
     };
     expect(p1.proactive).toBe(1);
     expect(p2.proactive).toBe(0);
   });
 
-  it('preserves proactive across a resanitize re-mirror (reproduced from funnel_events truth)', async () => {
+  it('preserves proactive across a resanitize re-mirror (reproduced from pipeline_events truth)', async () => {
     seedApp({ id: 'app-1', company_name: 'Acme', obfuscated_label: 'fintech-a' });
     seedEvent({ id: 'fe-1', application_id: 'app-1', payload: JSON.stringify({ note: 'auto-advance' }), proactive: 1 });
 
-    expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
+    expect(await mirrorPipelineEvent(db, 'fe-1')).toBe('inserted');
     expect(
       (
-        db.prepare(`SELECT proactive FROM public_audit_trail WHERE source_funnel_event_id = 'fe-1'`).get() as {
+        db.prepare(`SELECT proactive FROM public_audit_trail WHERE source_pipeline_event_id = 'fe-1'`).get() as {
           proactive: number;
         }
       ).proactive,
     ).toBe(1);
 
     // A policy change triggers delete + re-mirror with no session context;
-    // proactive must come back from funnel_events truth, not get lost.
+    // proactive must come back from pipeline_events truth, not get lost.
     await resanitizeApplicationAuditTrail(db, 'app-1');
 
     const after = db
-      .prepare(`SELECT proactive FROM public_audit_trail WHERE source_funnel_event_id = 'fe-1'`)
+      .prepare(`SELECT proactive FROM public_audit_trail WHERE source_pipeline_event_id = 'fe-1'`)
       .get() as {
       proactive: number;
     };
@@ -450,15 +450,15 @@ describe('public_audit_trail.seq', () => {
     );
   }
 
-  it('assigns strictly increasing seq across mirrorFunnelEvent inserts', async () => {
+  it('assigns strictly increasing seq across mirrorPipelineEvent inserts', async () => {
     seedApp({ id: 'app-1', company_name: 'Acme', obfuscated_label: 'fintech-a' });
     seedEvent({ id: 'fe-1', application_id: 'app-1', payload: JSON.stringify({ note: 'one' }) });
     seedEvent({ id: 'fe-2', application_id: 'app-1', payload: JSON.stringify({ note: 'two' }) });
     seedEvent({ id: 'fe-3', application_id: 'app-1', payload: JSON.stringify({ note: 'three' }) });
 
-    expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
-    expect(await mirrorFunnelEvent(db, 'fe-2')).toBe('inserted');
-    expect(await mirrorFunnelEvent(db, 'fe-3')).toBe('inserted');
+    expect(await mirrorPipelineEvent(db, 'fe-1')).toBe('inserted');
+    expect(await mirrorPipelineEvent(db, 'fe-2')).toBe('inserted');
+    expect(await mirrorPipelineEvent(db, 'fe-3')).toBe('inserted');
 
     expect(seqs()).toEqual([1, 2, 3]);
   });
@@ -468,13 +468,13 @@ describe('public_audit_trail.seq', () => {
     seedEvent({ id: 'fe-1', application_id: 'app-1', payload: JSON.stringify({ note: 'one' }) });
     seedEvent({ id: 'fe-2', application_id: 'app-1', payload: JSON.stringify({ note: 'two' }) });
 
-    expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('inserted'); // seq 1 (pipeline)
+    expect(await mirrorPipelineEvent(db, 'fe-1')).toBe('inserted'); // seq 1 (pipeline)
     await handleRecordProgress(
       progressContent({ subagent_name: 'research-company', stage: 'start', detail: 'digging in' }),
       FAKE_SESSION,
       inDb,
     ); // seq 2 (subagent_progress)
-    expect(await mirrorFunnelEvent(db, 'fe-2')).toBe('inserted'); // seq 3 (pipeline)
+    expect(await mirrorPipelineEvent(db, 'fe-2')).toBe('inserted'); // seq 3 (pipeline)
 
     const rows = db.prepare('SELECT seq, category FROM public_audit_trail ORDER BY seq ASC').all() as Array<{
       seq: number;
@@ -499,17 +499,17 @@ describe('public_audit_trail.seq', () => {
     seedEvent({ id: 'fe-1', application_id: 'app-1', payload: JSON.stringify({ note: 'call with Acme Corp' }) });
     seedEvent({ id: 'fe-2', application_id: 'app-2', payload: JSON.stringify({ note: 'note for Globex' }) });
 
-    expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('inserted'); // seq 1
-    expect(await mirrorFunnelEvent(db, 'fe-2')).toBe('inserted'); // seq 2
+    expect(await mirrorPipelineEvent(db, 'fe-1')).toBe('inserted'); // seq 1
+    expect(await mirrorPipelineEvent(db, 'fe-2')).toBe('inserted'); // seq 2
     const app2Seq = (
-      db.prepare("SELECT seq FROM public_audit_trail WHERE source_funnel_event_id = 'fe-2'").get() as { seq: number }
+      db.prepare("SELECT seq FROM public_audit_trail WHERE source_pipeline_event_id = 'fe-2'").get() as { seq: number }
     ).seq;
 
     db.prepare("UPDATE applications SET public_state = 'obfuscated' WHERE id = 'app-1'").run();
     expect(await resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 1, deleted: 1 });
 
     const app1Seq = (
-      db.prepare("SELECT seq FROM public_audit_trail WHERE source_funnel_event_id = 'fe-1'").get() as { seq: number }
+      db.prepare("SELECT seq FROM public_audit_trail WHERE source_pipeline_event_id = 'fe-1'").get() as { seq: number }
     ).seq;
     expect(app1Seq).toBeGreaterThan(app2Seq);
 

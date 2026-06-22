@@ -15,23 +15,23 @@ test.describe('/pipeline async states', () => {
   test('loading → a skeleton board, not the real board', async ({ page }) => {
     await page.goto('/pipeline?__state=loading')
     await expect(page.getByRole('heading', { level: 1, name: 'My Job Pipeline' })).toBeVisible()
-    await expect(page.getByTestId('funnel-skeleton')).toBeVisible()
-    await expect(page.getByTestId('funnel-board')).toHaveCount(0)
+    await expect(page.getByTestId('pipeline-skeleton')).toBeVisible()
+    await expect(page.getByTestId('pipeline-board')).toHaveCount(0)
   })
 
   test('empty → a themed empty note (a11y clean)', async ({ page }) => {
     await page.goto('/pipeline?__state=empty')
-    const note = page.getByTestId('funnel-empty')
+    const note = page.getByTestId('pipeline-empty')
     await expect(note).toBeVisible()
     await expect(note).toContainText(/no applications/i)
-    await expect(page.getByTestId('funnel-board')).toHaveCount(0)
+    await expect(page.getByTestId('pipeline-board')).toHaveCount(0)
     const a11y = await new AxeBuilder({ page }).analyze()
     expect(a11y.violations).toEqual([])
   })
 
   test('error → a themed offline note', async ({ page }) => {
     await page.goto('/pipeline?__state=error')
-    const note = page.getByTestId('funnel-error')
+    const note = page.getByTestId('pipeline-error')
     await expect(note).toBeVisible()
     await expect(note).toContainText(/offline/i)
   })
@@ -79,13 +79,13 @@ test.describe('reduced-motion (§24.36 36.4)', () => {
 
     // Control: with no preference, the pulse runs.
     await page.goto('/pipeline?__state=loading')
-    await expect(page.getByTestId('funnel-skeleton')).toBeVisible()
+    await expect(page.getByTestId('pipeline-skeleton')).toBeVisible()
     expect(await pulseDurationS()).toBeGreaterThan(0.5)
 
     // Treatment: under prefers-reduced-motion the app.css global reset neutralizes
     // it (the media query re-matches live — no reload needed).
     await page.emulateMedia({ reducedMotion: 'reduce' })
-    await expect(page.getByTestId('funnel-skeleton')).toBeVisible()
+    await expect(page.getByTestId('pipeline-skeleton')).toBeVisible()
     expect(await pulseDurationS()).toBeLessThan(0.001)
   })
 })

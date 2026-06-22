@@ -56,7 +56,7 @@ interface Chip {
 // `proactive` flag; the per-subagent + System chips read `agent_name`/`category`.
 // One chip per subagent, matched on the native `agent_name`: post-§24.77
 // (migration 137) the audit data carries the real names, so a chip is a single
-// id — no legacy-alias fan-out ('funnel-curator'/'prep-interview' are migrated).
+// id — no legacy-alias fan-out ('pipeline-scribe'/'prep-interview' are migrated).
 const AGENT_CHIPS: { id: string; label: string }[] = [
   { id: 'research-company', label: 'Research' },
   { id: 'tailor-resume', label: 'Tailor' },

@@ -1,9 +1,9 @@
 /**
- * Shared TypeScript types for the funnel-curator subsystem (Phase 3.2 §24.9).
+ * Shared TypeScript types for the pipeline-scribe subsystem (Phase 3.2 §24.9).
  *
  * The parsed Gmail / Calendar shapes here describe what the host actions
- * (`gmail_query_delta`, `calendar_query_delta`) return to the funnel-curator
- * subagent. The fixture loader at `scripts/test/load-funnel-fixtures.ts`
+ * (`gmail_query_delta`, `calendar_query_delta`) return to the pipeline-scribe
+ * subagent. The fixture loader at `scripts/test/load-pipeline-fixtures.ts`
  * normalizes its higher-level fixture format into these same shapes, so a
  * test against a fixture is indistinguishable from a real Google API
  * response at the curator's tool-call boundary.
@@ -66,7 +66,7 @@ export interface NewEmailEvent {
   evidence_excerpt: string | null;
 }
 
-export interface FunnelNarrative {
+export interface PipelineNarrative {
   company: string;
   application_id: string | null;
   lead_id: string | null;
@@ -75,7 +75,7 @@ export interface FunnelNarrative {
   timeline_excerpt: string[];
 }
 
-export interface FunnelAttentionItem {
+export interface PipelineAttentionItem {
   priority: 'same_day' | 'action_owed' | 'fyi';
   reason: string;
   application_id: string | null;
@@ -83,7 +83,7 @@ export interface FunnelAttentionItem {
   action_hint: string | null;
 }
 
-export interface FunnelSuggestion {
+export interface PipelineSuggestion {
   action:
     | 'mark_applied'
     | 'mark_interviewing'
@@ -97,11 +97,11 @@ export interface FunnelSuggestion {
   rationale: string;
 }
 
-export interface FunnelCuratorOutput {
+export interface PipelineScribeOutput {
   new_email_events: NewEmailEvent[];
-  narratives: FunnelNarrative[];
-  attention: FunnelAttentionItem[];
-  suggestions: FunnelSuggestion[];
+  narratives: PipelineNarrative[];
+  attention: PipelineAttentionItem[];
+  suggestions: PipelineSuggestion[];
   gmail_history_id: string | null;
   calendar_sync_tokens: Record<string, string>;
   cheap_out: boolean;

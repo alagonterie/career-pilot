@@ -1,9 +1,9 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 
-// /dashboard composes the funnel + architecture data + the SSE trace + /api/telemetry
+// /dashboard composes the pipeline + architecture data + the SSE trace + /api/telemetry
 // into the aggregate ops dashboard (§24.29). The E2E server seeds the backlog,
-// funnel, sessions, and a fixed container count; the telemetry/cost panels render
+// pipeline, sessions, and a fixed container count; the telemetry/cost panels render
 // from the seeded per-turn rows (§24.47 — local-sourced, no Portkey API).
 // Correctness rests on semantic assertions + a11y + the console/network gate; the
 // live-tail (a new pushed row) is already covered by smoke.spec.
@@ -11,7 +11,7 @@ function ignorable(url: string): boolean {
   return (
     url.includes('/api/architecture') ||
     url.includes('/api/system-status') ||
-    url.includes('/api/funnel') ||
+    url.includes('/api/pipeline') ||
     url.includes('/api/telemetry') ||
     url.includes('/api/observability') ||
     url.includes('/api/activity/stream')
@@ -54,9 +54,9 @@ test.describe('/dashboard — aggregate ops dashboard, frontend <-> backend', ()
     await expect(trace).toBeVisible()
     await expect(trace.getByText('research-company')).toBeVisible()
 
-    // The compact funnel reveals the public OFFER by its real name (the reveal
+    // The compact pipeline reveals the public OFFER by its real name (the reveal
     // tier — a public application's ref is the company, not the obfuscated label).
-    await expect(page.getByTestId('funnel-compact-reveal')).toContainText('Wayne Enterprises')
+    await expect(page.getByTestId('pipeline-compact-reveal')).toContainText('Wayne Enterprises')
 
     // §24.35 Pass B: the anonymization demo moved off /dashboard into the
     // /architecture pub-sanitize node modal — covered by architecture.spec.ts.
@@ -105,7 +105,7 @@ test.describe('/dashboard — aggregate ops dashboard, frontend <-> backend', ()
 
   test('the trace header explains the cast via one InfoTip (§24.60)', async ({ page }) => {
     await page.goto('/dashboard')
-    // Retried like funnel.spec's stat-tile tip (§24.65 Δ): under parallel-
+    // Retried like pipeline.spec's stat-tile tip (§24.65 Δ): under parallel-
     // worker load a click can land during hydration / a late layout settle
     // (the tip closes on scroll), so a single click is racy.
     const panel = page.getByTestId('info-tip-panel')
@@ -185,7 +185,7 @@ test.describe('/dashboard — aggregate ops dashboard, frontend <-> backend', ()
 
   test('the Job Pipeline panel links into /pipeline (contextual nav — §24.35 Pass A)', async ({ page }) => {
     await page.goto('/dashboard')
-    // Scope to main; the funnel panel header action is the only "open →" link.
+    // Scope to main; the pipeline panel header action is the only "open →" link.
     await page
       .getByRole('main')
       .getByRole('link', { name: /open →/ })

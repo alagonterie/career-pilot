@@ -100,7 +100,7 @@ describe('sdkResultToTurnTelemetry', () => {
 
 describe('isRecordCallToolName', () => {
   it('matches the record_* MCP tools by suffix (robust to the server prefix)', () => {
-    expect(isRecordCallToolName('mcp__career-pilot__record_funnel_event')).toBe(true);
+    expect(isRecordCallToolName('mcp__career-pilot__record_pipeline_event')).toBe(true);
     expect(isRecordCallToolName('mcp__career-pilot__record_progress')).toBe(true);
     expect(isRecordCallToolName('mcp__cp__record_progress')).toBe(true);
   });

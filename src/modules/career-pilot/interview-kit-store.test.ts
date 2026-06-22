@@ -136,7 +136,7 @@ describe('interview-kit-store CRUD', () => {
   });
 });
 
-describe('getActiveKitUrlsByApplication (read_funnel_state join)', () => {
+describe('getActiveKitUrlsByApplication (read_pipeline_state join)', () => {
   it('returns the newest active kit_url per requested application, ignoring archived + unrequested', () => {
     seedApp('a1');
     seedApp('a2');

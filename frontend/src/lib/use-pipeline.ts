@@ -2,10 +2,10 @@ import { useSurfaceState, withState } from './dev-state'
 import { usePolledJson, type PollStatus } from './use-polled-json'
 
 /**
- * A row of the public pipeline read-model as delivered by `GET /api/funnel`
- * (src/modules/portal/api.ts → public_funnel_view + read-time day counts).
+ * A row of the public pipeline read-model as delivered by `GET /api/pipeline`
+ * (src/modules/portal/api.ts → public_pipeline_view + read-time day counts).
  * Naming boundary (§24.77 D3): the visitor-facing concept is the "pipeline"; the
- * internal fetch URL + read-model keep their `funnel` names (unrenamed plumbing).
+ * internal fetch URL + read-model keep their `pipeline` names (unrenamed plumbing).
  * `application_ref` is the obfuscated label, or the real company name when
  * `public_state === 'public'` (the reveal tier, PORTAL §5.4).
  */
@@ -100,16 +100,16 @@ export interface PipelineState {
 }
 
 /**
- * Poll `GET /api/funnel` and keep the latest snapshot. `/api/funnel` is plain
+ * Poll `GET /api/pipeline` and keep the latest snapshot. `/api/pipeline` is plain
  * JSON (not SSE), and the system mutates stages over time (recruiter replies,
- * the dev `maybeAdvanceFunnel` generator), so a short poll surfaces the motion
+ * the dev `maybeAdvancePipeline` generator), so a short poll surfaces the motion
  * — the board's `motion/react` layout animation does the rest. Delegates to the
  * shared `usePolledJson` primitive (client-only; keeps last-good data on a
  * transient blip; only a cold first failure shows `'error'`).
  */
 export function usePipeline(baseUrl: string, pollMs?: number): PipelineState {
   const forced = useSurfaceState('pipeline')
-  return usePolledJson<PipelineResponse>(withState(`${baseUrl}/api/funnel`, forced), pollMs)
+  return usePolledJson<PipelineResponse>(withState(`${baseUrl}/api/pipeline`, forced), pollMs)
 }
 
 export interface StatTile {

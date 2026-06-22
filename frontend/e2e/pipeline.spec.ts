@@ -1,20 +1,20 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 
-// /pipeline reads the built GET /api/funnel through a polling hook and renders the
-// stage board from the deterministic funnel seed (scripts/portal-e2e-server.ts
-// → seedDeterministicFunnel). Correctness rests on semantic assertions + a11y +
+// /pipeline reads the built GET /api/pipeline through a polling hook and renders the
+// stage board from the deterministic pipeline seed (scripts/portal-e2e-server.ts
+// → seedDeterministicPipeline). Correctness rests on semantic assertions + a11y +
 // the console/network gate; the live stage-advance motion is dev-only.
 function ignorable(url: string): boolean {
-  // The funnel poll + the landing SSE stream are aborted on nav/teardown —
+  // The pipeline poll + the landing SSE stream are aborted on nav/teardown —
   // those aborts are expected, not failures.
-  return url.includes('/api/funnel') || url.includes('/api/activity/stream')
+  return url.includes('/api/pipeline') || url.includes('/api/activity/stream')
 }
 
 test('the Bookmarked & closed strip is a one-row filmstrip that scrolls sideways (§24.138 A0-cont)', async ({
   page,
 }) => {
-  // Override /api/funnel with a long tail of closed (offboard) apps and prove the
+  // Override /api/pipeline with a long tail of closed (offboard) apps and prove the
   // strip stays ONE card row tall and scrolls horizontally, instead of wrapping into
   // many rows that grow the page down.
   const mkApp = (i: number) => ({
@@ -36,7 +36,7 @@ test('the Bookmarked & closed strip is a one-row filmstrip that scrolls sideways
     learnings: [],
   })
   const applications = Array.from({ length: 24 }, (_, i) => mkApp(i))
-  await page.route('**/api/funnel', (route) =>
+  await page.route('**/api/pipeline', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -45,7 +45,7 @@ test('the Bookmarked & closed strip is a one-row filmstrip that scrolls sideways
   )
 
   await page.goto('/pipeline')
-  const strip = page.getByTestId('funnel-offboard-cards')
+  const strip = page.getByTestId('pipeline-offboard-cards')
   await expect(strip).toBeVisible()
   // 24 uniform cards in ONE row overflow the width → horizontal scroll; the strip
   // stays one card tall (never wraps into page-growing rows).
@@ -58,7 +58,7 @@ test('the Bookmarked & closed strip is a one-row filmstrip that scrolls sideways
   expect(box.clientH).toBeLessThan(220) // a single card row, not many wrapped rows
 })
 
-test.describe('/pipeline — the funnel board, frontend <-> backend', () => {
+test.describe('/pipeline — the pipeline board, frontend <-> backend', () => {
   test('renders the stage board + reveal tier + detail panel from the seeded API', async ({ page }) => {
     const consoleErrors: string[] = []
     page.on('console', (msg) => {
@@ -74,8 +74,8 @@ test.describe('/pipeline — the funnel board, frontend <-> backend', () => {
 
     await expect(page.getByRole('heading', { level: 1, name: 'My Job Pipeline' })).toBeVisible()
 
-    // Board renders from the seeded /api/funnel over the polling hook.
-    const board = page.getByTestId('funnel-board')
+    // Board renders from the seeded /api/pipeline over the polling hook.
+    const board = page.getByTestId('pipeline-board')
     await expect(board).toBeVisible()
     for (const col of ['Applied', 'Screening', 'Tech interview', 'Final interview', 'Offer']) {
       await expect(page.getByRole('region', { name: col })).toBeVisible()
@@ -117,7 +117,7 @@ test.describe('/pipeline — the funnel board, frontend <-> backend', () => {
     await page.goto('/pipeline')
 
     // Open from a keyboard-focused card so the trigger is a known element.
-    const card = page.getByTestId('funnel-card').filter({ hasText: 'Wayne Enterprises' })
+    const card = page.getByTestId('pipeline-card').filter({ hasText: 'Wayne Enterprises' })
     await card.focus()
     await page.keyboard.press('Enter')
 
@@ -167,7 +167,7 @@ test.describe('/pipeline — the funnel board, frontend <-> backend', () => {
 
   test('closing the drawer preserves the scroll position (§24.58 Δ)', async ({ page }) => {
     await page.goto('/pipeline')
-    await expect(page.getByTestId('funnel-card').first()).toBeVisible()
+    await expect(page.getByTestId('pipeline-card').first()).toBeVisible()
     // Force a scrollable page on the desktop viewport, then scroll down.
     await page.setViewportSize({ width: 1280, height: 400 })
     await page.evaluate(() => window.scrollTo(0, 300))
@@ -191,7 +191,7 @@ test.describe('/pipeline — the funnel board, frontend <-> backend', () => {
     await expect(page.getByRole('dialog', { name: 'Wayne Enterprises' })).toBeHidden()
     await expect(page).toHaveURL('/pipeline')
     // Still on the board — back dismissed the overlay, not the page.
-    await expect(page.getByTestId('funnel-board')).toBeVisible()
+    await expect(page.getByTestId('pipeline-board')).toBeVisible()
   })
 
   test('/momentum redirects to /pipeline, ?app preserved (§24.59)', async ({ page }) => {
@@ -204,12 +204,12 @@ test.describe('/pipeline — the funnel board, frontend <-> backend', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'My Job Pipeline' })).toBeVisible()
   })
 
-  test('?app deep-link opens the drawer once the funnel loads (§24.57)', async ({ page }) => {
+  test('?app deep-link opens the drawer once the pipeline loads (§24.57)', async ({ page }) => {
     await page.goto('/pipeline?app=Wayne%20Enterprises')
     await expect(page.getByRole('dialog', { name: 'Wayne Enterprises' })).toBeVisible()
     // An unknown ref is a no-op — the board renders, no drawer.
     await page.goto('/pipeline?app=not-a-real-ref')
-    await expect(page.getByTestId('funnel-card').first()).toBeVisible()
+    await expect(page.getByTestId('pipeline-card').first()).toBeVisible()
     await expect(page.getByRole('dialog')).toBeHidden()
   })
 

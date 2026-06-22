@@ -113,7 +113,7 @@ function fullPalette(): Tool[] {
     LIST_APPS_TOOL,
     mcp('get_application', 'Get one application by id.'),
     mcp('update_application', 'Create or update an application.'),
-    mcp('record_funnel_event', 'Append a funnel event to an application.'),
+    mcp('record_pipeline_event', 'Append a pipeline event to an application.'),
     mcp('query_job_leads', 'Query the job-lead pool with filters.'),
     builtin('Read', 'Read a file from the workspace.'),
     builtin('Bash', 'Run a shell command.'),

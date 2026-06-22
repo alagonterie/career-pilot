@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { EmailClassification } from '../funnel-types.js';
+import type { EmailClassification } from '../pipeline-types.js';
 import { emptySimState, mulberry32, planTick } from './scenario.js';
 import type { InjectEmailIntent, SimKnobs, SimState } from './types.js';
 
@@ -65,7 +65,7 @@ describe('recruiter-sim scenario', () => {
     expect(plan.nextState.apps[0].status).toBe('active');
   });
 
-  it('walks the full funnel to an offer when ghosting is off', () => {
+  it('walks the full pipeline to an offer when ghosting is off', () => {
     const { state, injects } = runTicks(emptySimState(), knobs({ offerProbability: 1, rejectionProbability: 0 }), 5);
     expect(classes(injects)).toEqual([
       'application_confirmation',
@@ -92,7 +92,7 @@ describe('recruiter-sim scenario', () => {
   it('rejects at the screen step (early attrition) when screenPassRate is 0', () => {
     // Two ticks: confirmation always sends (stage 0), then the screen step is an
     // early rejection — the app never reaches an intro call. This is the realistic
-    // top-of-funnel cull that keeps most apps out of the deep funnel.
+    // top-of-pipeline cull that keeps most apps out of the deep pipeline.
     const { state, injects } = runTicks(emptySimState(), knobs({ screenPassRate: 0 }), 2);
     expect(classes(injects)).toEqual(['application_confirmation', 'screen_rejection']);
     expect(state.apps[0].status).toBe('closed');

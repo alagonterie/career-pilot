@@ -88,7 +88,7 @@ describe('PipelineBoard', () => {
         onSelect={() => {}}
       />,
     )
-    const col = screen.getByTestId('funnel-col-screening')
+    const col = screen.getByTestId('pipeline-col-screening')
     expect(within(col).getAllByText('series-b-ai')).toHaveLength(2)
   })
 
@@ -104,15 +104,15 @@ describe('PipelineBoard', () => {
 
   it('surfaces closed/non-pipeline applications rather than dropping them', () => {
     render(<PipelineBoard apps={APPS} onSelect={() => {}} />)
-    expect(screen.getByTestId('funnel-offboard')).toBeInTheDocument()
+    expect(screen.getByTestId('pipeline-offboard')).toBeInTheDocument()
     expect(screen.getByText('saas-b')).toBeInTheDocument()
   })
 
   it('keeps the Bookmarked & closed strip with an honest note when nothing is closed (§24.62)', () => {
     const pipelineOnly = APPS.filter((a) => a.stage !== 'rejected')
     render(<PipelineBoard apps={pipelineOnly} onSelect={() => {}} />)
-    expect(screen.getByTestId('funnel-offboard')).toBeInTheDocument()
-    expect(screen.getByTestId('funnel-offboard-empty')).toHaveTextContent('Nothing bookmarked or closed yet.')
+    expect(screen.getByTestId('pipeline-offboard')).toBeInTheDocument()
+    expect(screen.getByTestId('pipeline-offboard-empty')).toHaveTextContent('Nothing bookmarked or closed yet.')
   })
 
   it('calls onSelect with the clicked application', () => {
@@ -128,10 +128,10 @@ describe('PipelineBoard', () => {
     // board stacks vertically, so an empty stage's "—" body is `hidden sm:flex`
     // (the section collapses to its header row — no full-height void).
     render(<PipelineBoard apps={[app({ application_ref: 'x', stage: 'offer' })]} onSelect={() => {}} />)
-    const dash = within(screen.getByTestId('funnel-col-applied')).getByText('—')
+    const dash = within(screen.getByTestId('pipeline-col-applied')).getByText('—')
     expect(dash.parentElement?.className).toContain('hidden')
     // A populated stage keeps its card (not collapsed).
-    expect(within(screen.getByTestId('funnel-col-offer')).getByText('x')).toBeInTheDocument()
+    expect(within(screen.getByTestId('pipeline-col-offer')).getByText('x')).toBeInTheDocument()
   })
 })
 
@@ -167,7 +167,7 @@ describe('PipelineCard kit chip (§24.65)', () => {
     render(
       <PipelineCard app={app({ application_ref: 'x', interview_kits: [kit('TECH_SCREEN')] })} onSelect={() => {}} />,
     )
-    expect(screen.getByTestId('funnel-card-kit')).toHaveTextContent('▤')
+    expect(screen.getByTestId('pipeline-card-kit')).toHaveTextContent('▤')
 
     render(
       <PipelineCard
@@ -175,12 +175,12 @@ describe('PipelineCard kit chip (§24.65)', () => {
         onSelect={() => {}}
       />,
     )
-    expect(screen.getAllByTestId('funnel-card-kit')[1]).toHaveTextContent('▤ 2')
+    expect(screen.getAllByTestId('pipeline-card-kit')[1]).toHaveTextContent('▤ 2')
   })
 
   it('shows no chip without kits', () => {
     render(<PipelineCard app={app({ application_ref: 'z' })} onSelect={() => {}} />)
-    expect(screen.queryByTestId('funnel-card-kit')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('pipeline-card-kit')).not.toBeInTheDocument()
   })
 })
 
@@ -189,12 +189,12 @@ describe('PipelineCard lesson chip (§24.117)', () => {
 
   it('shows the ✎ chip when published lessons exist (count when several)', () => {
     render(<PipelineCard app={app({ application_ref: 'x', learnings: [lesson()] })} onSelect={() => {}} />)
-    expect(screen.getByTestId('funnel-card-lesson')).toHaveTextContent('✎')
+    expect(screen.getByTestId('pipeline-card-lesson')).toHaveTextContent('✎')
 
     render(
       <PipelineCard app={app({ application_ref: 'y', learnings: [lesson(), lesson('offer')] })} onSelect={() => {}} />,
     )
-    expect(screen.getAllByTestId('funnel-card-lesson')[1]).toHaveTextContent('✎ 2')
+    expect(screen.getAllByTestId('pipeline-card-lesson')[1]).toHaveTextContent('✎ 2')
   })
 
   it('shows the kit + lesson chips together when the app has both', () => {
@@ -217,13 +217,13 @@ describe('PipelineCard lesson chip (§24.117)', () => {
         onSelect={() => {}}
       />,
     )
-    expect(screen.getByTestId('funnel-card-kit')).toBeInTheDocument()
-    expect(screen.getByTestId('funnel-card-lesson')).toBeInTheDocument()
+    expect(screen.getByTestId('pipeline-card-kit')).toBeInTheDocument()
+    expect(screen.getByTestId('pipeline-card-lesson')).toBeInTheDocument()
   })
 
   it('shows no lesson chip without lessons', () => {
     render(<PipelineCard app={app({ application_ref: 'z' })} onSelect={() => {}} />)
-    expect(screen.queryByTestId('funnel-card-lesson')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('pipeline-card-lesson')).not.toBeInTheDocument()
   })
 })
 
@@ -249,7 +249,7 @@ describe('StatTiles', () => {
 describe('DetailPanel', () => {
   it('renders nothing when no application is selected', () => {
     render(<DetailPanel app={null} onClose={() => {}} />)
-    expect(screen.queryByTestId('funnel-detail')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('pipeline-detail')).not.toBeInTheDocument()
   })
 
   it('shows the anonymized facts + the labeled win-confidence estimate', () => {
@@ -408,7 +408,7 @@ describe('card click opens the detail panel (composed)', () => {
 
   it('opens the panel for the clicked application', () => {
     render(<Harness />)
-    expect(screen.queryByTestId('funnel-detail')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('pipeline-detail')).not.toBeInTheDocument()
     fireEvent.click(screen.getByText('Wayne Enterprises'))
     expect(screen.getByRole('dialog', { name: 'Wayne Enterprises' })).toBeInTheDocument()
   })
@@ -420,7 +420,7 @@ describe('card click opens the detail panel (composed)', () => {
     fireEvent.click(card)
     expect(screen.getByRole('dialog', { name: 'Wayne Enterprises' })).toBeInTheDocument()
     fireEvent.keyDown(window, { key: 'Escape' })
-    expect(screen.queryByTestId('funnel-detail')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('pipeline-detail')).not.toBeInTheDocument()
     expect(document.activeElement).toBe(card)
   })
 })

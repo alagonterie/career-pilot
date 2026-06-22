@@ -1,5 +1,5 @@
 /**
- * Tests for the funnel-curator bootstrap (Phase 3.2 §24.9 component 4).
+ * Tests for the pipeline-scribe bootstrap (Phase 3.2 §24.9 component 4).
  *
  * Mirrors killer-match-bootstrap.test.ts — same harness, same idempotency
  * cases, different SERIES_ID + cron defaults.
@@ -19,10 +19,10 @@ import type { AgentGroup, Session } from '../../types.js';
 
 import {
   computeNextFireTime,
-  ensureFunnelCuratorTask,
-  hasLiveFunnelCuratorTask,
-  readFunnelCuratorPreferences,
-} from './funnel-curator-bootstrap.js';
+  ensurePipelineScribeTask,
+  hasLivePipelineScribeTask,
+  readPipelineScribePreferences,
+} from './pipeline-scribe-bootstrap.js';
 
 const tmpDir = path.join(os.tmpdir(), `nanoclaw-cp-fc-bootstrap-test-${process.pid}`);
 const inboundPath = path.join(tmpDir, 'inbound.db');
@@ -87,6 +87,9 @@ function insertSampleTask(opts: { id?: string; status: string; recurrence?: stri
     platformId: null,
     channelType: null,
     threadId: null,
+    // Seeds the PRE-rename sentinel so the reconcile path has something stale to
+    // converge (§24.59 renamed the prompt to pipeline-scribe; deployed boxes hold
+    // the old one). hasLive* tests ignore the prompt, so this is safe for all.
     content: JSON.stringify({ prompt: '[scheduled trigger: funnel-curator]', script: null }),
   });
   if (opts.status !== 'pending') {
@@ -94,66 +97,66 @@ function insertSampleTask(opts: { id?: string; status: string; recurrence?: stri
   }
 }
 
-describe('readFunnelCuratorPreferences', () => {
+describe('readPipelineScribePreferences', () => {
   it('returns defaults when preferences table is empty', () => {
-    const prefs = readFunnelCuratorPreferences(getDb());
+    const prefs = readPipelineScribePreferences(getDb());
     expect(prefs).toEqual({ enabled: true, cronExpr: '30 7 * * *' });
   });
 
-  it('respects funnel_curator_enabled=false', () => {
-    setPreference('funnel_curator_enabled', 'false');
-    expect(readFunnelCuratorPreferences(getDb()).enabled).toBe(false);
+  it('respects pipeline_scribe_enabled=false', () => {
+    setPreference('pipeline_scribe_enabled', 'false');
+    expect(readPipelineScribePreferences(getDb()).enabled).toBe(false);
   });
 
   it('treats any value other than "false" as enabled', () => {
-    setPreference('funnel_curator_enabled', 'true');
-    expect(readFunnelCuratorPreferences(getDb()).enabled).toBe(true);
-    setPreference('funnel_curator_enabled', '1');
-    expect(readFunnelCuratorPreferences(getDb()).enabled).toBe(true);
+    setPreference('pipeline_scribe_enabled', 'true');
+    expect(readPipelineScribePreferences(getDb()).enabled).toBe(true);
+    setPreference('pipeline_scribe_enabled', '1');
+    expect(readPipelineScribePreferences(getDb()).enabled).toBe(true);
   });
 
   it('respects custom cron expression', () => {
-    setPreference('funnel_curator_cron', '0 */4 * * *');
-    expect(readFunnelCuratorPreferences(getDb()).cronExpr).toBe('0 */4 * * *');
+    setPreference('pipeline_scribe_cron', '0 */4 * * *');
+    expect(readPipelineScribePreferences(getDb()).cronExpr).toBe('0 */4 * * *');
   });
 
   it('falls back to default cron when preferences table missing', () => {
     const fakeDb = new Database(':memory:');
-    expect(readFunnelCuratorPreferences(fakeDb).cronExpr).toBe('30 7 * * *');
+    expect(readPipelineScribePreferences(fakeDb).cronExpr).toBe('30 7 * * *');
     fakeDb.close();
   });
 });
 
-describe('hasLiveFunnelCuratorTask', () => {
+describe('hasLivePipelineScribeTask', () => {
   it('returns false when no tasks exist', () => {
-    expect(hasLiveFunnelCuratorTask(inDb)).toBe(false);
+    expect(hasLivePipelineScribeTask(inDb)).toBe(false);
   });
 
   it('returns true when a pending task exists', () => {
     insertSampleTask({ status: 'pending' });
-    expect(hasLiveFunnelCuratorTask(inDb)).toBe(true);
+    expect(hasLivePipelineScribeTask(inDb)).toBe(true);
   });
 
   it('returns true when a paused task exists', () => {
     insertSampleTask({ status: 'paused' });
-    expect(hasLiveFunnelCuratorTask(inDb)).toBe(true);
+    expect(hasLivePipelineScribeTask(inDb)).toBe(true);
   });
 
   it('returns false when only a completed task exists', () => {
     insertSampleTask({ status: 'completed' });
-    expect(hasLiveFunnelCuratorTask(inDb)).toBe(false);
+    expect(hasLivePipelineScribeTask(inDb)).toBe(false);
   });
 
   it('matches by series_id, not just id', () => {
     insertSampleTask({ id: 'funnel-curator', status: 'completed' });
     insertSampleTask({ id: 'task-clone-1', status: 'pending' });
     inDb.prepare("UPDATE messages_in SET series_id = 'funnel-curator' WHERE id = 'task-clone-1'").run();
-    expect(hasLiveFunnelCuratorTask(inDb)).toBe(true);
+    expect(hasLivePipelineScribeTask(inDb)).toBe(true);
   });
 
   it('ignores tasks in other series', () => {
     insertSampleTask({ id: 'some-other-task', status: 'pending' });
-    expect(hasLiveFunnelCuratorTask(inDb)).toBe(false);
+    expect(hasLivePipelineScribeTask(inDb)).toBe(false);
   });
 });
 
@@ -176,9 +179,9 @@ describe('computeNextFireTime', () => {
   });
 });
 
-describe('ensureFunnelCuratorTask', () => {
+describe('ensurePipelineScribeTask', () => {
   it('inserts a task when none exists', () => {
-    const res = ensureFunnelCuratorTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION);
+    const res = ensurePipelineScribeTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION);
     expect(res.action).toBe('inserted');
     expect(res.taskId).toMatch(/^task-\d+-[a-z0-9]+$/);
     expect(res.recurrence).toBe('30 7 * * *');
@@ -207,8 +210,8 @@ describe('ensureFunnelCuratorTask', () => {
   });
 
   it('is idempotent — no duplicate insert on second call', () => {
-    ensureFunnelCuratorTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION);
-    const res2 = ensureFunnelCuratorTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION);
+    ensurePipelineScribeTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION);
+    const res2 = ensurePipelineScribeTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION);
     expect(res2.action).toBe('skipped_exists');
 
     const count = (
@@ -217,9 +220,9 @@ describe('ensureFunnelCuratorTask', () => {
     expect(count).toBe(1);
   });
 
-  it('skips when funnel_curator_enabled=false', () => {
-    setPreference('funnel_curator_enabled', 'false');
-    const res = ensureFunnelCuratorTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION);
+  it('skips when pipeline_scribe_enabled=false', () => {
+    setPreference('pipeline_scribe_enabled', 'false');
+    const res = ensurePipelineScribeTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION);
     expect(res.action).toBe('skipped_disabled');
 
     const count = (inDb.prepare('SELECT COUNT(*) AS n FROM messages_in').get() as { n: number }).n;
@@ -227,8 +230,8 @@ describe('ensureFunnelCuratorTask', () => {
   });
 
   it('uses custom cron from preferences', () => {
-    setPreference('funnel_curator_cron', '0 */6 * * *');
-    const res = ensureFunnelCuratorTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION);
+    setPreference('pipeline_scribe_cron', '0 */6 * * *');
+    const res = ensurePipelineScribeTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION);
     expect(res.action).toBe('inserted');
     expect(res.recurrence).toBe('0 */6 * * *');
 
@@ -240,7 +243,7 @@ describe('ensureFunnelCuratorTask', () => {
 
   it('inserts a fresh task when only completed rows exist in the series', () => {
     insertSampleTask({ status: 'completed' });
-    const res = ensureFunnelCuratorTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION);
+    const res = ensurePipelineScribeTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION);
     expect(res.action).toBe('inserted');
 
     const liveCount = (
@@ -254,14 +257,14 @@ describe('ensureFunnelCuratorTask', () => {
   });
 
   it('reconciles a live row holding the pre-rename sentinel to the current prompt (§24.59)', () => {
-    // insertSampleTask seeds the legacy '[scheduled trigger: funnel-curator]'
+    // insertSampleTask seeds the legacy '[scheduled trigger: pipeline-scribe]'
     // prompt — exactly what a deployed box holds across the rename deploy.
     insertSampleTask({ status: 'pending' });
     const before = inDb
       .prepare("SELECT process_after, recurrence FROM messages_in WHERE id = 'funnel-curator'")
       .get() as { process_after: string; recurrence: string };
 
-    const res = ensureFunnelCuratorTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION);
+    const res = ensurePipelineScribeTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION);
     expect(res.action).toBe('reconciled_prompt');
     expect(res.taskId).toBe('funnel-curator');
 
@@ -280,12 +283,12 @@ describe('ensureFunnelCuratorTask', () => {
       inDb.prepare("SELECT COUNT(*) AS n FROM messages_in WHERE series_id = 'funnel-curator'").get() as { n: number }
     ).n;
     expect(count).toBe(1);
-    expect(ensureFunnelCuratorTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION).action).toBe('skipped_exists');
+    expect(ensurePipelineScribeTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION).action).toBe('skipped_exists');
   });
 
   it('reconciles a paused legacy row too', () => {
     insertSampleTask({ status: 'paused' });
-    const res = ensureFunnelCuratorTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION);
+    const res = ensurePipelineScribeTask(getDb(), inDb, FAKE_AGENT_GROUP, FAKE_SESSION);
     expect(res.action).toBe('reconciled_prompt');
     const row = inDb.prepare("SELECT status, content FROM messages_in WHERE id = 'funnel-curator'").get() as {
       status: string;

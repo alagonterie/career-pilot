@@ -82,7 +82,7 @@ describe('/api/dev/* — on the dev stack', () => {
     const body = (await res.json()) as { knobs: Array<{ key: string }> };
     expect(Array.isArray(body.knobs)).toBe(true);
     expect(body.knobs.some((k) => k.key === 'recruiter_sim_enabled')).toBe(true);
-    expect(body.knobs.some((k) => k.key === 'funnel_curator_cron')).toBe(true);
+    expect(body.knobs.some((k) => k.key === 'pipeline_scribe_cron')).toBe(true);
   });
 
   it('GET /api/dev/state returns sim state + applications arrays', async () => {
@@ -130,11 +130,11 @@ describe('/api/dev/* — on the dev stack', () => {
     expect(res.status).toBe(400);
   });
 
-  it('POST /api/dev/reset { scope: "funnel-data" } returns 200 with the cleared shape', async () => {
-    const res = await postReset({ scope: 'funnel-data' });
+  it('POST /api/dev/reset { scope: "pipeline-data" } returns 200 with the cleared shape', async () => {
+    const res = await postReset({ scope: 'pipeline-data' });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { scope: string; cleared: Record<string, number>; halted: boolean };
-    expect(body.scope).toBe('funnel-data');
+    expect(body.scope).toBe('pipeline-data');
     expect(body.halted).toBe(false);
     expect(typeof body.cleared).toBe('object');
   });

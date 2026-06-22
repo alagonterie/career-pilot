@@ -464,7 +464,7 @@ export function LlmSpendPanel({
 /** RECENT OUTCOMES — the most-recently-active applications with current stage +
  * the ◆ public marker, from the already-polled pipeline rows. An honest
  * current-state snapshot; true transition arrows need the deferred
- * funnel_events history (§24.29). `flex-1` lets it grow to fill the rail down to
+ * pipeline_events history (§24.29). `flex-1` lets it grow to fill the rail down to
  * the trace-stream height beside it (§24.69 follow-up) — the list earns the room
  * by showing more of the real recent activity, rather than leaving a dead gap. */
 /** Color ONLY the outcome word (§24.109 #12), never the company ref: a win and a

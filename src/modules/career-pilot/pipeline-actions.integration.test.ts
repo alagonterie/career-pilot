@@ -1,16 +1,16 @@
 /**
- * Integration tests for the funnel-curator host-side action handlers
+ * Integration tests for the pipeline-scribe host-side action handlers
  * (Phase 3.2 §24.9 component 3).
  *
  * Five handlers covered:
  *   - handleGmailQueryDelta — fixture-mode read, sandbox guard,
  *                             NOT_IMPLEMENTED in non-fixture mode
  *   - handleCalendarQueryDelta — same
- *   - handlePersistFunnelState — transactional UPSERT email_events +
- *                                INSERT funnel_curator_output +
+ *   - handlePersistPipelineState — transactional UPSERT email_events +
+ *                                INSERT pipeline_scribe_output +
  *                                update sync-state pointers; validates
  *                                classification enum and excerpt cap
- *   - handleReadFunnelState — returns most-recent row JSON-parsed;
+ *   - handleReadPipelineState — returns most-recent row JSON-parsed;
  *                             null when no rows exist
  *   - handleReadEmailEvents — filtered query by app/lead/thread/since;
  *                             respects max limit
@@ -38,12 +38,12 @@ import {
   handleGmailQueryDelta,
   handleLoadCalendarFixture,
   handleLoadGmailFixture,
-  handlePersistFunnelState,
+  handlePersistPipelineState,
   handleReadEmailEvents,
-  handleReadFunnelState,
-} from './funnel-actions.js';
+  handleReadPipelineState,
+} from './pipeline-actions.js';
 
-const tmpDir = path.join(os.tmpdir(), `nanoclaw-cp-funnel-test-${process.pid}`);
+const tmpDir = path.join(os.tmpdir(), `nanoclaw-cp-pipeline-test-${process.pid}`);
 const inboundPath = path.join(tmpDir, 'inbound.db');
 
 const BASE_SESSION = {
@@ -238,8 +238,8 @@ describe('handleGetGmailSyncState', () => {
   });
 
   it('returns the stored history_id after persist writes it', async () => {
-    await handlePersistFunnelState(
-      actionContent('career_pilot.persist_funnel_state', makeValidPayload({ gmail_history_id: 'h-12345' })),
+    await handlePersistPipelineState(
+      actionContent('career_pilot.persist_pipeline_state', makeValidPayload({ gmail_history_id: 'h-12345' })),
       OWNER_SESSION,
       inDb,
     );
@@ -254,8 +254,8 @@ describe('handleGetGmailSyncState', () => {
   it('never stores the stringified-null historyId (the 2026-06-13 box bug)', async () => {
     // The agent passing the *string* "null" must NOT be written — storing it
     // sends startHistoryId=null to Gmail → 400 and a permanently broken delta.
-    await handlePersistFunnelState(
-      actionContent('career_pilot.persist_funnel_state', makeValidPayload({ gmail_history_id: 'null' })),
+    await handlePersistPipelineState(
+      actionContent('career_pilot.persist_pipeline_state', makeValidPayload({ gmail_history_id: 'null' })),
       OWNER_SESSION,
       inDb,
     );
@@ -298,9 +298,9 @@ describe('handleGetCalendarSyncState', () => {
   });
 
   it('returns the stored sync_tokens after persist writes them', async () => {
-    await handlePersistFunnelState(
+    await handlePersistPipelineState(
       actionContent(
-        'career_pilot.persist_funnel_state',
+        'career_pilot.persist_pipeline_state',
         makeValidPayload({ calendar_sync_tokens: { primary: 't-abc', work: 't-xyz' } }),
       ),
       OWNER_SESSION,
@@ -348,7 +348,7 @@ describe('handleLoadCalendarFixture', () => {
   });
 });
 
-// ── handlePersistFunnelState ──────────────────────────────────────────────
+// ── handlePersistPipelineState ──────────────────────────────────────────────
 
 function makeValidPayload(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -375,10 +375,10 @@ function makeValidPayload(overrides: Record<string, unknown> = {}): Record<strin
   };
 }
 
-describe('handlePersistFunnelState', () => {
-  it('writes email_events, funnel_curator_output, and updates sync-state in one transaction', async () => {
-    const c = actionContent('career_pilot.persist_funnel_state', makeValidPayload());
-    await handlePersistFunnelState(c, OWNER_SESSION, inDb);
+describe('handlePersistPipelineState', () => {
+  it('writes email_events, pipeline_scribe_output, and updates sync-state in one transaction', async () => {
+    const c = actionContent('career_pilot.persist_pipeline_state', makeValidPayload());
+    await handlePersistPipelineState(c, OWNER_SESSION, inDb);
 
     const res = readResponse(c.requestId);
     expect(res.frame.ok).toBe(true);
@@ -391,7 +391,7 @@ describe('handlePersistFunnelState', () => {
     expect(eventRows[0].classification).toBe('application_confirmation');
 
     const outputRows = getDb()
-      .prepare('SELECT id, gmail_history_id, cheap_out, cost_usd FROM funnel_curator_output')
+      .prepare('SELECT id, gmail_history_id, cheap_out, cost_usd FROM pipeline_scribe_output')
       .all() as Array<{ id: string; gmail_history_id: string; cheap_out: number; cost_usd: number }>;
     expect(outputRows).toHaveLength(1);
     expect(outputRows[0].gmail_history_id).toBe('hist-12345');
@@ -409,11 +409,11 @@ describe('handlePersistFunnelState', () => {
   });
 
   it('UPSERTs email_events on conflict by gmail_msg_id (re-classification on second run)', async () => {
-    const c1 = actionContent('career_pilot.persist_funnel_state', makeValidPayload());
-    await handlePersistFunnelState(c1, OWNER_SESSION, inDb);
+    const c1 = actionContent('career_pilot.persist_pipeline_state', makeValidPayload());
+    await handlePersistPipelineState(c1, OWNER_SESSION, inDb);
 
     const c2 = actionContent(
-      'career_pilot.persist_funnel_state',
+      'career_pilot.persist_pipeline_state',
       makeValidPayload({
         new_email_events: [
           {
@@ -429,7 +429,7 @@ describe('handlePersistFunnelState', () => {
         ],
       }),
     );
-    await handlePersistFunnelState(c2, OWNER_SESSION, inDb);
+    await handlePersistPipelineState(c2, OWNER_SESSION, inDb);
 
     const eventRows = getDb().prepare('SELECT classification FROM email_events').all() as Array<{
       classification: string;
@@ -441,7 +441,7 @@ describe('handlePersistFunnelState', () => {
   it('truncates evidence_excerpt to <=500 chars', async () => {
     const longText = 'x'.repeat(900);
     const c = actionContent(
-      'career_pilot.persist_funnel_state',
+      'career_pilot.persist_pipeline_state',
       makeValidPayload({
         new_email_events: [
           {
@@ -454,7 +454,7 @@ describe('handlePersistFunnelState', () => {
         ],
       }),
     );
-    await handlePersistFunnelState(c, OWNER_SESSION, inDb);
+    await handlePersistPipelineState(c, OWNER_SESSION, inDb);
 
     const row = getDb().prepare("SELECT evidence_excerpt FROM email_events WHERE gmail_msg_id = 'msg-long'").get() as {
       evidence_excerpt: string;
@@ -464,7 +464,7 @@ describe('handlePersistFunnelState', () => {
 
   it('rejects invalid classification with BAD_ARGS (or PERSIST_ERROR) and writes nothing', async () => {
     const c = actionContent(
-      'career_pilot.persist_funnel_state',
+      'career_pilot.persist_pipeline_state',
       makeValidPayload({
         new_email_events: [
           {
@@ -476,19 +476,19 @@ describe('handlePersistFunnelState', () => {
         ],
       }),
     );
-    await handlePersistFunnelState(c, OWNER_SESSION, inDb);
+    await handlePersistPipelineState(c, OWNER_SESSION, inDb);
     const res = readResponse(c.requestId);
     expect(res.frame.ok).toBe(false);
 
     const eventRows = getDb().prepare('SELECT gmail_msg_id FROM email_events').all() as Array<{ gmail_msg_id: string }>;
-    const outputRows = getDb().prepare('SELECT id FROM funnel_curator_output').all();
+    const outputRows = getDb().prepare('SELECT id FROM pipeline_scribe_output').all();
     expect(eventRows).toHaveLength(0);
     expect(outputRows).toHaveLength(0);
   });
 
   it('refuses with FORBIDDEN for sandbox sessions', async () => {
-    const c = actionContent('career_pilot.persist_funnel_state', makeValidPayload());
-    await handlePersistFunnelState(c, SANDBOX_SESSION, inDb);
+    const c = actionContent('career_pilot.persist_pipeline_state', makeValidPayload());
+    await handlePersistPipelineState(c, SANDBOX_SESSION, inDb);
     const res = readResponse(c.requestId);
     expect(res.frame.ok).toBe(false);
     if (res.frame.ok) throw new Error('unreachable');
@@ -497,24 +497,24 @@ describe('handlePersistFunnelState', () => {
 
   it('allows cheap_out=true with empty events array', async () => {
     const c = actionContent(
-      'career_pilot.persist_funnel_state',
+      'career_pilot.persist_pipeline_state',
       makeValidPayload({ new_email_events: [], narratives: [], attention: [], cheap_out: true }),
     );
-    await handlePersistFunnelState(c, OWNER_SESSION, inDb);
+    await handlePersistPipelineState(c, OWNER_SESSION, inDb);
     const res = readResponse(c.requestId);
     expect(res.frame.ok).toBe(true);
 
-    const outputRow = getDb().prepare('SELECT cheap_out FROM funnel_curator_output').get() as { cheap_out: number };
+    const outputRow = getDb().prepare('SELECT cheap_out FROM pipeline_scribe_output').get() as { cheap_out: number };
     expect(outputRow.cheap_out).toBe(1);
   });
 });
 
-// ── handleReadFunnelState ─────────────────────────────────────────────────
+// ── handleReadPipelineState ─────────────────────────────────────────────────
 
-describe('handleReadFunnelState', () => {
+describe('handleReadPipelineState', () => {
   it('returns state=null when no curator runs have happened yet', async () => {
-    const c = actionContent('career_pilot.read_funnel_state', {});
-    await handleReadFunnelState(c, OWNER_SESSION, inDb);
+    const c = actionContent('career_pilot.read_pipeline_state', {});
+    await handleReadPipelineState(c, OWNER_SESSION, inDb);
     const res = readResponse(c.requestId);
     expect(res.frame.ok).toBe(true);
     if (!res.frame.ok) throw new Error('unreachable');
@@ -522,22 +522,22 @@ describe('handleReadFunnelState', () => {
   });
 
   it('returns the most-recent run with JSON-parsed narratives/attention/suggestions', async () => {
-    const p1 = actionContent('career_pilot.persist_funnel_state', makeValidPayload());
-    await handlePersistFunnelState(p1, OWNER_SESSION, inDb);
+    const p1 = actionContent('career_pilot.persist_pipeline_state', makeValidPayload());
+    await handlePersistPipelineState(p1, OWNER_SESSION, inDb);
 
     await new Promise((r) => setTimeout(r, 10));
 
     const p2 = actionContent(
-      'career_pilot.persist_funnel_state',
+      'career_pilot.persist_pipeline_state',
       makeValidPayload({
         new_email_events: [],
         narratives: [{ company: 'Stripe', current_state: 'screen', timeline_excerpt: [] }],
       }),
     );
-    await handlePersistFunnelState(p2, OWNER_SESSION, inDb);
+    await handlePersistPipelineState(p2, OWNER_SESSION, inDb);
 
-    const c = actionContent('career_pilot.read_funnel_state', {});
-    await handleReadFunnelState(c, OWNER_SESSION, inDb);
+    const c = actionContent('career_pilot.read_pipeline_state', {});
+    await handleReadPipelineState(c, OWNER_SESSION, inDb);
     const res = readResponse(c.requestId);
     if (!res.frame.ok) throw new Error('unreachable');
     const state = (res.frame.data as { state: { narratives: Array<{ company: string }> } }).state;
@@ -546,8 +546,8 @@ describe('handleReadFunnelState', () => {
   });
 
   it('refuses with FORBIDDEN for sandbox sessions', async () => {
-    const c = actionContent('career_pilot.read_funnel_state', {});
-    await handleReadFunnelState(c, SANDBOX_SESSION, inDb);
+    const c = actionContent('career_pilot.read_pipeline_state', {});
+    await handleReadPipelineState(c, SANDBOX_SESSION, inDb);
     const res = readResponse(c.requestId);
     expect(res.frame.ok).toBe(false);
     if (res.frame.ok) throw new Error('unreachable');
@@ -605,7 +605,7 @@ describe('handleReadEmailEvents', () => {
   beforeEach(async () => {
     seedLinkedApplicationsAndLeads();
     const p = actionContent(
-      'career_pilot.persist_funnel_state',
+      'career_pilot.persist_pipeline_state',
       makeValidPayload({
         new_email_events: [
           {
@@ -638,7 +638,7 @@ describe('handleReadEmailEvents', () => {
         ],
       }),
     );
-    await handlePersistFunnelState(p, OWNER_SESSION, inDb);
+    await handlePersistPipelineState(p, OWNER_SESSION, inDb);
   });
 
   it('returns all events when no filter is passed', async () => {
@@ -692,9 +692,9 @@ describe('handleReadEmailEvents', () => {
 
 describe('handleFilterSeenEmailEvents', () => {
   async function seedClassified(gmailMsgId: string): Promise<void> {
-    await handlePersistFunnelState(
+    await handlePersistPipelineState(
       actionContent(
-        'career_pilot.persist_funnel_state',
+        'career_pilot.persist_pipeline_state',
         makeValidPayload({
           new_email_events: [
             { gmail_msg_id: gmailMsgId, thread_id: `thread-${gmailMsgId}`, classification: 'noise', confidence: 0.3 },
@@ -733,7 +733,7 @@ describe('handleFilterSeenEmailEvents', () => {
     await seedClassified('msg-seen-x');
     getDb()
       .prepare(
-        "INSERT OR REPLACE INTO preferences (key, value, updated_at) VALUES ('funnel_curator_skip_classified_messages', 'false', datetime('now'))",
+        "INSERT OR REPLACE INTO preferences (key, value, updated_at) VALUES ('pipeline_scribe_skip_classified_messages', 'false', datetime('now'))",
       )
       .run();
     const c = actionContent('career_pilot.filter_seen_email_events', { gmail_msg_ids: ['msg-seen-x'] });

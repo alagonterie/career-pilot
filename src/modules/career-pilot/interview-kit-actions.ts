@@ -3,8 +3,8 @@
  *
  *  - career_pilot.persist_interview_kit — the subagent-owned writer: materialize
  *    (or refresh) a per-interview kit as a native Google Doc in the career-account
- *    Drive, then UPSERT the interview_kits row. Mirrors the funnel-curator
- *    `persist_funnel_state` internal-writer pattern; NOT approval-gated (private,
+ *    Drive, then UPSERT the interview_kits row. Mirrors the pipeline-scribe
+ *    `persist_pipeline_state` internal-writer pattern; NOT approval-gated (private,
  *    reversible, no external recipient).
  *
  *  - archiveKitsForApplication / runKitCleanupSweep — host functions (no agent
@@ -20,7 +20,7 @@ import { getDb } from '../../db/connection.js';
 import { insertMessage } from '../../db/session-db.js';
 import { getConfig } from '../../get-config.js';
 import { log } from '../../log.js';
-import { upsertPublicFunnelView } from '../portal/public-funnel-view.js';
+import { upsertPublicPipelineView } from '../portal/public-pipeline-view.js';
 import { upsertPublicKitView } from '../portal/public-kit-view.js';
 import type { Session } from '../../types.js';
 
@@ -34,7 +34,7 @@ import {
   upsertInterviewKit,
 } from './interview-kit-store.js';
 
-// ── response writer (mirrors funnel-actions.ts) ──────────────────────────────
+// ── response writer (mirrors pipeline-actions.ts) ──────────────────────────────
 
 type ActionFrame =
   | { ok: true; data: Record<string, unknown> }
@@ -188,7 +188,7 @@ export async function handlePersistInterviewKit(
     // §24.65: refresh the public projections AFTER the response frame (same
     // best-effort discipline as every other writer — both functions never throw).
     await upsertPublicKitView(db, applicationId);
-    upsertPublicFunnelView(db, applicationId);
+    upsertPublicPipelineView(db, applicationId);
   } catch (err) {
     log.error('handlePersistInterviewKit failed', { err });
     writeResponse(inDb, requestId, {
@@ -237,7 +237,7 @@ export async function archiveKitsForApplication(db: Database.Database, applicati
     log.info('interview-kit: archived kits for application', { applicationId, count: archived });
     // §24.65: the archived status is public metadata — re-project.
     await upsertPublicKitView(db, applicationId);
-    upsertPublicFunnelView(db, applicationId);
+    upsertPublicPipelineView(db, applicationId);
   }
   return archived;
 }
@@ -264,7 +264,7 @@ export async function runKitCleanupSweep(db: Database.Database): Promise<{ archi
   // §24.65: re-project each touched application (archived status is public metadata).
   for (const appId of touchedApps) {
     await upsertPublicKitView(db, appId);
-    upsertPublicFunnelView(db, appId);
+    upsertPublicPipelineView(db, appId);
   }
   log.info('interview-kit cleanup sweep', { archived, threshold_days: staleDays });
   return { archived };

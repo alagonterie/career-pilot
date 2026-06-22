@@ -1,5 +1,5 @@
 /**
- * Test fixture loader for the funnel-curator subsystem (Phase 3.2 §24.9).
+ * Test fixture loader for the pipeline-scribe subsystem (Phase 3.2 §24.9).
  *
  * Reads JSON/JSONL fixtures from `tests/fixtures/gmail/` and
  * `tests/fixtures/calendar/`, normalizes their relative-date markers
@@ -8,7 +8,7 @@
  * return from a real Google API call.
  *
  * Lives under src/ (not scripts/) so it's typechecked by `tsc --noEmit`
- * and importable by `funnel-actions.ts` via the `GMAIL_FIXTURE` /
+ * and importable by `pipeline-actions.ts` via the `GMAIL_FIXTURE` /
  * `CALENDAR_FIXTURE` env-var test seam.
  *
  * Fixture format (Gmail):
@@ -28,7 +28,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import type { ParsedCalendarAttendee, ParsedCalendarEvent, ParsedGmailMessage } from './funnel-types.js';
+import type { ParsedCalendarAttendee, ParsedCalendarEvent, ParsedGmailMessage } from './pipeline-types.js';
 
 interface RelativeDate {
   relative: {

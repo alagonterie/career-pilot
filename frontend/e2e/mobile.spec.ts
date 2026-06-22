@@ -7,7 +7,7 @@ import { expect, test, type Page } from '@playwright/test'
 // (`--grep-invert @visual`), like the desktop ones — pixel baselines are
 // OS-specific. The phone-primary contract: every page stacks with no horizontal
 // scroll, the nav collapses to a hamburger, /dashboard leads with the trace, the
-// funnel board stacks, and architecture nodes stay tappable.
+// pipeline board stacks, and architecture nodes stay tappable.
 
 const ROUTES = [
   '/',
@@ -33,7 +33,7 @@ async function gotoStable(page: Page, path: string): Promise<void> {
   } else if (path === '/dashboard') {
     await expect(page.getByTestId('trace-stream')).toBeVisible()
   } else if (path === '/pipeline') {
-    await expect(page.getByTestId('funnel-board')).toBeVisible()
+    await expect(page.getByTestId('pipeline-board')).toBeVisible()
   } else if (path.startsWith('/kit')) {
     await expect(page.getByTestId('kit-masthead')).toBeVisible()
   } else {
@@ -128,11 +128,11 @@ test('/dashboard leads with the trace stream on mobile (not the stat tiles)', as
   expect(trace!.y).toBeLessThan(stats!.y)
 })
 
-test('/pipeline stacks the funnel board into a single column on mobile', async ({ page }) => {
+test('/pipeline stacks the pipeline board into a single column on mobile', async ({ page }) => {
   await page.goto('/pipeline')
-  await expect(page.getByTestId('funnel-board')).toBeVisible()
-  const applied = await page.getByTestId('funnel-col-applied').boundingBox()
-  const offer = await page.getByTestId('funnel-col-offer').boundingBox()
+  await expect(page.getByTestId('pipeline-board')).toBeVisible()
+  const applied = await page.getByTestId('pipeline-col-applied').boundingBox()
+  const offer = await page.getByTestId('pipeline-col-offer').boundingBox()
   // Single column → same left edge, stacked top-to-bottom.
   expect(Math.abs(applied!.x - offer!.x)).toBeLessThan(2)
   expect(offer!.y).toBeGreaterThan(applied!.y)
@@ -304,12 +304,12 @@ test('mobile nav menu (open) matches visual baseline', { tag: '@visual' }, async
 
 test('mobile pipeline matches visual baseline', { tag: '@visual' }, async ({ page }) => {
   await page.goto('/pipeline')
-  await expect(page.getByTestId('funnel-board')).toBeVisible()
+  await expect(page.getByTestId('pipeline-board')).toBeVisible()
   await expect(page.getByText('Wayne Enterprises')).toBeVisible()
   await expect(page).toHaveScreenshot('mobile-pipeline.png', {
     animations: 'disabled',
     fullPage: true,
-    mask: [page.getByTestId('funnel-card-age'), page.getByTestId('stat-value')],
+    mask: [page.getByTestId('pipeline-card-age'), page.getByTestId('stat-value')],
   })
 })
 
@@ -328,11 +328,11 @@ test('mobile home concluded retrospective matches visual baseline', { tag: '@vis
 test('mobile pipeline concluded retrospective matches visual baseline', { tag: '@visual' }, async ({ page }) => {
   await page.goto('/pipeline?__lifecycle=concluded')
   await expect(page.getByTestId('concluded-banner')).toBeVisible()
-  await expect(page.getByTestId('funnel-board')).toBeVisible()
+  await expect(page.getByTestId('pipeline-board')).toBeVisible()
   await expect(page).toHaveScreenshot('mobile-pipeline-concluded.png', {
     animations: 'disabled',
     fullPage: true,
-    mask: [page.getByTestId('funnel-card-age'), page.getByTestId('stat-value')],
+    mask: [page.getByTestId('pipeline-card-age'), page.getByTestId('stat-value')],
   })
 })
 
@@ -392,7 +392,7 @@ test('mobile live matches visual baseline', { tag: '@visual' }, async ({ page })
   await page.goto('/dashboard')
   await expect(page.getByTestId('trace-stream')).toBeVisible()
   await expect(page.getByTestId('trace-stream').getByText('research-company')).toBeVisible()
-  await expect(page.getByTestId('funnel-compact-reveal')).toContainText('Wayne Enterprises')
+  await expect(page.getByTestId('pipeline-compact-reveal')).toContainText('Wayne Enterprises')
   await expect(page).toHaveScreenshot('mobile-live.png', {
     animations: 'disabled',
     fullPage: true,

@@ -68,7 +68,7 @@ export const SANDBOX_DISALLOWED_TOOLS = [
   // career-pilot.ts
   'mcp__nanoclaw__update_profile_field',
   'mcp__nanoclaw__update_application',
-  'mcp__nanoclaw__record_funnel_event',
+  'mcp__nanoclaw__record_pipeline_event',
   'mcp__nanoclaw__get_application',
   'mcp__nanoclaw__list_applications',
   'mcp__nanoclaw__record_progress',
@@ -82,11 +82,11 @@ export const SANDBOX_DISALLOWED_TOOLS = [
   'mcp__nanoclaw__rank_leads',
   'mcp__nanoclaw__query_killer_matches',
   'mcp__nanoclaw__close_stale_leads',
-  // funnel-curator.ts
+  // pipeline-scribe.ts
   'mcp__nanoclaw__query_gmail_delta',
   'mcp__nanoclaw__query_calendar_delta',
-  'mcp__nanoclaw__persist_funnel_state',
-  'mcp__nanoclaw__read_funnel_state',
+  'mcp__nanoclaw__persist_pipeline_state',
+  'mcp__nanoclaw__read_pipeline_state',
   'mcp__nanoclaw__read_email_events',
 ];
 

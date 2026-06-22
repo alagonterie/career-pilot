@@ -92,13 +92,13 @@
  *                           the agent to move it to PHONE_SCREEN and log
  *                           the event with PII-bearing context (recruiter
  *                           email + $ amount). Phase 4 §24.10 Sub-milestone
- *                           4.1 live validation: confirms record_funnel_
+ *                           4.1 live validation: confirms record_pipeline_
  *                           event triggers the public mirror writer, the
  *                           audit row uses the obfuscated_label, Pass 1
  *                           redacts the email + amount, and Pass 2 redacts
  *                           the real company name. ~$0.05/run with Claude.
  *   --flow=resanitize       Seeded profile + an obfuscated APPLIED Acme Corp
- *                           application, a funnel_event naming it, and a
+ *                           application, a pipeline_event naming it, and a
  *                           pre-existing REDACTED public_audit_trail row
  *                           (raw-SQL seed, no LLM). Phase 4 §24.11 Sub-
  *                           milestone 4.3 live wrap-up: asks the agent to
@@ -184,8 +184,8 @@ type Flow =
   | 'scrape-jobs'
   | 'daily-briefing'
   | 'killer-match'
-  | 'funnel-curator-consumer'
-  | 'funnel-curator'
+  | 'pipeline-scribe-consumer'
+  | 'pipeline-scribe'
   | 'close-detection'
   | 'mirror-audit'
   | 'resanitize';
@@ -201,8 +201,8 @@ const FLOWS: ReadonlySet<Flow> = new Set([
   'scrape-jobs',
   'daily-briefing',
   'killer-match',
-  'funnel-curator-consumer',
-  'funnel-curator',
+  'pipeline-scribe-consumer',
+  'pipeline-scribe',
   'close-detection',
   'mirror-audit',
   'resanitize',
@@ -218,8 +218,8 @@ const FLOWS_NEEDING_SEED: ReadonlySet<Flow> = new Set([
   'scrape-jobs',
   'daily-briefing',
   'killer-match',
-  'funnel-curator-consumer',
-  'funnel-curator',
+  'pipeline-scribe-consumer',
+  'pipeline-scribe',
   'close-detection',
   'mirror-audit',
   'resanitize',
@@ -2492,10 +2492,10 @@ async function runKillerMatch(): Promise<void> {
   // fire would block the harness waiting for a <message> that never comes.
 }
 
-// ── funnel-curator-consumer flow (§24.9) ──────────────────────────────────
+// ── pipeline-scribe-consumer flow (§24.9) ──────────────────────────────────
 
-function seedFakeFunnelState(): { applicationId: string; runId: string } {
-  // Seeds a complete funnel-curator output as if the curator subagent had
+function seedFakePipelineState(): { applicationId: string; runId: string } {
+  // Seeds a complete pipeline-scribe output as if the curator subagent had
   // just run. The orchestrator's on-demand pattern reads this cached state
   // when the candidate asks "what's the state of <company>?" — no curator
   // re-spawn, no LLM expense for the consumer flow.
@@ -2601,7 +2601,7 @@ function seedFakeFunnelState(): { applicationId: string; runId: string } {
     }
 
     db.prepare(
-      `INSERT INTO funnel_curator_output (
+      `INSERT INTO pipeline_scribe_output (
         id, run_at, gmail_history_id, calendar_sync_tokens,
         narratives_json, attention_json, suggestions_json,
         cheap_out, cost_usd
@@ -2637,71 +2637,71 @@ function seedFakeFunnelState(): { applicationId: string; runId: string } {
       suggestions: JSON.stringify([]),
     });
 
-    ok(`seeded funnel-curator state: application=${applicationId}, lead=${leadId}, 4 email_events, run=${runId}`);
+    ok(`seeded pipeline-scribe state: application=${applicationId}, lead=${leadId}, 4 email_events, run=${runId}`);
     return { applicationId, runId };
   } finally {
     db.close();
   }
 }
 
-async function runFunnelCuratorConsumer(): Promise<void> {
-  header('Flow: funnel-curator-consumer');
+async function runPipelineScribeConsumer(): Promise<void> {
+  header('Flow: pipeline-scribe-consumer');
   // Phase 3.2 §24.9 DoD #9.
   //
-  // Validates the consumer side of the funnel-curator subsystem: the
+  // Validates the consumer side of the pipeline-scribe subsystem: the
   // orchestrator's on-demand "what's the state of X?" pattern reads from
-  // the cached funnel_curator_output read-model rather than re-spawning
+  // the cached pipeline_scribe_output read-model rather than re-spawning
   // the curator. We seed the cached state directly — no curator subagent
   // dispatch, no LLM expense beyond the orchestrator's own answer turn.
   //
   // This is the cheap layer (Layer 3 from the spec): mechanics-of-
-  // orchestration, suitable for ollama. The full funnel-curator dispatch
+  // orchestration, suitable for ollama. The full pipeline-scribe dispatch
   // path (Layer 4 — fixture-driven curator + Claude) is a separate flow.
-  const { applicationId } = seedFakeFunnelState();
+  const { applicationId } = seedFakePipelineState();
 
   const reply = await chatTurn("What's the state of my Acme application?", 300_000);
 
-  // ── Assertion 1: funnel-curator bootstrap fired ──
+  // ── Assertion 1: pipeline-scribe bootstrap fired ──
   const inboundPath = findCareerPilotInboundDb();
   if (!inboundPath) fail('no career-pilot session inbound.db found under data/v2-sessions/');
   const inDb = new Database(inboundPath, { readonly: true });
   try {
     const row = inDb
-      .prepare("SELECT id, kind, recurrence, content FROM messages_in WHERE series_id = 'funnel-curator' LIMIT 1")
+      .prepare("SELECT id, kind, recurrence, content FROM messages_in WHERE series_id = 'pipeline-scribe' LIMIT 1")
       .get() as { id: string; kind: string; recurrence: string; content: string } | undefined;
     if (!row) {
       fail(
-        'bootstrap did not insert a funnel-curator task. ' +
-          "Expected messages_in row with series_id='funnel-curator' kind='task'.",
+        'bootstrap did not insert a pipeline-scribe task. ' +
+          "Expected messages_in row with series_id='pipeline-scribe' kind='task'.",
       );
     }
-    if (row.kind !== 'task') fail(`funnel-curator row has kind='${row.kind}', expected 'task'`);
-    if (!row.recurrence) fail('funnel-curator row has null recurrence');
+    if (row.kind !== 'task') fail(`pipeline-scribe row has kind='${row.kind}', expected 'task'`);
+    if (!row.recurrence) fail('pipeline-scribe row has null recurrence');
     const content = JSON.parse(row.content) as { prompt: string };
     if (!content.prompt?.includes('pipeline-scribe')) {
-      fail(`funnel-curator row content.prompt missing trigger sentinel: ${content.prompt}`);
+      fail(`pipeline-scribe row content.prompt missing trigger sentinel: ${content.prompt}`);
     }
-    ok(`bootstrap inserted task: series_id=funnel-curator recurrence='${row.recurrence}'`);
+    ok(`bootstrap inserted task: series_id=pipeline-scribe recurrence='${row.recurrence}'`);
   } finally {
     inDb.close();
   }
 
-  // ── Assertion 2: orchestrator called read_funnel_state ──
+  // ── Assertion 2: orchestrator called read_pipeline_state ──
   const jsonl = findLatestSessionJsonl();
   if (!jsonl) fail('no session JSONL found under data/v2-sessions/');
   const allCalls = listAllToolCalls(jsonl);
   const readCalls = allCalls.filter(
-    (c) => c.startsWith('mcp__nanoclaw__read_funnel_state') || c.startsWith('read_funnel_state'),
+    (c) => c.startsWith('mcp__nanoclaw__read_pipeline_state') || c.startsWith('read_pipeline_state'),
   );
   if (readCalls.length === 0) {
     console.error('  --- all orchestrator tool calls ---');
     for (const c of allCalls) console.error(`  ${c}`);
     fail(
-      'orchestrator did not call read_funnel_state. The on-demand "state of X?" ' +
+      'orchestrator did not call read_pipeline_state. The on-demand "state of X?" ' +
         'pattern must read from the cached read-model rather than the lead pool.',
     );
   }
-  ok(`orchestrator called read_funnel_state ${readCalls.length} time(s)`);
+  ok(`orchestrator called read_pipeline_state ${readCalls.length} time(s)`);
 
   // ── Assertion 3: reply references the seeded narrative ──
   const replyLower = reply.toLowerCase();
@@ -2733,14 +2733,14 @@ async function runFunnelCuratorConsumer(): Promise<void> {
 
   // ── Assertion 4: application id present in the narrative read ──
   // (Sanity check on the seeded state, not the reply — we already verified
-  // read_funnel_state was called.)
+  // read_pipeline_state was called.)
   const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
   const centralDb = new Database(dbPath, { readonly: true });
   try {
     const outputRow = centralDb
-      .prepare("SELECT narratives_json FROM funnel_curator_output WHERE id LIKE 'fcr-seed-%' LIMIT 1")
+      .prepare("SELECT narratives_json FROM pipeline_scribe_output WHERE id LIKE 'fcr-seed-%' LIMIT 1")
       .get() as { narratives_json: string } | undefined;
-    if (!outputRow) fail('seeded funnel_curator_output row not found post-run');
+    if (!outputRow) fail('seeded pipeline_scribe_output row not found post-run');
     const narratives = JSON.parse(outputRow.narratives_json) as Array<{ application_id: string }>;
     const matched = narratives.find((n) => n.application_id === applicationId);
     if (!matched) fail(`narrative for ${applicationId} not in seeded output`);
@@ -2750,9 +2750,9 @@ async function runFunnelCuratorConsumer(): Promise<void> {
   }
 }
 
-// ── funnel-curator flow (§24.9 fixture-driven curator) ───────────────────
+// ── pipeline-scribe flow (§24.9 fixture-driven curator) ───────────────────
 
-function seedFunnelCuratorBase(): { applicationId: string; leadId: string } {
+function seedPipelineScribeBase(): { applicationId: string; leadId: string } {
   // Seeds an existing application + lead for "Acme" so the curator can link
   // the fixture-driven inbox messages back to known DB rows. Without these,
   // the curator would emit `suggestions[].action='create_lead'` — valid
@@ -2796,14 +2796,14 @@ function seedFunnelCuratorBase(): { applicationId: string; leadId: string } {
   }
 }
 
-async function runFunnelCurator(): Promise<void> {
-  header('Flow: funnel-curator');
+async function runPipelineScribe(): Promise<void> {
+  header('Flow: pipeline-scribe');
   // Phase 3.2 §24.9 DoD #10.
   //
-  // Validates the full funnel-curator dispatch path: scheduled trigger →
+  // Validates the full pipeline-scribe dispatch path: scheduled trigger →
   // subagent spawn → fixture-driven Gmail + Calendar reads → classify +
-  // link to seeded DB rows → persist_funnel_state writes email_events +
-  // funnel_curator_output.
+  // link to seeded DB rows → persist_pipeline_state writes email_events +
+  // pipeline_scribe_output.
   //
   // Requires GMAIL_FIXTURE and CALENDAR_FIXTURE env vars (set via the
   // --gmail-fixture / --calendar-fixture CLI args). Requires Claude
@@ -2816,12 +2816,12 @@ async function runFunnelCurator(): Promise<void> {
   if (!realApiMode) {
     if (!process.env.GMAIL_FIXTURE) {
       fail(
-        'funnel-curator flow with --calendar-fixture set also requires --gmail-fixture (or omit both for real mode)',
+        'pipeline-scribe flow with --calendar-fixture set also requires --gmail-fixture (or omit both for real mode)',
       );
     }
     if (!process.env.CALENDAR_FIXTURE) {
       fail(
-        'funnel-curator flow with --gmail-fixture set also requires --calendar-fixture (or omit both for real mode)',
+        'pipeline-scribe flow with --gmail-fixture set also requires --calendar-fixture (or omit both for real mode)',
       );
     }
   } else {
@@ -2830,12 +2830,12 @@ async function runFunnelCurator(): Promise<void> {
     );
   }
 
-  const { applicationId, leadId } = seedFunnelCuratorBase();
+  const { applicationId, leadId } = seedPipelineScribeBase();
 
   // Real-mode runs may legitimately emit <internal> only when the dev
   // inbox contains nothing job-relevant — chatTurn would hang waiting
   // for a <message> that the curator (correctly) declined to send.
-  // Detect this case via the persisted funnel_curator_output row.
+  // Detect this case via the persisted pipeline_scribe_output row.
   let reply = '';
   try {
     reply = await chatTurn('[scheduled trigger: pipeline-scribe]', realApiMode ? 120_000 : 600_000);
@@ -2845,7 +2845,7 @@ async function runFunnelCurator(): Promise<void> {
     const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
     const checkDb = new Database(dbPath, { readonly: true });
     try {
-      const persisted = checkDb.prepare('SELECT COUNT(*) AS n FROM funnel_curator_output').get() as { n: number };
+      const persisted = checkDb.prepare('SELECT COUNT(*) AS n FROM pipeline_scribe_output').get() as { n: number };
       if (persisted.n > 0) {
         console.log(
           `  (chatTurn timed out, but curator persisted ${persisted.n} run(s) — treating as silent completion)`,
@@ -2866,10 +2866,10 @@ async function runFunnelCurator(): Promise<void> {
   const inDb = new Database(inboundPath, { readonly: true });
   try {
     const row = inDb
-      .prepare("SELECT id, kind, recurrence, content FROM messages_in WHERE series_id = 'funnel-curator' LIMIT 1")
+      .prepare("SELECT id, kind, recurrence, content FROM messages_in WHERE series_id = 'pipeline-scribe' LIMIT 1")
       .get() as { id: string; kind: string; recurrence: string; content: string } | undefined;
-    if (!row) fail('bootstrap did not insert a funnel-curator task');
-    if (row.kind !== 'task') fail(`funnel-curator row has kind='${row.kind}', expected 'task'`);
+    if (!row) fail('bootstrap did not insert a pipeline-scribe task');
+    if (row.kind !== 'task') fail(`pipeline-scribe row has kind='${row.kind}', expected 'task'`);
     ok(`bootstrap inserted task: recurrence='${row.recurrence}'`);
   } finally {
     inDb.close();
@@ -2887,7 +2887,7 @@ async function runFunnelCurator(): Promise<void> {
   }
   ok('orchestrator dispatched pipeline-scribe subagent');
 
-  // ── Assertion 3: subagent called query_gmail_delta + persist_funnel_state ──
+  // ── Assertion 3: subagent called query_gmail_delta + persist_pipeline_state ──
   const subagentJsonl = findSubagentJsonl(jsonl);
   if (!subagentJsonl) fail('no subagent JSONL found (Task block exists but no sidechain log written)');
   const subagentCalls = listAllToolCalls(subagentJsonl);
@@ -2897,35 +2897,35 @@ async function runFunnelCurator(): Promise<void> {
   if (gmailCalls.length === 0) {
     console.error('  --- subagent tool calls ---');
     for (const c of subagentCalls) console.error(`  ${c}`);
-    fail('funnel-curator subagent did not call query_gmail_delta');
+    fail('pipeline-scribe subagent did not call query_gmail_delta');
   }
   ok(`subagent called query_gmail_delta ${gmailCalls.length} time(s)`);
 
   const persistCalls = subagentCalls.filter(
-    (c) => c.startsWith('mcp__nanoclaw__persist_funnel_state') || c.startsWith('persist_funnel_state'),
+    (c) => c.startsWith('mcp__nanoclaw__persist_pipeline_state') || c.startsWith('persist_pipeline_state'),
   );
   if (persistCalls.length === 0) {
     console.error('  --- subagent tool calls ---');
     for (const c of subagentCalls) console.error(`  ${c}`);
-    fail('funnel-curator subagent did not call persist_funnel_state');
+    fail('pipeline-scribe subagent did not call persist_pipeline_state');
   }
   if (persistCalls.length > 1) {
     fail(
-      `funnel-curator subagent called persist_funnel_state ${persistCalls.length} times; should be exactly once per run`,
+      `pipeline-scribe subagent called persist_pipeline_state ${persistCalls.length} times; should be exactly once per run`,
     );
   }
-  ok('subagent called persist_funnel_state exactly once');
+  ok('subagent called persist_pipeline_state exactly once');
 
-  // ── Assertion 4: funnel_curator_output written ──
+  // ── Assertion 4: pipeline_scribe_output written ──
   const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
   const centralDb = new Database(dbPath, { readonly: true });
   try {
     const outputRow = centralDb
       .prepare(
-        'SELECT id, narratives_json, attention_json, cheap_out FROM funnel_curator_output ORDER BY run_at DESC LIMIT 1',
+        'SELECT id, narratives_json, attention_json, cheap_out FROM pipeline_scribe_output ORDER BY run_at DESC LIMIT 1',
       )
       .get() as { id: string; narratives_json: string; attention_json: string; cheap_out: number } | undefined;
-    if (!outputRow) fail('no funnel_curator_output row was written by the curator');
+    if (!outputRow) fail('no pipeline_scribe_output row was written by the curator');
     if (outputRow.cheap_out === 1) {
       fail('curator emitted cheap_out=true despite non-empty Gmail + Calendar deltas');
     }
@@ -2939,7 +2939,7 @@ async function runFunnelCurator(): Promise<void> {
       // from 0 to a few welcome emails. We're verifying plumbing, not
       // content. Just check the curator ran to completion with valid
       // output shape.
-      ok(`funnel_curator_output written: ${narratives.length} narrative(s) [real-API mode]`);
+      ok(`pipeline_scribe_output written: ${narratives.length} narrative(s) [real-API mode]`);
 
       const eventRows = centralDb
         .prepare('SELECT gmail_msg_id, classification FROM email_events ORDER BY gmail_msg_id')
@@ -2972,7 +2972,7 @@ async function runFunnelCurator(): Promise<void> {
       } else {
         ok(`Acme narrative correctly linked to application_id=${applicationId}`);
       }
-      ok(`funnel_curator_output written: ${narratives.length} narrative(s)`);
+      ok(`pipeline_scribe_output written: ${narratives.length} narrative(s)`);
 
       const eventRows = centralDb
         .prepare('SELECT gmail_msg_id, classification FROM email_events ORDER BY gmail_msg_id')
@@ -3241,7 +3241,7 @@ async function runMirrorAudit(): Promise<void> {
   header('Flow: mirror-audit');
   // Phase 4 §24.10 Sub-milestone 4.1 live validation.
   //
-  // Confirms that record_funnel_event, in a real container session,
+  // Confirms that record_pipeline_event, in a real container session,
   // triggers the public-mirror writer and produces a sanitized row in
   // public_audit_trail. Unit + integration tests already exercise the
   // sanitizer and mirror in isolation; this flow proves the end-to-end
@@ -3251,12 +3251,12 @@ async function runMirrorAudit(): Promise<void> {
   // Seed: an APPLIED application for "Acme Corp" with public_state=
   // 'obfuscated' and obfuscated_label='fintech-a'. The prompt nudges
   // the agent to (a) bump status to PHONE_SCREEN via update_application
-  // and (b) log a record_funnel_event whose payload naturally embeds an
+  // and (b) log a record_pipeline_event whose payload naturally embeds an
   // email + monetary amount + the real company name.
   //
   // Hard assertions:
-  //   1. ≥1 funnel_events row for the seeded app
-  //   2. ≥1 public_audit_trail row with category='funnel' and
+  //   1. ≥1 pipeline_events row for the seeded app
+  //   2. ≥1 public_audit_trail row with category='pipeline' and
   //      application_ref='fintech-a' (mirror fired AND obfuscation correct)
   //   3. summary does NOT leak 'jane@acme.com' (Pass 1 email redaction)
   //   4. summary does NOT leak 'Acme Corp' (Pass 2 redaction OR agent
@@ -3299,16 +3299,16 @@ async function runMirrorAudit(): Promise<void> {
   );
   if (reply.length === 0) fail('reply was empty');
 
-  // WAL surface lag — both the funnel_events INSERT and the mirror
+  // WAL surface lag — both the pipeline_events INSERT and the mirror
   // INSERT happen on the host's write connection; give the readonly
   // assertion connection a beat to see them.
   await sleep(750);
 
   const db = new Database(dbPath, { readonly: true });
   try {
-    // 1. Private funnel_events row exists.
+    // 1. Private pipeline_events row exists.
     const events = db
-      .prepare('SELECT id, kind, from_status, to_status, payload FROM funnel_events WHERE application_id = ?')
+      .prepare('SELECT id, kind, from_status, to_status, payload FROM pipeline_events WHERE application_id = ?')
       .all(appId) as Array<{
       id: string;
       kind: string;
@@ -3322,15 +3322,15 @@ async function runMirrorAudit(): Promise<void> {
         console.error('  --- orchestrator tool_use calls ---');
         for (const c of listAllToolCalls(jsonl)) console.error(`  ${c}`);
       }
-      fail('no funnel_events row written — agent did not call record_funnel_event');
+      fail('no pipeline_events row written — agent did not call record_pipeline_event');
     }
-    ok(`funnel_events row(s) written: ${events.length} (kind=${events[0].kind})`);
+    ok(`pipeline_events row(s) written: ${events.length} (kind=${events[0].kind})`);
 
     // 2. Mirror fired — public_audit_trail row with our obfuscated_label.
     const auditRows = db
       .prepare(
         'SELECT application_ref, summary, category, details_json ' +
-          "FROM public_audit_trail WHERE category = 'funnel'",
+          "FROM public_audit_trail WHERE category = 'pipeline'",
       )
       .all() as Array<{
       application_ref: string | null;
@@ -3340,13 +3340,13 @@ async function runMirrorAudit(): Promise<void> {
     }>;
     if (auditRows.length === 0) {
       fail(
-        'no public_audit_trail (category=funnel) rows written — ' +
-          'mirrorFunnelEvent either did not fire OR was suppressed by ' +
+        'no public_audit_trail (category=pipeline) rows written — ' +
+          'mirrorPipelineEvent either did not fire OR was suppressed by ' +
           'the defense-in-depth scan (check host logs for ' +
-          '"mirrorFunnelEvent: dropped row").',
+          '"mirrorPipelineEvent: dropped row").',
       );
     }
-    ok(`public_audit_trail funnel-category row(s) written: ${auditRows.length}`);
+    ok(`public_audit_trail pipeline-category row(s) written: ${auditRows.length}`);
 
     const ours = auditRows.find((r) => r.application_ref === 'fintech-a');
     if (!ours) {
@@ -3431,9 +3431,9 @@ async function runResanitize(): Promise<void> {
   // integration tested; this proves the wire from a live agent turn.
   //
   // Setup is deterministic (raw SQL, no LLM): seed an obfuscated APPLIED
-  // application + a funnel_event whose payload names the company, plus a
+  // application + a pipeline_event whose payload names the company, plus a
   // pre-existing REDACTED public_audit_trail row linked to that event
-  // (source_funnel_event_id). The single host turn asks the agent to flip
+  // (source_pipeline_event_id). The single host turn asks the agent to flip
   // the application to public; after, the audit row must show the real
   // name and the seed row must be gone (rewritten, not appended).
   //
@@ -3460,7 +3460,7 @@ async function runResanitize(): Promise<void> {
       // once the app is public.
       seedDb
         .prepare(
-          `INSERT INTO funnel_events
+          `INSERT INTO pipeline_events
              (id, application_id, kind, from_status, to_status, payload, source, ts)
            VALUES (?, ?, 'recruiter_email', NULL, NULL, ?, 'agent', ?)`,
         )
@@ -3471,13 +3471,13 @@ async function runResanitize(): Promise<void> {
       seedDb
         .prepare(
           `INSERT INTO public_audit_trail
-             (id, ts, category, application_ref, summary, details_json, source_funnel_event_id)
-           VALUES (?, ?, 'funnel', 'fintech-a',
+             (id, ts, category, application_ref, summary, details_json, source_pipeline_event_id)
+           VALUES (?, ?, 'pipeline', 'fintech-a',
               'recruiter_email — [REDACTED:fintech-a] sent [AMOUNT_REDACTED] offer ([EMAIL_REDACTED])',
               '{}', ?)`,
         )
         .run(seedAuditId, now, eventId);
-      ok('seeded obfuscated Acme Corp + funnel_event + redacted audit row');
+      ok('seeded obfuscated Acme Corp + pipeline_event + redacted audit row');
     } finally {
       seedDb.close();
     }
@@ -3538,11 +3538,11 @@ async function runResanitize(): Promise<void> {
     }
     ok('original redacted audit row was deleted (rewrite, not append)');
 
-    // 3. The funnel-category rows for this app now show the REAL name.
+    // 3. The pipeline-category rows for this app now show the REAL name.
     const rows = db
       .prepare(
         'SELECT application_ref, summary FROM public_audit_trail ' +
-          "WHERE category = 'funnel' AND source_funnel_event_id = ?",
+          "WHERE category = 'pipeline' AND source_pipeline_event_id = ?",
       )
       .all(eventId) as Array<{ application_ref: string; summary: string }>;
     if (rows.length === 0) {
@@ -4029,7 +4029,7 @@ async function main(): Promise<void> {
   preflight(args.llmProvider);
 
   // Propagate fixture selections to the host process env BEFORE startHost
-  // spawns it (the host inherits process.env). The funnel-actions
+  // spawns it (the host inherits process.env). The pipeline-actions
   // GMAIL_FIXTURE / CALENDAR_FIXTURE seam reads these to swap real Google
   // API calls for fixture loads.
   if (args.gmailFixture) {
@@ -4067,8 +4067,8 @@ async function main(): Promise<void> {
       'scrape-jobs': runScrapeJobs,
       'daily-briefing': runDailyBriefing,
       'killer-match': runKillerMatch,
-      'funnel-curator-consumer': runFunnelCuratorConsumer,
-      'funnel-curator': runFunnelCurator,
+      'pipeline-scribe-consumer': runPipelineScribeConsumer,
+      'pipeline-scribe': runPipelineScribe,
       'close-detection': runCloseDetection,
       'mirror-audit': runMirrorAudit,
       resanitize: runResanitize,

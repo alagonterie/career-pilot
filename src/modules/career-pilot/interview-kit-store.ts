@@ -6,7 +6,7 @@
  *
  * The `interview_kits` table tracks the per-interview kit Google Docs the host
  * materializes in the career-account Drive: one row per (application_id, round),
- * surfaced later via `drive_url` (joined into the funnel read-model) and archived
+ * surfaced later via `drive_url` (joined into the pipeline read-model) and archived
  * on terminal-transition or by the backstop sweep.
  */
 import type Database from 'better-sqlite3';
@@ -156,7 +156,7 @@ export function markKitArchived(db: Database.Database, kitId: string, archivedAt
 
 /**
  * Newest ACTIVE kit `drive_url` per application id, restricted to `applicationIds`
- * — feeds the `read_funnel_state` join so the orchestrator can surface the link.
+ * — feeds the `read_pipeline_state` join so the orchestrator can surface the link.
  * Returns a Map keyed by application_id. An empty input returns an empty Map.
  */
 export function getActiveKitUrlsByApplication(db: Database.Database, applicationIds: string[]): Map<string, string> {

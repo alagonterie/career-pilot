@@ -22,7 +22,7 @@ function Fact({ label, value }: { label: string; value: string }) {
 
 /**
  * The card side-panel (PORTAL §5.4 click-through). Renders from the
- * `/api/funnel` fields available today — the anonymized state/role/stage facts,
+ * `/api/pipeline` fields available today — the anonymized state/role/stage facts,
  * the win-confidence heuristic, and the published learning when present. The
  * richer per-application timeline + curator narrative are deferred (STRATEGY
  * §24.27). An accessible modal dialog via the shared `useDialog` contract
@@ -62,13 +62,13 @@ export function DetailPanel({ app, onClose }: { app: PipelineApplication | null;
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="funnel-detail-title"
-        data-testid="funnel-detail"
+        aria-labelledby="pipeline-detail-title"
+        data-testid="pipeline-detail"
         className="relative z-10 flex h-full w-full max-w-md flex-col gap-6 overflow-y-auto overscroll-contain border-l border-border bg-card p-6 shadow-xl focus:outline-none"
       >
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <h2 id="funnel-detail-title" className="truncate font-mono text-lg font-semibold text-foreground">
+            <h2 id="pipeline-detail-title" className="truncate font-mono text-lg font-semibold text-foreground">
               <CompanyHandle app={app} />
             </h2>
             {app.role_title ? <p className="mt-1 text-sm text-muted-foreground">{app.role_title}</p> : null}

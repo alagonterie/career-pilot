@@ -8,7 +8,7 @@
  *
  * Sub-milestone 5.1 (STRATEGY.md §24.15) — read-only endpoints over the
  * already-built public tables:
- *   GET /api/funnel          public_funnel_view + read-time-computed days + stage_counts
+ *   GET /api/pipeline          public_pipeline_view + read-time-computed days + stage_counts
  *   GET /api/activity        public_audit_trail, paginated by the monotonic seq cursor
  *   GET /api/system-status   live_mode / pause_state / pause_reason / backend
  *
@@ -159,7 +159,7 @@ function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
 
 // ── route handlers ───────────────────────────────────────────────────────
 
-interface FunnelViewRow {
+interface PipelineViewRow {
   application_id: string;
   application_ref: string;
   public_state: string;
@@ -176,7 +176,7 @@ interface FunnelViewRow {
   kits_json: string | null;
 }
 
-/** Parse a public_funnel_view kits_json column into the API's interview_kits array. */
+/** Parse a public_pipeline_view kits_json column into the API's interview_kits array. */
 function parseKitsJson(raw: string | null): unknown[] {
   if (!raw) return [];
   try {
@@ -207,15 +207,15 @@ function parseLearnings(learningsJson: string | null, publishedLearning: string 
   return [];
 }
 
-function handleFunnel(res: http.ServerResponse, cors: Record<string, string>): void {
+function handlePipeline(res: http.ServerResponse, cors: Record<string, string>): void {
   const rows = getDb()
     .prepare(
       `SELECT application_id, application_ref, public_state, role_title, status, stage,
               applied_at, stage_entered_at, last_activity_at, win_confidence,
               win_confidence_rationale, published_learning, learnings_json, kits_json
-         FROM public_funnel_view`,
+         FROM public_pipeline_view`,
     )
-    .all() as FunnelViewRow[];
+    .all() as PipelineViewRow[];
 
   const now = Date.now();
   const applications = rows.map(({ kits_json, learnings_json, ...r }) => ({
@@ -391,7 +391,7 @@ async function handleAdminControl(
  * `?app=«application_ref»&round=«ROUND»` — the ref is the public key the
  * frontend holds (same first-match resolution rule as the /pipeline drawer;
  * the two-public-apps-one-company collision is the accepted §24.62 behavior).
- * Reads ONLY public tables (public_funnel_view → public_kit_view); sealed
+ * Reads ONLY public tables (public_pipeline_view → public_kit_view); sealed
  * sections carry counts + captions, never text. 404 when absent.
  */
 function handleKit(url: URL, res: http.ServerResponse, cors: Record<string, string>): void {
@@ -406,7 +406,7 @@ function handleKit(url: URL, res: http.ServerResponse, cors: Record<string, stri
   const app = db
     .prepare(
       `SELECT application_id, application_ref, public_state, role_title
-         FROM public_funnel_view WHERE application_ref = ? LIMIT 1`,
+         FROM public_pipeline_view WHERE application_ref = ? LIMIT 1`,
     )
     .get(ref) as
     | { application_id: string; application_ref: string; public_state: string; role_title: string | null }
@@ -803,7 +803,7 @@ function parseForcedState(url: URL): ForcedState | null {
  * preview state (0 applications / idle sessions / no telemetry). */
 function emptyPayloadFor(path: string): unknown {
   switch (path) {
-    case '/api/funnel':
+    case '/api/pipeline':
       return { applications: [], stage_counts: {} };
     case '/api/activity':
       return { events: [], next_since: 0 };
@@ -1006,7 +1006,7 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
     const forced = method === 'GET' ? parseForcedState(url) : null;
     if (forced) return applyForcedState(forced, path, req, res, cors);
 
-    if (method === 'GET' && path === '/api/funnel') return handleFunnel(res, cors);
+    if (method === 'GET' && path === '/api/pipeline') return handlePipeline(res, cors);
     if (method === 'GET' && path === '/api/profile') return handleProfile(res, cors);
     if (method === 'GET' && path === '/api/resume.pdf') return await handleResumePdf(res, cors);
     // §24.74 attribution redirect — `/r/<code>` (not under /api/*; the Worker

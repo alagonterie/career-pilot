@@ -6,7 +6,7 @@
  * touch the action handler — that's covered by the spot-check in
  * actions.integration.test.ts (Component 3).
  *
- * mirrorFunnelEvent + resanitizeApplicationAuditTrail are async since §24.12
+ * mirrorPipelineEvent + resanitizeApplicationAuditTrail are async since §24.12
  * (Pass 3). In this test env Pass 3 is inactive (no Portkey key + the default
  * `sanitization_pass3_enabled=false`), so the deterministic Pass 1+2 path runs
  * and the outcomes/values are unchanged — the calls just need awaiting.
@@ -17,9 +17,9 @@ import type Database from 'better-sqlite3';
 import { closeDb, initTestDb } from '../../db/connection.js';
 import { runMigrations } from '../../db/migrations/index.js';
 
-import { mirrorFunnelEvent, publicApplicationRef, resanitizeApplicationAuditTrail } from './public-audit.js';
+import { mirrorPipelineEvent, publicApplicationRef, resanitizeApplicationAuditTrail } from './public-audit.js';
 
-describe('mirrorFunnelEvent', () => {
+describe('mirrorPipelineEvent', () => {
   let db: Database.Database;
 
   beforeEach(() => {
@@ -65,7 +65,7 @@ describe('mirrorFunnelEvent', () => {
     payload?: string;
   }): void {
     db.prepare(
-      `INSERT INTO funnel_events (
+      `INSERT INTO pipeline_events (
          id, application_id, kind, from_status, to_status, payload, source, ts
        ) VALUES (
          @id, @application_id, @kind, @from_status, @to_status, @payload,
@@ -106,7 +106,7 @@ describe('mirrorFunnelEvent', () => {
       payload: JSON.stringify({ note: 'jane@acme.com sent the $220k offer at Acme Corp' }),
     });
 
-    await mirrorFunnelEvent(db, 'fe-1');
+    await mirrorPipelineEvent(db, 'fe-1');
 
     const rows = readAuditRows();
     expect(rows).toHaveLength(1);
@@ -138,7 +138,7 @@ describe('mirrorFunnelEvent', () => {
       }),
     });
 
-    await mirrorFunnelEvent(db, 'fe-1');
+    await mirrorPipelineEvent(db, 'fe-1');
 
     const rows = readAuditRows();
     expect(rows).toHaveLength(1);
@@ -164,7 +164,7 @@ describe('mirrorFunnelEvent', () => {
       payload: JSON.stringify({ note: 'great chat with Acme Corp' }),
     });
 
-    await mirrorFunnelEvent(db, 'fe-1');
+    await mirrorPipelineEvent(db, 'fe-1');
 
     const rows = readAuditRows();
     expect(rows).toHaveLength(1);
@@ -180,7 +180,7 @@ describe('mirrorFunnelEvent', () => {
     seedEvent({ id: 'fe-1', application_id: 'app-missing' });
     db.exec('PRAGMA foreign_keys = ON');
 
-    await mirrorFunnelEvent(db, 'fe-1');
+    await mirrorPipelineEvent(db, 'fe-1');
 
     expect(readAuditRows()).toHaveLength(0);
   });
@@ -216,7 +216,7 @@ describe('mirrorFunnelEvent', () => {
     // PartnerCo's obfuscated_label to empty so Pass 2 skips it.
     db.prepare("UPDATE applications SET obfuscated_label = '' WHERE id = 'app-2'").run();
 
-    await mirrorFunnelEvent(db, 'fe-1');
+    await mirrorPipelineEvent(db, 'fe-1');
 
     // PartnerCo survived sanitization → defense-in-depth dropped the row.
     expect(readAuditRows()).toHaveLength(0);
@@ -239,7 +239,7 @@ describe('mirrorFunnelEvent', () => {
       payload: JSON.stringify({ note: 'compared notes on AMDGPU kernel scheduling' }),
     });
 
-    expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('dropped');
+    expect(await mirrorPipelineEvent(db, 'fe-1')).toBe('dropped');
     expect(readAuditRows()).toHaveLength(0);
   });
 
@@ -259,7 +259,7 @@ describe('mirrorFunnelEvent', () => {
        VALUES ('sanitization_audit_drop_on_unmatched_company', 'false', '2026-05-28T00:00:00Z')`,
     ).run();
 
-    await mirrorFunnelEvent(db, 'fe-1');
+    await mirrorPipelineEvent(db, 'fe-1');
 
     const rows = readAuditRows();
     expect(rows).toHaveLength(1);
@@ -277,7 +277,7 @@ describe('mirrorFunnelEvent', () => {
        VALUES ('sanitization_public_summary_max_chars', '100', '2026-05-28T00:00:00Z')`,
     ).run();
 
-    await mirrorFunnelEvent(db, 'fe-1');
+    await mirrorPipelineEvent(db, 'fe-1');
 
     const rows = readAuditRows();
     expect(rows).toHaveLength(1);
@@ -289,7 +289,7 @@ describe('mirrorFunnelEvent', () => {
     const longPayload = 'x'.repeat(2000);
     seedEvent({ id: 'fe-1', application_id: 'app-1', payload: longPayload });
 
-    await mirrorFunnelEvent(db, 'fe-1');
+    await mirrorPipelineEvent(db, 'fe-1');
 
     const rows = readAuditRows();
     expect(rows).toHaveLength(1);
@@ -307,7 +307,7 @@ describe('mirrorFunnelEvent', () => {
       payload: JSON.stringify({ note: 'submitted via Greenhouse' }),
     });
 
-    await mirrorFunnelEvent(db, 'fe-1');
+    await mirrorPipelineEvent(db, 'fe-1');
 
     const rows = readAuditRows();
     expect(rows).toHaveLength(1);
@@ -319,27 +319,27 @@ describe('mirrorFunnelEvent', () => {
     expect(typeof details.sanitized).toBe('string');
   });
 
-  it('does not throw (resolves) if the funnel_event id does not exist', async () => {
-    await expect(mirrorFunnelEvent(db, 'fe-nonexistent')).resolves.toBe('skipped');
+  it('does not throw (resolves) if the pipeline_event id does not exist', async () => {
+    await expect(mirrorPipelineEvent(db, 'fe-nonexistent')).resolves.toBe('skipped');
     expect(readAuditRows()).toHaveLength(0);
   });
 
-  it('links the audit row back to its source funnel_event (§24.11 migration 122)', async () => {
+  it('links the audit row back to its source pipeline_event (§24.11 migration 122)', async () => {
     seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a' });
     seedEvent({ id: 'fe-1', application_id: 'app-1', payload: JSON.stringify({ note: 'hello' }) });
 
-    const outcome = await mirrorFunnelEvent(db, 'fe-1');
+    const outcome = await mirrorPipelineEvent(db, 'fe-1');
     expect(outcome).toBe('inserted');
 
-    const row = db.prepare('SELECT source_funnel_event_id FROM public_audit_trail').get() as {
-      source_funnel_event_id: string | null;
+    const row = db.prepare('SELECT source_pipeline_event_id FROM public_audit_trail').get() as {
+      source_pipeline_event_id: string | null;
     };
-    expect(row.source_funnel_event_id).toBe('fe-1');
+    expect(row.source_pipeline_event_id).toBe('fe-1');
   });
 
   it('returns a typed outcome for skipped/dropped paths', async () => {
     // Non-existent event → skipped.
-    expect(await mirrorFunnelEvent(db, 'fe-nope')).toBe('skipped');
+    expect(await mirrorPipelineEvent(db, 'fe-nope')).toBe('skipped');
 
     // Defense-in-depth drop → dropped.
     seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a' });
@@ -349,7 +349,7 @@ describe('mirrorFunnelEvent', () => {
       application_id: 'app-1',
       payload: JSON.stringify({ note: 'collaboration with PartnerCo announced' }),
     });
-    expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('dropped');
+    expect(await mirrorPipelineEvent(db, 'fe-1')).toBe('dropped');
   });
 
   // ── §24.61: host-side public-ref derivation ─────────────────────────────
@@ -385,7 +385,7 @@ describe('mirrorFunnelEvent', () => {
         application_id: 'app-1',
         payload: JSON.stringify({ note: 'call with Acme Corp went well' }),
       });
-      expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
+      expect(await mirrorPipelineEvent(db, 'fe-1')).toBe('inserted');
 
       // Baseline: public row shows the real name.
       let rows = readAuditRows();
@@ -415,7 +415,7 @@ describe('mirrorFunnelEvent', () => {
         application_id: 'app-1',
         payload: JSON.stringify({ note: 'call with Acme Corp went well' }),
       });
-      expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
+      expect(await mirrorPipelineEvent(db, 'fe-1')).toBe('inserted');
 
       let rows = readAuditRows();
       expect(rows[0].summary).toContain('[REDACTED:fintech-a]');
@@ -443,7 +443,7 @@ describe('mirrorFunnelEvent', () => {
         application_id: 'app-1',
         payload: JSON.stringify({ note: 'spoke with Acme Corp' }),
       });
-      expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
+      expect(await mirrorPipelineEvent(db, 'fe-1')).toBe('inserted');
 
       db.prepare("UPDATE applications SET obfuscated_label = 'fintech-z' WHERE id = 'app-1'").run();
       expect(await resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 1, deleted: 1 });
@@ -468,7 +468,7 @@ describe('mirrorFunnelEvent', () => {
         application_id: 'app-1',
         payload: JSON.stringify({ note: 'AcmeCo recruiter reached out' }),
       });
-      expect(await mirrorFunnelEvent(db, 'fe-1')).toBe('inserted');
+      expect(await mirrorPipelineEvent(db, 'fe-1')).toBe('inserted');
 
       // Baseline: alias not yet known → leaks through.
       let rows = readAuditRows();
@@ -483,7 +483,7 @@ describe('mirrorFunnelEvent', () => {
       expect(rows[0].summary).not.toContain('AcmeCo');
     });
 
-    it('is a no-op when the application has no funnel_events', async () => {
+    it('is a no-op when the application has no pipeline_events', async () => {
       seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a' });
       expect(await resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 0, deleted: 0 });
       expect(readAuditRows()).toHaveLength(0);
@@ -595,7 +595,7 @@ describe('mirrorFunnelEvent', () => {
       seedEvent({ id: 'fe-x', application_id: 'app-2', payload: JSON.stringify({ note: 'unrelated Globex note' }) });
 
       for (const id of ['fe-1', 'fe-2', 'fe-3', 'fe-x']) {
-        expect(await mirrorFunnelEvent(db, id)).toBe('inserted');
+        expect(await mirrorPipelineEvent(db, id)).toBe('inserted');
       }
 
       db.prepare("UPDATE applications SET public_state = 'public' WHERE id = 'app-1'").run();

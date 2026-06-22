@@ -14,9 +14,9 @@ test.describe('landing (/) — hero + live ticker, frontend <-> backend', () => 
     })
     const failedRequests: string[] = []
     page.on('requestfailed', (req) => {
-      // The long-lived SSE stream + the funnel poll (the home funnel strip) are
+      // The long-lived SSE stream + the pipeline poll (the home pipeline strip) are
       // aborted on page close — those teardown aborts are expected, not failures.
-      if (req.url().includes('/api/activity/stream') || req.url().includes('/api/funnel')) return
+      if (req.url().includes('/api/activity/stream') || req.url().includes('/api/pipeline')) return
       failedRequests.push(`${req.method()} ${req.url()} — ${req.failure()?.errorText ?? ''}`)
     })
 

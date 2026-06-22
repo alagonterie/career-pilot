@@ -25,7 +25,7 @@ rigor:
 Paste 10 conversational scenarios into a test harness covering the
 spectrum:
 
-- Routine status update ("how's my funnel today?")
+- Routine status update ("how's my pipeline today?")
 - Ambiguous request ("look into Acme for me")
 - Agent mistake recovery (after a wrong-recipient draft)
 - Candidate venting after rejection
@@ -55,7 +55,7 @@ behavior).
 ### 2. Autonomy gradient compliance (manual + log review)
 
 For each of the four action classes, exercise at least one tool/action.
-Check the `funnel_events` log + Telegram thread:
+Check the `pipeline_events` log + Telegram thread:
 
 - **Just-do** actions land silently (no Telegram notification)
 - **Notify-after** actions emit a single one-liner — wrapped in
@@ -89,14 +89,14 @@ Adjust the persona if the pattern is consistently off in either direction
 
 ### 4. Sanitization-awareness check (automated, Phase 3+)
 
-When the agent produces output bound for `record_funnel_event` payloads,
+When the agent produces output bound for `record_pipeline_event` payloads,
 the sanitization pipeline should rarely have non-trivial work to do. If
 Pass 2 (company alias replacement) or Pass 3 (Haiku review) is
 consistently rewriting agent output, the persona isn't internalizing the
 "write as if there's no sanitization" rule and needs adjustment.
 
 Concrete signal: track `public_audit_trail.summary` length-delta vs the
-private `funnel_events.payload` summary. Large deltas = the sanitizer is
+private `pipeline_events.payload` summary. Large deltas = the sanitizer is
 doing structural work the agent should have already done.
 
 ### 5. Reflection loop quality (qualitative, Phase 4+)

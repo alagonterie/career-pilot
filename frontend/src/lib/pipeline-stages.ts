@@ -12,7 +12,7 @@
  *  - `short` — the cramped compact strips (narrow cells) that link to the board.
  *
  * Naming boundary (§24.77 D3): the visitor-facing concept is the "pipeline"; the
- * `funnel`-prefixed `data-testid`s on the consuming components are the retained
+ * `pipeline`-prefixed `data-testid`s on the consuming components are the retained
  * internal component↔test contract and are unaffected by this display-only source.
  */
 export interface PipelineStage {

@@ -8,9 +8,9 @@
  *
  *   - seedDeterministicBacklog(db): the small fixed backlog the Playwright E2E
  *     asserts against (moved here verbatim — byte-identical, stable snapshots).
- *   - seedRichFixture(db): the fat dev seed — applications across the funnel,
+ *   - seedRichFixture(db): the fat dev seed — applications across the pipeline,
  *     a deep audit backlog, simulator runs, and active sessions — so every
- *     dynamic page (/live, /funnel, /architecture, /) renders populated.
+ *     dynamic page (/live, /pipeline, /architecture, /) renders populated.
  *
  * The synthetic generator (buildSyntheticEvent / insertSyntheticEvent) inserts
  * one plausible `public_audit_trail` row at a time; the SSE tail (poll by seq,
@@ -24,7 +24,7 @@
 import type Database from 'better-sqlite3';
 
 import { upsertInterviewKit } from '../../career-pilot/interview-kit-store.js';
-import { upsertPublicFunnelView } from '../public-funnel-view.js';
+import { upsertPublicPipelineView } from '../public-pipeline-view.js';
 import { upsertPublicKitView } from '../public-kit-view.js';
 
 // ── low-level helpers ──────────────────────────────────────────────────────
@@ -151,9 +151,9 @@ export function seedDeterministicBacklog(db: Database.Database): void {
   });
 }
 
-// ── deterministic funnel seed (E2E /funnel — fixed rows, stable board) ──────
+// ── deterministic pipeline seed (E2E /pipeline — fixed rows, stable board) ──────
 
-interface DetFunnelSeed {
+interface DetPipelineSeed {
   company: string;
   label: string;
   role: string;
@@ -167,10 +167,10 @@ interface DetFunnelSeed {
 // Fixed applications spanning the displayed pipeline columns (one public
 // OFFER). Self-contained like seedDeterministicBacklog — no system_modes write
 // (the audit seed owns those). Timestamps are fixed; the day-counts the API
-// derives from them drift with wall-clock, so the /funnel visual baseline masks
+// derives from them drift with wall-clock, so the /pipeline visual baseline masks
 // those numeric regions (the semantic E2E asserts the stage/label/name, which
-// are time-independent). Do NOT change these without re-blessing funnel.png.
-const DET_FUNNEL_SEEDS: DetFunnelSeed[] = [
+// are time-independent). Do NOT change these without re-blessing pipeline.png.
+const DET_PIPELINE_SEEDS: DetPipelineSeed[] = [
   {
     company: 'Acme Corp',
     label: 'fintech-a',
@@ -228,12 +228,12 @@ const DET_FUNNEL_SEEDS: DetFunnelSeed[] = [
 ];
 
 /**
- * Seed a fixed set of applications + their public_funnel_view rows for the
- * Playwright /funnel E2E. Built through the real `upsertPublicFunnelView`
+ * Seed a fixed set of applications + their public_pipeline_view rows for the
+ * Playwright /pipeline E2E. Built through the real `upsertPublicPipelineView`
  * projection (FK-safe, valid stages). Additive — the existing smoke/work specs
- * don't read /api/funnel, so they're unaffected.
+ * don't read /api/pipeline, so they're unaffected.
  */
-export function seedDeterministicFunnel(db: Database.Database): void {
+export function seedDeterministicPipeline(db: Database.Database): void {
   const insertApp = db.prepare(
     `INSERT INTO applications
        (id, company_name, obfuscated_label, public_state, role_title, status,
@@ -241,8 +241,8 @@ export function seedDeterministicFunnel(db: Database.Database): void {
      VALUES (@id, @company, @label, @public_state, @role, @status,
         @win, @applied_at, @last_activity_at, @created_at)`,
   );
-  for (let i = 0; i < DET_FUNNEL_SEEDS.length; i++) {
-    const a = DET_FUNNEL_SEEDS[i];
+  for (let i = 0; i < DET_PIPELINE_SEEDS.length; i++) {
+    const a = DET_PIPELINE_SEEDS[i];
     const id = `det-app-${i + 1}`;
     insertApp.run({
       id,
@@ -256,7 +256,7 @@ export function seedDeterministicFunnel(db: Database.Database): void {
       last_activity_at: a.lastActivityAt,
       created_at: a.appliedAt,
     });
-    upsertPublicFunnelView(db, id);
+    upsertPublicPipelineView(db, id);
   }
 }
 
@@ -423,7 +423,7 @@ async function seedKits(db: Database.Database, seeds: KitSeed[]): Promise<void> 
   const apps = new Set(seeds.map((s) => s.applicationId));
   for (const id of apps) {
     await upsertPublicKitView(db, id);
-    upsertPublicFunnelView(db, id);
+    upsertPublicPipelineView(db, id);
   }
 }
 
@@ -437,9 +437,9 @@ interface LearningSeed {
 }
 
 /**
- * Seed PUBLISHED learnings (§24.117) then re-project each app's public funnel
+ * Seed PUBLISHED learnings (§24.117) then re-project each app's public pipeline
  * view so `learnings_json` fills — the drawer's "Lessons learned" list. Reuses
- * the real `upsertPublicFunnelView` (DRY: same sanitize+excerpt path as prod).
+ * the real `upsertPublicPipelineView` (DRY: same sanitize+excerpt path as prod).
  */
 function seedLearnings(db: Database.Database, seeds: LearningSeed[]): void {
   for (const s of seeds) {
@@ -456,7 +456,7 @@ function seedLearnings(db: Database.Database, seeds: LearningSeed[]): void {
     );
   }
   const apps = new Set(seeds.map((s) => s.applicationId));
-  for (const id of apps) upsertPublicFunnelView(db, id);
+  for (const id of apps) upsertPublicPipelineView(db, id);
 }
 
 /**
@@ -490,7 +490,7 @@ const WAYNE_LEARNINGS = (applicationId: string): LearningSeed[] => [
 ];
 
 /**
- * Kits for the deterministic E2E funnel (§24.65): the public OFFER app (Wayne
+ * Kits for the deterministic E2E pipeline (§24.65): the public OFFER app (Wayne
  * Enterprises) carries two ARCHIVED kits with full readable content — the
  * revealed dossier; the obfuscated TECH_SCREEN app (ai-infra-a) carries one
  * ACTIVE kit — the sealed skeleton. Do NOT change without re-blessing the kit
@@ -733,7 +733,7 @@ function isoDaysAgo(days: number): string {
   return new Date(Date.now() - days * DAY_MS).toISOString();
 }
 
-function seedApplicationsAndFunnel(db: Database.Database): void {
+function seedApplicationsAndPipeline(db: Database.Database): void {
   const insertApp = db.prepare(
     `INSERT INTO applications
        (id, company_name, obfuscated_label, public_state, role_title, status,
@@ -760,12 +760,12 @@ function seedApplicationsAndFunnel(db: Database.Database): void {
     });
     // Build the public read-model row through the real projection (FK-safe,
     // exercises the production write path, guarantees a valid stage).
-    upsertPublicFunnelView(db, id);
+    upsertPublicPipelineView(db, id);
   }
 }
 
 // Current subagent ids. Post-§24.77 the public audit data is natively new
-// (migration 137 rewrote historical 'funnel-curator' → 'pipeline-scribe'), so
+// (migration 137 rewrote historical 'pipeline-scribe' → 'pipeline-scribe'), so
 // the FE display-alias layer is gone — fixtures seed only the real names.
 const AGENTS = [
   'research-company',
@@ -787,7 +787,7 @@ function seedAuditBacklog(db: Database.Database): void {
 
     // Every 5th row is a per-turn telemetry row (§24.34) — the LLM economics
     // live ONLY on category='turn' rows (the SDK resolves cost per turn, not
-    // per event). Funnel/progress rows leave the telemetry lanes NULL: that is
+    // per event). Pipeline/progress rows leave the telemetry lanes NULL: that is
     // the real shape, so the seeded demo never misrepresents it.
     if (i % 5 === 0) {
       insertAuditRow(db, {
@@ -941,8 +941,8 @@ export function seedRequestTelemetry(db: Database.Database): void {
   }
   // A recent success per external provider so the architecture nodes read healthy.
   const providerSurfaces: [string, string][] = [
-    ['gmail', 'funnel-curator-gmail'],
-    ['calendar', 'funnel-curator-calendar'],
+    ['gmail', 'pipeline-scribe-gmail'],
+    ['calendar', 'pipeline-scribe-calendar'],
     ['drive', 'interview-kit-drive'],
     ['serpapi', 'serpapi-search'],
     ['greenhouse', 'scrape-board'],
@@ -1027,7 +1027,7 @@ export function seedCandidateProfileIdentity(db: Database.Database): void {
 export function seedRichFixture(db: Database.Database): void {
   seedMode(db, 'live_mode', 'true');
   seedMode(db, 'pause_state', 'active');
-  seedApplicationsAndFunnel(db);
+  seedApplicationsAndPipeline(db);
   seedAuditBacklog(db);
   seedSimulatorRuns(db);
   seedSessions(db);
@@ -1098,10 +1098,10 @@ const STATUS_PROGRESSION: Record<string, string> = {
 
 /**
  * Every 5th tick, advance the stalest in-flight application one stage and
- * re-project its public_funnel_view row — so the funnel board visibly moves
+ * re-project its public_pipeline_view row — so the pipeline board visibly moves
  * during a dev session. No-op on other ticks / when nothing is advanceable.
  */
-export function maybeAdvanceFunnel(db: Database.Database, state: GeneratorState): void {
+export function maybeAdvancePipeline(db: Database.Database, state: GeneratorState): void {
   if (state.tick % 5 !== 0) return;
   const app = db
     .prepare(
@@ -1118,7 +1118,7 @@ export function maybeAdvanceFunnel(db: Database.Database, state: GeneratorState)
     new Date().toISOString(),
     app.id,
   );
-  upsertPublicFunnelView(db, app.id);
+  upsertPublicPipelineView(db, app.id);
 }
 
 // ── mock payloads for the env-gated dev seams ───────────────────────────────

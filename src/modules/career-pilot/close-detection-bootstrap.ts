@@ -3,7 +3,7 @@
  * (Phase 3.2 §24.8 component 1).
  *
  * Mirrors killer-match-bootstrap.ts. Single daily fire at 06:00 (TZ-local)
- * — runs before the 07:30 funnel-curator and the 08:00 daily-briefing so
+ * — runs before the 07:30 pipeline-scribe and the 08:00 daily-briefing so
  * downstream consumers see a clean pool.
  *
  * Per [[feedback-nanoclaw-infra-first]]: reuses NanoClaw's `messages_in`

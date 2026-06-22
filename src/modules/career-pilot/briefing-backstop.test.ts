@@ -131,7 +131,7 @@ function seedCompletedBriefing(processAfterIso: string): void {
 function seedCuratorAttention(attentionJson: string): void {
   getDb()
     .prepare(
-      `INSERT INTO funnel_curator_output (id, run_at, narratives_json, attention_json, suggestions_json, cheap_out)
+      `INSERT INTO pipeline_scribe_output (id, run_at, narratives_json, attention_json, suggestions_json, cheap_out)
        VALUES ('fco-1', @ra, '[]', @aj, '[]', 0)`,
     )
     .run({ ra: isoMinutesAgo(20), aj: attentionJson });

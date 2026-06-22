@@ -8,7 +8,7 @@
  *   - NULL markdown → metadata-only row; vanished kits/apps clear their rows
  *   - the §24.65 hard invariant: no kit title / drive_url / unsanitized company
  *     name ever lands in the projection
- *   - public_funnel_view.kits_json carries the drawer metadata (all kits, D1)
+ *   - public_pipeline_view.kits_json carries the drawer metadata (all kits, D1)
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
@@ -19,7 +19,7 @@ import { upsertInterviewKit } from '../career-pilot/interview-kit-store.js';
 
 import { __resetEntityRedactStateForTests } from './kit-entity-redact.js';
 import { type PublicKitSection, upsertPublicKitView } from './public-kit-view.js';
-import { upsertPublicFunnelView } from './public-funnel-view.js';
+import { upsertPublicPipelineView } from './public-pipeline-view.js';
 
 let db: Database.Database;
 
@@ -232,7 +232,7 @@ describe('upsertPublicKitView (§24.65)', () => {
   });
 });
 
-describe('public_funnel_view.kits_json (§24.65 drawer metadata)', () => {
+describe('public_pipeline_view.kits_json (§24.65 drawer metadata)', () => {
   it('carries all kits incl. archived, with has_content flags and no titles/urls', () => {
     seedApp({ id: 'app-1', company: 'Initech Systems', label: 'fintech-a' });
     seedKit('app-1', 'SCREENING');
@@ -241,8 +241,8 @@ describe('public_funnel_view.kits_json (§24.65 drawer metadata)', () => {
       `UPDATE interview_kits SET status = 'archived', archived_at = '2026-06-10T00:00:00Z' WHERE round = 'SCREENING'`,
     ).run();
 
-    upsertPublicFunnelView(db, 'app-1');
-    const row = db.prepare(`SELECT kits_json FROM public_funnel_view WHERE application_id = 'app-1'`).get() as {
+    upsertPublicPipelineView(db, 'app-1');
+    const row = db.prepare(`SELECT kits_json FROM public_pipeline_view WHERE application_id = 'app-1'`).get() as {
       kits_json: string;
     };
     const kits = JSON.parse(row.kits_json) as Array<Record<string, unknown>>;
@@ -255,8 +255,8 @@ describe('public_funnel_view.kits_json (§24.65 drawer metadata)', () => {
 
   it('stays null for applications with no kits', () => {
     seedApp({ id: 'app-1', company: 'Initech Systems', label: 'fintech-a' });
-    upsertPublicFunnelView(db, 'app-1');
-    const row = db.prepare(`SELECT kits_json FROM public_funnel_view WHERE application_id = 'app-1'`).get() as {
+    upsertPublicPipelineView(db, 'app-1');
+    const row = db.prepare(`SELECT kits_json FROM public_pipeline_view WHERE application_id = 'app-1'`).get() as {
       kits_json: string | null;
     };
     expect(row.kits_json).toBeNull();

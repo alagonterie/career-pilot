@@ -2,7 +2,7 @@
  * scripts/resanitize-application.ts — operator escape hatch for §24.11.
  *
  * Retroactively re-sanitizes an application's public_audit_trail rows from
- * the canonical funnel_events truth. The host's handleUpdateApplication
+ * the canonical pipeline_events truth. The host's handleUpdateApplication
  * hook already does this automatically when the agent changes an
  * application's obfuscation policy — this script is for the cases the hook
  * can't see:

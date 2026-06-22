@@ -51,7 +51,7 @@ const KNOBS: DevKnob[] = [
     label: 'Max concurrent',
   }),
   knob({
-    key: 'funnel_curator_cron',
+    key: 'pipeline_scribe_cron',
     type: 'cron',
     group: 'curator',
     value: '30 7 * * *',
@@ -139,10 +139,10 @@ describe('KnobControls', () => {
   it('committing a cron input writes the string', async () => {
     const onWrite = vi.fn(ok)
     renderControls(KNOBS, { onWrite })
-    const input = within(screen.getByTestId('knob-funnel_curator_cron')).getByRole('textbox')
+    const input = within(screen.getByTestId('knob-pipeline_scribe_cron')).getByRole('textbox')
     fireEvent.change(input, { target: { value: '*/5 * * * *' } })
     fireEvent.blur(input)
-    await waitFor(() => expect(onWrite).toHaveBeenCalledWith('funnel_curator_cron', '*/5 * * * *'))
+    await waitFor(() => expect(onWrite).toHaveBeenCalledWith('pipeline_scribe_cron', '*/5 * * * *'))
   })
 
   it('reverts and shows the error when a write is rejected', async () => {
@@ -376,7 +376,7 @@ describe('ResetControl (§24.48)', () => {
 
   it('renders the four scope buttons + per-field buttons; empty fields are disabled', () => {
     render(<ResetControl persona={personaWith({ full_name: true, master_resume: true })} onReset={vi.fn(okReset)} />)
-    for (const scope of ['funnel-data', 'conversation', 'profile', 'everything']) {
+    for (const scope of ['pipeline-data', 'conversation', 'profile', 'everything']) {
       expect(screen.getByTestId(`reset-scope-${scope}`)).toBeInTheDocument()
     }
     expect(screen.getByTestId('reset-field-master_resume')).toBeEnabled()
@@ -387,14 +387,14 @@ describe('ResetControl (§24.48)', () => {
     const onReset = vi.fn(okReset)
     render(<ResetControl persona={personaWith({})} onReset={onReset} />)
 
-    fireEvent.click(screen.getByTestId('reset-scope-funnel-data'))
+    fireEvent.click(screen.getByTestId('reset-scope-pipeline-data'))
     const go = screen.getByTestId('reset-confirm-go')
     expect(go).toBeDisabled() // no confirm typed yet
 
-    fireEvent.change(screen.getByTestId('reset-confirm-input'), { target: { value: 'funnel-data' } })
+    fireEvent.change(screen.getByTestId('reset-confirm-input'), { target: { value: 'pipeline-data' } })
     expect(go).toBeEnabled()
     fireEvent.click(go)
-    await waitFor(() => expect(onReset).toHaveBeenCalledWith({ scope: 'funnel-data' }))
+    await waitFor(() => expect(onReset).toHaveBeenCalledWith({ scope: 'pipeline-data' }))
   })
 
   it('per-field reset calls onReset with { field } and shows the result', async () => {

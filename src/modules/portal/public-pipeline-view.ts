@@ -1,17 +1,17 @@
 /**
- * src/modules/portal/public-funnel-view.ts — Phase 5 BFF-readiness read-model.
+ * src/modules/portal/public-pipeline-view.ts — Phase 5 BFF-readiness read-model.
  *
- * `public_audit_trail` is an append-only event log; the portal funnel
- * surfaces (`/` strip, `/funnel` board, `/live` compact funnel) need current
- * state per application. `public_funnel_view` (migration 124) is a maintained
+ * `public_audit_trail` is an append-only event log; the portal pipeline
+ * surfaces (`/` strip, `/pipeline` board, `/live` compact pipeline) need current
+ * state per application. `public_pipeline_view` (migration 124) is a maintained
  * physical projection — one row per application — that the portal API reads
- * directly (`SELECT * FROM public_funnel_view`), never touching the private
+ * directly (`SELECT * FROM public_pipeline_view`), never touching the private
  * `applications` / `learnings` tables.
  *
- * `upsertPublicFunnelView(db, applicationId)` recomputes one application's row
+ * `upsertPublicPipelineView(db, applicationId)` recomputes one application's row
  * from the canonical private tables, sanitizing any free-text (the published
  * reflection excerpt) before it lands. Called best-effort AFTER the action
- * handler's `writeResponse` — identical discipline to `mirrorFunnelEvent`:
+ * handler's `writeResponse` — identical discipline to `mirrorPipelineEvent`:
  * the private write is already committed, so a projection failure is logged
  * and swallowed, never propagated.
  *
@@ -48,7 +48,7 @@ export function isKnownApplicationStatus(status: string): boolean {
   return APPLICATION_STATUS_SET.has(status.toUpperCase());
 }
 
-// status → the public funnel stage shown on the portal. The five primary
+// status → the public pipeline stage shown on the portal. The five primary
 // stages are applied/screening/tech/final/offer; `bookmarked` is a pre-stage
 // the frontend may hide, and rejected/withdrawn are terminal. An unknown
 // status passes through lowercased so `stage` is never null/empty.
@@ -64,7 +64,7 @@ const STAGE_BY_STATUS: Record<string, string> = {
   WITHDRAWN: 'withdrawn',
 };
 
-export function deriveFunnelStage(status: string | null | undefined): string {
+export function derivePipelineStage(status: string | null | undefined): string {
   if (!status) return 'applied';
   const upper = status.toUpperCase();
   return STAGE_BY_STATUS[upper] ?? status.toLowerCase();
@@ -113,11 +113,11 @@ function buildLearningExcerpt(reflectionsRaw: string, applicationId: string, db:
 }
 
 /**
- * Recompute and UPSERT one application's row in `public_funnel_view`.
+ * Recompute and UPSERT one application's row in `public_pipeline_view`.
  * Best-effort: never throws. Call AFTER the private write commits +
  * `writeResponse` returns.
  */
-export function upsertPublicFunnelView(db: Database.Database, applicationId: string): void {
+export function upsertPublicPipelineView(db: Database.Database, applicationId: string): void {
   try {
     const app = db
       .prepare(
@@ -134,23 +134,23 @@ export function upsertPublicFunnelView(db: Database.Database, applicationId: str
     }
 
     const applicationRef = app.public_state === 'public' ? app.company_name : app.obfuscated_label;
-    const stage = deriveFunnelStage(app.status);
+    const stage = derivePipelineStage(app.status);
 
     // stage_entered_at: when the application last transitioned TO its current
-    // status (latest matching funnel_events row); fall back to its activity
+    // status (latest matching pipeline_events row); fall back to its activity
     // timestamps if no such event exists.
     let stageEnteredAt: string | null = app.last_activity_at ?? app.applied_at ?? app.created_at ?? null;
     try {
       const fe = db
         .prepare(
-          `SELECT ts FROM funnel_events
+          `SELECT ts FROM pipeline_events
             WHERE application_id = ? AND to_status = ?
             ORDER BY ts DESC LIMIT 1`,
         )
         .get(applicationId, app.status) as { ts: string } | undefined;
       if (fe?.ts) stageEnteredAt = fe.ts;
     } catch (err) {
-      log.warn('upsertPublicFunnelView: stage_entered_at lookup failed', { applicationId, err });
+      log.warn('upsertPublicPipelineView: stage_entered_at lookup failed', { applicationId, err });
     }
 
     // published_learning: latest published reflection, sanitized + truncated.
@@ -167,7 +167,7 @@ export function upsertPublicFunnelView(db: Database.Database, applicationId: str
         publishedLearning = buildLearningExcerpt(learn.reflections, applicationId, db);
       }
     } catch (err) {
-      log.warn('upsertPublicFunnelView: published learning lookup failed', { applicationId, err });
+      log.warn('upsertPublicPipelineView: published learning lookup failed', { applicationId, err });
     }
 
     // learnings_json (§24.117): ALL published reflections for this app, newest
@@ -192,7 +192,7 @@ export function upsertPublicFunnelView(db: Database.Database, applicationId: str
         .filter((l) => l.excerpt.length > 0);
       if (learnings.length > 0) learningsJson = JSON.stringify(learnings);
     } catch (err) {
-      log.warn('upsertPublicFunnelView: learnings_json lookup failed', { applicationId, err });
+      log.warn('upsertPublicPipelineView: learnings_json lookup failed', { applicationId, err });
     }
 
     // win_confidence_rationale: the LLM's one-liner, sanitized like a learning
@@ -226,11 +226,11 @@ export function upsertPublicFunnelView(db: Database.Database, applicationId: str
         kitsJson = JSON.stringify(kits.map((k) => ({ ...k, has_content: k.has_content === 1 })));
       }
     } catch (err) {
-      log.warn('upsertPublicFunnelView: kits_json lookup failed', { applicationId, err });
+      log.warn('upsertPublicPipelineView: kits_json lookup failed', { applicationId, err });
     }
 
     db.prepare(
-      `INSERT INTO public_funnel_view (
+      `INSERT INTO public_pipeline_view (
          application_id, application_ref, public_state, role_title, status, stage,
          applied_at, stage_entered_at, last_activity_at, win_confidence,
          win_confidence_rationale, published_learning, learnings_json, kits_json, updated_at
@@ -272,6 +272,6 @@ export function upsertPublicFunnelView(db: Database.Database, applicationId: str
       updated_at: new Date().toISOString(),
     });
   } catch (err) {
-    log.error('upsertPublicFunnelView failed', { applicationId, err });
+    log.error('upsertPublicPipelineView failed', { applicationId, err });
   }
 }

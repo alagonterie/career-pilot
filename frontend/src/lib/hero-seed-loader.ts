@@ -8,7 +8,7 @@ import type { PipelineApplication } from './use-pipeline'
  * SSR seed for the hero stat line (the `/` polish pass). The stat numbers are
  * normally client-only (live hooks), so on first paint they popped in from a
  * skeleton. This server function fetches the same backend the live hooks poll
- * (`/api/funnel`, `/api/telemetry`) through the SSR tunnel + Access service-token
+ * (`/api/pipeline`, `/api/telemetry`) through the SSR tunnel + Access service-token
  * (mirrors `getWorkProfile`) and returns the full line, pre-rendered:
  *
  *   - `counts`       — "N active applications" + "N agent actions in 24h"
@@ -53,7 +53,7 @@ export const getHeroSeed = createServerFn({ method: 'GET' }).handler(async (): P
 
   try {
     const [pipelineRes, telRes] = await Promise.all([
-      fetch(`${base}/api/funnel`, { headers, redirect: 'manual' }),
+      fetch(`${base}/api/pipeline`, { headers, redirect: 'manual' }),
       fetch(`${base}/api/telemetry`, { headers, redirect: 'manual' }),
     ])
     const apps = pipelineRes.ok ? (((await pipelineRes.json()) as PipelineJson).applications ?? []) : []

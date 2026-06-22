@@ -50,7 +50,7 @@ describe('guardPublicMutation', () => {
   it('ignores non-POST and non-guarded paths (forwards = null)', async () => {
     const env: GuardEnv = { SANDBOX_BURST: passRl(), TURNSTILE_SECRET: 's' }
     expect(await guardPublicMutation(new Request('https://h/api/simulator'), env)).toBeNull()
-    expect(await guardPublicMutation(post('/api/funnel'), env)).toBeNull()
+    expect(await guardPublicMutation(post('/api/pipeline'), env)).toBeNull()
   })
 
   it('429s when the burst rate-limit is exceeded', async () => {

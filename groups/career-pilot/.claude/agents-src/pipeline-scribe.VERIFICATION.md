@@ -7,12 +7,12 @@
 > spec — how we check that pipeline-scribe's actual behavior matches its
 > written contract.
 >
-> Renamed from `funnel-curator` per STRATEGY §24.59 (2026-06-10). The
+> Renamed from `pipeline-scribe` per STRATEGY §24.59 (2026-06-10). The
 > internal names deliberately keep the old vocabulary: the bootstrap
-> `SERIES_ID='funnel-curator'`, the `funnel_curator_*` config keys, the
-> `funnel_curator_output` table, and the `--flow=funnel-curator` e2e flow
+> `SERIES_ID='pipeline-scribe'`, the `pipeline_scribe_*` config keys, the
+> `pipeline_scribe_output` table, and the `--flow=pipeline-scribe` e2e flow
 > ids. Historical `public_audit_trail` rows keep
-> `agent_name='funnel-curator'` and are display-aliased on the frontend.
+> `agent_name='pipeline-scribe'` and are display-aliased on the frontend.
 >
 > Per the project CLAUDE.md runtime-artifact rule: developer-facing DoD
 > lives next to the runtime artifact (not inline), so the system prompt
@@ -34,7 +34,7 @@ After build / spawn:
 - The rendered file's frontmatter contains exactly the 9 tools listed
   in source: `query_gmail_delta`, `query_calendar_delta`,
   `list_applications`, `get_application`, `query_job_leads`,
-  `read_funnel_state`, `read_email_events`, `persist_funnel_state`,
+  `read_pipeline_state`, `read_email_events`, `persist_pipeline_state`,
   `record_progress` — no more, no less.
 - The rendered file does NOT exist in `groups/career-pilot-sandbox/`
   (the source isn't in that group → no render → orchestrator can't
@@ -43,16 +43,16 @@ After build / spawn:
 - `model: sonnet` in frontmatter (not haiku, not opus — synthesis
   quality matters; cost still bounded since runs are ~daily).
 
-### 2. End-to-end wiring (automated — `--flow=funnel-curator`)
+### 2. End-to-end wiring (automated — `--flow=pipeline-scribe`)
 
-`pnpm test:e2e --flow=funnel-curator --gmail-fixture=acme-pipeline-multi --calendar-fixture=acme-onsite-tomorrow --llm-provider=claude`
+`pnpm test:e2e --flow=pipeline-scribe --gmail-fixture=acme-pipeline-multi --calendar-fixture=acme-onsite-tomorrow --llm-provider=claude`
 exercises the full path: scheduled-task fires → orchestrator dispatches
-pipeline-scribe → subagent calls `read_funnel_state` (null on first run)
+pipeline-scribe → subagent calls `read_pipeline_state` (null on first run)
 → calls `query_gmail_delta` (returns fixture messages) +
 `query_calendar_delta` (returns fixture event) → calls
 `list_applications` + `query_job_leads` → classifies each message,
 links to applications, synthesizes narratives + attention list +
-suggestions → calls `persist_funnel_state` ONCE → orchestrator reads
+suggestions → calls `persist_pipeline_state` ONCE → orchestrator reads
 the output and emits any same-day-priority highlights (or silent skip
 if none).
 
@@ -62,13 +62,13 @@ Critical subset to check first if the run fails:
 - `query_gmail_delta` returned `fixture_mode: true` with 4 messages
   (the canonical pipeline-multi fixture).
 - `query_calendar_delta` returned 1 event.
-- `persist_funnel_state` called exactly once with a payload that
+- `persist_pipeline_state` called exactly once with a payload that
   parses against the schema.
 - `email_events` rows: 4 (one per pipeline message), classifications
   span the pipeline (`application_confirmation`,
   `screen_invite`/`next_round_update`, `take_home_delivery`,
   `onsite_invite`/`next_round_update`).
-- `funnel_curator_output` has one row with `cheap_out=false`,
+- `pipeline_scribe_output` has one row with `cheap_out=false`,
   non-empty narratives + attention.
 - `attention` includes at least one item with `priority='same_day'`
   flagging the +26h onsite event.
@@ -91,7 +91,7 @@ This is the discipline check on the subagent's output structure.
 
 ### 4. Calibration sweep (manual; multi-scenario — Layer 5 from spec §24.9)
 
-`pnpm test:e2e --flow=funnel-curator-calibration --llm-provider=claude`
+`pnpm test:e2e --flow=pipeline-scribe-calibration --llm-provider=claude`
 exercises the canonical fixture set with content assertions:
 
 - `acme-applied-confirmation` →  narrative state=`applied`,
@@ -117,15 +117,15 @@ changes. Cost: ~6 × ~$0.30 = ~$2/sweep. Not gated on every CI tick.
 
 ### 5. Cheap-out path (automated; included in e2e)
 
-A second `--flow=funnel-curator` run *immediately* after a successful
+A second `--flow=pipeline-scribe` run *immediately* after a successful
 first run (same fixtures, no new state) should:
 
-- Read the prior `funnel_curator_output` (the one we just wrote).
+- Read the prior `pipeline_scribe_output` (the one we just wrote).
 - See zero new messages from `query_gmail_delta` (fixtures are
   deterministic; nothing new since last run).
 - See zero new events from `query_calendar_delta`.
 - Determine no ghosting transitions are due.
-- Call `persist_funnel_state` with `cheap_out=true`, empty
+- Call `persist_pipeline_state` with `cheap_out=true`, empty
   `new_email_events`/`narratives`/`attention`/`suggestions`.
 - `cost_usd` ≤ $0.05 for this cheap-out run.
 
@@ -141,7 +141,7 @@ won't trigger — that's expected.)
   in the sandbox group).
 - Calling `mcp__nanoclaw__query_gmail_delta` from a sandbox session
   returns a `FORBIDDEN`-shaped error from the host action (verified by
-  `funnel-actions.integration.test.ts`).
+  `pipeline-actions.integration.test.ts`).
 
 ### 7. Cost / quota envelope (manual; after 5+ runs)
 
@@ -177,7 +177,7 @@ Re-run this verification plan whenever any of the following changes:
   §2, §3, §4
 - The email taxonomy or matching strategies (sections in the runtime
   spec) — re-run §4
-- The host-side `funnel-actions.ts` or fixture loader — re-run §2, §3
+- The host-side `pipeline-actions.ts` or fixture loader — re-run §2, §3
 - The output schema fields or caps (preferences) — re-run §3
 - The persona's pipeline-scribe handler section — re-run §2
-  (orchestrator dispatch + read_funnel_state surfacing)
+  (orchestrator dispatch + read_pipeline_state surfacing)

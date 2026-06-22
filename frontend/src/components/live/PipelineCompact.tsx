@@ -12,7 +12,7 @@ import { cn } from '~/lib/utils'
  * (the reveal tier), everything else stays a count. Because this strip *links to*
  * the full board, it renders the short stage codes (§24.79 D2 — APP/SCREEN/…)
  * from the shared `~/lib/pipeline-stages` source the board uses for its long
- * names. Pure presentation of the already-polled `/api/funnel` rows.
+ * names. Pure presentation of the already-polled `/api/pipeline` rows.
  *
  * §24.119 turned the five flat boxes into a *directional pipeline* — flavor with
  * zero new numbers (the hero stat line already carries the active total, so any
@@ -59,7 +59,7 @@ export function PipelineCompact({
   const lastIdx = PIPELINE_STAGES.length - 1
 
   return (
-    <div data-testid="funnel-compact" className="flex flex-col gap-3">
+    <div data-testid="pipeline-compact" className="flex flex-col gap-3">
       <div className="flex items-stretch gap-1">
         {PIPELINE_STAGES.map((s, i) => {
           const n = counts[s.stage] ?? 0
@@ -83,7 +83,7 @@ export function PipelineCompact({
                 </span>
               ) : null}
               <div
-                data-testid={`funnel-compact-${s.stage}`}
+                data-testid={`pipeline-compact-${s.stage}`}
                 data-leading-edge={isLeadingEdge ? 'true' : undefined}
                 title={
                   isLeadingEdge ? 'the furthest stage an application has reached' : isOffer ? 'the goal' : undefined
@@ -129,7 +129,7 @@ export function PipelineCompact({
         })}
       </div>
       {!loading && publicOffers.length > 0 ? (
-        <p data-testid="funnel-compact-reveal" className="font-mono text-xs text-primary">
+        <p data-testid="pipeline-compact-reveal" className="font-mono text-xs text-primary">
           ◆ {publicOffers.map((a) => a.application_ref).join(', ')} — public offer
         </p>
       ) : null}

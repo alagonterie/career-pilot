@@ -12,7 +12,7 @@
  *
  *   Orchestrator:
  *     - query_job_leads         — typed-args SELECT
- *     - update_job_lead_status  — funnel transition
+ *     - update_job_lead_status  — pipeline transition
  *     - discover_ats_board      — careers-page → ATS provider+token
  *
  * Kept in a separate file from career-pilot.ts (Phase 1 tools) so the
@@ -225,7 +225,7 @@ export const queryJobLeads: McpToolDefinition = {
         status: {
           type: 'string',
           enum: ['new', 'reviewed', 'queued', 'applied', 'rejected', 'archived'],
-          description: 'Filter to one funnel status. Omit for any non-closed status.',
+          description: 'Filter to one pipeline status. Omit for any non-closed status.',
         },
         source: { type: 'string', enum: ['greenhouse', 'lever', 'google_jobs'], description: 'Filter to one source.' },
         min_rules_score: {
@@ -291,7 +291,7 @@ export const updateJobLeadStatus: McpToolDefinition = {
   tool: {
     name: 'update_job_lead_status',
     description:
-      'Transition a job_lead through the funnel: "new" (default on insert) → "reviewed" (candidate considered it) → "queued" (intent to apply) → "applied" (application submitted, usually paired with creating an `applications` row) → "rejected" (post-application outcome) | "archived" (soft-delete, candidate not interested). "archived" also sets closed_at — the lead drops out of normal query_job_leads results. Funnel transitions only; does NOT delete.',
+      'Transition a job_lead through the pipeline: "new" (default on insert) → "reviewed" (candidate considered it) → "queued" (intent to apply) → "applied" (application submitted, usually paired with creating an `applications` row) → "rejected" (post-application outcome) | "archived" (soft-delete, candidate not interested). "archived" also sets closed_at — the lead drops out of normal query_job_leads results. Pipeline transitions only; does NOT delete.',
     inputSchema: {
       type: 'object' as const,
       properties: {

@@ -117,13 +117,13 @@ function finiteOrZero(v: unknown): number {
 
 /**
  * True for the career-pilot MCP tool names that write a portal-visible row
- * (`record_funnel_event` / `record_progress`). Matches on the tool-name
+ * (`record_pipeline_event` / `record_progress`). Matches on the tool-name
  * suffix so it is robust to the MCP server prefix the SDK prepends
  * (`mcp__<server>__…`). The count of these dispatches is the §24.34
  * portal-worthy gate.
  */
 export function isRecordCallToolName(name: unknown): boolean {
-  return typeof name === 'string' && /__record_(funnel_event|progress)$/.test(name);
+  return typeof name === 'string' && /__record_(pipeline_event|progress)$/.test(name);
 }
 
 /**

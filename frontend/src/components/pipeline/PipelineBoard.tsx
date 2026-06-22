@@ -13,11 +13,11 @@ import { PipelineCard } from './PipelineCard'
 // rather than dropped — nothing in the pipeline is silently hidden.
 //
 // Naming note (§24.77 D3): the visitor-facing rename to "pipeline" is complete in
-// component/hook/type names, but the `data-testid="funnel-*"` selectors keep the
+// component/hook/type names, but the `data-testid="pipeline-*"` selectors keep the
 // old prefix on purpose — they're an internal component↔test contract (the
-// Playwright specs + the named `funnel*.png` visual baselines), so renaming them
+// Playwright specs + the named `pipeline*.png` visual baselines), so renaming them
 // is pure churn for zero visitor benefit. Same retained-internal boundary as the
-// `/api/funnel` fetch URL.
+// `/api/pipeline` fetch URL.
 
 /**
  * The horse-race board (PORTAL §5.4). Each card is a `motion` element keyed by
@@ -46,14 +46,14 @@ export function PipelineBoard({
           sizes to content min-width, and a truncated long role title still
           contributes its full nowrap line — one real-world title blows the
           phone layout out sideways. grid-cols-N = minmax(0,1fr) = the clamp. */}
-      <div data-testid="funnel-board" className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div data-testid="pipeline-board" className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {PIPELINE_STAGES.map((col) => {
           const items = apps.filter((a) => a.stage === col.stage)
           return (
             <section
               key={col.stage}
               aria-label={col.long}
-              data-testid={`funnel-col-${col.stage}`}
+              data-testid={`pipeline-col-${col.stage}`}
               className="flex flex-col rounded-lg border border-border bg-background/40 p-2"
             >
               <header className="mb-2 flex items-center justify-between px-1">
@@ -91,7 +91,7 @@ export function PipelineBoard({
       {/* Always rendered (§24.62): the strip popping in/out between loading and
           loaded shifted everything below it. Empty gets an honest line instead
           of disappearing — nothing in the pipeline is silently hidden either way. */}
-      <section aria-label="Bookmarked and closed" data-testid="funnel-offboard" className="mt-4">
+      <section aria-label="Bookmarked and closed" data-testid="pipeline-offboard" className="mt-4">
         <h2 className="mb-2 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">
           Bookmarked &amp; closed
         </h2>
@@ -100,7 +100,7 @@ export function PipelineBoard({
           // fixed-width cards in ONE row that scrolls sideways — so the strip stays
           // one card tall and never grows the page down, however many close. pb-1
           // leaves room for the horizontal scrollbar.
-          <div data-testid="funnel-offboard-cards" className="flex gap-2 overflow-x-auto pb-1 opacity-70">
+          <div data-testid="pipeline-offboard-cards" className="flex gap-2 overflow-x-auto pb-1 opacity-70">
             {offboard.map((a) => (
               <div key={a.application_id} className="w-[14rem] shrink-0">
                 <PipelineCard app={a} onSelect={() => onSelect(a)} />
@@ -111,7 +111,7 @@ export function PipelineBoard({
           // min-h = one card row (114px, the measured PipelineCard footprint), so
           // loading→empty holds the same ground as loading→cards (§24.62).
           <div className="flex min-h-[114px] items-center">
-            <p data-testid="funnel-offboard-empty" className="font-mono text-xs text-muted-foreground">
+            <p data-testid="pipeline-offboard-empty" className="font-mono text-xs text-muted-foreground">
               Nothing bookmarked or closed yet.
             </p>
           </div>
@@ -126,7 +126,7 @@ export function PipelineBoard({
  * is in flight. Static markup — no motion, no data. */
 export function PipelineBoardSkeleton() {
   return (
-    <div data-testid="funnel-skeleton" className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 lg:grid-cols-5">
+    <div data-testid="pipeline-skeleton" className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 lg:grid-cols-5">
       {PIPELINE_STAGES.map((col, i) => (
         <section
           key={col.stage}
@@ -155,7 +155,7 @@ export function PipelineBoardSkeleton() {
  * PipelineCard footprint (114px measured) so loading→loaded doesn't resize. */
 export function PipelineOffboardSkeleton() {
   return (
-    <section aria-label="Bookmarked and closed" data-testid="funnel-offboard-skeleton" className="mt-4">
+    <section aria-label="Bookmarked and closed" data-testid="pipeline-offboard-skeleton" className="mt-4">
       <h2 className="mb-2 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">
         Bookmarked &amp; closed
       </h2>

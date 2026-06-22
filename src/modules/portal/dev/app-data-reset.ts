@@ -3,7 +3,7 @@
  * reset primitives (STRATEGY §24.41 + §24.48).
  *
  * SINGLE SOURCE OF TRUTH for which tables a reset clears, split into the
- * funnel/app-data group and the conversation-session group. Two callers share
+ * pipeline/app-data group and the conversation-session group. Two callers share
  * it so they can never drift:
  *   - `scripts/reset-dev.ts` — the CLI/CI SOFT reset (clears `APP_DATA_TABLES`).
  *   - the dev inspector's scoped `/api/dev/reset` endpoint (§24.48) — clears a
@@ -20,12 +20,12 @@ import path from 'path';
 
 import type Database from 'better-sqlite3';
 
-/** Funnel / application / lead state — the board a reset rebuilds from scratch. */
-export const FUNNEL_DATA_TABLES = [
+/** Pipeline / application / lead state — the board a reset rebuilds from scratch. */
+export const PIPELINE_DATA_TABLES = [
   'applications',
-  'funnel_events',
-  'funnel_curator_output',
-  'public_funnel_view',
+  'pipeline_events',
+  'pipeline_scribe_output',
+  'public_pipeline_view',
   'public_audit_trail',
   'learnings',
   'job_leads',
@@ -41,8 +41,8 @@ export const FUNNEL_DATA_TABLES = [
  */
 export const SESSION_TABLES = ['sessions'] as const;
 
-/** The full soft-reset app-data set (funnel data + sessions) — what `reset-dev.ts` clears. */
-export const APP_DATA_TABLES = [...FUNNEL_DATA_TABLES, ...SESSION_TABLES] as const;
+/** The full soft-reset app-data set (pipeline data + sessions) — what `reset-dev.ts` clears. */
+export const APP_DATA_TABLES = [...PIPELINE_DATA_TABLES, ...SESSION_TABLES] as const;
 
 /**
  * DELETE every present table in `tables` inside one transaction with FKs off (so
