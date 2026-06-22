@@ -155,6 +155,35 @@ describe('decideStuckAction', () => {
     expect(res.action).toBe('ok');
   });
 
+  it('flags an idle reap as expected, a stuck-in-flight-tool reap as not (§24.155)', () => {
+    // No tool in flight → reaped at the idle ceiling → the EXPECTED post-turn cleanup.
+    const idle = decideStuckAction({
+      now: BASE,
+      heartbeatMtimeMs: BASE - ABSOLUTE_CEILING_MS - 1_000,
+      containerState: null,
+      claims: [],
+    });
+    expect(idle.action).toBe('kill-ceiling');
+    if (idle.action !== 'kill-ceiling') return;
+    expect(idle.expected).toBe(true);
+
+    // A tool IS still in flight and blew past its generous 30-min backstop → a
+    // genuinely stuck tool, NOT expected (this one keeps the WARN log).
+    const stuck = decideStuckAction({
+      now: BASE,
+      heartbeatMtimeMs: BASE - ABSOLUTE_CEILING_MS - 1_000,
+      containerState: {
+        current_tool: 'Task',
+        tool_declared_timeout_ms: null,
+        tool_started_at: new Date(BASE - ABSOLUTE_CEILING_MS - 1_000).toISOString(),
+      },
+      claims: [],
+    });
+    expect(stuck.action).toBe('kill-ceiling');
+    if (stuck.action !== 'kill-ceiling') return;
+    expect(stuck.expected).toBe(false);
+  });
+
   it('does NOT kill a long NON-Bash tool mid-run under a short ceiling (§24.114)', () => {
     // A subagent Task (or WebFetch / MCP call) in flight emits no SDK events while
     // it runs, so the heartbeat is stale 5 min — but the 60s ops ceiling must NOT

@@ -131,7 +131,11 @@ const BACKOFF_BASE_MS = 5000;
 
 export type StuckDecision =
   | { action: 'ok' }
-  | { action: 'kill-ceiling'; heartbeatAgeMs: number; ceilingMs: number }
+  // §24.155: `expected` is true when NO tool was in flight — i.e. the container
+  // finished its (cron) turn and went idle, so reaping it at the short idle
+  // ceiling is the *intended* cleanup, not an anomaly. False = a tool was still
+  // in flight and blew past its generous 30-min ceiling → a genuinely stuck tool.
+  | { action: 'kill-ceiling'; heartbeatAgeMs: number; ceilingMs: number; expected: boolean }
   | { action: 'kill-claim'; messageId: string; claimAgeMs: number; toleranceMs: number };
 
 /**
@@ -167,7 +171,12 @@ export function decideStuckAction(args: {
     const heartbeatAge = now - heartbeatMtimeMs;
     const ceiling = Math.max(absoluteCeilingMs, inFlightToolMs ?? 0);
     if (heartbeatAge > ceiling) {
-      return { action: 'kill-ceiling', heartbeatAgeMs: heartbeatAge, ceilingMs: ceiling };
+      return {
+        action: 'kill-ceiling',
+        heartbeatAgeMs: heartbeatAge,
+        ceilingMs: ceiling,
+        expected: inFlightToolMs == null,
+      };
     }
   }
 
@@ -430,11 +439,21 @@ function enforceRunningContainerSla(
   if (decision.action === 'ok') return;
 
   if (decision.action === 'kill-ceiling') {
-    log.warn('Killing container past absolute ceiling', {
+    const detail = {
       sessionId: session.id,
       heartbeatAgeMs: decision.heartbeatAgeMs,
       ceilingMs: decision.ceilingMs,
-    });
+    };
+    // §24.155: an idle container reaped at its (short ops) idle ceiling is the
+    // EXPECTED cleanup of a finished cron turn — the killer-match/scrape/etc.
+    // wakes spawn a container, do their work, go idle, and get reaped. That is
+    // not an error, so log it at info; only a reap WHILE a tool is still in
+    // flight (a genuinely stuck tool past its generous ceiling) keeps WARN.
+    if (decision.expected) {
+      log.info('Reaped idle container at its idle ceiling (expected post-turn cleanup)', detail);
+    } else {
+      log.warn('Killing container past absolute ceiling (stuck in-flight tool)', detail);
+    }
     killContainer(session.id, 'absolute-ceiling');
     resetStuckProcessingRows(inDb, outDb, session, 'absolute-ceiling');
     return;
