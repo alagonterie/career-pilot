@@ -7114,6 +7114,18 @@ The contracts live in two committed places: `groups/_shared-subagents/{research-
 
 ---
 
+## §24.156 — Hero stat line: a deliberate two-line layout (the §24.153 four-segment wrap, finished)
+
+**Origin** (owner, 2026-06-22 — reviewing the §24.153 item-2 hero stat fix on the live site). The four `·`-separated segments ("N active applications · searching since «Mon YYYY» · N agent actions in 24h · last activity «X» ago") never fit the `max-w-xl` hero on one row, so §24.153's per-segment wrap — while it stopped phrases splitting mid-word — still wrapped into a lop-sided centered **bullet stack with an orphaned leading `·`** (worst on a phone: four stacked lines each led by a dangling dot; on desktop a lone "· last activity" line). Captured + confirmed at 360/390/1024 before changing anything.
+
+**Decision — the two-line split.** Replace the single wrapping line with TWO deliberate lines via a pure, testable `heroStatLines(counts, lastActivity)` split: **headline** (the search identity — active count + "searching since") over a dimmer **freshness** line (the live signals — agent actions + last activity). The `·` is a SIBLING flex item between segments (so `gap-x-2` spaces it evenly both sides) and lives INSIDE a line, where it can never lead or dangle.
+
+**Decision — clarity over abbreviation (owner steer), with two fit refinements.** The hero stats are the recruiter-legible proof (§24.71), so wording stays FULL — no cryptic abbreviations (the owner specifically rejected "19d ago"-style shortening: "I have no idea what the 19 days represents"). Two refinements make two full-wording lines fit a phone: **(a)** 11px on mobile (`text-[11px] sm:text-xs`) — a hair smaller on the secondary muted line, verified legible; **(b)** **"active applications"** (drop the redundant "job") — the hook one line up already frames it as the job search, so "applications" is unambiguous (removing a redundant word, NOT abbreviating; the owner chose this over keeping "job" + a taller stacked mobile layout). **Result (captured):** clean two lines down to **360px** (all modern phones); only 320px (iPhone SE 1st-gen, 2016) still wraps — negligible, left as-is.
+
+**Definition of done.** The hero stat line renders two deliberate lines (headline + dimmer freshness) with the `·` evenly spaced inside each line — no orphaned dot at any width ≥360px; wording stays full + clear; FE tsc + hero-stats tests (incl. the `heroStatLines` split) + suite green; the masked home/mobile-home `@visual` baselines re-blessed for the stat-block height change (dimension-changed = real, §24.153 lesson). Memory: [[status_current]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
