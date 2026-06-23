@@ -327,8 +327,8 @@ describe('applyOpsSpawnEnv — no model floor (§24.78: the §24.68 Δ B1 haiku 
     agent_provider: null,
     created_at: '2026-06-12T00:00:00Z',
   };
-  // Simulates the post-materializeContainerJson state when dev_model_tier=haiku
-  // downshifted the spawn (orchestrator + every alias → Haiku).
+  // Simulates the post-materializeContainerJson state when the owner orchestrator
+  // is pinned to Haiku (§24.163 applyOrchestratorModel + its alias backstops).
   const haikuConfig = {
     model: 'claude-haiku-4-5',
     env: {
@@ -347,20 +347,11 @@ describe('applyOpsSpawnEnv — no model floor (§24.78: the §24.68 Δ B1 haiku 
     else process.env.ENVIRONMENT = priorEnv;
   });
 
-  function setTier(tier: string): void {
-    getDb()
-      .prepare(
-        "INSERT OR REPLACE INTO preferences (key, value, updated_at) VALUES ('dev_model_tier', ?, datetime('now'))",
-      )
-      .run(tier);
-  }
-
-  it('honors the configured tier under dev + haiku — NO floor (the model was a red herring, §24.78)', () => {
+  it('honors the configured model under dev + haiku — NO floor (the model was a red herring, §24.78)', () => {
     process.env.ENVIRONMENT = 'dev';
-    setTier('haiku');
     const out = applyOpsSpawnEnv(haikuConfig, fakeSession({ thread_id: OPS_THREAD_ID }), ownerGroup);
     // Model + every alias pass through unchanged — the ops cascade now runs at the
-    // configured tier like any other session (no clamp to Sonnet).
+    // configured owner orchestrator model like any other session (no clamp to Sonnet).
     expect(out.model).toBe('claude-haiku-4-5');
     expect(out.env).toMatchObject({
       ANTHROPIC_DEFAULT_OPUS_MODEL: 'claude-haiku-4-5',
@@ -373,7 +364,6 @@ describe('applyOpsSpawnEnv — no model floor (§24.78: the §24.68 Δ B1 haiku 
 
   it('never touches a non-ops session, even under dev + haiku', () => {
     process.env.ENVIRONMENT = 'dev';
-    setTier('haiku');
     const out = applyOpsSpawnEnv(haikuConfig, fakeSession({ thread_id: null }), ownerGroup);
     expect(out).toBe(haikuConfig); // early return — unchanged reference
   });

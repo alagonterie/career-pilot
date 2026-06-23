@@ -121,7 +121,7 @@ describe('buildAdminKnobs / applyAdminKnobWrite (registry − ADMIN_DENY)', () =
   it('omits the denied recruiter-sim / dev knobs, keeps the operational levers', () => {
     const keys = buildAdminKnobs(getDb()).knobs.map((k) => k.key);
     expect(keys).not.toContain('recruiter_sim_enabled');
-    expect(keys).not.toContain('dev_model_tier');
+    expect(keys).not.toContain('recruiter_sim_prose_model');
     expect(keys).toContain('owner_daily_llm_budget_usd');
     expect(keys).toContain('simulator_enabled');
   });

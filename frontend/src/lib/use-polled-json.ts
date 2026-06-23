@@ -5,6 +5,9 @@ export type PollStatus = 'loading' | 'ok' | 'error'
 export interface PolledJson<T> {
   data: T | null
   status: PollStatus
+  /** Fetch immediately (e.g. right after a mutation) without resetting to the
+   *  loading shell — keeps the steady-state poll loop intact. No-op once unmounted. */
+  refresh: () => void
 }
 
 // §24.137: the portal's live data moves at human pace (recruiter replies land
@@ -28,6 +31,9 @@ const DEFAULT_POLL_MS = 20000
 export function usePolledJson<T>(url: string, pollMs = DEFAULT_POLL_MS): PolledJson<T> {
   const [data, setData] = React.useState<T | null>(null)
   const [status, setStatus] = React.useState<PollStatus>('loading')
+  // Holds the live effect's immediate-refetch; swapped per (re)subscribe, cleared
+  // on unmount. Lets `refresh()` poke the current loop without resetting state.
+  const refreshRef = React.useRef<() => void>(() => {})
 
   React.useEffect(() => {
     const ac = new AbortController()
@@ -43,6 +49,9 @@ export function usePolledJson<T>(url: string, pollMs = DEFAULT_POLL_MS): PolledJ
     setData(null)
 
     const tick = async (): Promise<void> => {
+      // Cancel any pending scheduled tick so an imperative refresh() doesn't
+      // leave a second timer running (it re-arms one at the end).
+      if (timer) clearTimeout(timer)
       try {
         const res = await fetch(url, { signal: ac.signal })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -62,12 +71,17 @@ export function usePolledJson<T>(url: string, pollMs = DEFAULT_POLL_MS): PolledJ
       if (!ac.signal.aborted) timer = setTimeout(() => void tick(), pollMs)
     }
 
+    refreshRef.current = () => {
+      if (!ac.signal.aborted) void tick()
+    }
     void tick()
     return () => {
       ac.abort()
       if (timer) clearTimeout(timer)
+      refreshRef.current = () => {}
     }
   }, [url, pollMs])
 
-  return { data, status }
+  const refresh = React.useCallback(() => refreshRef.current(), [])
+  return { data, status, refresh }
 }

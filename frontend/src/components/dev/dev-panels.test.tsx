@@ -59,12 +59,12 @@ const KNOBS: DevKnob[] = [
     note: 'applies next cycle',
   }),
   knob({
-    key: 'dev_model_tier',
+    key: 'owner_orchestrator_model',
     type: 'enum',
     group: 'models',
-    value: 'default',
-    options: ['default', 'sonnet', 'haiku'],
-    label: 'Dev model tier',
+    value: 'claude-sonnet-4-6',
+    options: ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-8'],
+    label: 'Owner · orchestrator model',
   }),
 ]
 
@@ -96,14 +96,20 @@ describe('KnobControls', () => {
     expect(screen.queryByTestId('knob-group-polling')).not.toBeInTheDocument()
   })
 
-  it('picking a model tier option commits the selected value AND optimistically activates it', async () => {
+  it('picking a model option commits the selected value AND optimistically activates it', async () => {
     const onWrite = vi.fn(ok)
     renderControls(KNOBS, { onWrite })
-    const row = screen.getByTestId('knob-dev_model_tier')
-    expect(within(row).getByTestId('knob-option-dev_model_tier-default')).toHaveAttribute('aria-checked', 'true')
-    fireEvent.click(within(row).getByTestId('knob-option-dev_model_tier-haiku'))
-    await waitFor(() => expect(onWrite).toHaveBeenCalledWith('dev_model_tier', 'haiku'))
-    expect(within(row).getByTestId('knob-option-dev_model_tier-haiku')).toHaveAttribute('aria-checked', 'true')
+    const row = screen.getByTestId('knob-owner_orchestrator_model')
+    expect(within(row).getByTestId('knob-option-owner_orchestrator_model-claude-sonnet-4-6')).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+    fireEvent.click(within(row).getByTestId('knob-option-owner_orchestrator_model-claude-opus-4-8'))
+    await waitFor(() => expect(onWrite).toHaveBeenCalledWith('owner_orchestrator_model', 'claude-opus-4-8'))
+    expect(within(row).getByTestId('knob-option-owner_orchestrator_model-claude-opus-4-8')).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
   })
 
   it('toggling a boolean writes the flipped value AND optimistically flips the control', async () => {

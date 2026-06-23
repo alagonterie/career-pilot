@@ -180,7 +180,10 @@ export function parseAnthropicCustomHeaders(
  */
 async function callHaiku(systemPrompt: string, userPrompt: string): Promise<string> {
   const baseUrl = process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com';
-  const model = process.env.HAIKU_MODEL || 'claude-haiku-4-5-20251001';
+  // §24.163 lead_ranking_model: the host injects LEAD_RANKING_MODEL into the
+  // container env from getConfig at materialize; HAIKU_MODEL stays as a legacy
+  // fallback, then the hardcoded default.
+  const model = process.env.LEAD_RANKING_MODEL || process.env.HAIKU_MODEL || 'claude-haiku-4-5-20251001';
 
   const t0 = Date.now();
   let res: Response;

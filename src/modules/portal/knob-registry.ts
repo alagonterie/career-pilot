@@ -6,8 +6,8 @@
  * lever. The dev inspector (`/api/dev/knobs`, ENVIRONMENT==='dev', owner-gated)
  * may write the WHOLE registry; the prod `/admin` control-center
  * (`/api/admin/knobs`, behind Cloudflare Access + `admin_api_enabled`) writes the
- * registry MINUS `ADMIN_DENY` (the short, explicit deny-list — recruiter-sim,
- * dev_model_tier; the self-referential gates / boot-identity / non-scalar object
+ * registry MINUS `ADMIN_DENY` (the short, explicit deny-list — the recruiter-sim
+ * dial; the self-referential gates / boot-identity / non-scalar object
  * knobs are absent from the registry entirely and live in `UNSPEC_KNOBS`).
  *
  * Inclusion, not curation: `UNSPEC_KNOBS` records EVERY non-registry
@@ -64,13 +64,15 @@ export interface KnobSpec {
 const CRON_NOTE =
   'Saved immediately, but the running recurring task keeps its old cadence until its series is re-bootstrapped (next fresh session / reset:dev) — the bootstrap skips an existing task and the cron is copied onto the queued row at insert.';
 
-const MODEL_TIER_NOTE =
-  'Retargets the orchestrator + every subagent model for cost (dev only). Applies on the next container spawn (a fresh session / reset:dev), not mid-session. default = real Opus · sonnet = Opus→Sonnet (Haiku kept) · haiku = everything→Haiku.';
-
+// ── §24.163 model-control plane notes ──
+const OWNER_ORCH_NOTE =
+  'The owner agent’s orchestrator — its brain (planning, dispatch, the candidate-facing chat). Sonnet by default; crank to Opus only if you observe a quality gap (Opus is ~5× the cost and wants daily-budget headroom). Applies on the owner’s NEXT container spawn (a fresh session / reset:dev), not mid-session.';
+const OWNER_SUB_NOTE =
+  '`inherit` = the owner orchestrator’s model. Applies on the owner’s next container spawn (fresh session / reset:dev), not mid-session.';
 const SANDBOX_ORCH_NOTE =
   'Model for the PUBLIC "Watch it work" simulator ORCHESTRATOR — it writes the tailored-résumé bio, the quality the visitor sees (§24.142). The only visitor-facing money path; the owner agent is unaffected (prod-safe, not deny-listed). Applies on the next sandbox spawn. Sonnet recommended.';
 const SANDBOX_SUB_NOTE =
-  'Model for the simulator SUBAGENTS (research / tailor / draft). Research is retrieval+summarization and the latency hog; tailor bullets are snapped to the master host-side — so Haiku keeps runs fast + cheap without touching bio quality (§24.142). Applies on the next sandbox spawn.';
+  '`inherit` = the sandbox orchestrator’s model (Sonnet). Defaults mirror the owner agent’s same-named subagent. §24.142 cost lever: the sandbox is the public money-path under a per-run budget + wall — drop a subagent to Haiku to trim cost/latency where it won’t move output (research is retrieval; tailor bullets are master-snapped host-side). Applies on the next sandbox spawn.';
 
 const OPS_SPAWN_NOTE =
   'Pushed as container env when the career-pilot ops session spawns — applies on its NEXT spawn, not mid-session. Other sessions keep the upstream rotation defaults.';
@@ -85,8 +87,17 @@ const OUTCOME_SPLIT_NOTE =
 const ORPHAN_POLL_NOTE =
   'No live consumer today — inbound mail is pulled by the pipeline-scribe cron (pipeline_scribe_cron) + the on-demand sweep, not a fixed poll loop. Kept as a tunable for a future host poller; changing it currently has no effect.';
 
-/** The current model IDs the redaction belts may target (an enum keeps a typo from breaking the call). */
+/**
+ * The served-allowlist (§24.163 D6) — every model selectable for any model knob.
+ * All three are verified routable through Portkey's `@anthropic-prod` provider (a
+ * live probe 2026-06-23 returned HTTP 200 for each). The enum check in
+ * `validateKnobWrite` is the write-guard: a value off this list is rejected, so
+ * `/admin` can't pin a model the gateway won't serve. Adding a model here requires
+ * re-confirming Portkey serves it.
+ */
 const MODEL_OPTIONS = ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-8'];
+/** Subagent model knobs additionally accept `inherit` (use the group's orchestrator model). */
+const MODEL_OPTIONS_INHERIT = [...MODEL_OPTIONS, 'inherit'];
 
 /**
  * The canonical registry. Keys are `preferences`-tier config keys; the value is
@@ -820,13 +831,6 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     label: 'Sanitization pass-3 enabled',
     note: 'Toggle for the optional third (LLM) sanitization pass over public text.',
   },
-  sanitization_pass3_model: {
-    type: 'enum',
-    group: 'sanitization',
-    label: 'Sanitization pass-3 model',
-    options: MODEL_OPTIONS,
-    note: 'The model the optional public-text pass-3 LLM scrub uses — default Haiku, and the pass itself is OFF by default (sanitization_pass3_enabled). This is NOT the kit entity-redact belt, which defaults to Sonnet (kit_entity_redact_model). Applies to the next run.',
-  },
   sanitization_pass3_timeout_ms: {
     type: 'number',
     group: 'sanitization',
@@ -862,13 +866,6 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     group: 'sanitization',
     label: 'Kit entity-redact enabled',
     note: 'Toggle for the interview-kit entity-redaction belt (§24.134a).',
-  },
-  kit_entity_redact_model: {
-    type: 'enum',
-    group: 'sanitization',
-    label: 'Kit entity-redact model',
-    options: MODEL_OPTIONS,
-    note: 'The model the kit entity-redaction belt uses (§24.134e — Sonnet by default). Applies to the next run.',
   },
   kit_entity_redact_timeout_ms: {
     type: 'number',
@@ -913,36 +910,123 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     note: 'When the agent auto-runs company research: never (manual), once a JD is pasted, or always on a new application.',
   },
 
-  // ── dev model tier (§24.43) — ADMIN_DENY (dev/container-only) ──
-  dev_model_tier: {
+  // ── §24.163 model-control plane: every agent-runtime + host model, explicit ──
+  // Owner agent (career-pilot)
+  owner_orchestrator_model: {
     type: 'enum',
     group: 'models',
-    label: 'Dev model tier',
-    options: ['default', 'sonnet', 'haiku'],
-    note: MODEL_TIER_NOTE,
+    label: 'Owner · orchestrator model',
+    options: MODEL_OPTIONS,
+    note: OWNER_ORCH_NOTE,
+  },
+  owner_model_research_company: {
+    type: 'enum',
+    group: 'models',
+    label: 'Owner · research-company model',
+    options: MODEL_OPTIONS_INHERIT,
+    note: `Owner research-company subagent (web retrieval + summarization — Haiku-grade). ${OWNER_SUB_NOTE}`,
+  },
+  owner_model_scrape_jobs: {
+    type: 'enum',
+    group: 'models',
+    label: 'Owner · scrape-jobs model',
+    options: MODEL_OPTIONS_INHERIT,
+    note: `Owner scrape-jobs subagent (query → judge → record leads; rules-score is host-computed — Haiku-grade). ${OWNER_SUB_NOTE}`,
+  },
+  owner_model_tailor_resume: {
+    type: 'enum',
+    group: 'models',
+    label: 'Owner · tailor-resume model',
+    options: MODEL_OPTIONS_INHERIT,
+    note: `Owner tailor-resume subagent (quality-critical assembly — defaults to inherit the orchestrator). ${OWNER_SUB_NOTE}`,
+  },
+  owner_model_draft_outreach: {
+    type: 'enum',
+    group: 'models',
+    label: 'Owner · draft-outreach model',
+    options: MODEL_OPTIONS_INHERIT,
+    note: `Owner draft-outreach subagent (writes a real recruiter email — defaults to inherit the orchestrator). ${OWNER_SUB_NOTE}`,
+  },
+  owner_model_build_interview_kit: {
+    type: 'enum',
+    group: 'models',
+    label: 'Owner · build-interview-kit model',
+    options: MODEL_OPTIONS_INHERIT,
+    note: `Owner build-interview-kit subagent (composes the prep Doc — defaults to inherit the orchestrator). ${OWNER_SUB_NOTE}`,
+  },
+  owner_model_pipeline_scribe: {
+    type: 'enum',
+    group: 'models',
+    label: 'Owner · pipeline-scribe model',
+    options: MODEL_OPTIONS_INHERIT,
+    note: `Owner pipeline-scribe subagent (classifies inbox/calendar deltas, writes the pipeline read-model — defaults to inherit the orchestrator). ${OWNER_SUB_NOTE}`,
   },
 
-  // ── §24.142 sandbox model split: prod-safe model levers (NOT deny-listed) ──
+  // Sandbox (public "Watch it work" simulator)
   sandbox_orchestrator_model: {
     type: 'enum',
     group: 'models',
-    label: 'Sandbox orchestrator model',
-    options: ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-8'],
+    label: 'Sandbox · orchestrator model',
+    options: MODEL_OPTIONS,
     note: SANDBOX_ORCH_NOTE,
   },
-  sandbox_subagent_model: {
+  sandbox_model_research_company: {
     type: 'enum',
     group: 'models',
-    label: 'Sandbox subagent model',
-    options: ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-8'],
+    label: 'Sandbox · research-company model',
+    options: MODEL_OPTIONS_INHERIT,
     note: SANDBOX_SUB_NOTE,
   },
+  sandbox_model_tailor_resume: {
+    type: 'enum',
+    group: 'models',
+    label: 'Sandbox · tailor-resume model',
+    options: MODEL_OPTIONS_INHERIT,
+    note: SANDBOX_SUB_NOTE,
+  },
+  sandbox_model_draft_outreach: {
+    type: 'enum',
+    group: 'models',
+    label: 'Sandbox · draft-outreach model',
+    options: MODEL_OPTIONS_INHERIT,
+    note: SANDBOX_SUB_NOTE,
+  },
+
+  // Host-side LLM calls
   win_confidence_model: {
     type: 'enum',
     group: 'models',
-    label: 'Win-confidence model',
+    label: 'Host · win-confidence model',
     options: MODEL_OPTIONS,
     note: 'The model the win-confidence scorer uses (§24.140 — Haiku by default; a heuristic 0–100 score, so Haiku is plenty). Applies to the next scoring run.',
+  },
+  kit_entity_redact_model: {
+    type: 'enum',
+    group: 'models',
+    label: 'Host · kit entity-redact model',
+    options: MODEL_OPTIONS,
+    note: 'The model the interview-kit entity-redaction belt uses (§24.134e — Sonnet by default; it’s a leak-prevention belt, so the capable tier earns its cost). The enable-toggle stays in the Sanitization tab. Applies to the next run.',
+  },
+  sanitization_pass3_model: {
+    type: 'enum',
+    group: 'models',
+    label: 'Host · sanitization pass-3 model',
+    options: MODEL_OPTIONS,
+    note: 'The model the optional public-text pass-3 LLM scrub uses — Haiku by default, and the pass itself is OFF by default (its enable-toggle stays in the Sanitization tab). This is NOT the kit entity-redact belt. Applies to the next run.',
+  },
+  lead_ranking_model: {
+    type: 'enum',
+    group: 'models',
+    label: 'Host · lead-ranking model',
+    options: MODEL_OPTIONS,
+    note: 'The model the daily-briefing lead-ranking call uses (container-side scorer — a calibrated 0–100 fit score, so Haiku is plenty). Applies on the owner agent’s next container spawn.',
+  },
+  recruiter_sim_prose_model: {
+    type: 'enum',
+    group: 'models',
+    label: 'Sim · recruiter prose model',
+    options: MODEL_OPTIONS,
+    note: 'The model the DEV-ONLY recruiter-sim uses to write realistic email prose (Haiku; optional — falls back to deterministic templates). Dev-inspector only; not on the prod /admin surface. Applies to the next injected email.',
   },
 
   // ── recruiter-sim dial (SIM_KNOB_KEYS) — ADMIN_DENY (dev-only sim) ──
@@ -1055,9 +1139,9 @@ export const UNSPEC_KNOBS: Record<string, string> = {
 export const ALL_KNOB_KEYS = Object.keys(KNOB_SPECS);
 
 /**
- * The /admin exclusion list (STRATEGY §24.138 D1): recruiter-sim dial +
- * dev_model_tier. (The self-referential gates / boot-identity / non-scalar
- * knobs aren't in the registry at all — they're in UNSPEC_KNOBS.)
+ * The /admin exclusion list (STRATEGY §24.138 D1): the recruiter-sim dial (incl.
+ * its §24.163 prose-model knob). (The self-referential gates / boot-identity /
+ * non-scalar knobs aren't in the registry at all — they're in UNSPEC_KNOBS.)
  */
 export const ADMIN_DENY: ReadonlySet<string> = new Set<string>([
   'recruiter_sim_enabled',
@@ -1070,7 +1154,7 @@ export const ADMIN_DENY: ReadonlySet<string> = new Set<string>([
   'recruiter_sim_ghost_probability',
   'recruiter_sim_noise_ratio',
   'recruiter_sim_daily_budget_usd',
-  'dev_model_tier',
+  'recruiter_sim_prose_model',
 ]);
 
 /** The knobs the prod /admin control-center may read + write: registry − ADMIN_DENY. */

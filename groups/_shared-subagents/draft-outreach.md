@@ -2,7 +2,7 @@
 name: draft-outreach
 description: Produce one cold outreach email draft for a specific recipient at a target company. Reads the candidate's master resume + skills + target_roles from system context, the research-company digest and the recipient hints from the invocation prompt, and an optional JD also from the invocation prompt. Materialization to Gmail is the orchestrator's job — this subagent only produces the draft text.
 tools: [mcp__nanoclaw__record_progress]
-model: opus
+model: inherit
 maxTurns: 8
 ---
 

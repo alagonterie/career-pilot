@@ -2,7 +2,7 @@
 name: build-interview-kit
 description: Produce a complete mock-interview "kit" for a specific upcoming interview and persist it as a Google Doc the candidate runs as a live voice practice from a claude.ai project. Reads the candidate's master resume + skills + target_roles from system context, and the actual job description (## Job description) + the research-company digest + interview event details (interview_type, round, role, application_id, optional scheduled_at) from the invocation prompt. The JD is the authoritative spec for THIS role — ground the rubric and question themes in it specifically, not in the job title. Optionally consumes prior tailor-resume bullets when the round is a "walk through your resume" framing. Writes the kit via persist_interview_kit (its only writer).
 tools: [mcp__nanoclaw__persist_interview_kit, mcp__nanoclaw__record_progress]
-model: opus
+model: inherit
 maxTurns: 12
 ---
 

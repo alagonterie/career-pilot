@@ -3,8 +3,9 @@ import type { DevKnob, KnobGroup, KnobWriteResult } from '~/lib/use-dev-inspecto
 
 import { KnobControl } from './KnobControl'
 
-// Operational levers first; the dev-only `sim` + `models` groups sit last (they
-// only appear on /dev — /admin's feed excludes them via ADMIN_DENY).
+// Operational levers first; the `sim` + `models` groups sit last. On /dev they
+// render here as cards; on /admin the model knobs get a dedicated Models tab and
+// only the recruiter-sim knobs are excluded (ADMIN_DENY).
 const GROUP_ORDER: KnobGroup[] = [
   'budget',
   'simulator',
@@ -77,9 +78,9 @@ const GROUP_META: Record<KnobGroup, { title: string; blurb: string }> = {
   },
   sim: { title: 'Recruiter sim', blurb: 'Dev-only: the fixture that injects ATS mail into the dev mailbox.' },
   models: {
-    title: 'Model tier',
+    title: 'Models',
     blurb:
-      'Dev-only: drop the orchestrator + subagents off Opus for cheap dev runs (applies on the next spawn). The cost delta shows up in Portkey.',
+      'Every model the system runs, per-surface (§24.163): owner + sandbox orchestrators and each subagent, plus host-side calls. `inherit` = the group’s orchestrator. Applies on the next spawn. (On /admin these get the dedicated Models tab.)',
   },
 }
 

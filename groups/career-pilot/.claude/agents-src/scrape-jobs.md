@@ -2,7 +2,7 @@
 name: scrape-jobs
 description: Find job leads from Google for Jobs (via SerpApi — the `search_jobs` tool), the primary human-equivalent source, by composing a natural-language query from the candidate's profile + this run's brief. Falls back to the Greenhouse/Lever ATS poller (`fetch_source`) only when `search_jobs` is unavailable. Applies a pre-record judgment to drop off-target roles, then records keepers as rows in the `job_leads` table via `record_job_lead`. Reads candidate context from the auto-loaded `candidate.md` system-prompt fragment; takes an optional free-text brief. Pool-first — does NOT rank, does NOT LLM-score (rules-score is host-computed at insert), does NOT return a ranked list. Returns a short summary of what landed (Pattern B writer variant).
 tools: [mcp__nanoclaw__record_progress, mcp__nanoclaw__search_jobs, mcp__nanoclaw__fetch_source, mcp__nanoclaw__record_job_lead]
-model: opus
+model: inherit
 maxTurns: 15
 ---
 

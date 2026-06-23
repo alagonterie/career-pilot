@@ -7228,7 +7228,7 @@ The contracts live in two committed places: `groups/_shared-subagents/{research-
 
 **Decision (D2) — defaults codify reality + the agreed differentiation** (owner's calls, 2026-06-23). Deploy changes no behavior; the explicitness *is* the win, with the owner subagents now deliberately tiered:
 - Owner orchestrator → **Sonnet** (pinned, dev + prod). Owner subagents → `research_company` + `scrape_jobs` = **Haiku** (retrieval/scrape); `tailor_resume`, `draft_outreach`, `build_interview_kit`, `pipeline_scribe` = **`inherit`** (the quality-critical assembly, on the Sonnet orchestrator).
-- Sandbox orchestrator → **Sonnet** (it writes the visitor-facing bio); the three sandbox subagents → **Haiku** (per §24.142, now individually settable).
+- Sandbox orchestrator → **Sonnet** (it writes the visitor-facing bio); the three sandbox subagents **default to the owner agent's same-named subagent** (research-company → Haiku; tailor-resume + draft-outreach → `inherit`) so owner and sandbox share one model policy. §24.142's all-Haiku sandbox split is no longer the hardcoded default but a **per-subagent cost lever** — drop a subagent to Haiku when it won't move output (the sandbox is the public money-path under a per-run budget + 360 s wall; research is retrieval, tailor bullets are master-snapped host-side).
 - Host → `kit_entity_redact_model` = **Sonnet** (§24.134e); `win_confidence` / `sanitization_pass3` / `lead_ranking` / `recruiter_sim_prose` = **Haiku**.
 - All-Sonnet/Haiku by default; **Opus is opt-in** — crank a single surface when observation shows a quality gap there, not a blanket setting.
 

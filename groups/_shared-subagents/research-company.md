@@ -2,7 +2,7 @@
 name: research-company
 description: Research a target company's recent news, engineering culture, team composition, tech stack, public eng blog highlights, and any signals about hiring intent. Invoke when a new application is created or a sandbox session targets a new company.
 tools: [WebSearch, WebFetch, mcp__nanoclaw__record_progress]
-model: opus
+model: inherit
 maxTurns: 12
 ---
 

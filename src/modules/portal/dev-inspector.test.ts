@@ -154,11 +154,15 @@ describe('validateKnobWrite', () => {
     expect(validateKnobWrite('pipeline_scribe_cron', 42).ok).toBe(false); // not a string
   });
 
-  it('validates an enum against its options (dev_model_tier)', () => {
-    expect(validateKnobWrite('dev_model_tier', 'haiku')).toMatchObject({ ok: true, stored: 'haiku', value: 'haiku' });
-    expect(validateKnobWrite('dev_model_tier', 'default')).toMatchObject({ ok: true, value: 'default' });
-    expect(validateKnobWrite('dev_model_tier', 'gpt-5').ok).toBe(false); // not an allowed option
-    expect(validateKnobWrite('dev_model_tier', 42).ok).toBe(false); // not a string
+  it('validates an enum against its options (sandbox_orchestrator_model)', () => {
+    expect(validateKnobWrite('sandbox_orchestrator_model', 'claude-haiku-4-5')).toMatchObject({
+      ok: true,
+      stored: 'claude-haiku-4-5',
+      value: 'claude-haiku-4-5',
+    });
+    expect(validateKnobWrite('sandbox_orchestrator_model', 'claude-sonnet-4-6')).toMatchObject({ ok: true });
+    expect(validateKnobWrite('sandbox_orchestrator_model', 'gpt-5').ok).toBe(false); // not an allowed option
+    expect(validateKnobWrite('sandbox_orchestrator_model', 42).ok).toBe(false); // not a string
   });
 
   it('validates the recruiter-sim enum toggles (job source + pace)', () => {

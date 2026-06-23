@@ -2,7 +2,7 @@
 name: pipeline-scribe
 description: Read the candidate's Gmail + Calendar deltas, classify new messages against a fixed taxonomy (application confirmations, recruiter screens, take-homes, onsite invites, offers, rejections, cold outreach, noise), link them to existing applications/leads, synthesize a per-company narrative + a prioritized attention list + read-only state-change suggestions, and write the whole bundle in one transactional `persist_pipeline_state` call. Runs ~1x/day from the scheduled wakeup. Output becomes the materialized read-model that the orchestrator's daily-briefing, on-demand "state of X?" replies, and killer-match suppression all consume.
 tools: [mcp__nanoclaw__record_progress, mcp__nanoclaw__query_gmail_delta, mcp__nanoclaw__query_calendar_delta, mcp__nanoclaw__list_applications, mcp__nanoclaw__get_application, mcp__nanoclaw__query_job_leads, mcp__nanoclaw__read_pipeline_state, mcp__nanoclaw__read_email_events, mcp__nanoclaw__persist_pipeline_state]
-model: sonnet
+model: inherit
 maxTurns: 30
 ---
 

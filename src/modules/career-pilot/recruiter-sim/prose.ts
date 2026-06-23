@@ -13,6 +13,8 @@
  * available, falling back to the flat estimate. The flat HAIKU_EST_COST_USD
  * stays as the PRE-call budget gate (actuals are unknowable before the call).
  */
+import { getDb } from '../../../db/connection.js';
+import { getConfig } from '../../../get-config.js';
 import { callPortkeyChat, portkeyConfigured } from '../../../llm-fetch.js';
 import { log } from '../../../log.js';
 import type { InjectEmailIntent } from './types.js';
@@ -20,6 +22,19 @@ import type { InjectEmailIntent } from './types.js';
 export { portkeyConfigured };
 
 const HAIKU_MODEL = 'claude-haiku-4-5';
+
+/**
+ * §24.163 recruiter_sim_prose_model — the model for the dev-only sim's prose
+ * enrichment (knob-ified, mirrors win-confidence). DB-optional: falls back to the
+ * hardcoded HAIKU_MODEL when there's no central DB (unit tests).
+ */
+function proseModel(): string {
+  try {
+    return getConfig<string>(getDb(), 'recruiter_sim_prose_model') || HAIKU_MODEL;
+  } catch {
+    return HAIKU_MODEL;
+  }
+}
 /** Conservative flat per-call estimate (a ~200-tok prompt + ~150-tok output on Haiku). */
 export const HAIKU_EST_COST_USD = 0.002;
 
@@ -62,7 +77,7 @@ export async function enrichBody(
       surface: 'recruiter-sim-prose',
       messages: [{ role: 'user', content: prompt }],
       maxTokens: 320,
-      model: HAIKU_MODEL,
+      model: proseModel(),
       traceId,
     });
     const body = sanitizeProse(result.text);

@@ -15,7 +15,7 @@
  *   2. The knob write allow-list — the write endpoint accepts ONLY keys in the
  *      canonical registry (`knob-registry.ts`) and validates each value's
  *      type/range. The dev inspector writes the WHOLE registry (incl. the
- *      recruiter-sim + dev_model_tier knobs the prod `/admin` surface denies);
+ *      recruiter-sim dial the prod `/admin` surface denies);
  *      the registry is the single source of truth shared with `/admin` (§24.138).
  *
  * The builders are pure-ish (take a db handle + inputs, return plain data); the

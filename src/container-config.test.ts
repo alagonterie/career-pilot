@@ -7,9 +7,12 @@
  * touches the filesystem + DB; the round-trip is covered by the
  * agent-runner's config.ts (which reads back what we write).
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { applyModelTier, applySandboxModelSplit, configFromDb, type ContainerConfig } from './container-config.js';
+import { applyOrchestratorModel, configFromDb, type ContainerConfig } from './container-config.js';
+import { closeDb, getDb, initTestDb } from './db/connection.js';
+import { runMigrations } from './db/migrations/index.js';
+import { writePreference } from './modules/portal/knob-registry.js';
 import type { AgentGroup, ContainerConfigRow } from './types.js';
 
 function row(overrides: Partial<ContainerConfigRow> = {}): ContainerConfigRow {
@@ -76,74 +79,57 @@ describe('configFromDb — disallowedTools', () => {
   });
 });
 
-describe('applyModelTier (§24.43 dev tier / §24.140 sandbox tier)', () => {
+describe('applyOrchestratorModel (§24.163 — pin the orchestrator from the group knob)', () => {
   function baseConfig(): ContainerConfig {
     return { mcpServers: {}, packages: { apt: [], npm: [] }, additionalMounts: [], skills: 'all' };
   }
-
-  it('is a no-op for the default tier — real models kept', () => {
-    const cfg = baseConfig();
-    applyModelTier(cfg, 'default');
-    expect(cfg.model).toBeUndefined();
-    expect(cfg.env).toBeUndefined();
-  });
-
-  it('is a no-op for an unknown tier (defends the gate)', () => {
-    const cfg = baseConfig();
-    applyModelTier(cfg, 'gpt-5');
-    expect(cfg.model).toBeUndefined();
-    expect(cfg.env).toBeUndefined();
-  });
-
-  it('sonnet tier: opus alias + orchestrator → Sonnet, Haiku kept', () => {
-    const cfg = baseConfig();
-    applyModelTier(cfg, 'sonnet');
-    expect(cfg.model).toBe('claude-sonnet-4-6');
-    expect(cfg.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-sonnet-4-6');
-    expect(cfg.env?.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('claude-sonnet-4-6');
-    expect(cfg.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('claude-haiku-4-5');
-  });
-
-  it('haiku tier: orchestrator + every alias → Haiku', () => {
-    const cfg = baseConfig();
-    applyModelTier(cfg, 'haiku');
-    expect(cfg.model).toBe('claude-haiku-4-5');
-    expect(cfg.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-haiku-4-5');
-    expect(cfg.env?.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('claude-haiku-4-5');
-    expect(cfg.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('claude-haiku-4-5');
-  });
-
-  it('preserves any pre-existing env when applying a tier', () => {
-    const cfg = baseConfig();
-    cfg.env = { FOO: 'bar' };
-    applyModelTier(cfg, 'haiku');
-    expect(cfg.env?.FOO).toBe('bar');
-    expect(cfg.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-haiku-4-5');
-  });
-});
-
-describe('applySandboxModelSplit (§24.142 — orchestrator vs subagent tiers)', () => {
-  function baseConfig(): ContainerConfig {
-    return { mcpServers: {}, packages: { apt: [], npm: [] }, additionalMounts: [], skills: 'all' };
+  function group(folder: string): AgentGroup {
+    return { id: 'ag-1', name: 'g', folder, agent_provider: null, created_at: '2026-05-27T00:00:00Z' };
   }
 
-  it('orchestrator → its model; subagents (opus alias) + internal (haiku) → subagent model', () => {
+  beforeEach(() => {
+    initTestDb();
+    runMigrations(getDb());
+  });
+  afterEach(() => closeDb());
+
+  it('owner group: pins config.model to owner_orchestrator_model (default Sonnet) + the aliases', () => {
     const cfg = baseConfig();
-    applySandboxModelSplit(cfg, 'claude-sonnet-4-6', 'claude-haiku-4-5');
+    applyOrchestratorModel(cfg, group('career-pilot'), getDb());
     expect(cfg.model).toBe('claude-sonnet-4-6');
-    // subagents are `model: opus` → carried to the subagent tier
-    expect(cfg.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-haiku-4-5');
-    // internal WebFetch/WebSearch summarization → subagent tier (cheap)
+    expect(cfg.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('claude-haiku-4-5'); // internal summarize stays cheap
+    expect(cfg.env?.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('claude-sonnet-4-6'); // backstop → orchestrator
+    expect(cfg.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-sonnet-4-6'); // backstop → orchestrator (no surprise Opus)
+  });
+
+  it('honors an owner_orchestrator_model override (crank to Opus) without touching the Haiku internal', () => {
+    writePreference(getDb(), 'owner_orchestrator_model', 'claude-opus-4-8');
+    const cfg = baseConfig();
+    applyOrchestratorModel(cfg, group('career-pilot'), getDb());
+    expect(cfg.model).toBe('claude-opus-4-8');
+    expect(cfg.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-opus-4-8');
     expect(cfg.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('claude-haiku-4-5');
-    // sonnet alias pinned to the orchestrator so config.model resolves consistently
+  });
+
+  it('sandbox group: pins config.model to sandbox_orchestrator_model (default Sonnet)', () => {
+    const cfg = baseConfig();
+    applyOrchestratorModel(cfg, group('career-pilot-sandbox'), getDb());
+    expect(cfg.model).toBe('claude-sonnet-4-6');
     expect(cfg.env?.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('claude-sonnet-4-6');
+  });
+
+  it('non-career-pilot group: no-op (leaves the DB-configured model untouched)', () => {
+    const cfg = baseConfig();
+    applyOrchestratorModel(cfg, group('some-other-group'), getDb());
+    expect(cfg.model).toBeUndefined();
+    expect(cfg.env).toBeUndefined();
   });
 
   it('preserves any pre-existing env', () => {
     const cfg = baseConfig();
     cfg.env = { FOO: 'bar' };
-    applySandboxModelSplit(cfg, 'claude-sonnet-4-6', 'claude-haiku-4-5');
+    applyOrchestratorModel(cfg, group('career-pilot'), getDb());
     expect(cfg.env?.FOO).toBe('bar');
-    expect(cfg.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-haiku-4-5');
+    expect(cfg.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('claude-haiku-4-5');
   });
 });

@@ -247,8 +247,8 @@ const OPS_CONVERSATIONS_DIR = '/workspace/agent/conversations/ops';
  * worked under Haiku Jun 11–15) showed the model was a red herring — the real
  * gap was the model-dependent record_progress emission, now fixed deterministically
  * host-side (§24.78). The floor only added cost and silently overrode the owner's
- * dev_model_tier choice. The ops cascade now honors the configured tier like every
- * other session.
+ * configured model. The ops cascade now honors the §24.163 `owner_orchestrator_model`
+ * like every other owner session (pinned by applyOrchestratorModel at materialize).
  */
 export function applyOpsSpawnEnv(config: ContainerConfig, session: Session, agentGroup: AgentGroup): ContainerConfig {
   try {

@@ -72,12 +72,12 @@ describe('ADMIN_DENY / ADMIN_KNOB_KEYS invariants', () => {
     expect(ADMIN_KNOB_KEYS).toEqual(ALL_KNOB_KEYS.filter((k) => !ADMIN_DENY.has(k)));
   });
 
-  it('every ADMIN_DENY key is a real registry spec (denies the recruiter-sim dial + dev_model_tier)', () => {
+  it('every ADMIN_DENY key is a real registry spec (denies the recruiter-sim dial incl. its prose model)', () => {
     for (const key of ADMIN_DENY) {
       expect(KNOB_SPECS[key], `ADMIN_DENY key ${key} is not in the registry`).toBeTruthy();
     }
     expect(ADMIN_DENY.has('recruiter_sim_enabled')).toBe(true);
-    expect(ADMIN_DENY.has('dev_model_tier')).toBe(true);
+    expect(ADMIN_DENY.has('recruiter_sim_prose_model')).toBe(true);
   });
 
   it('no ADMIN_KNOB_KEYS key is denied, and the included set carries the operational levers', () => {

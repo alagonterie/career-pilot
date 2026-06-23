@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 
 import { AdminModeControls } from '~/components/admin/AdminModeControls'
+import { ModelControls } from '~/components/admin/ModelControls'
 import { KnobControls } from '~/components/dev/KnobControls'
 import { StateNote } from '~/components/states'
 import { Skeleton } from '~/components/ui/skeleton'
@@ -44,12 +45,13 @@ export const Route = createFileRoute('/(ops)/admin')({
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
 
-type TabId = 'overview' | 'pipeline' | 'visitors' | 'contacts' | 'system'
+type TabId = 'overview' | 'pipeline' | 'visitors' | 'contacts' | 'models' | 'system'
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'pipeline', label: 'Pipeline' },
   { id: 'visitors', label: 'Visitors' },
   { id: 'contacts', label: 'Contacts' },
+  { id: 'models', label: 'Models' },
   { id: 'system', label: 'System' },
 ]
 
@@ -127,17 +129,33 @@ function AdminPage() {
             ))}
           </nav>
 
-          {tab === 'overview' ? <OverviewPanel summary={summary.data} /> : null}
+          {tab === 'overview' ? <OverviewPanel summary={summary.data} onModeChange={summary.refresh} /> : null}
           {tab === 'pipeline' ? (
             <PipelinePanel rows={pipeline.data?.applications ?? []} stageCounts={pipeline.data?.stageCounts ?? {}} />
           ) : null}
           {tab === 'visitors' ? <VisitorsPanel data={attribution.data} /> : null}
           {tab === 'contacts' ? <ContactsPanel contacts={contacts.data?.contacts ?? []} /> : null}
+          {tab === 'models' ? (
+            <section className="flex flex-col gap-4">
+              {knobs.data ? (
+                <ModelControls
+                  knobs={knobs.data.knobs.filter((k) => k.group === 'models')}
+                  onWrite={(key, value) => postAdminKnob(API_BASE, key, value)}
+                  onReset={(key) => resetAdminKnob(API_BASE, key)}
+                />
+              ) : null}
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                The recruiter-sim prose model is dev-only (excluded here by design); the model feature <em>toggles</em>{' '}
+                (kit entity-redact, sanitization pass-3) stay on the System tab — these are the model <em>choices</em>{' '}
+                only.
+              </p>
+            </section>
+          ) : null}
           {tab === 'system' ? (
             <section className="flex flex-col gap-4">
               {knobs.data ? (
                 <KnobControls
-                  knobs={knobs.data.knobs}
+                  knobs={knobs.data.knobs.filter((k) => k.group !== 'models')}
                   onWrite={(key, value) => postAdminKnob(API_BASE, key, value)}
                   onReset={(key) => resetAdminKnob(API_BASE, key)}
                   onResetAll={() => resetAllAdminKnobs(API_BASE)}
@@ -146,8 +164,8 @@ function AdminPage() {
               <p className="text-[11px] leading-snug text-muted-foreground">
                 Edge-tier abuse controls (Turnstile, the Workers rate-limit burst caps) live in{' '}
                 <code className="font-mono">frontend/wrangler.jsonc</code> per environment — the Worker enforces them at
-                the edge and can't read these host knobs (§24.70 D4). The recruiter-sim + dev-model knobs are excluded
-                here by design (dev-only).
+                the edge and can't read these host knobs (§24.70 D4). Model choices moved to the <strong>Models</strong>{' '}
+                tab; the recruiter-sim knobs are excluded here by design (dev-only).
               </p>
             </section>
           ) : null}
@@ -159,12 +177,21 @@ function AdminPage() {
 
 // ── Overview ──────────────────────────────────────────────────────────────────
 
-function OverviewPanel({ summary }: { summary: AdminSummary | null }) {
+function OverviewPanel({ summary, onModeChange }: { summary: AdminSummary | null; onModeChange: () => void }) {
   const health = summary?.health
   const classes = summary ? (['ops', 'chat', 'sandbox', 'host'] as const) : []
   return (
     <section className="flex flex-col gap-4">
-      <AdminModeControls mode={summary?.mode} onControl={(body) => postAdminControl(API_BASE, body)} />
+      <AdminModeControls
+        mode={summary?.mode}
+        onControl={async (body) => {
+          const res = await postAdminControl(API_BASE, body)
+          // Refetch the summary so the Mode / Run-state badges flip immediately —
+          // no manual page refresh (the poll alone left them stale for up to 20s).
+          if (res.ok) onModeChange()
+          return res
+        }}
+      />
 
       <div className="grid gap-4 md:grid-cols-2">
         {/* Health */}

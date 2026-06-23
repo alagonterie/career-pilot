@@ -30,8 +30,10 @@ import { originJwtEnabled } from './access-jwt.js';
 import { isDevEnv } from './dev-inspector.js';
 import { executeControlCommand, executeKillswitch } from './kill-switch.js';
 import { ADMIN_DENY, ADMIN_KNOB_KEYS, KNOB_SPECS, applyKnobWrite, buildKnobs, type KnobView } from './knob-registry.js';
-import { getObservability } from './observability.js';
+import { computeRunningTopology, getObservability } from './observability.js';
 import { getSystemStatus, setLiveMode, type SystemStatus } from './system-modes.js';
+
+import { countRunningContainers } from '../../container-runtime.js';
 
 /**
  * True when the owner-only admin surface may serve. Dev → always (owner-gated
@@ -149,8 +151,8 @@ export function buildAdminKnobs(db: Database.Database): { knobs: KnobView[] } {
 }
 
 /**
- * Write an /admin knob. The prod surface excludes `ADMIN_DENY` (recruiter-sim,
- * dev_model_tier): a denied key that IS a valid registry spec is refused with 403
+ * Write an /admin knob. The prod surface excludes `ADMIN_DENY` (the recruiter-sim
+ * dial incl. its prose model): a denied key that IS a valid registry spec is refused with 403
  * (defense-in-depth behind the not-rendered UI); everything else delegates to the
  * shared `applyKnobWrite`, scoped to `ADMIN_KNOB_KEYS`.
  */
@@ -197,7 +199,15 @@ export async function buildAdminSummary(db: Database.Database): Promise<AdminSum
 
   const obs = await getObservability();
   const spendTotalMicrousd24h = Object.values(obs.spend_by_class).reduce((sum, s) => sum + s.microusd_24h, 0);
-  const topo = obs.session_topology;
+
+  // The pool gauge counts LIVE CONTAINERS (the same source the /dashboard gauge
+  // uses), not active sessions — an active session can exist with no running
+  // container (idle/reaped), which is why the old `session_topology` count read
+  // wrong here. Prefer the live docker count; fall back to running-session topology
+  // (one container per running session) when the runtime is unreachable.
+  const live = countRunningContainers();
+  const running = computeRunningTopology();
+  const activeContainers = live ?? running.chat + running.ops + running.sandbox;
 
   return {
     mode: getSystemStatus(),
@@ -205,7 +215,7 @@ export async function buildAdminSummary(db: Database.Database): Promise<AdminSum
     spendByClass: obs.spend_by_class,
     spendTotalMicrousd24h,
     pool: {
-      active: topo.chat + topo.ops + topo.sandbox,
+      active: activeContainers,
       capacity: getConfig<number>(db, 'container_max_concurrent', 4),
     },
   };

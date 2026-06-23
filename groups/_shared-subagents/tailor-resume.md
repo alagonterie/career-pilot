@@ -2,7 +2,7 @@
 name: tailor-resume
 description: Tailor 3-5 resume bullets to a target JD, honestly. Reads the candidate's master resume + skills + target_roles from system context, the JD from the invocation prompt, and an optional company-research digest also from the invocation prompt. Read-only — never modifies the master resume.
 tools: [mcp__nanoclaw__record_progress]
-model: opus
+model: inherit
 maxTurns: 8
 ---
 

@@ -29,6 +29,7 @@ import { getDb, hasTable } from './db/connection.js';
 import { getConfig } from './get-config.js';
 import { initGroupFilesystem } from './group-init.js';
 import { renderPersonaForGroup, renderSandboxCandidateForGroup } from './modules/career-pilot/render-persona.js';
+import { applySubagentModels } from './modules/career-pilot/subagent-models.js';
 import { getPauseState, type PauseState } from './modules/portal/system-modes.js';
 import { stopTypingRefresh } from './modules/typing/index.js';
 import { log } from './log.js';
@@ -379,6 +380,11 @@ function buildMounts(
   // shared preamble via `<!-- @include ... -->` directives. See
   // `claude-md-compose.ts` and `.specs/STRATEGY.md §24.3` item 2.
   composeSubagentDefinitions(agentGroup);
+
+  // §24.163 — inject each subagent's configured model into its rendered
+  // frontmatter (owner_model_* / sandbox_model_*). Must run AFTER the composer
+  // writes the files. No-op for non-career-pilot groups + under test modes.
+  applySubagentModels(agentGroup);
 
   const mounts: VolumeMount[] = [];
   const sessDir = sessionDir(agentGroup.id, session.id);

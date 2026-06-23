@@ -11,6 +11,8 @@
 import fs from 'fs';
 import path from 'path';
 
+import type Database from 'better-sqlite3';
+
 import { GROUPS_DIR } from './config.js';
 import { getConfig } from './get-config.js';
 import { getContainerConfig } from './db/container-configs.js';
@@ -141,46 +143,34 @@ export function materializeContainerJson(agentGroupId: string): ContainerConfig 
 
   const config = configFromDb(row, group);
 
-  // §24.142 sandbox model split: the PUBLIC "Watch it work" sandbox (the only
-  // visitor-facing money path) runs its ORCHESTRATOR on a capable tier (Sonnet —
-  // it writes the tailored-résumé bio, the one quality lever the visitor sees) and
-  // ALL its subagents on a cheap/fast tier (Haiku — research is retrieval +
-  // summarization; tailor-resume's bullets are snapped to the master verbatim
-  // host-side so its model barely affects output; draft is a sample email). That
-  // keeps the slow tier's footprint to the single assembly turn — near full-Haiku
-  // latency with a Sonnet-grade bio — and bounds the cost/latency a uniform Sonnet
-  // tier blew past (it stalled mid-flow at the §24.141 maxBudgetUsd cap, right
-  // after the ~$0.50 research subagent). Sandbox-only + applied on dev AND prod;
-  // dev_model_tier (below) is now owner-scoped so the sandbox runs identically in
-  // both. Knob-driven so any piece can move tiers without a redeploy.
+  // §24.141 S1-1 sandbox caps (model-independent): maxTurns is the reliable
+  // per-run bound (caps agent turns → caps expensive web ops); maxBudgetUsd is a
+  // coarse cost ceiling enforced on the SDK's running total, so it must sit ABOVE a
+  // full legitimate run and catch only a runaway. The 360s host hard-wall + the
+  // daily global budget are the real backstops.
   if (group.folder === 'career-pilot-sandbox') {
-    applySandboxModelSplit(
-      config,
-      getConfig<string>(getDb(), 'sandbox_orchestrator_model', 'claude-sonnet-4-6'),
-      getConfig<string>(getDb(), 'sandbox_subagent_model', 'claude-haiku-4-5'),
-    );
-    // §24.141 S1-1 caps: maxTurns is the reliable per-run bound (caps agent turns
-    // → caps expensive web ops); maxBudgetUsd is a coarse cost ceiling enforced on
-    // the SDK's running total, so it must sit ABOVE a full legitimate run (a
-    // uniform Sonnet run hit $0.81; a split run is well under) and catch only a
-    // runaway. The 360s host hard-wall + the daily global budget are the real
-    // backstops.
     config.maxTurns = getConfig<number>(getDb(), 'simulator_max_turns', 30);
     config.maxBudgetUsd = getConfig<number>(getDb(), 'simulator_max_budget_usd', 1.0);
   }
 
+  // §24.163 model-control plane: pin the orchestrator model from the group's
+  // knob (owner OR sandbox; dev AND prod). Per-subagent models are injected as
+  // frontmatter at compose time (applySubagentModels in container-runner.buildMounts).
+  // The Ollama/Claude test modes pin their own models and take precedence.
   if (process.env.OLLAMA_TEST_MODE === '1' && group.folder === 'career-pilot') {
     applyOllamaTestOverrides(config);
   } else if (process.env.CLAUDE_TEST_MODE === '1' && group.folder === 'career-pilot') {
     applyClaudeTestOverrides(config);
-  } else if (process.env.ENVIRONMENT === 'dev' && group.folder === 'career-pilot') {
-    // §24.43 dev model tier: a runtime, dev-only lever to drop the OWNER orchestrator
-    // + subagents off the (expensive) default Opus without a redeploy. No-op unless
-    // the `dev_model_tier` preference is `sonnet`/`haiku`. Owner-scoped (§24.142): the
-    // sandbox keeps its own model split on dev so it runs identically to prod; prod
-    // (ENVIRONMENT!=='dev') never reaches this branch. The test modes above take
-    // precedence (they pin a specific model for their own purposes).
-    applyModelTier(config, getConfig<string>(getDb(), 'dev_model_tier', 'default'));
+  } else {
+    applyOrchestratorModel(config, group, getDb());
+    // The container-side lead-ranking call (rank-leads.ts) reads its model from
+    // LEAD_RANKING_MODEL; inject it for the owner group (the only group that ranks).
+    if (group.folder === 'career-pilot') {
+      config.env = {
+        ...(config.env ?? {}),
+        LEAD_RANKING_MODEL: getConfig<string>(getDb(), 'lead_ranking_model', 'claude-haiku-4-5'),
+      };
+    }
   }
 
   // Forward fixture-mode selectors to the container so pipeline-scribe's
@@ -218,9 +208,11 @@ export function materializeContainerJson(agentGroupId: string): ContainerConfig 
  *   `WebSearch`/`WebFetch` (which use Haiku internally to summarize
  *   fetched content) fail with "model claude-haiku-4-5-20251001 not
  *   accessible" because Ollama doesn't host that name. Subagents declared
- *   with `model: opus` (e.g. `tailor-resume`, `prep-interview` per
- *   STRATEGY.md §5) would hit the same wall via the Opus alias.
- *   Discovered 2026-05-26 while running --flow=research-company-discovery.
+ *   `model: inherit` (§24.163) resolve to `config.model` (the Ollama model
+ *   here), so they don't hit Anthropic — and `applySubagentModels` is SKIPPED
+ *   under the test modes (see that function) precisely so it doesn't rewrite
+ *   the frontmatter to an exact Anthropic ID that `blockedHosts` would then
+ *   refuse. Discovered 2026-05-26 while running --flow=research-company-discovery.
  * - `blockedHosts: ['api.anthropic.com']` resolves the real Anthropic
  *   endpoint to 0.0.0.0 inside the container — defense-in-depth, so a
  *   stray config override can't accidentally bill real credits during
@@ -269,11 +261,11 @@ function applyOllamaTestOverrides(config: ContainerConfig): void {
  * injects the real Anthropic credential at request time. We just retarget
  * Claude Code's model aliases:
  * - `ANTHROPIC_DEFAULT_SONNET_MODEL` → `claude-sonnet-4-6`
- * - `ANTHROPIC_DEFAULT_OPUS_MODEL` → `claude-sonnet-4-6` (default; route
- *   Opus aliases to Sonnet for cost — every subagent declares
- *   `model: opus` in frontmatter, but for these task shapes Sonnet is
- *   plenty capable. Override via `CLAUDE_TEST_OPUS_MODEL=claude-opus-4-7`
- *   if you need real Opus.)
+ * - `ANTHROPIC_DEFAULT_OPUS_MODEL` → `claude-sonnet-4-6` (default; a backstop
+ *   for any stray `model: opus` alias — subagents now declare `model: inherit`
+ *   (§24.163) and `applySubagentModels` is SKIPPED under the test modes, so
+ *   every subagent inherits this `config.model`. Override via
+ *   `CLAUDE_TEST_OPUS_MODEL=claude-opus-4-8` if you need real Opus.)
  * - `ANTHROPIC_DEFAULT_HAIKU_MODEL` → `claude-haiku-4-5` (WebFetch/
  *   WebSearch use Haiku internally for content summarization)
  *
@@ -297,70 +289,47 @@ function applyClaudeTestOverrides(config: ContainerConfig): void {
   config.model = sonnetModel;
 }
 
-/**
- * Apply a model-tier overlay in place — the pure tier→config mapping behind the
- * dev-only `dev_model_tier` lever (§24.43, OWNER group only, set from `/dev`; the
- * public sandbox uses {@link applySandboxModelSplit} per §24.142). It retargets
- * the orchestrator's own model AND every
- * subagent's `model: opus` alias to a cheaper tier — no redeploy; picked up on the
- * next container spawn. Mirrors `applyClaudeTestOverrides` (env alias redirects +
- * `config.model`); the alias redirects also catch Haiku-internal calls
- * (WebFetch/WebSearch summarization). Works whether the agent hits
- * `api.anthropic.com` directly or routes through Portkey (§24.44) — Claude Code
- * resolves the alias client-side before the request.
- *
- * - `default` (or any unknown value) → no-op: the real models (Opus orchestrator
- *   + subagents).
- * - `sonnet` → Opus aliases + the orchestrator model → Sonnet; Haiku kept.
- * - `haiku` → everything (orchestrator + all aliases) → Haiku: cheapest, for
- *   plumbing / loop runs where output quality doesn't matter.
- */
-export function applyModelTier(config: ContainerConfig, tier: string): void {
-  const SONNET = 'claude-sonnet-4-6';
-  const HAIKU = 'claude-haiku-4-5';
-  if (tier === 'sonnet') {
-    config.env = {
-      ...(config.env ?? {}),
-      ANTHROPIC_DEFAULT_OPUS_MODEL: SONNET,
-      ANTHROPIC_DEFAULT_SONNET_MODEL: SONNET,
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: HAIKU,
-    };
-    config.model = SONNET;
-  } else if (tier === 'haiku') {
-    config.env = {
-      ...(config.env ?? {}),
-      ANTHROPIC_DEFAULT_OPUS_MODEL: HAIKU,
-      ANTHROPIC_DEFAULT_SONNET_MODEL: HAIKU,
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: HAIKU,
-    };
-    config.model = HAIKU;
-  }
-  // 'default'/unknown → no-op (real models).
-}
+/** Claude Code's internal WebFetch/WebSearch summarization always runs on cheap Haiku. */
+const INTERNAL_SUMMARIZE_MODEL = 'claude-haiku-4-5';
 
 /**
- * §24.142 sandbox model split — the per-group model policy for the public
- * simulator: the orchestrator on `orchestratorModel`, every subagent on
- * `subagentModel`. Mirrors {@link applyModelTier}'s mechanism (config.model is
- * the orchestrator; the ANTHROPIC_DEFAULT_*_MODEL aliases redirect each
- * subagent's `model:` frontmatter AND the Haiku-internal WebFetch/WebSearch
- * summarization), but splits the two tiers so the slow/capable model is spent
- * ONLY on the bio-writing assembly turn — not on the latency-heavy research fan-
- * out or the master-snapped tailor bullets. The subagents are all `model: opus`,
- * so the OPUS alias carries them to the subagent tier; the SONNET alias is pinned
- * to the orchestrator model so a literal/symbolic `config.model` resolves
- * consistently; HAIKU → subagent tier for cheap internal summarization.
+ * §24.163 model-control plane — pin the orchestrator model in place from the
+ * group's orchestrator knob (`owner_orchestrator_model` for `career-pilot`,
+ * `sandbox_orchestrator_model` for `career-pilot-sandbox`), in dev AND prod.
+ * No-op for any other group (leaves the DB-configured `config.model`).
+ *
+ * `config.model` is the orchestrator's own model (the SDK `model` option).
+ * Per-subagent models are NOT set here — they're injected as per-subagent
+ * frontmatter at compose time by `applySubagentModels`
+ * (src/modules/career-pilot/subagent-models.ts, run in
+ * container-runner.buildMounts). So the only env aliases this sets are:
+ *   - HAIKU → claude-haiku-4-5, keeping Claude Code's internal WebFetch/WebSearch
+ *     summarization cheap; and
+ *   - SONNET/OPUS → the orchestrator model, a BACKSTOP so any unmigrated
+ *     `model: <alias-word>` frontmatter resolves to the orchestrator tier and can
+ *     never surprise-bill Opus (a subagent set via exact-ID frontmatter ignores
+ *     these aliases entirely; `model: inherit` resolves to `config.model`).
+ * Resolves client-side in Claude Code, so it works whether the agent hits
+ * `api.anthropic.com` directly or routes through Portkey (§24.44).
  */
-export function applySandboxModelSplit(
+export function applyOrchestratorModel(
   config: ContainerConfig,
-  orchestratorModel: string,
-  subagentModel: string,
+  group: AgentGroup,
+  db: Database.Database,
 ): void {
+  const knob =
+    group.folder === 'career-pilot'
+      ? 'owner_orchestrator_model'
+      : group.folder === 'career-pilot-sandbox'
+        ? 'sandbox_orchestrator_model'
+        : null;
+  if (!knob) return;
+  const model = getConfig<string>(db, knob, 'claude-sonnet-4-6');
+  config.model = model;
   config.env = {
     ...(config.env ?? {}),
-    ANTHROPIC_DEFAULT_OPUS_MODEL: subagentModel,
-    ANTHROPIC_DEFAULT_SONNET_MODEL: orchestratorModel,
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: subagentModel,
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: INTERNAL_SUMMARIZE_MODEL,
+    ANTHROPIC_DEFAULT_SONNET_MODEL: model,
+    ANTHROPIC_DEFAULT_OPUS_MODEL: model,
   };
-  config.model = orchestratorModel;
 }
