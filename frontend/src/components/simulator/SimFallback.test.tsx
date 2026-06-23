@@ -12,14 +12,16 @@ import { SimFallback } from './SimFallback'
 afterEach(() => vi.restoreAllMocks())
 
 describe('SimFallback (PORTAL §5.3 disabled state)', () => {
-  it('shows the unavailable message + Talk to me, and lists recent runs', async () => {
+  it('shows the unavailable message + Talk to me, and lists recent runs as metrics only (§24.162)', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(
         async () =>
           ({
             ok: true,
-            json: async () => ({ runs: [{ id: 'r1', visitor_company: 'Globex', visitor_role: 'Staff Engineer' }] }),
+            json: async () => ({
+              runs: [{ ts: new Date().toISOString(), total_cost_cents: 84, total_latency_ms: 152700 }],
+            }),
           }) as Response,
       ),
     )
@@ -28,7 +30,9 @@ describe('SimFallback (PORTAL §5.3 disabled state)', () => {
     expect(screen.getByTestId('sim-unavailable')).toBeInTheDocument()
     expect(screen.getByText(/talk to me/i)).toBeInTheDocument()
     await waitFor(() => expect(screen.getByTestId('sim-recent')).toBeInTheDocument())
-    expect(screen.getByText(/Globex/)).toBeInTheDocument()
+    // Metrics render (cost + runtime); no visitor company/role text is present.
+    expect(screen.getByText(/\$0\.84/)).toBeInTheDocument()
+    expect(screen.getByText(/2m 33s/)).toBeInTheDocument()
   })
 
   it('brands the budget cap (§24.150) with the dashboard + architecture CTAs', () => {

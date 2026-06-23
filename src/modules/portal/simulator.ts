@@ -698,7 +698,12 @@ export function getSimulatorResult(id: string): SimulatorRunRow | null {
   return row ?? null;
 }
 
-/** List recent shareable, non-expired runs (metadata only) for the fallback. */
+/** Recent shareable, non-expired runs as METRICS ONLY (§24.162): runtime + cost +
+ *  when — the proof-of-spend cross-checkable against /dashboard. Deliberately omits
+ *  the visitor's free-text company/role (arbitrary public input — the app never
+ *  surfaces raw visitor text on a public feed) AND the run id (so the public feed
+ *  carries no navigable key to a stranger's result page; a result is reachable only
+ *  via the runner's own share link). */
 export function getRecentSimulatorRuns(limit?: number): Array<Partial<SimulatorRunRow>> {
   let n = limit;
   if (n == null) {
@@ -710,7 +715,7 @@ export function getRecentSimulatorRuns(limit?: number): Array<Partial<SimulatorR
   }
   return getDb()
     .prepare(
-      `SELECT id, ts, visitor_company, visitor_role, total_cost_cents, total_latency_ms
+      `SELECT ts, total_cost_cents, total_latency_ms
          FROM simulator_runs
         WHERE shareable = 1 AND (expires_at IS NULL OR datetime(expires_at) > datetime('now'))
         ORDER BY ts DESC LIMIT ?`,

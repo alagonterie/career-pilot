@@ -36,13 +36,23 @@ beforeEach(() => {
 
 afterEach(() => closeDb());
 
-function seedRun(id: string, opts: { company?: string; shareable?: number; expiresAt?: string | null }): void {
+function seedRun(
+  id: string,
+  opts: { company?: string; shareable?: number; expiresAt?: string | null; cost?: number; ts?: string },
+): void {
   getDb()
     .prepare(
-      `INSERT INTO simulator_runs (id, ts, visitor_company, visitor_role, shareable, expires_at)
-       VALUES (?, ?, ?, 'SWE', ?, ?)`,
+      `INSERT INTO simulator_runs (id, ts, visitor_company, visitor_role, total_cost_cents, shareable, expires_at)
+       VALUES (?, ?, ?, 'SWE', ?, ?, ?)`,
     )
-    .run(id, new Date().toISOString(), opts.company ?? 'Acme', opts.shareable ?? 1, opts.expiresAt ?? null);
+    .run(
+      id,
+      opts.ts ?? new Date().toISOString(),
+      opts.company ?? 'Acme',
+      opts.cost ?? null,
+      opts.shareable ?? 1,
+      opts.expiresAt ?? null,
+    );
 }
 
 describe('run accumulation + finalize', () => {
@@ -118,15 +128,21 @@ describe('sweepExpiredSimulatorRuns', () => {
   });
 });
 
-describe('getRecentSimulatorRuns', () => {
-  it('lists recent shareable, non-expired runs (newest first), excluding opted-out', () => {
-    seedRun('sb-1', { company: 'A', expiresAt: new Date(Date.now() + 86_400_000).toISOString() });
-    seedRun('sb-2', { company: 'B', shareable: 0, expiresAt: new Date(Date.now() + 86_400_000).toISOString() });
-    seedRun('sb-3', { company: 'C', expiresAt: new Date(Date.now() - 1000).toISOString() }); // expired
+describe('getRecentSimulatorRuns — metrics only, newest first, filtered (§24.162)', () => {
+  it('returns shareable non-expired runs newest-first as metrics, with no visitor text or id', () => {
+    const future = new Date(Date.now() + 86_400_000).toISOString();
+    seedRun('sb-old', { company: 'A', cost: 11, ts: new Date(Date.now() - 60_000).toISOString(), expiresAt: future });
+    seedRun('sb-new', { company: 'B', cost: 22, ts: new Date().toISOString(), expiresAt: future });
+    seedRun('sb-hidden', { company: 'C', shareable: 0, expiresAt: future }); // opted out
+    seedRun('sb-expired', { company: 'D', expiresAt: new Date(Date.now() - 1000).toISOString() }); // expired
     const recent = getRecentSimulatorRuns(10);
-    const companies = recent.map((r) => r.visitor_company);
-    expect(companies).toContain('A');
-    expect(companies).not.toContain('B'); // shareable=0 excluded
-    expect(companies).not.toContain('C'); // expired excluded
+    // Only the two shareable, non-expired runs, newest first — identified by cost, not text.
+    expect(recent.map((r) => r.total_cost_cents)).toEqual([22, 11]);
+    // §24.162: no visitor free-text, no run id (no result-page key) on the public feed.
+    for (const r of recent) {
+      expect(r.visitor_company).toBeUndefined();
+      expect(r.visitor_role).toBeUndefined();
+      expect(r.id).toBeUndefined();
+    }
   });
 });

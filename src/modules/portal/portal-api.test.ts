@@ -419,8 +419,8 @@ describe('GET /api/simulator/results/:id + /recent', () => {
   function seedRun(id: string, company: string, expiresAt: string | null): void {
     getDb()
       .prepare(
-        `INSERT INTO simulator_runs (id, ts, visitor_company, visitor_role, tailored_resume, shareable, expires_at)
-         VALUES (?, ?, ?, 'SWE', 'bullets', 1, ?)`,
+        `INSERT INTO simulator_runs (id, ts, visitor_company, visitor_role, tailored_resume, total_cost_cents, total_latency_ms, shareable, expires_at)
+         VALUES (?, ?, ?, 'SWE', 'bullets', 84, 152700, 1, ?)`,
       )
       .run(id, new Date().toISOString(), company, expiresAt);
   }
@@ -436,12 +436,19 @@ describe('GET /api/simulator/results/:id + /recent', () => {
     expect(body.visitor_company).toBe('Acme');
   });
 
-  it('lists recent shareable runs', async () => {
+  it('lists recent runs as metrics only — no visitor free-text or id (§24.162)', async () => {
     seedRun('sb-a', 'Globex', new Date(Date.now() + 86_400_000).toISOString());
     const body = (await (await fetch(`${base}/api/simulator/recent`)).json()) as {
-      runs: Array<{ visitor_company: string }>;
+      runs: Array<Record<string, unknown>>;
     };
-    expect(body.runs.map((r) => r.visitor_company)).toContain('Globex');
+    expect(body.runs.length).toBeGreaterThan(0);
+    const r = body.runs[0];
+    expect(r.total_cost_cents).toBe(84);
+    expect(r.total_latency_ms).toBe(152700);
+    // The visitor's raw free-text (+ the run-id/result-page key) is NOT exposed.
+    expect(r.visitor_company).toBeUndefined();
+    expect(r.visitor_role).toBeUndefined();
+    expect(r.id).toBeUndefined();
   });
 });
 

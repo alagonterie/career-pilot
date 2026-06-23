@@ -7,9 +7,29 @@ import type { SimDegradeReason } from '~/lib/sim-degrade'
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
 
 interface RecentRun {
-  id: string
-  visitor_company: string | null
-  visitor_role: string | null
+  ts: string
+  total_cost_cents: number | null
+  total_latency_ms: number | null
+}
+
+/** §24.162 metrics formatters for the recent-runs feed (proof-of-spend, not a
+ *  content browser). Each returns null when the value is missing → the row drops it. */
+function fmtDuration(ms: number | null): string | null {
+  if (ms == null || ms <= 0) return null
+  const s = Math.round(ms / 1000)
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`
+}
+function fmtCost(cents: number | null): string | null {
+  return cents == null || cents <= 0 ? null : `$${(cents / 100).toFixed(2)}`
+}
+function fmtWhen(ts: string): string | null {
+  const t = Date.parse(ts)
+  if (Number.isNaN(t)) return null
+  const mins = Math.round((Date.now() - t) / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.round(mins / 60)
+  return hrs < 24 ? `${hrs}h ago` : `${Math.round(hrs / 24)}d ago`
 }
 
 interface FallbackCopy {
@@ -54,7 +74,7 @@ function fallbackCopy(
     default:
       return {
         title: 'This is taking a breather.',
-        body: 'The live sandbox is catching its breath — try again in a moment. Recent runs are still browsable below.',
+        body: 'The live sandbox is catching its breath — try again in a moment. Recent runs are still listed below.',
       }
   }
 }
@@ -198,15 +218,28 @@ export function SimFallback({
       {recent.length > 0 ? (
         <div className="mt-6 border-t border-border pt-4">
           <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Recent runs</p>
-          <ul data-testid="sim-recent" className="mt-2 flex flex-col gap-1.5 text-sm">
-            {recent.map((r) => (
-              <li key={r.id}>
-                <Link to="/watch/results/$id" params={{ id: r.id }} className="text-accent-cool hover:underline">
-                  {r.visitor_role ?? 'Role'} @ {r.visitor_company ?? 'a company'} →
-                </Link>
-              </li>
-            ))}
+          {/* §24.162: metrics only — runtime · cost · when, no visitor free-text and
+              no link. Real spend you can cross-check on the dashboard, never a
+              browser of strangers' typed inputs. */}
+          <ul data-testid="sim-recent" className="mt-2 flex flex-col gap-1 font-mono text-sm text-muted-foreground">
+            {recent.map((r, i) => {
+              const parts = [fmtWhen(r.ts), fmtDuration(r.total_latency_ms), fmtCost(r.total_cost_cents)].filter(
+                (p): p is string => p !== null,
+              )
+              if (parts.length === 0) return null
+              return (
+                <li key={i} className="tabular-nums">
+                  <span aria-hidden className="text-muted-foreground/40">
+                    {'· '}
+                  </span>
+                  <span>{parts.join('  ·  ')}</span>
+                </li>
+              )
+            })}
           </ul>
+          <p className="mt-2 text-xs text-muted-foreground/70">
+            Each one is real LLM spend — the same runs you’ll find on the dashboard.
+          </p>
         </div>
       ) : null}
     </div>
