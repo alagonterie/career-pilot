@@ -94,6 +94,36 @@ describe('projectWorkProfile', () => {
     expect(projectWorkProfile(JSON.stringify({ name: 'X', projectsFirst: false }))!.projectsFirst).toBeUndefined();
     expect(projectWorkProfile(JSON.stringify({ name: 'X', projectsFirst: 'yes' }))!.projectsFirst).toBeUndefined();
   });
+
+  it('projects the §24.157 experience descriptor/titles + project bullets/repo (omit-when-absent)', () => {
+    const p = projectWorkProfile(
+      JSON.stringify({
+        name: 'X',
+        experience: [
+          { role: 'R', company: 'C', period: 'P', bullets: ['b'], descriptor: 'A SaaS co.', titles: 'SE II (2018–20)' },
+          { role: 'R2', company: 'C2', period: 'P2', bullets: [] }, // no descriptor/titles → omitted
+        ],
+        projects: [
+          {
+            name: 'one',
+            description: 'D',
+            href: 'https://a.example',
+            repo: 'https://github.com/x/one',
+            bullets: ['x', 1, 'y'],
+          },
+          { name: 'two', description: 'D2' }, // no repo/bullets → omitted
+        ],
+      }),
+    );
+    expect(p!.experience[0].descriptor).toBe('A SaaS co.');
+    expect(p!.experience[0].titles).toBe('SE II (2018–20)');
+    expect(p!.experience[1].descriptor).toBeUndefined();
+    expect(p!.experience[1].titles).toBeUndefined();
+    expect(p!.projects[0].repo).toBe('https://github.com/x/one');
+    expect(p!.projects[0].bullets).toEqual(['x', 'y']); // non-strings dropped
+    expect(p!.projects[1].repo).toBeUndefined();
+    expect(p!.projects[1].bullets).toBeUndefined(); // empty/absent → omitted
+  });
 });
 
 const EMPTY_IDENTITY = { email: null, github: null, linkedin: null, x: null, website: null };

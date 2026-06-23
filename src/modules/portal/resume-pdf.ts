@@ -73,6 +73,9 @@ function makeStyles(compact: boolean) {
     role: { fontWeight: 600, fontSize: f(10, 9.5) },
     period: { fontSize: 8.5, color: '#777777' },
     company: { fontSize: 9.5, color: '#444444', marginBottom: f(1.5, 1) },
+    // §24.157: the company one-liner preface + the prior-title progression line.
+    descriptor: { fontSize: 8.5, color: '#555555', marginBottom: f(1.5, 1) },
+    titles: { fontSize: 8.5, color: '#777777', marginBottom: f(2, 1) },
     bullet: { flexDirection: 'row', marginBottom: f(1, 0.5) },
     bulletDot: { width: 9, color: '#888888' },
     bulletText: { flex: 1 },
@@ -151,6 +154,8 @@ function experienceRow(s: Styles, e: WorkProfile['experience'][number], key: num
       e.period ? h(Text, { style: s.period }, e.period) : null,
     ),
     e.company ? h(Text, { style: s.company }, e.company) : null,
+    e.descriptor ? h(Text, { style: s.descriptor }, e.descriptor) : null,
+    e.titles ? h(Text, { style: s.titles }, e.titles) : null,
     ...e.bullets.map((b, j) =>
       h(View, { key: j, style: s.bullet }, h(Text, { style: s.bulletDot }, '•'), h(Text, { style: s.bulletText }, b)),
     ),
@@ -166,8 +171,12 @@ function projectRow(s: Styles, p: WorkProfile['projects'][number], key: number):
       {},
       h(Text, { style: s.projName }, p.name),
       p.href ? h(Link, { src: p.href, style: s.projLink }, `   ${cleanUrl(p.href)}`) : null,
+      p.repo ? h(Link, { src: p.repo, style: s.projLink }, `   ·   ${cleanUrl(p.repo)}`) : null,
     ),
     p.description ? h(Text, { style: s.projDesc }, p.description) : null,
+    ...(p.bullets ?? []).map((b, j) =>
+      h(View, { key: j, style: s.bullet }, h(Text, { style: s.bulletDot }, '•'), h(Text, { style: s.bulletText }, b)),
+    ),
     p.tags && p.tags.length > 0 ? h(Text, { style: s.projTags }, p.tags.join('  ·  ')) : null,
   );
 }
@@ -225,9 +234,10 @@ function buildResumeDocument(
     'Experience',
     profile.experience.map((e, i) => experienceRow(s, e, i)),
   );
+  // §24.157: a lone project reads as a deliberate "Featured Project"; 2+ → "Projects".
   const projectsSection = section(
     s,
-    'Projects',
+    profile.projects.length === 1 ? 'Featured Project' : 'Projects',
     profile.projects.map((p, i) => projectRow(s, p, i)),
   );
   const orderedCore = profile.projectsFirst

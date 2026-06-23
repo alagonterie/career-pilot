@@ -17,12 +17,20 @@ export interface ExperienceEntry {
   company: string
   period: string
   bullets: string[]
+  /** Optional company one-liner (scale + credential preface), §24.157. */
+  descriptor?: string
+  /** Optional prior-title progression line, e.g. "SE II (2020–24) · SE I (2019–20)" (§24.157). */
+  titles?: string
 }
 
 export interface ProjectEntry {
   name: string
   description: string
   href?: string
+  /** Optional source-repository link, shown beside the live `href` (§24.157). */
+  repo?: string
+  /** Optional detail bullets under the description (§24.157). */
+  bullets?: string[]
   tags?: string[]
 }
 

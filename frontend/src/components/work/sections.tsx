@@ -6,6 +6,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { cn } from '~/lib/utils'
 import type { WorkProfile } from '~/lib/work-profile'
 
+/** Strip protocol + trailing slash for a compact link label (mirrors resume-pdf, §24.157). */
+function cleanUrl(u: string): string {
+  return u.replace(/^https?:\/\//, '').replace(/\/+$/, '')
+}
+
 /** A labelled `/experience` section: the wrapper carries the long-form scaffold's
  *  `data-longform-section` anchor + scroll-margin + stable id; heading h2 → page h1. */
 function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
@@ -84,8 +89,10 @@ export function WorkSections({ profile }: { profile: WorkProfile }) {
                   {job.role} · {job.company}
                 </CardTitle>
                 <p className="font-mono text-xs text-muted-foreground">{job.period}</p>
+                {job.titles ? <p className="text-xs text-muted-foreground/80">{job.titles}</p> : null}
               </CardHeader>
               <CardContent>
+                {job.descriptor ? <p className="mb-3 text-sm text-muted-foreground">{job.descriptor}</p> : null}
                 <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm text-foreground/90">
                   {job.bullets.map((b) => (
                     <li key={b}>{b}</li>
@@ -100,12 +107,14 @@ export function WorkSections({ profile }: { profile: WorkProfile }) {
   }
 
   if (profile.projects.length > 0) {
+    // §24.157: a lone project reads as a deliberate "Featured project" (full width); 2+ → "Projects" grid.
+    const single = profile.projects.length === 1
     items.push({
       id: 'projects',
-      nav: 'Projects',
-      title: 'Projects',
+      nav: single ? 'Featured' : 'Projects',
+      title: single ? 'Featured project' : 'Projects',
       body: (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className={cn('grid gap-4', !single && 'sm:grid-cols-2')}>
           {profile.projects.map((proj) => (
             <Card key={proj.name}>
               <CardHeader>
@@ -118,9 +127,30 @@ export function WorkSections({ profile }: { profile: WorkProfile }) {
                     proj.name
                   )}
                 </CardTitle>
+                {proj.href || proj.repo ? (
+                  <p className="flex flex-wrap gap-x-3 font-mono text-xs text-muted-foreground">
+                    {proj.href ? (
+                      <a href={proj.href} className="hover:text-primary hover:underline">
+                        {cleanUrl(proj.href)}
+                      </a>
+                    ) : null}
+                    {proj.repo ? (
+                      <a href={proj.repo} className="hover:text-primary hover:underline">
+                        {cleanUrl(proj.repo)}
+                      </a>
+                    ) : null}
+                  </p>
+                ) : null}
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
                 <p className="text-sm text-foreground/90">{proj.description}</p>
+                {proj.bullets && proj.bullets.length > 0 ? (
+                  <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm text-foreground/90">
+                    {proj.bullets.map((b) => (
+                      <li key={b}>{b}</li>
+                    ))}
+                  </ul>
+                ) : null}
                 {proj.tags && proj.tags.length > 0 ? (
                   <div className="flex flex-wrap gap-1.5">
                     {proj.tags.map((t) => (

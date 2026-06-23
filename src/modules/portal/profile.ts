@@ -27,12 +27,20 @@ export interface ExperienceEntry {
   company: string;
   period: string;
   bullets: string[];
+  /** Optional company one-liner (scale + credential preface), §24.157. */
+  descriptor?: string;
+  /** Optional prior-title progression line, e.g. "SE II (2020–24) · SE I (2019–20)" (§24.157). */
+  titles?: string;
 }
 
 export interface ProjectEntry {
   name: string;
   description: string;
   href?: string;
+  /** Optional source-repository link, shown beside the live `href` (§24.157). */
+  repo?: string;
+  /** Optional detail bullets under the description (§24.157). */
+  bullets?: string[];
   tags?: string[];
 }
 
@@ -144,12 +152,19 @@ function optString(v: unknown): string | undefined {
 
 function projectExperience(v: unknown): ExperienceEntry[] {
   if (!Array.isArray(v)) return [];
-  return v.filter(isObject).map((e) => ({
-    role: asString(e.role),
-    company: asString(e.company),
-    period: asString(e.period),
-    bullets: asStringArray(e.bullets),
-  }));
+  return v.filter(isObject).map((e) => {
+    const entry: ExperienceEntry = {
+      role: asString(e.role),
+      company: asString(e.company),
+      period: asString(e.period),
+      bullets: asStringArray(e.bullets),
+    };
+    const descriptor = optString(e.descriptor);
+    if (descriptor) entry.descriptor = descriptor;
+    const titles = optString(e.titles);
+    if (titles) entry.titles = titles;
+    return entry;
+  });
 }
 
 function projectProjects(v: unknown): ProjectEntry[] {
@@ -161,6 +176,10 @@ function projectProjects(v: unknown): ProjectEntry[] {
     };
     const href = optString(p.href);
     if (href) entry.href = href;
+    const repo = optString(p.repo);
+    if (repo) entry.repo = repo;
+    const bullets = asStringArray(p.bullets);
+    if (bullets.length > 0) entry.bullets = bullets;
     const tags = asStringArray(p.tags);
     if (tags.length > 0) entry.tags = tags;
     return entry;
