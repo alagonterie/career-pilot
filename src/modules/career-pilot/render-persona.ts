@@ -319,7 +319,7 @@ function approvedFiguresFromWorkProfile(wp: WorkProfile): string[] {
       ...wp.lookingFor,
       ...wp.education,
       ...wp.skills,
-      ...wp.experience.flatMap((e) => [e.role, e.company, e.period, ...e.bullets]),
+      ...wp.experience.flatMap((e) => [e.role, e.company, e.period, ...e.bullets.map((b) => b.text)]),
       ...wp.projects.flatMap((p) => [p.name, p.description ?? '', ...(p.tags ?? [])]),
     ].join(' '),
   );
@@ -336,7 +336,7 @@ function workProfileToMarkdown(wp: WorkProfile): string {
     for (const e of wp.experience) {
       const head = [e.role, e.company].filter((s) => s).join(' — ');
       parts.push(e.period ? `**${head}** (${e.period})` : `**${head}**`);
-      if (e.bullets.length > 0) parts.push(e.bullets.map((b) => `- ${b}`).join('\n'));
+      if (e.bullets.length > 0) parts.push(e.bullets.map((b) => `- ${b.text}`).join('\n'));
     }
   }
   if (wp.projects.length > 0) {

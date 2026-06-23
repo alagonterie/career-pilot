@@ -19,7 +19,7 @@ const PROFILE: WorkProfile = {
       role: 'Staff Engineer',
       company: 'Analytical Engines',
       period: '2020 — Present',
-      bullets: ['Shipped X.', 'Led Y.'],
+      bullets: [{ text: 'Shipped X.' }, { text: 'Led Y.' }],
     },
   ],
   projects: [{ name: 'note-g', description: 'The first algorithm.', href: 'https://example.com/g', tags: ['Math'] }],
@@ -131,7 +131,7 @@ describe('renderResumePdf — §24.158 fields', () => {
           period: '2020 — Present',
           descriptor: 'A **SaaS** company.',
           titles: 'SE II (2018–20)',
-          bullets: Array.from({ length: 9 }, (_, i) => `Bullet ${i} with a **bold** bit.`),
+          bullets: Array.from({ length: 9 }, (_, i) => ({ text: `Bullet ${i} with a **bold** bit.` })),
         },
       ],
       projects: [

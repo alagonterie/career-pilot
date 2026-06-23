@@ -50,7 +50,7 @@ describe('projectWorkProfile', () => {
     expect(p).not.toBeNull();
     expect(p!.name).toBe('Ada Lovelace');
     expect(p!.bio).toHaveLength(2);
-    expect(p!.experience[0].bullets).toEqual(['Shipped X.']);
+    expect(p!.experience[0].bullets).toEqual([{ text: 'Shipped X.' }]);
     expect(p!.projects[0].href).toBe('https://example.com');
     expect(p!.projects[0].tags).toEqual(['Math']);
     expect(p!.writing).toHaveLength(1);
@@ -126,6 +126,33 @@ describe('projectWorkProfile', () => {
     expect(p!.projects[1].repo).toBeUndefined();
     expect(p!.projects[1].bullets).toBeUndefined(); // empty/absent → omitted
     expect(p!.focus).toBe('Backend & Platform'); // §24.158
+  });
+
+  it('coerces experience bullets to BulletItem[] — legacy strings → {text}, objects keep group (§24.161)', () => {
+    const p = projectWorkProfile(
+      JSON.stringify({
+        name: 'X',
+        experience: [
+          {
+            role: 'R',
+            company: 'C',
+            period: 'P',
+            bullets: [
+              'a legacy string bullet', // → { text }
+              { text: 'an intro bullet', group: 'topic-a' }, // keeps group
+              { text: 'a detail bullet', group: 'topic-a' },
+              { text: '' }, // empty text → dropped
+              42, // non-string/object → dropped
+            ],
+          },
+        ],
+      }),
+    );
+    expect(p!.experience[0].bullets).toEqual([
+      { text: 'a legacy string bullet' },
+      { text: 'an intro bullet', group: 'topic-a' },
+      { text: 'a detail bullet', group: 'topic-a' },
+    ]);
   });
 });
 

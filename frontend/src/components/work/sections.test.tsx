@@ -12,7 +12,12 @@ function profile(overrides: Partial<WorkProfile> = {}): WorkProfile {
     bio: ['First paragraph.', 'Second paragraph.'],
     lookingFor: ['Senior roles', 'Remote'],
     experience: [
-      { role: 'Engineer', company: 'Acme', period: '2020 — Present', bullets: ['Shipped a thing', 'Fixed a bug'] },
+      {
+        role: 'Engineer',
+        company: 'Acme',
+        period: '2020 — Present',
+        bullets: [{ text: 'Shipped a thing' }, { text: 'Fixed a bug' }],
+      },
     ],
     projects: [{ name: 'career-pilot', description: 'This portal.', href: 'https://example.com', tags: ['Agents'] }],
     skills: ['TypeScript', 'React'],
@@ -41,7 +46,7 @@ describe('WorkSections', () => {
               role: 'Senior Engineer',
               company: 'Acme',
               period: '2020 — Present',
-              bullets: ['Did a thing'],
+              bullets: [{ text: 'Did a thing' }],
               descriptor: 'A SaaS company (10k+ customers).',
               titles: 'Engineer II (2018–2020)',
             },
@@ -86,7 +91,12 @@ describe('WorkSections', () => {
       <WorkSections
         profile={profile({
           experience: [
-            { role: 'Eng', company: 'Acme', period: '2020 — Present', bullets: ['Cut latency by **90%** overall'] },
+            {
+              role: 'Eng',
+              company: 'Acme',
+              period: '2020 — Present',
+              bullets: [{ text: 'Cut latency by **90%** overall' }],
+            },
           ],
         })}
       />,

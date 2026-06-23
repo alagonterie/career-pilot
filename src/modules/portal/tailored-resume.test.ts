@@ -14,6 +14,7 @@ import { stripTailoredResumeBlock, validateTailoredResume } from './tailored-res
 const MASTER: WorkProfile = {
   name: 'Jane Doe',
   title: 'Senior Software Engineer · Team Lead',
+  focus: 'Backend · Systems',
   bio: ['Master bio.'],
   lookingFor: ['Staff / Lead'],
   experience: [
@@ -21,16 +22,29 @@ const MASTER: WorkProfile = {
       role: 'Senior Software Engineer',
       company: 'Acme',
       period: '2021 — Present',
+      descriptor: 'A SaaS company.',
+      titles: 'Senior Software Engineer (2021–Present) · Software Engineer (2019–2021)',
       bullets: [
-        'Built a Rust in-memory authorization engine answering security checks 850 times faster than the SQL it replaced.',
-        'Architected the .NET backend using CQRS and hybrid event sourcing over a live legacy database.',
+        {
+          text: 'Built a Rust in-memory authorization engine answering security checks 850 times faster than the SQL it replaced.',
+        },
+        { text: 'Architected the .NET backend using CQRS and hybrid event sourcing over a live legacy database.' },
+        // A §24.161 group: intro → detail, in this authored order.
+        {
+          text: 'Built the delivery platform on GitLab CI and AWS CDK with ephemeral per-branch environments.',
+          group: 'platform',
+        },
+        {
+          text: 'Ran integration suites against a real SQL Server with millisecond data resets on that platform.',
+          group: 'platform',
+        },
       ],
     },
     {
       role: 'Software Engineer',
       company: 'Globex',
       period: '2019 — 2021',
-      bullets: ['Owned a TypeScript services layer from prototype to production.'],
+      bullets: [{ text: 'Owned a TypeScript services layer from prototype to production.' }],
     },
   ],
   projects: [
@@ -93,7 +107,7 @@ describe('validateTailoredResume — bullets selected/ordered, never reworded in
     };
     const res = validateTailoredResume(emitted, MASTER);
     expect(res.ok).toBe(true);
-    expect(res.profile!.experience[0].bullets).toEqual([
+    expect(res.profile!.experience[0].bullets.map((b) => b.text)).toEqual([
       'Built a Rust in-memory authorization engine answering security checks 850 times faster than the SQL it replaced.',
     ]);
   });
@@ -111,9 +125,73 @@ describe('validateTailoredResume — bullets selected/ordered, never reworded in
       ],
     };
     const res = validateTailoredResume(emitted, MASTER);
-    expect(res.profile!.experience[0].bullets).toEqual([
+    expect(res.profile!.experience[0].bullets.map((b) => b.text)).toEqual([
       'Owned a TypeScript services layer from prototype to production.',
     ]);
+  });
+});
+
+describe('validateTailoredResume — §24.161: atomic groups, master intra-order, agent group-order, structural carry-through', () => {
+  it('expands a group atomically in master order — select the detail, get the intro too', () => {
+    const emitted = {
+      experience: [
+        {
+          company: 'Acme',
+          role: 'Senior Software Engineer',
+          period: '2021 — Present',
+          // Only the group's DETAIL bullet is emitted…
+          bullets: ['Ran integration suites against a real SQL Server with millisecond data resets on that platform.'],
+        },
+      ],
+    };
+    const res = validateTailoredResume(emitted, MASTER);
+    // …so the intro is pulled in too, ahead of it (the master's authored order).
+    expect(res.profile!.experience[0].bullets.map((b) => b.text)).toEqual([
+      'Built the delivery platform on GitLab CI and AWS CDK with ephemeral per-branch environments.',
+      'Ran integration suites against a real SQL Server with millisecond data resets on that platform.',
+    ]);
+  });
+
+  it('leads with the group the agent emits first; intra-group order stays the master’s', () => {
+    const emitted = {
+      experience: [
+        {
+          company: 'Acme',
+          role: 'Senior Software Engineer',
+          period: '2021 — Present',
+          bullets: [
+            // The .NET singleton emitted FIRST → its group leads the section.
+            'Architected the .NET backend using CQRS and hybrid event sourcing over a live legacy database.',
+            // The platform group second → both members, in master order, atomically.
+            'Built the delivery platform on GitLab CI and AWS CDK with ephemeral per-branch environments.',
+          ],
+        },
+      ],
+    };
+    const res = validateTailoredResume(emitted, MASTER);
+    expect(res.profile!.experience[0].bullets.map((b) => b.text)).toEqual([
+      'Architected the .NET backend using CQRS and hybrid event sourcing over a live legacy database.',
+      'Built the delivery platform on GitLab CI and AWS CDK with ephemeral per-branch environments.',
+      'Ran integration suites against a real SQL Server with millisecond data resets on that platform.',
+    ]);
+  });
+
+  it('carries the master’s descriptor + titles and forces focus from the master (D2)', () => {
+    const emitted = {
+      focus: 'WRONG focus the agent invented',
+      experience: [
+        {
+          company: 'Acme',
+          role: 'Senior Software Engineer',
+          period: '2021 — Present',
+          bullets: ['Built a Rust authorization engine that answered security checks 850 times faster than SQL.'],
+        },
+      ],
+    };
+    const p = validateTailoredResume(emitted, MASTER).profile!;
+    expect(p.focus).toBe('Backend · Systems');
+    expect(p.experience[0].descriptor).toBe('A SaaS company.');
+    expect(p.experience[0].titles).toBe('Senior Software Engineer (2021–Present) · Software Engineer (2019–2021)');
   });
 });
 
@@ -204,7 +282,7 @@ describe('validateTailoredResume — quality floor: never a worse subset of the 
     expect(p.skills).toEqual(MASTER.skills); // full skill set restored
     expect(p.skillGroups).toEqual(MASTER.skillGroups);
     expect(p.projects.map((x) => x.name)).toEqual(MASTER.projects.map((x) => x.name)); // project restored
-    expect(p.experience[0].bullets[0]).toContain('Rust in-memory authorization engine'); // agent selection kept
+    expect(p.experience[0].bullets[0].text).toContain('Rust in-memory authorization engine'); // agent selection kept
   });
 });
 
@@ -252,7 +330,7 @@ describe('validateTailoredResume — fabrication is rejected', () => {
     expect(res.ok).toBe(true);
     expect(res.profile!.name).toBe('Jane Doe');
     expect(res.profile!.title).toBe('Senior Software Engineer · Team Lead');
-    expect(res.profile!.experience[0].bullets[0]).toContain('Rust in-memory authorization engine');
+    expect(res.profile!.experience[0].bullets[0].text).toContain('Rust in-memory authorization engine');
   });
 });
 

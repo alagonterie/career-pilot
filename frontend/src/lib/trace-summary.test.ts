@@ -1,11 +1,24 @@
 import { describe, expect, it } from 'vitest'
 
-import { humanizeTraceSummary } from './trace-summary'
+import { dispatchLabel, humanizeTraceSummary } from './trace-summary'
 import type { SimTraceEvent } from './use-simulator-run'
 
 function ev(partial: Partial<SimTraceEvent>): SimTraceEvent {
   return { t: 'tool', ...partial }
 }
+
+describe('dispatchLabel — §24.161 branded tools, no framework-name leak', () => {
+  it('strips the mcp__<server>__ prefix so the framework name never shows on the public trace', () => {
+    expect(dispatchLabel(ev({ name: 'mcp__nanoclaw__some_internal_tool' }))).toBe('some_internal_tool')
+  })
+  it('relabels the two emit tools as branded milestones', () => {
+    expect(dispatchLabel(ev({ name: 'mcp__nanoclaw__emit_tailored_resume' }))).toBe('Produced the tailored résumé')
+    expect(dispatchLabel(ev({ name: 'mcp__nanoclaw__emit_cold_email' }))).toBe('Drafted the outreach email')
+  })
+  it('leaves a plain (non-mcp) tool name untouched', () => {
+    expect(dispatchLabel(ev({ name: 'WebSearch' }))).toBe('WebSearch')
+  })
+})
 
 describe('humanizeTraceSummary', () => {
   it('returns null for an absent summary', () => {
@@ -65,5 +78,20 @@ describe('humanizeTraceSummary', () => {
     const out = humanizeTraceSummary(ev({ name: 'MysteryTool', input_summary: '{"weird":"shape"}' }))
     expect(out).toBeTruthy()
     expect(out!.startsWith('{')).toBe(false)
+  })
+
+  it('suppresses the JSON payload for emit_tailored_resume — the label stands alone (§24.161)', () => {
+    expect(
+      humanizeTraceSummary(
+        ev({ name: 'mcp__nanoclaw__emit_tailored_resume', input_summary: '{"profile":{"bio":["x"]}}' }),
+      ),
+    ).toBeNull()
+  })
+
+  it('shows the subject (not the raw JSON) for emit_cold_email (§24.161)', () => {
+    const out = humanizeTraceSummary(
+      ev({ name: 'mcp__nanoclaw__emit_cold_email', input_summary: '{"subject":"Backend role at Acme","body":"Hi…"}' }),
+    )
+    expect(out).toBe('“Backend role at Acme”')
   })
 })

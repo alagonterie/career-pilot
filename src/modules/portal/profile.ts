@@ -22,11 +22,19 @@
 import { getDb } from '../../db/connection.js';
 import { log } from '../../log.js';
 
+/** A résumé bullet (§24.161). `group` ties bullets that must stay together AND
+ *  in authored order — the tailoring snap treats a group atomically (select any
+ *  member → the whole group, in master order). Singletons omit it. */
+export interface BulletItem {
+  text: string;
+  group?: string;
+}
+
 export interface ExperienceEntry {
   role: string;
   company: string;
   period: string;
-  bullets: string[];
+  bullets: BulletItem[];
   /** Optional company one-liner (scale + credential preface), §24.157. */
   descriptor?: string;
   /** Optional prior-title progression line, e.g. "SE II (2020–24) · SE I (2019–20)" (§24.157). */
@@ -148,6 +156,27 @@ function asStringArray(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
 }
 
+/** Normalize a bullets array to `BulletItem[]` (§24.161), accepting either a
+ *  legacy plain string (→ `{text}`) or a `{text, group?}` object — so an older
+ *  string-bullet blob still renders without a hard migration. */
+function asBulletArray(v: unknown): BulletItem[] {
+  if (!Array.isArray(v)) return [];
+  const out: BulletItem[] = [];
+  for (const b of v) {
+    if (typeof b === 'string') {
+      if (b.length > 0) out.push({ text: b });
+    } else if (isObject(b)) {
+      const text = asString(b.text);
+      if (text.length === 0) continue;
+      const item: BulletItem = { text };
+      const group = optString(b.group);
+      if (group) item.group = group;
+      out.push(item);
+    }
+  }
+  return out;
+}
+
 /** An optional string — emitted only when it's a non-empty string. */
 function optString(v: unknown): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined;
@@ -160,7 +189,7 @@ function projectExperience(v: unknown): ExperienceEntry[] {
       role: asString(e.role),
       company: asString(e.company),
       period: asString(e.period),
-      bullets: asStringArray(e.bullets),
+      bullets: asBulletArray(e.bullets),
     };
     const descriptor = optString(e.descriptor);
     if (descriptor) entry.descriptor = descriptor;

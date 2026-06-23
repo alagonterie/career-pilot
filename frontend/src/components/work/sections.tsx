@@ -107,7 +107,7 @@ export function WorkSections({ profile }: { profile: WorkProfile }) {
                 {job.descriptor ? <p className="mb-3 text-sm text-muted-foreground">{rich(job.descriptor)}</p> : null}
                 <ul className="flex list-disc flex-col gap-2 pl-5 text-sm text-foreground/90">
                   {job.bullets.map((b) => (
-                    <li key={b}>{rich(b)}</li>
+                    <li key={b.text}>{rich(b.text)}</li>
                   ))}
                 </ul>
               </CardContent>

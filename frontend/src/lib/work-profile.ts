@@ -12,11 +12,18 @@
  * details are committed to this public repo.
  */
 
+/** A résumé bullet (§24.161). `group` ties bullets that stay together and in
+ *  authored order; the tailoring snap treats a group atomically. Singletons omit it. */
+export interface BulletItem {
+  text: string
+  group?: string
+}
+
 export interface ExperienceEntry {
   role: string
   company: string
   period: string
-  bullets: string[]
+  bullets: BulletItem[]
   /** Optional company one-liner (scale + credential preface), §24.157. */
   descriptor?: string
   /** Optional prior-title progression line, e.g. "SE II (2020–24) · SE I (2019–20)" (§24.157). */
@@ -99,9 +106,15 @@ export const workProfile: WorkProfile = {
       company: 'Example Labs',
       period: '2022 — Present',
       bullets: [
-        'Designed and shipped an internal agent platform that automates routine engineering toil, adopted across multiple teams.',
-        'Built the observability + approval layer that made LLM-driven automation safe to run unattended in production.',
-        'Mentored engineers on developer-experience patterns: typed contracts, fast local feedback loops, and ruthless removal of magic numbers.',
+        {
+          text: 'Designed and shipped an internal agent platform that automates routine engineering toil, adopted across multiple teams.',
+        },
+        {
+          text: 'Built the observability + approval layer that made LLM-driven automation safe to run unattended in production.',
+        },
+        {
+          text: 'Mentored engineers on developer-experience patterns: typed contracts, fast local feedback loops, and ruthless removal of magic numbers.',
+        },
       ],
     },
     {
@@ -109,9 +122,9 @@ export const workProfile: WorkProfile = {
       company: 'Generic Co',
       period: '2019 — 2022',
       bullets: [
-        'Owned a TypeScript/Node services layer from prototype to production scale.',
-        'Cut CI feedback time substantially by reworking the test harness and build pipeline.',
-        'Introduced an edge-deployed frontend that improved time-to-interactive for global users.',
+        { text: 'Owned a TypeScript/Node services layer from prototype to production scale.' },
+        { text: 'Cut CI feedback time substantially by reworking the test harness and build pipeline.' },
+        { text: 'Introduced an edge-deployed frontend that improved time-to-interactive for global users.' },
       ],
     },
   ],

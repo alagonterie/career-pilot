@@ -23,7 +23,7 @@
  * selection/ordering — over a complete master, never a strip-down. The agent
  * keeps freedom over the summary + which bullets to feature. Pure + testable.
  */
-import { projectWorkProfile, type WorkProfile } from './profile.js';
+import { type BulletItem, type ExperienceEntry, projectWorkProfile, type WorkProfile } from './profile.js';
 
 function norm(s: string): string {
   return s.toLowerCase().replace(/\s+/g, ' ').trim();
@@ -58,20 +58,37 @@ function overlapCoeff(a: Set<string>, b: Set<string>): number {
 const BULLET_MATCH_THRESHOLD = 0.5;
 
 /**
- * Snap each tailored bullet to the master bullet it most resembles (≥ half its
- * words shared), substituting the MASTER's verbatim text — so the agent picks +
- * orders its real accomplishments but can't reword them into fiction (the
- * "PostgreSQL / 60% latency" failure mode). Bullets that match nothing
- * (genericized or invented) are dropped; if a role ends up empty, fall back to
- * the master's bullets (show the truth, never nothing). Each master bullet is
- * used at most once, so the agent's selection + ordering is preserved.
+ * Group-aware snapping (§24.161). Each tailored bullet is matched to the master
+ * bullet it most resembles (≥ half its words shared), and the MASTER's verbatim
+ * text + grouping are what render — so the agent picks its real accomplishments
+ * but can't reword them into fiction (the "PostgreSQL / 60% latency" failure
+ * mode) NOR scramble an intro→detail pair. The agent keeps two freedoms:
+ * SELECTION (which bullets) and GROUP-LEVEL ORDER (which topic leads — inferred
+ * from first-appearance). The master owns the order WITHIN a group, and groups
+ * are ATOMIC: matching any member pulls in the whole group, in master order
+ * (singletons are their own group of one). Falls back to the full master list
+ * when nothing matches (show the truth, never nothing).
  */
-function snapBullets(tailoredBullets: string[], masterBullets: string[]): string[] {
-  const master = masterBullets.map((b) => ({ text: b, tokens: tokens(b) }));
+function snapBullets(tailoredBullets: BulletItem[], masterBullets: BulletItem[]): BulletItem[] {
+  const master = masterBullets.map((b) => ({ item: b, tokens: tokens(b.text) }));
+  // Group key per master index: the explicit `group`, else a unique singleton key.
+  const keyAt = (i: number): string => master[i].item.group ?? `__single_${i}`;
+  // Each group's member indices, in the master's authored (intra-group) order.
+  const members = new Map<string, number[]>();
+  master.forEach((_, i) => {
+    const k = keyAt(i);
+    const list = members.get(k);
+    if (list) list.push(i);
+    else members.set(k, [i]);
+  });
+
+  // Snap each tailored bullet to a master bullet (each used at most once),
+  // recording the group it selects in the order the agent first reaches it.
   const used = new Set<number>();
-  const out: string[] = [];
+  const seen = new Set<string>();
+  const groupOrder: string[] = [];
   for (const tb of tailoredBullets) {
-    const tset = tokens(tb);
+    const tset = tokens(tb.text);
     let bestIdx = -1;
     let bestScore = 0;
     master.forEach((m, i) => {
@@ -83,11 +100,20 @@ function snapBullets(tailoredBullets: string[], masterBullets: string[]): string
       }
     });
     if (bestIdx >= 0 && bestScore >= BULLET_MATCH_THRESHOLD) {
-      out.push(master[bestIdx].text);
       used.add(bestIdx);
+      const k = keyAt(bestIdx);
+      if (!seen.has(k)) {
+        seen.add(k);
+        groupOrder.push(k);
+      }
     }
   }
-  return out.length > 0 ? out : [...masterBullets];
+
+  // Emit each selected group in the agent's group-order, expanded ATOMICALLY to
+  // all its members in master order (the verbatim master items).
+  const out: BulletItem[] = [];
+  for (const k of groupOrder) for (const i of members.get(k)!) out.push(master[i].item);
+  return out.length > 0 ? out : masterBullets.map((b) => ({ ...b }));
 }
 
 export interface TailoredValidation {
@@ -139,9 +165,13 @@ export function validateTailoredResume(emitted: unknown, master: WorkProfile): T
   const errors: string[] = [];
 
   // Identity is never tailored — pinned to the master (already injected above).
+  // `focus` is part of the title identity (§24.158/§24.161 D2) — force it too, so
+  // the tailored title reads `title · focus` like the master (not a barer title).
   tailored.name = master.name;
   tailored.title = master.title;
   tailored.links = master.links;
+  if (master.focus) tailored.focus = master.focus;
+  else delete tailored.focus;
 
   // Experience: the company must trace to the master; the matched entry's role +
   // period are forced (rephrased titles/dates corrected). A company NOT in the
@@ -166,9 +196,18 @@ export function validateTailoredResume(emitted: unknown, master: WorkProfile): T
     }
     // Prefer a role match when a company has multiple stints; else the sole entry.
     const m = candidates.find((c) => norm(c.role) === norm(e.role)) ?? candidates[0];
-    // Force employer/role/dates from the master; snap bullets to the master's
-    // verbatim wording (selection + ordering kept; rewording into fiction can't).
-    return { company: m.company, role: m.role, period: m.period, bullets: snapBullets(e.bullets, m.bullets) };
+    // Force employer/role/dates AND the structural lines (descriptor/titles) from
+    // the master — stable facts the agent tailors emphasis around, not content
+    // (§24.161 D2). Snap bullets to the master's verbatim wording + grouping.
+    const anchored: ExperienceEntry = {
+      company: m.company,
+      role: m.role,
+      period: m.period,
+      bullets: snapBullets(e.bullets, m.bullets),
+    };
+    if (m.descriptor) anchored.descriptor = m.descriptor;
+    if (m.titles) anchored.titles = m.titles;
+    return anchored;
   });
 
   // Education is not tailored — take the master's list verbatim.
@@ -196,7 +235,7 @@ export function validateTailoredResume(emitted: unknown, master: WorkProfile): T
         ...master.lookingFor,
         ...master.education,
         ...master.skills,
-        ...master.experience.flatMap((e) => [e.role, e.company, e.period, ...e.bullets]),
+        ...master.experience.flatMap((e) => [e.role, e.company, e.period, ...e.bullets.map((b) => b.text)]),
         ...master.projects.flatMap((p) => [p.name, p.description ?? '', ...(p.tags ?? [])]),
       ].join(' '),
     ),

@@ -13,6 +13,23 @@ const MAX_LEN = 110
 
 const FIELD_PRIORITY = ['description', 'query', 'url', 'prompt', 'command', 'file_path', 'path', 'role'] as const
 
+/** §24.161: mcp tool names arrive as `mcp__<server>__<tool>` on the wire; strip
+ *  the framework prefix so the public trace never shows it (a brand leak) — for
+ *  every mcp tool, present or future, not just the two we relabel below. */
+function bareToolName(name: string): string {
+  if (!name.startsWith('mcp__')) return name
+  const parts = name.split('__')
+  return parts.length >= 3 ? parts.slice(2).join('__') : name
+}
+
+/** §24.161: branded labels for the run's payoff tools — the agent producing the
+ *  tailored résumé / the outreach draft — so the feed reads as a milestone, not a
+ *  raw tool call. Keyed by the bare tool name (post prefix-strip). */
+const TOOL_LABELS: Record<string, string> = {
+  emit_tailored_resume: 'Produced the tailored résumé',
+  emit_cold_email: 'Drafted the outreach email',
+}
+
 /**
  * Is this trace row a subagent dispatch? `t:'subagent'` is the canonical wire
  * shape; `name:'Agent'|'Task'` covers traces persisted before the runner
@@ -25,7 +42,10 @@ export function isSubagentDispatch(ev: SimTraceEvent): boolean {
 /** The display label for a dispatch line — the subagent's name when it is one
  * (from the event, else dug out of the legacy input_summary). */
 export function dispatchLabel(ev: SimTraceEvent): string {
-  if (!isSubagentDispatch(ev)) return ev.name ?? 'tool'
+  if (!isSubagentDispatch(ev)) {
+    const bare = ev.name ? bareToolName(ev.name) : 'tool'
+    return TOOL_LABELS[bare] ?? bare
+  }
   return ev.subagent ?? extractOne(ev.input_summary, 'subagent_type') ?? ev.name ?? 'subagent'
 }
 
@@ -53,6 +73,15 @@ export function humanizeTraceSummary(ev: SimTraceEvent): string | null {
 
   if (isSubagentDispatch(ev)) {
     return cap(fields.description ?? fields.prompt ?? fallback(raw))
+  }
+  // §24.161: the emit tools carry a whole payload — show a tasteful detail, never
+  // the raw JSON. The résumé needs no summary (the milestone label stands alone);
+  // the email shows its subject.
+  const bare = ev.name ? bareToolName(ev.name) : ''
+  if (bare === 'emit_tailored_resume') return null
+  if (bare === 'emit_cold_email') {
+    const subject = extractOne(raw, 'subject')
+    return subject ? cap(`“${subject}”`) : null
   }
   // Search queries often carry exact-match `"..."` operators — strip them for
   // display so the curly-quote wrapping doesn't nest awkwardly.

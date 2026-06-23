@@ -208,7 +208,7 @@ function experienceRow(s: Styles, e: WorkProfile['experience'][number], key: num
         View,
         { key: j, style: s.bullet, wrap: false },
         h(Text, { style: s.bulletDot }, '•'),
-        h(Text, { style: s.bulletText }, ...rich(b)),
+        h(Text, { style: s.bulletText }, ...rich(b.text)),
       ),
     ),
   );

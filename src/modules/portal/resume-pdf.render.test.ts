@@ -15,6 +15,9 @@ import { describe, expect, it } from 'vitest';
 import type { Identity, WorkProfile } from './profile.js';
 import { masterFooter, renderResumePdf } from './resume-pdf.js';
 
+/** Wrap plain bullet strings into the §24.161 `BulletItem[]` fixture shape. */
+const b = (...texts: string[]) => texts.map((text) => ({ text }));
+
 // A realistic, dense master profile (generic identity — no real PII) sized like a
 // strong senior résumé: a long summary, two roles with 8 bullets total, a project,
 // ~25 grouped skills, education. The two-page budget is meaningful at this size.
@@ -35,23 +38,23 @@ const FULL_MASTER: WorkProfile = {
       role: 'Senior Software Engineer & Team Lead',
       company: 'Vertex Systems',
       period: 'Sept 2019 — Present',
-      bullets: [
+      bullets: b(
         'Promoted from Software Engineer I to Senior & Team Lead over seven years; lead a 7-person scrum team while remaining its senior IC, owning the modernization workstream.',
         'Architected the .NET successor backend: CQRS with hybrid event sourcing over the live legacy database, single-round-trip transactional commits, and Roslyn source generators enforcing the architecture at compile time.',
         'Built a Rust in-memory authorization engine (gRPC, Roaring Bitmaps) replacing per-request SQL — 137ns point checks, 850×–22,000× faster, under 1GB of memory, with zero-downtime reloads and 600+ tests.',
         'Built the delivery platform: GitLab CI and AWS CDK with ephemeral per-feature-branch environments and integration suites against real SQL Server with millisecond data resets.',
         'Created the AI-native developer tooling suite, unprompted: four CLI + MCP tools on a shared core with an umbrella installer, plus a Claude Code plugin marketplace.',
         'As API Product Warden owned all code review, conventions, and architecture; rebuilt database versioning for multitenancy, deleting 20k+ redundant lines and improving every request ~10%.',
-      ],
+      ),
     },
     {
       role: 'Software Engineer',
       company: 'Northwind Labs',
       period: '2017 — 2019',
-      bullets: [
+      bullets: b(
         'Owned a TypeScript/Node services layer from prototype to production scale.',
         'Cut CI feedback time substantially by reworking the test harness and build pipeline.',
-      ],
+      ),
     },
   ],
   projects: [
@@ -255,11 +258,11 @@ describe('rendered résumé — structural guarantees', () => {
           role: 'Software Engineer',
           company: 'Initech',
           period: '2015 — 2017',
-          bullets: [
+          bullets: b(
             'Built and operated a high-throughput billing pipeline processing millions of records nightly.',
             'Owned the migration from a monolith to a set of well-bounded services with clear contracts.',
             'Cut the integration test suite runtime by reworking fixtures and parallelizing the run.',
-          ],
+          ),
         },
       ],
     };
