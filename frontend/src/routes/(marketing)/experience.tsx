@@ -54,7 +54,7 @@ function Work() {
     <>
       <main className="mx-auto flex max-w-4xl flex-col items-start px-6 py-16">
         <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{p.name}</h1>
-        <p className="mt-2 text-lg text-muted-foreground">{p.title}</p>
+        <p className="mt-2 text-lg text-muted-foreground">{p.focus ? `${p.title} · ${p.focus}` : p.title}</p>
         {/* Provenance (§24.71 D4 / §24.73): honest only when the agent actually
             composed this page — a hand-seed (source='seed') or the placeholder
             shows no marker. The master page is whole-system output, so it's

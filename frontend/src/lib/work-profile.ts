@@ -56,6 +56,9 @@ export interface SkillGroup {
 export interface WorkProfile {
   name: string
   title: string
+  /** Optional focus areas (§24.158): the home hero shows `title` alone; `/experience`
+   *  + the résumé PDF show `title · focus`. */
+  focus?: string
   /** Bio paragraphs (PORTAL §5.6 §1). */
   bio: string[]
   /** "What I'm looking for" (PORTAL §5.6 §2): target roles / comp / location. */

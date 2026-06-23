@@ -81,6 +81,22 @@ describe('WorkSections', () => {
     expect(screen.queryByRole('heading', { level: 2, name: 'Featured project' })).not.toBeInTheDocument()
   })
 
+  it('renders **bold** markup as <strong> in bullets, with no literal asterisks (§24.158)', () => {
+    render(
+      <WorkSections
+        profile={profile({
+          experience: [
+            { role: 'Eng', company: 'Acme', period: '2020 — Present', bullets: ['Cut latency by **90%** overall'] },
+          ],
+        })}
+      />,
+    )
+    const strong = screen.getByText('90%')
+    expect(strong.tagName).toBe('STRONG')
+    // The full bullet reassembles with no `**` markers leaking through.
+    expect(strong.closest('li')?.textContent).toBe('Cut latency by 90% overall')
+  })
+
   it('drives the scaffold TOC from the present sections (§24.83) — one entry per nav + rail', () => {
     render(<WorkSections profile={profile()} />)
     // The scaffold renders two navs (mobile chips + desktop rail) → one entry per

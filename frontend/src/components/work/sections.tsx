@@ -11,6 +11,14 @@ function cleanUrl(u: string): string {
   return u.replace(/^https?:\/\//, '').replace(/\/+$/, '')
 }
 
+/** §24.158: render `**bold**` markup as <strong> spans (split on '**' → odd index bold). */
+function rich(text: string): ReactNode[] {
+  return text
+    .split('**')
+    .map((seg, i) => (i % 2 === 1 ? <strong key={i}>{seg}</strong> : seg))
+    .filter((seg) => seg !== '')
+}
+
 /** A labelled `/experience` section: the wrapper carries the long-form scaffold's
  *  `data-longform-section` anchor + scroll-margin + stable id; heading h2 → page h1. */
 function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
@@ -52,7 +60,7 @@ export function WorkSections({ profile }: { profile: WorkProfile }) {
       title: 'About',
       body: profile.bio.map((p, i) => (
         <p key={i} className="mt-3 text-base leading-relaxed text-foreground/90 first:mt-0">
-          {p}
+          {rich(p)}
         </p>
       )),
     })
@@ -92,10 +100,10 @@ export function WorkSections({ profile }: { profile: WorkProfile }) {
                 {job.titles ? <p className="text-xs text-muted-foreground/80">{job.titles}</p> : null}
               </CardHeader>
               <CardContent>
-                {job.descriptor ? <p className="mb-3 text-sm text-muted-foreground">{job.descriptor}</p> : null}
+                {job.descriptor ? <p className="mb-3 text-sm text-muted-foreground">{rich(job.descriptor)}</p> : null}
                 <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm text-foreground/90">
                   {job.bullets.map((b) => (
-                    <li key={b}>{b}</li>
+                    <li key={b}>{rich(b)}</li>
                   ))}
                 </ul>
               </CardContent>
@@ -143,11 +151,11 @@ export function WorkSections({ profile }: { profile: WorkProfile }) {
                 ) : null}
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
-                <p className="text-sm text-foreground/90">{proj.description}</p>
+                <p className="text-sm text-foreground/90">{rich(proj.description)}</p>
                 {proj.bullets && proj.bullets.length > 0 ? (
                   <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm text-foreground/90">
                     {proj.bullets.map((b) => (
-                      <li key={b}>{b}</li>
+                      <li key={b}>{rich(b)}</li>
                     ))}
                   </ul>
                 ) : null}

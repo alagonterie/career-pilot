@@ -76,6 +76,7 @@ describe('projectWorkProfile', () => {
     expect(p!.skills).toEqual([]);
     expect(p!.links).toEqual({});
     expect(p!.writing).toBeUndefined(); // optional — omitted, not []
+    expect(p!.focus).toBeUndefined(); // §24.158 — omitted when absent
   });
 
   it('drops non-string array members and empty optional fields', () => {
@@ -99,6 +100,7 @@ describe('projectWorkProfile', () => {
     const p = projectWorkProfile(
       JSON.stringify({
         name: 'X',
+        focus: 'Backend & Platform',
         experience: [
           { role: 'R', company: 'C', period: 'P', bullets: ['b'], descriptor: 'A SaaS co.', titles: 'SE II (2018–20)' },
           { role: 'R2', company: 'C2', period: 'P2', bullets: [] }, // no descriptor/titles → omitted
@@ -123,6 +125,7 @@ describe('projectWorkProfile', () => {
     expect(p!.projects[0].bullets).toEqual(['x', 'y']); // non-strings dropped
     expect(p!.projects[1].repo).toBeUndefined();
     expect(p!.projects[1].bullets).toBeUndefined(); // empty/absent → omitted
+    expect(p!.focus).toBe('Backend & Platform'); // §24.158
   });
 });
 

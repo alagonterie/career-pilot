@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Identity, WorkProfile } from './profile.js';
-import { masterFooter, renderResumePdf, tailoredFooter } from './resume-pdf.js';
+import { masterFooter, renderResumePdf, splitBold, tailoredFooter } from './resume-pdf.js';
 
 const PROFILE: WorkProfile = {
   name: 'Ada Lovelace',
@@ -95,5 +95,57 @@ describe('tailoredFooter', () => {
     expect(f).toContain('this role');
     expect(f).not.toContain('Generated');
     expect(f).not.toContain('the same system');
+  });
+});
+
+describe('splitBold (§24.158)', () => {
+  it('splits **bold** runs (odd segments bold), drops empties', () => {
+    expect(splitBold('plain **bold** more')).toEqual([
+      { text: 'plain ', bold: false },
+      { text: 'bold', bold: true },
+      { text: ' more', bold: false },
+    ]);
+  });
+
+  it('returns a single plain run when there is no markup', () => {
+    expect(splitBold('just text')).toEqual([{ text: 'just text', bold: false }]);
+  });
+
+  it('handles leading bold + filters the empty leading segment', () => {
+    expect(splitBold('**X** y')).toEqual([
+      { text: 'X', bold: true },
+      { text: ' y', bold: false },
+    ]);
+  });
+});
+
+describe('renderResumePdf — §24.158 fields', () => {
+  it('renders bold markup + focus + descriptor/titles + a long (9-bullet) entry into a valid PDF', async () => {
+    const p: WorkProfile = {
+      ...PROFILE,
+      focus: 'Backend & Platform',
+      experience: [
+        {
+          role: 'Staff Engineer',
+          company: 'Acme',
+          period: '2020 — Present',
+          descriptor: 'A **SaaS** company.',
+          titles: 'SE II (2018–20)',
+          bullets: Array.from({ length: 9 }, (_, i) => `Bullet ${i} with a **bold** bit.`),
+        },
+      ],
+      projects: [
+        {
+          name: 'p',
+          description: 'A **bold** project.',
+          href: 'https://x.dev',
+          repo: 'https://github.com/x/p',
+          bullets: ['One **b**.'],
+        },
+      ],
+    };
+    const buf = await renderResumePdf(p, IDENTITY, masterFooter(''));
+    expect(isPdf(buf)).toBe(true);
+    expect(buf.length).toBeGreaterThan(1000);
   });
 });

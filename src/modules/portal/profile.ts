@@ -71,6 +71,9 @@ export interface SkillGroup {
 export interface WorkProfile {
   name: string;
   title: string;
+  /** Optional focus areas (§24.158): the home hero shows `title` alone; `/experience`
+   *  + the résumé PDF show `title · focus` (the full "… · Backend & Platform · …"). */
+  focus?: string;
   bio: string[];
   lookingFor: string[];
   experience: ExperienceEntry[];
@@ -253,6 +256,9 @@ export function projectWorkProfile(raw: string | null): WorkProfile | null {
     education: asStringArray(parsed.education),
     links: projectLinks(parsed.links),
   };
+  const focus = optString(parsed.focus);
+  if (focus) profile.focus = focus;
+
   const writing = projectWriting(parsed.writing);
   if (writing) profile.writing = writing;
 

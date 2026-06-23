@@ -110,6 +110,21 @@ function cleanUrl(u: string): string {
   return u.replace(/^https?:\/\//, '').replace(/\/+$/, '');
 }
 
+/** §24.158: split `**bold**` markup into plain/bold runs (split on `**` → even
+ *  index plain, odd index bold; tolerant of an unmatched marker). Exported for tests. */
+export function splitBold(text: string): { text: string; bold: boolean }[] {
+  return text
+    .split('**')
+    .map((t, i) => ({ text: t, bold: i % 2 === 1 }))
+    .filter((r) => r.text.length > 0);
+}
+
+/** Render a string with `**bold**` runs as `<Text>` children (bold via Inter-700);
+ *  a plain string returns a single text child. Spread into a parent `<Text>`. */
+function rich(str: string): ReactNode[] {
+  return splitBold(str).map((r) => (r.bold ? h(Text, { style: { fontWeight: 700 } }, r.text) : r.text));
+}
+
 /** Contact identity as {label, href} pairs (omit-when-null), in display order. */
 function contactSegments(id: Identity): { label: string; href: string }[] {
   const out: { label: string; href: string }[] = [];
@@ -138,26 +153,42 @@ function header(s: Styles, profile: WorkProfile, identity: Identity): ReactEleme
     View,
     {},
     h(Text, { style: s.name }, profile.name),
-    profile.title ? h(Text, { style: s.title }, profile.title) : null,
+    // §24.158: the PDF always carries the full "role · focus"; the home hero shows `title` alone.
+    profile.title
+      ? h(Text, { style: s.title }, profile.focus ? `${profile.title} · ${profile.focus}` : profile.title)
+      : null,
     segs.length > 0 ? h(Text, { style: s.contact }, ...contactChildren) : null,
   );
 }
 
 function experienceRow(s: Styles, e: WorkProfile['experience'][number], key: number): ReactElement {
+  // §24.158: the entry FLOWS across the page break (no `wrap:false` on the
+  // container — a long entry that doesn't fit a page's remainder must not jump
+  // wholesale, orphaning the heading above a blank). The header block stays
+  // together, and each bullet is unbreakable so the break falls between bullets.
   return h(
     View,
-    { key, style: s.expRow, wrap: false },
+    { key, style: s.expRow },
     h(
       View,
-      { style: s.expHead },
-      h(Text, { style: s.role }, e.role),
-      e.period ? h(Text, { style: s.period }, e.period) : null,
+      { wrap: false },
+      h(
+        View,
+        { style: s.expHead },
+        h(Text, { style: s.role }, e.role),
+        e.period ? h(Text, { style: s.period }, e.period) : null,
+      ),
+      e.company ? h(Text, { style: s.company }, e.company) : null,
+      e.descriptor ? h(Text, { style: s.descriptor }, ...rich(e.descriptor)) : null,
+      e.titles ? h(Text, { style: s.titles }, e.titles) : null,
     ),
-    e.company ? h(Text, { style: s.company }, e.company) : null,
-    e.descriptor ? h(Text, { style: s.descriptor }, e.descriptor) : null,
-    e.titles ? h(Text, { style: s.titles }, e.titles) : null,
     ...e.bullets.map((b, j) =>
-      h(View, { key: j, style: s.bullet }, h(Text, { style: s.bulletDot }, '•'), h(Text, { style: s.bulletText }, b)),
+      h(
+        View,
+        { key: j, style: s.bullet, wrap: false },
+        h(Text, { style: s.bulletDot }, '•'),
+        h(Text, { style: s.bulletText }, ...rich(b)),
+      ),
     ),
   );
 }
@@ -173,9 +204,14 @@ function projectRow(s: Styles, p: WorkProfile['projects'][number], key: number):
       p.href ? h(Link, { src: p.href, style: s.projLink }, `   ${cleanUrl(p.href)}`) : null,
       p.repo ? h(Link, { src: p.repo, style: s.projLink }, `   ·   ${cleanUrl(p.repo)}`) : null,
     ),
-    p.description ? h(Text, { style: s.projDesc }, p.description) : null,
+    p.description ? h(Text, { style: s.projDesc }, ...rich(p.description)) : null,
     ...(p.bullets ?? []).map((b, j) =>
-      h(View, { key: j, style: s.bullet }, h(Text, { style: s.bulletDot }, '•'), h(Text, { style: s.bulletText }, b)),
+      h(
+        View,
+        { key: j, style: s.bullet, wrap: false },
+        h(Text, { style: s.bulletDot }, '•'),
+        h(Text, { style: s.bulletText }, ...rich(b)),
+      ),
     ),
     p.tags && p.tags.length > 0 ? h(Text, { style: s.projTags }, p.tags.join('  ·  ')) : null,
   );
@@ -248,7 +284,7 @@ function buildResumeDocument(
     section(
       s,
       'Summary',
-      profile.bio.map((p, i) => h(Text, { key: i, style: s.para }, p)),
+      profile.bio.map((p, i) => h(Text, { key: i, style: s.para }, ...rich(p))),
     ),
     section(
       s,
