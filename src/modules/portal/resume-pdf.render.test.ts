@@ -3,7 +3,7 @@
  * résumé-quality rework). Instead of "how does it look?", we INSPECT the rendered
  * PDF with pdfjs: page count, the text layer (+ positions), and link annotations.
  * Each identified bug is a red assertion here first, then fixed to green:
- *   - a realistic full master résumé fits on ONE page (page-balance + no orphans)
+ *   - a realistic full master résumé fits within two pages (§24.157; page-balance + no orphans)
  *   - contact details are real clickable Link annotations, not plain text
  *   - the footer renders the real glyph (no Helvetica ◇→Ç mojibake)
  *   - the title sits clearly below the name (no overlap)
@@ -17,7 +17,7 @@ import { masterFooter, renderResumePdf } from './resume-pdf.js';
 
 // A realistic, dense master profile (generic identity — no real PII) sized like a
 // strong senior résumé: a long summary, two roles with 8 bullets total, a project,
-// ~25 grouped skills, education. The one-page guarantee is meaningful at this size.
+// ~25 grouped skills, education. The two-page budget is meaningful at this size.
 const FULL_MASTER: WorkProfile = {
   name: 'Jordan Rivera',
   title: 'Senior Software Engineer · Team Lead',
@@ -138,9 +138,10 @@ async function inspectPdf(buf: Buffer): Promise<PdfInspection> {
 }
 
 describe('rendered résumé — structural guarantees', () => {
-  it('a realistic full master résumé fits on ONE page', async () => {
+  it('a realistic full master résumé fits within two pages (§24.157 two-pages-max — no overflow)', async () => {
     const pdf = await inspectPdf(await renderResumePdf(FULL_MASTER, FULL_IDENTITY, masterFooter('')));
-    expect(pdf.pageCount).toBe(1);
+    expect(pdf.pageCount).toBeGreaterThanOrEqual(1);
+    expect(pdf.pageCount).toBeLessThanOrEqual(2);
   });
 
   it('contact details are real clickable Link annotations, not plain text', async () => {
@@ -213,10 +214,10 @@ describe('rendered résumé — structural guarantees', () => {
     expect(projY2!).toBeGreaterThan(expY2!); // Projects now sits above Experience
   });
 
-  // The tailored-PDF one-page fix: a résumé that runs marginally past one page at
-  // the normal (master) density still fits one page in compact mode (the tailored
-  // caller passes `{ compact: true }`) — the master itself stays normal.
-  it('compact mode fits a slightly-too-long résumé on one page', async () => {
+  // §24.157 retired the one-page rule (two pages max); compact stays a *density*
+  // option the tailored caller passes (`{ compact: true }`), so it must never use
+  // MORE pages than the master density — a denser variant of the same content.
+  it('compact mode is never looser than the master density', async () => {
     const DENSE: WorkProfile = {
       ...FULL_MASTER,
       bio: [
@@ -241,7 +242,7 @@ describe('rendered résumé — structural guarantees', () => {
     const atCompact = await inspectPdf(
       await renderResumePdf(DENSE, FULL_IDENTITY, masterFooter(''), '', { compact: true }),
     );
-    expect(atNormal.pageCount).toBe(2); // spills at the master density
-    expect(atCompact.pageCount).toBe(1); // compact reclaims the page
+    expect(atNormal.pageCount).toBeGreaterThanOrEqual(2); // a dense résumé spans 2+ at master density
+    expect(atCompact.pageCount).toBeLessThanOrEqual(atNormal.pageCount); // compact reclaims, never adds
   });
 });
