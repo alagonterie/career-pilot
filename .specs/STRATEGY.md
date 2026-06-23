@@ -7126,6 +7126,25 @@ The contracts live in two committed places: `groups/_shared-subagents/{research-
 
 ---
 
+## §24.157 — Two pages max + the WorkProfile schema extensions (the master-résumé rework)
+
+**Origin** (owner, 2026-06-23 — the A4 master-résumé landed as a deliberate, dense **two-page** document). The owner-authored master `resume.md` carries structure the §24.71/§24.72 `WorkProfile` can't yet represent: a single **"Featured Project"** with its own bullets + a source-repo link, and an Experience entry with a **company-descriptor** preface + a **stacked-title progression** — and it runs two pages, against the §24.72 one-page design. The blob (`candidate_profile.work_profile_json`) drives BOTH `/experience` (PORTAL §5.6) and the résumé PDF (§24.72), so the rework lands in the shared shape + both renderers.
+
+**Decision — two pages max (supersedes the §24.72 one-page rule).** "One page" is retired; **two pages max** is the guidance for the master AND the tailored cut. `@react-pdf` already auto-paginates (each entry `wrap:false`; the footer is `fixed` so it repeats per page), so the master needs no force-fit; the tailored `compact` density stays an *option*, not a one-page guarantee. The composer's compose-guidance flips one-page → two-page-max (deferred while we hand-seed for launch; tracked for the agent path).
+
+**Decision — additive `WorkProfile` fields (kept identical in backend `profile.ts` + frontend `work-profile.ts`).**
+- `ProjectEntry`: `+ bullets?: string[]` (detail bullets under the description) and `+ repo?: string` (a second, source-repo link beside the live `href`).
+- `ExperienceEntry`: `+ descriptor?: string` (the company one-liner: scale + credential preface) and `+ titles?: string` (the prior-title progression line beneath the current role — the candidate's earlier titles + dates).
+- All optional + omit-when-absent: a profile without them renders exactly as today (no migration; the projector coerces missing → undefined).
+
+**Decision — "Featured Project" heading.** The projects section heading reads **"Featured Project"** when there is exactly one project, else **"Projects"** — derived from `projects.length`, no new field. Both the PDF (`resume-pdf.ts`) and `/experience` (`sections.tsx` section title + TOC nav).
+
+**Decision — public-PDF contact (privacy, extends §24.70).** The downloadable PDF keeps the dedicated career email; **phone is omitted** from the public PDF (publicly downloadable → scrapeable, hard to rotate) and lives only on the directly-sent `resume.md`. `/experience` shows neither email nor phone (already true — only the footer socials strip).
+
+**Definition of done.** `ProjectEntry` renders its `bullets` + `repo` link and `ExperienceEntry` its `descriptor` + `titles`, in BOTH the PDF and `/experience`, each new field omit-clean when absent; the projects heading is "Featured Project" for a single project. The real `candidate_profile.work_profile_json` is seeded (DB-only, never committed) from the locked `resume.md`; `/experience` + `GET /api/resume.pdf` render the real profile across ≤2 pages on dev, then prod. host + FE tsc + the resume-pdf / sections / profile suites green. Memory: [[status_current]], [[todo_backlog]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
