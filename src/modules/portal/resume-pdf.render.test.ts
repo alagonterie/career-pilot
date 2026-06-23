@@ -185,6 +185,31 @@ describe('rendered résumé — structural guarantees', () => {
     expect(links).not.toContain(url);
   });
 
+  it('routes self-referential links (project href + website on the portal host) through the §24.74 token', async () => {
+    const url = 'https://hire.example.com';
+    const footerLinkUrl = 'https://hire.example.com/r/SelfTok9';
+    const profile: WorkProfile = {
+      ...FULL_MASTER,
+      projects: [
+        {
+          name: 'portal',
+          description: 'this site',
+          href: 'https://hire.example.com',
+          repo: 'https://github.com/example/portal',
+        },
+      ],
+    };
+    const identity: Identity = { ...FULL_IDENTITY, website: 'https://hire.example.com/' };
+    const { links } = await inspectPdf(
+      await renderResumePdf(profile, identity, masterFooter(url), url, { footerLinkUrl }),
+    );
+    // Footer host + the project href + the website all share the portal host → all tokenized.
+    expect(links.filter((u) => u === footerLinkUrl).length).toBeGreaterThanOrEqual(2);
+    expect(links).not.toContain('https://hire.example.com'); // no bare self-host target survives
+    // An external link (the repo) passes through untouched.
+    expect(links.some((u) => u.includes('github.com/example/portal'))).toBe(true);
+  });
+
   it('renders grouped skills with their category labels', async () => {
     const { text } = await inspectPdf(await renderResumePdf(FULL_MASTER, FULL_IDENTITY, masterFooter('')));
     expect(text).toContain('Languages');

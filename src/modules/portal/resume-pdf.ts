@@ -52,7 +52,7 @@ function makeStyles(compact: boolean) {
       lineHeight: f(1.3, 1.24),
     },
     name: { fontSize: f(20, 17), fontWeight: 700, letterSpacing: 0.2, lineHeight: 1.15 },
-    title: { fontSize: f(10.5, 9.5), color: '#555555', marginTop: f(5, 3) },
+    title: { fontSize: f(10.5, 9.5), color: '#555555', marginTop: f(7, 5) },
     contact: { fontSize: 8.5, color: '#555555', marginTop: f(5, 3) },
     contactSep: { color: '#999999' },
     link: { color: LINK, textDecoration: 'none' },
@@ -65,16 +65,16 @@ function makeStyles(compact: boolean) {
       borderBottomWidth: 0.5,
       borderBottomColor: '#cfcfcf',
       paddingBottom: f(2.5, 2),
-      marginBottom: f(5, 3.5),
+      marginBottom: f(7, 5),
     },
     para: { marginBottom: f(5, 4) },
     expRow: { marginBottom: f(6, 4) },
     expHead: { flexDirection: 'row', justifyContent: 'space-between' },
     role: { fontWeight: 600, fontSize: f(10, 9.5) },
     period: { fontSize: 8.5, color: '#777777' },
-    company: { fontSize: 9.5, color: '#444444', marginTop: f(2, 1.5), marginBottom: f(2.5, 2) },
+    company: { fontSize: 9.5, color: '#444444', marginTop: f(3.5, 3), marginBottom: f(3.5, 3) },
     // §24.157: the company one-liner preface + the prior-title progression line.
-    descriptor: { fontSize: 8.5, color: '#555555', marginBottom: f(2.5, 2) },
+    descriptor: { fontSize: 8.5, color: '#555555', marginBottom: f(3.5, 3) },
     titles: { fontSize: 8.5, color: '#777777', marginBottom: f(5, 4) },
     // §24.159/160: generous air between bullets + header pieces — page 2 has slack.
     bullet: { flexDirection: 'row', marginBottom: f(5, 4) },
@@ -83,7 +83,7 @@ function makeStyles(compact: boolean) {
     projRow: { marginBottom: f(4, 3) },
     projName: { fontWeight: 600 },
     projLink: { fontSize: 8.5, color: LINK, textDecoration: 'none' },
-    projDesc: { color: '#444444', marginTop: f(2, 1.5), marginBottom: f(2, 1.5) },
+    projDesc: { color: '#444444', marginTop: f(3, 2.5), marginBottom: f(2, 1.5) },
     projTags: { fontSize: 8.5, color: '#777777', marginTop: 0.5 },
     body: { color: '#333333' },
     skillRow: { flexDirection: 'row', marginBottom: f(3, 2) },
@@ -130,6 +130,14 @@ function rich(str: string): ReactNode[] {
   return splitBold(str).map((r) => (r.bold ? h(Text, { style: { fontWeight: 700 } }, r.text) : r.text));
 }
 
+/** §24.74 follow-on: a self-referential link (its host matches the PDF's own
+ *  portal host) routes through the first-party `…/r/<code>` token when present —
+ *  so a recruiter clicking the résumé's own site is tracked like the footer host.
+ *  External links (github, etc.) pass through unchanged. */
+function trackedHref(href: string, portalHost: string | null, footerLinkUrl?: string): string {
+  return footerLinkUrl && portalHost && siteHost(href) === portalHost ? footerLinkUrl : href;
+}
+
 /** Contact identity as {label, href} pairs (omit-when-null), in display order. */
 function contactSegments(id: Identity): { label: string; href: string }[] {
   const out: { label: string; href: string }[] = [];
@@ -147,12 +155,20 @@ function section(s: Styles, heading: string, children: ReactNode[]): ReactElemen
   return h(View, { style: s.section }, h(Text, { style: s.heading }, heading.toUpperCase()), ...children);
 }
 
-function header(s: Styles, profile: WorkProfile, identity: Identity): ReactElement {
+function header(
+  s: Styles,
+  profile: WorkProfile,
+  identity: Identity,
+  portalHost: string | null,
+  footerLinkUrl?: string,
+): ReactElement {
   const segs = contactSegments(identity);
   const contactChildren: ReactNode[] = [];
   segs.forEach((seg, i) => {
     if (i > 0) contactChildren.push(h(Text, { key: `sep${i}`, style: s.contactSep }, '   ·   '));
-    contactChildren.push(h(Link, { key: `lnk${i}`, src: seg.href, style: s.link }, seg.label));
+    contactChildren.push(
+      h(Link, { key: `lnk${i}`, src: trackedHref(seg.href, portalHost, footerLinkUrl), style: s.link }, seg.label),
+    );
   });
   return h(
     View,
@@ -198,7 +214,13 @@ function experienceRow(s: Styles, e: WorkProfile['experience'][number], key: num
   );
 }
 
-function projectRow(s: Styles, p: WorkProfile['projects'][number], key: number): ReactElement {
+function projectRow(
+  s: Styles,
+  p: WorkProfile['projects'][number],
+  key: number,
+  portalHost: string | null,
+  footerLinkUrl?: string,
+): ReactElement {
   return h(
     View,
     { key, style: s.projRow, wrap: false },
@@ -206,8 +228,16 @@ function projectRow(s: Styles, p: WorkProfile['projects'][number], key: number):
       Text,
       {},
       h(Text, { style: s.projName }, p.name),
-      p.href ? h(Link, { src: p.href, style: s.projLink }, `   ${cleanUrl(p.href)}`) : null,
-      p.repo ? h(Link, { src: p.repo, style: s.projLink }, `   ·   ${cleanUrl(p.repo)}`) : null,
+      p.href
+        ? h(Link, { src: trackedHref(p.href, portalHost, footerLinkUrl), style: s.projLink }, `   ${cleanUrl(p.href)}`)
+        : null,
+      p.repo
+        ? h(
+            Link,
+            { src: trackedHref(p.repo, portalHost, footerLinkUrl), style: s.projLink },
+            `   ·   ${cleanUrl(p.repo)}`,
+          )
+        : null,
     ),
     p.description ? h(Text, { style: s.projDesc }, ...rich(p.description)) : null,
     ...(p.bullets ?? []).map((b, j) =>
@@ -268,6 +298,8 @@ function buildResumeDocument(
   s: Styles,
   footerLinkUrl?: string,
 ) {
+  // §24.74 follow-on: self-referential links (host === the portal) route through the token.
+  const portalHost = siteHost(publicUrl);
   // Experience + Projects, ordered by the §24.106 layout hint (Projects first
   // when the tailoring agent flags this role as projects-led; else the default).
   const experienceSection = section(
@@ -279,7 +311,7 @@ function buildResumeDocument(
   const projectsSection = section(
     s,
     profile.projects.length === 1 ? 'Featured Project' : 'Projects',
-    profile.projects.map((p, i) => projectRow(s, p, i)),
+    profile.projects.map((p, i) => projectRow(s, p, i, portalHost, footerLinkUrl)),
   );
   const orderedCore = profile.projectsFirst
     ? [projectsSection, experienceSection]
@@ -318,7 +350,7 @@ function buildResumeDocument(
     h(
       Page,
       { size: 'LETTER', style: s.page },
-      header(s, profile, identity),
+      header(s, profile, identity, portalHost, footerLinkUrl),
       ...sections,
       footerElement(s, footer, publicUrl, footerLinkUrl ?? publicUrl),
     ),
