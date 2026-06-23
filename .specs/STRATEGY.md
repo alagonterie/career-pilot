@@ -7159,6 +7159,22 @@ The contracts live in two committed places: `groups/_shared-subagents/{research-
 
 ---
 
+## §24.159 — Résumé + hero polish (spacing · the "→" glyph · title chronology · www · looking-for · a stale infotip)
+
+**Origin** (owner, 2026-06-23 — reviewing the §24.158 PDF + a stray home-hero infotip). Six small fixes:
+- **(1) Spacing** — the PDF bullets sit too tight; add air between bullets (+ a touch before the first bullet) and nudge the `/experience` bullet gaps. Page 2 has slack, so it stays ≤2 pages.
+- **(2) The "→" glyph** doesn't render — the bundled Inter WOFF is a Latin subset without U+2192 (every other special char renders). Reword the one bullet that used it (no font swap); sync `resume.md`.
+- **(3) Title chronology** — the experience `titles` line listed only the prior roles; restore the full chronology including the current "Senior Software Engineer & Team Lead (2024–Present)" (matches `resume.md`; the bold header repeats the current title by design).
+- **(4) Strip a leading `www.`** in the link DISPLAY label (`cleanUrl`, both surfaces) — the href keeps the full URL.
+- **(6) Trim "What I'm looking for"** — drop the role-areas line (now redundant with the title's focus); keep level + location + culture.
+- **(7) A stale infotip** on `/` claimed "Tap any stage on the pipeline page to follow it" — no such per-stage interaction exists, and "Tap" is mobile-only; drop the sentence (the rest of the tip stands alone).
+
+**Deferred (fast follow-on, not this slice):** **(5)** `/r/` first-party tracking on self-referential résumé links whose host matches the PDF footer host (reuse the §24.74 token).
+
+**Definition of done.** The PDF bullets have visible breathing room (still ≤2 pages); no missing glyph; the `titles` line carries the full role chronology; `linkedin.com/...` displays without `www.` (href unchanged); "What I'm looking for" is level/location/culture only; the `/` infotip no longer claims a non-existent per-stage follow. host + FE tsc + suites green; re-seeded from the updated `work-profile.json`. Memory: [[status_current]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
