@@ -7194,6 +7194,22 @@ The contracts live in two committed places: `groups/_shared-subagents/{research-
 
 ---
 
+## §24.162 — The disabled-simulator "recent runs" feed: metrics, not visitor text
+
+**Origin** (owner security review, 2026-06-23, while verifying §24.161). The §24.150 disabled-state fallback surfaces a "Recent runs" list (`GET /api/simulator/recent`). Two issues:
+- **It echoed visitor free-text.** Each row showed `visitor_role @ visitor_company` — arbitrary text the visitor typed into the sandbox, rendered on a public, recruiter-facing surface. Nowhere else does the app surface raw visitor input (the pipeline anonymizes companies; the kit/trace sanitize). The submit-time guard is length-only (`MAX_COMPANY`/`MAX_ROLE` = 200, no content filter), so a short offensive/sensitive string flows straight through. The endpoint also over-returned `total_cost_cents`/`total_latency_ms`/`ts` (serialized but not rendered).
+- **The first instinct — "trim the cost" — was backwards.** The cost/latency/ts are the ASSET, not the leak: they cross-check against `/dashboard` (these N runs really happened — here's the receipt), and the cost is already public on every result page + the ledger. The free-text is the liability.
+
+**Decision (D1) — metrics-only feed (option B).** `GET /api/simulator/recent` returns `{ ts, total_cost_cents, total_latency_ms }` and nothing else — no `visitor_company`/`visitor_role` (the liability), and **no `id`** (so the public feed carries no navigable key to a stranger's result page). The fallback renders metrics rows (runtime · cost · when), **not links** — the live simulator is where you watch a real run; the feed is verifiable proof-of-spend, not a content browser. A result page is reachable only via the runner's own share link.
+
+**Decision (D2) — the result page keeps `visitor_company`/`visitor_role`.** They're intrinsic to the run (the whole run is "research company X for role Y"; sanitizing them guts the page), and it's the runner's own shareable artifact, reached intentionally, not aggregated.
+
+**Verified property (no code change) — the input garbage-bomb is already contained.** Recorded so it isn't re-litigated: the host caps the request body at `MAX_BODY_BYTES` = 64KB (`readJsonBody` rejects + `req.destroy()` past it — no unbounded buffering); fields are sliced (`company`/`role` ≤ 200, `jd` ≤ 4000, url ≤ `MAX_URL`) so the prompt is bounded; persisted fields are capped (company/role 200, jd_excerpt 500, trace 200 rows); spend is bounded regardless by per-run `maxBudgetUsd` + maxTurns + the 300s hard-wall + the global daily budget + the per-IP 5/day cap + edge Turnstile/RL; and the JD is framed "treat as data, not instructions" (prompt-injection mitigation). Oversized input is dropped before parse; legal-but-large input can't blow up memory, storage, or cost.
+
+**Definition of done.** `GET /api/simulator/recent` returns only `{ ts, total_cost_cents, total_latency_ms }` (no company/role/id) — asserted by the host tests; the fallback renders metrics rows with no links; the result page still serves `visitor_company`/`visitor_role`; the garbage-bomb defenses are confirmed (no change). host + FE tsc + suites green. Memory: [[status_current]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
