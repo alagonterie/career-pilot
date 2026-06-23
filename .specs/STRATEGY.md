@@ -7145,6 +7145,20 @@ The contracts live in two committed places: `groups/_shared-subagents/{research-
 
 ---
 
+## §24.158 — Résumé-render polish from the first real render (inline bold · page-break · title/focus split)
+
+**Origin** (owner, 2026-06-23 — reviewing the first PDF + `/experience` generated from the real §24.157 seed). Three readability issues the real content exposed: (a) the owner's deliberate **`**bold**` markup** is lost — both renderers print plain text, so the wins don't pop; (b) a **page-break bug** — the single 9-bullet experience entry renders `wrap:false`, so it can't fit page 1's remainder and jumps wholesale to page 2, **orphaning the "EXPERIENCE" heading above a half-page blank**; (c) the **focus-area title** ("Senior Software Engineer · Backend & Platform · AI Systems & DevX") is right for `/experience` + the PDF but too wordy for the home hero's punchy first impression.
+
+**Decision — inline bold (both surfaces).** A pure `splitBold(text)` (`text.split('**')` → alternating plain/bold spans) renders `**…**` as bold: nested `<Text fontWeight:700>` in the PDF (`resume-pdf.ts`; Inter-700 is already registered) and `<strong>` on `/experience` (`sections.tsx`). Applied uniformly to the rich text fields (bullets, descriptions, descriptor, bio). The seed restores the `**` markup the §24.157 plain seed stripped.
+
+**Decision — let the experience entry flow across pages.** Drop `wrap:false` from the entry container so it breaks across the page boundary; keep the role/company/descriptor/titles **header block** `wrap:false` (it stays together) and mark each **bullet** `wrap:false` (a bullet never splits mid-item) — so the break falls cleanly between bullets and page 1 fills.
+
+**Decision — split the title (general role vs. focus areas).** Add `focus?: string` to the WorkProfile. `title` carries the **general role** ("Senior Software Engineer") — the home hero shows ONLY `title`. `/experience` + the PDF show `title · focus` (the full "… · Backend & Platform · AI Systems & DevX"). One blob, two presentations; the hero stays crisp.
+
+**Definition of done.** `**bold**` renders bold (not literal asterisks) in BOTH the PDF and `/experience`; the PDF experience section fills page 1 (no orphaned heading / half-page blank) and stays ≤2 pages; the home hero shows `title` only while `/experience` + the PDF show `title · focus`; new fields omit-clean when absent; the projector parses `focus`; host + FE tsc + the resume-pdf/sections/profile suites green (incl. a `splitBold` test). Re-seeded from the updated `work-profile.json` (title/focus split + restored `**` markup). Memory: [[status_current]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
