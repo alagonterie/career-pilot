@@ -6,9 +6,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { cn } from '~/lib/utils'
 import type { WorkProfile } from '~/lib/work-profile'
 
-/** Strip protocol + trailing slash for a compact link label (mirrors resume-pdf, §24.157). */
+/** Strip protocol, a leading `www.`, and a trailing slash for a compact link label
+ *  (mirrors resume-pdf; §24.159 drops the `www.` — the href keeps it). */
 function cleanUrl(u: string): string {
-  return u.replace(/^https?:\/\//, '').replace(/\/+$/, '')
+  return u
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/+$/, '')
 }
 
 /** §24.158: render `**bold**` markup as <strong> spans (split on '**' → odd index bold). */
@@ -101,7 +105,7 @@ export function WorkSections({ profile }: { profile: WorkProfile }) {
               </CardHeader>
               <CardContent>
                 {job.descriptor ? <p className="mb-3 text-sm text-muted-foreground">{rich(job.descriptor)}</p> : null}
-                <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm text-foreground/90">
+                <ul className="flex list-disc flex-col gap-2 pl-5 text-sm text-foreground/90">
                   {job.bullets.map((b) => (
                     <li key={b}>{rich(b)}</li>
                   ))}
@@ -153,7 +157,7 @@ export function WorkSections({ profile }: { profile: WorkProfile }) {
               <CardContent className="flex flex-col gap-3">
                 <p className="text-sm text-foreground/90">{rich(proj.description)}</p>
                 {proj.bullets && proj.bullets.length > 0 ? (
-                  <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm text-foreground/90">
+                  <ul className="flex list-disc flex-col gap-2 pl-5 text-sm text-foreground/90">
                     {proj.bullets.map((b) => (
                       <li key={b}>{rich(b)}</li>
                     ))}

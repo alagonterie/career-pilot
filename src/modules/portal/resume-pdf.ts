@@ -75,8 +75,9 @@ function makeStyles(compact: boolean) {
     company: { fontSize: 9.5, color: '#444444', marginBottom: f(1.5, 1) },
     // §24.157: the company one-liner preface + the prior-title progression line.
     descriptor: { fontSize: 8.5, color: '#555555', marginBottom: f(1.5, 1) },
-    titles: { fontSize: 8.5, color: '#777777', marginBottom: f(2, 1) },
-    bullet: { flexDirection: 'row', marginBottom: f(1, 0.5) },
+    titles: { fontSize: 8.5, color: '#777777', marginBottom: f(3, 2) },
+    // §24.159: more air between bullets (was f(1, 0.5)) — page 2 has slack.
+    bullet: { flexDirection: 'row', marginBottom: f(2.5, 1.5) },
     bulletDot: { width: 9, color: '#888888' },
     bulletText: { flex: 1 },
     projRow: { marginBottom: f(4, 3) },
@@ -105,9 +106,13 @@ const NORMAL = makeStyles(false);
 const COMPACT = makeStyles(true);
 type Styles = ReturnType<typeof makeStyles>;
 
-/** Strip protocol + trailing slash for a compact, readable link label. */
+/** Strip protocol, a leading `www.`, and a trailing slash for a compact, readable
+ *  link label (§24.159 drops the `www.` — the real href keeps it). */
 function cleanUrl(u: string): string {
-  return u.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  return u
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/+$/, '');
 }
 
 /** §24.158: split `**bold**` markup into plain/bold runs (split on `**` → even

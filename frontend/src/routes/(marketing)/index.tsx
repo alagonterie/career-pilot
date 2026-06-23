@@ -322,7 +322,7 @@ function Home() {
               My job search, live
               <InfoTip label="My job search, live" align="text">
                 Every role I’m actively pursuing, as a live pipeline. Companies stay anonymized until each process
-                closes — a deliberate privacy choice. Tap any stage on the pipeline page to follow it.
+                closes — a deliberate privacy choice.
               </InfoTip>
             </h2>
             <Link to="/pipeline" className="shrink-0 font-mono text-xs text-accent-cool hover:underline">
