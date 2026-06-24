@@ -43,10 +43,11 @@ These have an external clock; kick them off first.
 
 > Most of this is "apply the dev posture to a prod environment." Cross-ref the dev wiring: `bootstrap-vm.sh`, `provision-backend.ts`, `deploy-backend.yml`, `deploy-frontend.yml`, `cloudflare.tf`, `infra/tunnel.tf`, `infra/waf.tf`, `frontend/wrangler.jsonc`, `src/modules/portal/access-jwt.ts`, `frontend/src/routes/api/$.ts`.
 
-### 2.1 Backend service (the VM)
-- [ ] Decide prod-on-same-VM vs. separate VM. `TODO:` record the choice + rationale (cost vs. blast-radius).
-- [ ] Provision the prod backend service (binds `127.0.0.1` only — no inbound ports; the tunnel dials out).
-- [ ] Stamp the upgrade-state marker (§24.126 tripwire) for the prod service.
+### 2.1 Backend service (the VM) — SAME VM as dev (§24.165 D1)
+- [x] Decided: **same VM** as dev (cost; dev goes quiet post-launch). Per-checkout isolation is automatic — the prod checkout at `/opt/career-pilot` derives its unit/image/DB from the path; distinct ports **3004 portal / 3003 webhook** (clear of dev's 3002/3001).
+- [ ] Provision the prod backend service via the new `deploy-backend-prod.yml` (tag / `workflow_dispatch`; `CP_ENVIRONMENT=production CP_ALLOW_PRODUCTION=1`; binds `127.0.0.1` only — no inbound ports; the tunnel dials out).
+- [ ] Post-launch: put **dev into system-pause** (RECOVERY.md) so it stops spawning containers — bounds the shared 4 GB (§24.165 D1).
+- [ ] The upgrade-state marker is stamped by the bootstrap step (§24.126 tripwire) for the prod checkout.
 
 ### 2.2 Tunnel
 - [ ] Stand up the prod `cloudflared` tunnel → `api.hire.<DOMAIN>` ingress (Worker-only; never browser-direct — D12).
@@ -104,8 +105,8 @@ Fill the real values into the **prod** GH environment (never here). Checklist:
 
 ## 5. `/admin` prod gate
 
-- [ ] Create the prod `/admin*` + `/api/admin/*` **Cloudflare Access app** (owner email only) — Terraform.
-- [ ] Confirm `src/modules/portal/access-jwt.ts` validates the Access-JWT (issuer = the team domain; `aud` = the admin app AUD); fail-closed (forged/missing assertion → reject).
+- [ ] Create the **two path-scoped** owner-only **Cloudflare Access apps** on `/admin` + `/api/admin` (owner email only) — Terraform `cloudflare.tf`. The public host is otherwise **open**; these are the PRIMARY admin gate (§24.165 D3).
+- [ ] Confirm `src/modules/portal/access-jwt.ts` validates the Access-JWT (issuer = the team domain; **`aud` = the _api_ app AUD** — the Worker re-auths to the tunnel with the api service token, so the assertion at the loopback is the api app's; the *admin* app gates at the edge, §24.165 D4); fail-closed (forged/missing → reject). Set `CF_ACCESS_TEAM` + `CF_ACCESS_AUD` in the prod `.env`; flip `origin_jwt_validation_enabled`.
 - [ ] Flip `admin_api_enabled` → on (prod DB pref).
 - [ ] Verify: owner reaches `/admin` (through Access); a non-owner / no-Access request → blocked + the API 404s when the flag/JWT is absent.
 
