@@ -1,10 +1,13 @@
 /**
- * Unit tests for Pass 3 (host-side semantic obfuscation) — §24.12 (F2).
+ * Unit tests for Pass 3 (host-side semantic obfuscation) — §24.12 (F2),
+ * rewritten as a DETECTION pass in §24.169.
  *
  * Pass 3 calls Portkey/Haiku via global `fetch`; tests stub `fetch` and set
- * PORTKEY_API_KEY so no real network call happens. The deterministic Pass 1+2
- * path is covered in sanitizer.test.ts; here we exercise the gating, the
- * success/cache/failure paths, the budget guard, and the withhold semantics.
+ * PORTKEY_API_KEY so no real network call happens. The model now returns a JSON
+ * array of substrings to redact, which the host deterministically wraps in the
+ * `[AI_REDACTED]` chip. The deterministic Pass 1+2 path is covered in
+ * sanitizer.test.ts; here we exercise the gating, the success/cache/failure
+ * paths, the budget guard, and the withhold semantics.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
@@ -29,11 +32,12 @@ function setBudget(db: Database.Database, usd: string): void {
   ).run({ v: usd });
 }
 
-/** A stub Portkey completion that "obfuscates" by returning a fixed generic line. */
-function okFetch(content = 'researching the target company') {
+/** A stub Portkey completion: the detection pass returns a JSON array of the
+ * substrings to redact (host then wraps each in `[AI_REDACTED]`). */
+function detectFetch(tokens: string[] = []) {
   return vi.fn(async () => ({
     ok: true,
-    json: async () => ({ choices: [{ message: { content } }] }),
+    json: async () => ({ choices: [{ message: { content: JSON.stringify(tokens) } }] }),
   })) as unknown as typeof fetch;
 }
 
@@ -88,25 +92,43 @@ describe('sanitizer-pass3', () => {
 
   describe('applyPass3', () => {
     it('returns null when Portkey is not configured (no key)', async () => {
-      const fetchMock = okFetch();
+      const fetchMock = detectFetch(['Acme']);
       vi.stubGlobal('fetch', fetchMock);
       expect(await applyPass3('researching Acme MI300 launch', db)).toBeNull();
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('returns the obfuscated completion on success, and caches it', async () => {
+    it('wraps each detected substring in [AI_REDACTED], and caches it', async () => {
       process.env.PORTKEY_API_KEY = 'pk-test';
-      const fetchMock = okFetch('researching the target company');
+      const fetchMock = detectFetch(['Acme', 'MI300']);
       vi.stubGlobal('fetch', fetchMock);
 
       const first = await applyPass3('researching Acme MI300 launch', db);
-      expect(first).toBe('researching the target company');
+      expect(first).toBe('researching [AI_REDACTED] [AI_REDACTED] launch');
       expect(fetchMock).toHaveBeenCalledTimes(1);
 
       // identical input → cache hit, no second network call
       const second = await applyPass3('researching Acme MI300 launch', db);
-      expect(second).toBe('researching the target company');
+      expect(second).toBe('researching [AI_REDACTED] [AI_REDACTED] launch');
       expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns the text unchanged when the model flags nothing ([])', async () => {
+      process.env.PORTKEY_API_KEY = 'pk-test';
+      vi.stubGlobal('fetch', detectFetch([]));
+      expect(await applyPass3('reviewing a job posting', db)).toBe('reviewing a job posting');
+    });
+
+    it('returns null when the completion has no parseable array (→ withhold)', async () => {
+      process.env.PORTKEY_API_KEY = 'pk-test';
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => ({
+          ok: true,
+          json: async () => ({ choices: [{ message: { content: 'I cannot help with that.' } }] }),
+        })) as unknown as typeof fetch,
+      );
+      expect(await applyPass3('researching Acme', db)).toBeNull();
     });
 
     it('returns null on HTTP error (→ caller withholds)', async () => {
@@ -121,29 +143,24 @@ describe('sanitizer-pass3', () => {
     it('returns null when over the daily budget', async () => {
       process.env.PORTKEY_API_KEY = 'pk-test';
       setBudget(db, '0.0001'); // below the per-call estimate
-      const fetchMock = okFetch();
+      const fetchMock = detectFetch(['Acme']);
       vi.stubGlobal('fetch', fetchMock);
       expect(await applyPass3('researching Acme MI300 launch', db)).toBeNull();
       expect(fetchMock).not.toHaveBeenCalled();
     });
-
-    it('strips wrapping quotes from the completion', async () => {
-      process.env.PORTKEY_API_KEY = 'pk-test';
-      vi.stubGlobal('fetch', okFetch('"the candidate reviewed a job posting"'));
-      expect(await applyPass3('x', db)).toBe('the candidate reviewed a job posting');
-    });
   });
 
   describe('sanitizeForPublic with Pass 3 active', () => {
-    it('returns the obfuscated text + ok=true on success', async () => {
+    it('chips the detected entity + returns ok=true on success', async () => {
       enablePass3(db);
       process.env.PORTKEY_API_KEY = 'pk-test';
-      vi.stubGlobal('fetch', okFetch('the candidate is preparing for an interview'));
+      vi.stubGlobal('fetch', detectFetch(['Acme', 'MI300']));
 
       const res = await sanitizeForPublic('building rubric for the Acme MI300 tech screen', { db });
       expect(res.ok).toBe(true);
-      expect(res.text).toBe('the candidate is preparing for an interview');
+      expect(res.text).toContain('[AI_REDACTED]');
       expect(res.text).not.toContain('Acme');
+      expect(res.text).not.toContain('MI300');
     });
 
     it('WITHHOLDS (ok=false) on Pass 3 failure, returning the deterministic text', async () => {

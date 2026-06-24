@@ -7297,6 +7297,22 @@ Separately, the owner has **no structured view** of sandbox runs — §24.162 de
 
 ---
 
+## §24.169 — Trace-stream sanitization: redact-not-drop, idempotent re-mirror, Pass-3 → detection chips
+
+**Origin** (owner review of the live agent trace stream, 2026-06-24). The public `/api/activity` feed (`public_audit_trail`, rendered by `LogStream` via `RedactedText`) had three issues, all in the mirror/sanitize path.
+
+**D1 — Redact instead of drop (`sanitization_audit_redact_on_unmatched_company`, /admin).** `mirrorPipelineEvent`'s defense-in-depth scan hard-DROPPED a whole trace when a known non-public company name survived the deterministic passes. The new opt-in mode replaces every surviving form with `[REDACTED:<obfuscated_label>]` in place and KEEPS the row; `drop` stays the conservative default, redact wins when both flags are set. The Pass-3-down WITHHOLD path stays fail-closed.
+
+**D2 — Re-mirror is idempotent on time AND feed position.** `resanitizeApplicationAuditTrail` DELETEs + re-INSERTs each pipeline row; the mirror stamped `now()` and `MAX(seq)+1`, so a re-sanitize re-dated a trace to the moment it ran and bumped it to the END of the seq-ordered feed (the owner caught a day-old "Candidate applied" row sitting at the newest position). Fix: the mirror carries the source `pipeline_event.ts`, and `resanitize` captures each row's seq before the delete and restores it via a new `forceSeq` param. Re-sanitizing now changes only the sanitized text, never a trace's time or place.
+
+**D3 — Pass 3: rewrite → detection (chip-emitting, kit-consistent).** Pass 3 was a REWRITE call ("genericize this line") — which makes Haiku role-play the prose (the §24.65 Δ failure) and hides the redaction behind a smooth paraphrase, so the feed never SHOWS the AI working. It now mirrors the kit entity-redaction belt (§24.134a): a DETECTION call (the model returns a JSON array of identifying substrings) + deterministic host replacement with the provenance-distinct `[AI_REDACTED]` chip (the violet "an AI did this" tier, §24.134d), reusing the belt's `parseEntityTokens` / `applyEntityRedactions` / `filterProtected` + the candidate keep-list. Broader detection scope than the kit (any third-party org, not just the one interviewed company). More robust (detection sidesteps paraphrase distortion/leak) AND consistent with how the kits render AI redaction.
+
+**Operational (prod-only, uncommitted).** The four `research-company` traces deleted in the earlier emergency cleanup were recovered faithfully from the agent's session transcript, hand-reviewed into `[AI_REDACTED]`-chip summaries, and re-inserted at their original seq slots (17–20). The recovery script holds raw pre-sanitization text, so it is written to the box and deleted after — never committed.
+
+**Definition of done.** New knob registered; `mirrorPipelineEvent` takes `forceSeq`; `resanitize` preserves ts + seq; Pass 3 emits `[AI_REDACTED]` via detection; host tsc + the `public-audit` / `sanitizer-pass3` / `sanitizer` / `kit-entity-redact` suites green; deployed to prod. Memory: [[status_current]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
