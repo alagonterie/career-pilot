@@ -85,14 +85,16 @@ describe('mirrorPipelineEvent', () => {
     application_ref: string | null;
     summary: string;
     category: string;
+    agent_name: string | null;
     details_json: string | null;
   }> {
     return db
-      .prepare('SELECT application_ref, summary, category, details_json FROM public_audit_trail')
+      .prepare('SELECT application_ref, summary, category, agent_name, details_json FROM public_audit_trail')
       .all() as Array<{
       application_ref: string | null;
       summary: string;
       category: string;
+      agent_name: string | null;
       details_json: string | null;
     }>;
   }
@@ -112,6 +114,7 @@ describe('mirrorPipelineEvent', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].application_ref).toBe('fintech-a');
     expect(rows[0].category).toBe('pipeline');
+    expect(rows[0].agent_name).toBe('pipeline-scribe');
     expect(rows[0].summary).toContain('[REDACTED:fintech-a]');
     expect(rows[0].summary).toContain('[EMAIL_REDACTED]');
     expect(rows[0].summary).toContain('[AMOUNT_REDACTED]');

@@ -241,14 +241,19 @@ export async function mirrorPipelineEvent(db: Database.Database, eventId: string
   try {
     db.prepare(
       `INSERT INTO public_audit_trail
-         (id, seq, ts, category, proactive, application_ref, summary, details_json, source_pipeline_event_id)
+         (id, seq, ts, category, agent_name, proactive, application_ref, summary, details_json, source_pipeline_event_id)
        VALUES (@id, (SELECT COALESCE(MAX(seq), 0) + 1 FROM public_audit_trail),
-               @ts, @category, @proactive, @application_ref, @summary, @details_json, @source_pipeline_event_id)`,
+               @ts, @category, @agent_name, @proactive, @application_ref, @summary, @details_json, @source_pipeline_event_id)`,
     ).run({
       id: generateId(),
       ts: new Date().toISOString(),
       // Public-facing category (§24.77 D3) — the private source is pipeline_events.
       category: 'pipeline',
+      // The public pipeline projection IS the pipeline-scribe's curated surface
+      // (§24.77 / migration 137). Attribute these stage-update rows to it so the
+      // activity trace shows the subagent name; without it agent_name is NULL and
+      // eventSourceLabel falls back to the bare 'pipeline' category.
+      agent_name: 'pipeline-scribe',
       proactive: row.proactive ? 1 : 0,
       application_ref: applicationRef,
       summary,
