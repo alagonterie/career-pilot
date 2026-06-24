@@ -188,7 +188,11 @@ function listInstallContainerNames(): string[] {
  * §24.96 ceiling otherwise only sees map-tracked containers. Never throws;
  * returns the names stopped.
  */
-export function reapUntrackedContainers(trackedNames: Set<string>, graceMs: number, now: number = Date.now()): string[] {
+export function reapUntrackedContainers(
+  trackedNames: Set<string>,
+  graceMs: number,
+  now: number = Date.now(),
+): string[] {
   const orphans = selectOrphanContainerNames(listInstallContainerNames(), trackedNames, graceMs, now);
   const reaped: string[] = [];
   for (const name of orphans) {

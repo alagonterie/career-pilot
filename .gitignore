@@ -129,3 +129,4 @@ coverage/
 frontend/.output/
 frontend/.tanstack/
 frontend/dist/
+.claude/scheduled_tasks.lock
