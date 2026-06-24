@@ -20,7 +20,7 @@
 # per-environment.
 #
 # §24.165 D7 — SAME-ZONE CONSTRAINT: a zone allows exactly ONE ruleset per phase,
-# and dev + prod share the `example.com` zone, so both envs can't each own a
+# and dev + prod share the `<apex>` zone, so both envs can't each own a
 # phase ruleset. These are gated DEV-ONLY (count below) and DEFERRED on prod
 # because prod's protection doesn't need them: the Worker's Rate Limiting
 # (SANDBOX_BURST/CONTACT_BURST = 2/60s) is TIGHTER than the 30/10s rule here, and
