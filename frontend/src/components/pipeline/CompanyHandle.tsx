@@ -59,11 +59,9 @@ export function CompanyHandleLegend() {
       <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/80">
         Company handles
       </span>
-      <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[11px] leading-relaxed text-muted-foreground">
-        <HandleChip label="infra-e" />
-        <span>
-          a company shown as a stable handle while its hiring process is live — the real name appears once it closes.
-        </span>
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
+        <HandleChip label="infra-e" /> a company shown as a stable handle while its hiring process is live — the real
+        name appears once it closes.
       </p>
     </div>
   )

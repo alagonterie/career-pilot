@@ -101,7 +101,7 @@ export const updateApplication: McpToolDefinition = {
   tool: {
     name: 'update_application',
     description:
-      "UPSERT an application row. If `id` doesn't exist, INSERT (requires company_name + role_title + status in patch; host assigns obfuscated_label deterministically). If `id` exists, UPDATE only the fields present in patch. Use to bookmark a new role, update status after a signal, or correct mistaken fields. Always follow with record_pipeline_event to log the transition.",
+      "UPSERT an application row. If `id` doesn't exist, INSERT (requires company_name + role_title + status in patch). On INSERT, ALSO include `jd_analyzed` with at least `role_category` — the company's industry/domain (e.g. 'health', 'fintech', 'devtools'): the host derives the public company handle from it, so omitting it drops the handle to a generic 'misc'. If `id` exists, UPDATE only the fields present in patch. Use to bookmark a new role, update status after a signal, or correct mistaken fields. Always follow with record_pipeline_event to log the transition.",
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -124,7 +124,8 @@ export const updateApplication: McpToolDefinition = {
             jd_text: { type: 'string' },
             jd_analyzed: {
               type: 'string',
-              description: 'JSON: { level, skills, comp_hint, role_category }',
+              description:
+                'JSON: { level, skills, comp_hint, role_category }. role_category = the company industry/domain (e.g. "health", "fintech") — it drives the public company handle, so set it on every INSERT.',
             },
             status: {
               type: 'string',

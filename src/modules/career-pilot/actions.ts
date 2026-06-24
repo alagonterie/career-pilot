@@ -39,6 +39,7 @@ import { priceTokensMicrousd, recordRequestTelemetry, type TrafficClass } from '
 import type { Session } from '../../types.js';
 
 import { reactToStatusTransitions } from './interview-kit-trigger.js';
+import { classifyJobIndustry } from './job-classify.js';
 import { isOpsSession } from './ops-session.js';
 import { validateProactivePref } from './quiet-hours.js';
 
@@ -1160,7 +1161,16 @@ export async function handleUpdateApplication(
         return;
       }
 
-      const industry = deriveIndustry(patch);
+      let industry = deriveIndustry(patch);
+      // §6.2 belt: the agent often omits jd_analyzed on a quick "I applied to X"
+      // add → deriveIndustry returns 'misc'. Land the deferred analyze_jd
+      // host-side: classify the company's industry from the JD so the public
+      // handle stays meaningful (health-a) instead of misc-a. Best-effort; keeps
+      // 'misc' on miss (no Portkey / failure).
+      if (industry === 'misc' && typeof patch.jd_text === 'string' && patch.jd_text.trim().length > 0) {
+        const inferred = await classifyJobIndustry(patch.jd_text, patch.role_title);
+        if (inferred) industry = inferred;
+      }
       const obfuscated_label = nextObfuscatedLabel(industry);
 
       db.prepare(
