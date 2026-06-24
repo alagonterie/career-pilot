@@ -35,8 +35,7 @@ resource "cloudflare_workers_domain" "frontend" {
   # listing all three is correct in either environment (§24.165 D3).
   depends_on = [
     cloudflare_zero_trust_access_application.frontend,
-    cloudflare_zero_trust_access_application.admin_page,
-    cloudflare_zero_trust_access_application.admin_api,
+    cloudflare_zero_trust_access_application.admin,
   ]
 }
 
@@ -69,28 +68,19 @@ resource "cloudflare_zero_trust_access_application" "frontend" {
   policies                  = [cloudflare_zero_trust_access_policy.owner_only.id]
 }
 
-# PROD-ONLY: two path-scoped owner-only Access apps — the PRIMARY admin gate on an
-# otherwise-open public host. `/admin` covers the SPA admin page; `/api/admin`
-# covers the BFF-proxied admin API (both `<path>` and everything under it). The
-# backend's origin-JWT (access-jwt.ts) is a separate blanket belt that validates
-# the api-app assertion the Worker presents at the tunnel — NOT the admin identity
-# gate, which is these edge apps (§24.165 D4).
-resource "cloudflare_zero_trust_access_application" "admin_page" {
+# PROD-ONLY: ONE owner-only Access app covering BOTH the `/admin` SPA page AND the
+# `/api/admin` BFF-proxied data endpoints (each path + everything under it) — the
+# PRIMARY admin gate on an otherwise-open public host. A SINGLE app (one `aud`) is
+# load-bearing: with two separate apps the SPA's XHR to `/api/admin` can't silently
+# obtain the second app's cookie, so the panels read "unavailable" — one app means
+# one cookie authorizes both. The backend's origin-JWT (access-jwt.ts) is a separate
+# blanket belt validating the api-app assertion the Worker presents at the tunnel —
+# NOT the admin identity gate, which is THIS edge app (§24.165 D4).
+resource "cloudflare_zero_trust_access_application" "admin" {
   count                     = var.environment == "prod" ? 1 : 0
   account_id                = var.cloudflare_account_id
-  name                      = "career-pilot ${var.environment} admin page"
-  domain                    = "${local.frontend_host}/admin"
-  type                      = "self_hosted"
-  session_duration          = "24h"
-  auto_redirect_to_identity = false
-  policies                  = [cloudflare_zero_trust_access_policy.owner_only.id]
-}
-
-resource "cloudflare_zero_trust_access_application" "admin_api" {
-  count                     = var.environment == "prod" ? 1 : 0
-  account_id                = var.cloudflare_account_id
-  name                      = "career-pilot ${var.environment} admin api"
-  domain                    = "${local.frontend_host}/api/admin"
+  name                      = "career-pilot ${var.environment} admin"
+  self_hosted_domains       = ["${local.frontend_host}/admin", "${local.frontend_host}/api/admin"]
   type                      = "self_hosted"
   session_duration          = "24h"
   auto_redirect_to_identity = false
