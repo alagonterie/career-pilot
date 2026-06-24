@@ -22,9 +22,10 @@ locals {
 
   # The tunnel forwards to the host-local listener; this MUST mirror the port
   # the env's NanoClaw process binds. Dev's portal API binds 3002 (set by the
-  # deploy step's CP_PORTAL_API_PORT -> the preferences config tier); prod (9.4)
-  # binds 3001. OneCLI is one gateway on its fixed port regardless of env.
-  portal_api_port = var.environment == "prod" ? 3001 : 3002
+  # deploy step's CP_PORTAL_API_PORT -> the preferences config tier); prod binds
+  # 3004 (§24.165 D1 — deconflicted from dev's webhook on 3001, since prod shares
+  # the VM with dev). OneCLI is one gateway on its fixed port regardless of env.
+  portal_api_port = var.environment == "prod" ? 3004 : 3002
   onecli_port     = 10254
 }
 

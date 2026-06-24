@@ -1,0 +1,215 @@
+name: deploy-backend-prod
+
+# Phase 9.7 (STRATEGY.md §24.165). The PROD backend on the SAME VM as dev, isolated
+# by checkout path: NanoClaw derives the systemd unit / image tag / data paths from
+# the checkout dir, so the prod tree at /opt/career-pilot coexists with dev at
+# /opt/career-pilot-dev with no shared mutable state (the OneCLI gateway + Docker
+# daemon aside). Prod binds 3004 (portal) / 3003 (webhook) — clear of dev's 3002/
+# 3001 (§24.165 D1). The dev workflow (deploy-backend.yml) is untouched.
+#
+# TAG-GATED (§24.165 D2): a `v*` tag push (the cutover ship-action — merge dev→
+# master then cut v1.0.0) provisions prod; workflow_dispatch stays for manual /
+# ad-hoc redeploys of an arbitrary ref. There is deliberately NO clean-reset path
+# here — a prod deploy must never wipe app data (unlike the dev workflow's gated
+# reset). Per-env config comes from the GitHub `production` Environment.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref (tag or branch) to deploy to prod. Defaults to the triggering ref.'
+        type: string
+        required: false
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: deploy-backend-prod
+  cancel-in-progress: false # never interrupt an in-flight prod provision
+
+permissions:
+  contents: read
+  id-token: write # required for Workload Identity Federation
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Authenticate to Google Cloud (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Provision prod backend over IAP SSH
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }} # short-lived; used only to clone the private repo onto the box
+          # The ref to deploy: the manual input wins; otherwise the triggering ref
+          # (the pushed `v*` tag). `git clone --branch` / `git fetch` accept a tag
+          # or a branch, so the box checks out exactly this commit.
+          DEPLOY_REF: ${{ inputs.ref || github.ref_name }}
+          VM_NAME: ${{ vars.GCP_VM_NAME || 'career-pilot-host' }}
+          VM_ZONE: ${{ vars.GCP_ZONE || 'us-central1-a' }}
+          GCP_PROJECT: ${{ vars.GCP_PROJECT || 'career-pilot-497319' }}
+          CP_ASSISTANT_NAME: ${{ vars.CP_ASSISTANT_NAME || 'Career Pilot' }}
+          CP_TZ: ${{ vars.CP_TZ || 'America/Chicago' }}
+          # Secrets (GitHub `production` Environment secrets) — GH masks these.
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_PROD_BOT_TOKEN }}
+          PORTKEY_API_KEY: ${{ secrets.PORTKEY_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Prod cloudflared tunnel token (the Terraform prod tunnel output). Empty
+          # until the prod edge is applied + the secret set — the install no-ops.
+          CLOUDFLARED_TOKEN: ${{ secrets.CLOUDFLARED_PROD_TUNNEL_TOKEN }}
+          # Optional — the VM is already on the tailnet (joined by the dev deploy);
+          # unset → the prod run skips the join.
+          TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+          API_HOST: ${{ vars.API_HOST }}
+          ONECLI_PUBLIC_URL: ${{ vars.ONECLI_PUBLIC_URL }}
+          PORTAL_PUBLIC_URL: ${{ vars.PORTAL_PUBLIC_URL }}
+          VISIT_IP_HASH_SALT: ${{ secrets.VISIT_IP_HASH_SALT }}
+          # Origin-JWT (§24.165 D4) — threaded into the prod .env by bootstrap-vm.sh
+          # so access-jwt.ts validates the Cf-Access-Jwt-Assertion. CF_ACCESS_AUD =
+          # the api Access app's AUD (the Worker re-auths to the tunnel with the api
+          # service token, so the assertion at the loopback is the api app's). Both
+          # empty until the prod edge is applied → origin-JWT stays inert (fail-safe
+          # pass-through) while unset.
+          CF_ACCESS_TEAM: ${{ vars.CF_ACCESS_TEAM }}
+          CF_ACCESS_AUD: ${{ vars.CF_ACCESS_AUD }}
+          # Service-token creds (GH `production` secrets) so the edge smoke reaches
+          # the backend THROUGH Access+tunnel (a token-authed 200), not just the
+          # Access challenge (which would mask a dead tunnel).
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+
+          # Build the remote orchestration script on the runner (secrets get
+          # interpolated here, then it travels over the encrypted SSH channel as
+          # `bash -s` STDIN — so secrets never land in argv on either side).
+          # Remote-only expansions (the service user's uid, the derived unit slug)
+          # are escaped (\$) to defer to the box.
+          cat > /tmp/cp-remote-prod.sh <<EOF
+          set -euo pipefail
+          REPO=${GH_REPO}
+          REF='${DEPLOY_REF}'
+          AUTH_URL="https://x-access-token:${GH_TOKEN}@github.com/\${REPO}.git"
+          CLEAN_URL="https://github.com/\${REPO}.git"
+          APP_DIR=/opt/career-pilot
+
+          # Ensure the prod checkout dir exists + is owned by the service user.
+          sudo install -d -o career-pilot -g career-pilot "\${APP_DIR}"
+
+          # Clone-or-fetch the exact ref (tag or branch) as the service user. A
+          # detached checkout of FETCH_HEAD pins the deployed commit; we never
+          # commit on the box, so detached HEAD is correct.
+          if sudo -u career-pilot test -d "\${APP_DIR}/.git"; then
+            sudo -u career-pilot git -C "\${APP_DIR}" remote set-url origin "\${AUTH_URL}"
+            sudo -u career-pilot git -C "\${APP_DIR}" fetch --depth=1 origin "\${REF}"
+            sudo -u career-pilot git -C "\${APP_DIR}" checkout -f FETCH_HEAD
+          else
+            sudo -u career-pilot git clone --depth=1 --branch "\${REF}" "\${AUTH_URL}" "\${APP_DIR}"
+          fi
+          # Scrub the token from the stored remote — never leave it on disk.
+          sudo -u career-pilot git -C "\${APP_DIR}" remote set-url origin "\${CLEAN_URL}"
+
+          # Host toolchain ensure (idempotent; privileged as the deploy SA). Cheap
+          # re-run since the dev deploy already laid Node 20 / pnpm / docker plugins.
+          NODE_MAJOR=\$(node -v 2>/dev/null | cut -d. -f1 | tr -d v)
+          if [ "\${NODE_MAJOR:-0}" -lt 20 ]; then
+            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+          fi
+          sudo npm install -g pnpm@10
+          sudo apt-get update -qq
+          sudo apt-get install -y docker-buildx docker-compose-v2
+
+          # SSRF metadata firewall (§24.141 S2-0) — host-level DOCKER-USER DROP, so
+          # prod containers inherit the protection too. Idempotent.
+          sudo bash "\${APP_DIR}/scripts/harden-container-egress.sh"
+
+          # cloudflared tunnel daemon — prod's SOLE ingress. TUNNEL_ENV=prod →
+          # the cloudflared-prod unit + /etc/cloudflared/prod.env, so it never
+          # clobbers dev's cloudflared-dev. Idempotent; no-ops when unset.
+          if [ -n '${CLOUDFLARED_TOKEN}' ]; then
+            sudo env TUNNEL_ENV=prod CLOUDFLARED_TOKEN='${CLOUDFLARED_TOKEN}' bash "\${APP_DIR}/scripts/install-tunnel.sh"
+          else
+            echo "CLOUDFLARED_PROD_TUNNEL_TOKEN unset — skipping prod tunnel daemon install"
+          fi
+
+          # Tailscale — additive, idempotent; the VM is already joined by the dev
+          # deploy, so this is normally a no-op (and skipped entirely when unset).
+          if [ -n '${TAILSCALE_AUTHKEY}' ]; then
+            sudo env TAILSCALE_AUTHKEY='${TAILSCALE_AUTHKEY}' bash "\${APP_DIR}/scripts/install-tailscale.sh"
+          else
+            echo "TAILSCALE_AUTHKEY unset — skipping Tailscale join (VM already on the tailnet)"
+          fi
+
+          # A persistent user-systemd session so the service survives logout/reboot.
+          sudo loginctl enable-linger career-pilot
+          CP_UID=\$(id -u career-pilot)
+
+          # Bootstrap the prod stack. CP_ALLOW_PRODUCTION=1 opts past the
+          # provision-backend.ts production guard; prod ports 3004/3003; the
+          # origin-JWT team/aud are threaded into .env by bootstrap-vm.sh.
+          sudo -u career-pilot env XDG_RUNTIME_DIR=/run/user/\${CP_UID} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/\${CP_UID}/bus CP_ENVIRONMENT=production CP_ALLOW_PRODUCTION=1 CP_PORTAL_API_PORT=3004 CP_WEBHOOK_PORT=3003 CP_ASSISTANT_NAME='${CP_ASSISTANT_NAME}' CP_TZ='${CP_TZ}' CP_ONECLI_PUBLIC_URL='${ONECLI_PUBLIC_URL}' CP_PORTAL_PUBLIC_URL='${PORTAL_PUBLIC_URL}' VISIT_IP_HASH_SALT='${VISIT_IP_HASH_SALT}' CP_CF_ACCESS_TEAM='${CF_ACCESS_TEAM}' CP_CF_ACCESS_AUD='${CF_ACCESS_AUD}' TELEGRAM_BOT_TOKEN='${TELEGRAM_BOT_TOKEN}' PORTKEY_API_KEY='${PORTKEY_API_KEY}' ANTHROPIC_API_KEY='${ANTHROPIC_API_KEY}' bash "\${APP_DIR}/scripts/bootstrap-vm.sh"
+
+          # The prod systemd unit is path-derived (sha1 of the checkout dir) — match
+          # bootstrap-vm.sh's slug so the diagnostics target the right unit.
+          UNIT="nanoclaw-v2-\$(printf %s "\${APP_DIR}" | sha1sum | cut -c1-8)"
+
+          # Post-bootstrap smoke — the prod portal API answering on its loopback port
+          # proves the host process is up and serving.
+          echo "== smoke: prod portal /api/system-status (:3004) =="
+          ok=0
+          for i in \$(seq 1 12); do
+            if curl -fsS -m 5 http://127.0.0.1:3004/api/system-status; then echo; echo "portal-ok"; ok=1; break; fi
+            sleep 3
+          done
+          if [ "\$ok" -ne 1 ]; then
+            echo "== prod portal DOWN — diagnostics =="
+            sudo -u career-pilot env XDG_RUNTIME_DIR=/run/user/\${CP_UID} systemctl --user status "\${UNIT}.service" --no-pager -l 2>&1 | tail -n 30 || true
+            echo "== nanoclaw.error.log (tail 60) =="
+            sudo tail -n 60 "\${APP_DIR}/logs/nanoclaw.error.log" 2>&1 || true
+            exit 1
+          fi
+
+          # Edge smoke (only when the tunnel + service token are configured): the
+          # PUBLIC api host should answer THROUGH the tunnel with a token-authed 200.
+          if [ -n '${CLOUDFLARED_TOKEN}' ] && [ -n '${API_HOST}' ] && [ -n '${CF_ACCESS_CLIENT_ID}' ]; then
+            echo "== smoke: edge https://${API_HOST}/api/system-status via service token (expect 200) =="
+            edge_ok=0
+            for i in \$(seq 1 10); do
+              code=\$(curl -s -o /dev/null -m 8 -w '%{http_code}' \
+                -H "CF-Access-Client-Id: ${CF_ACCESS_CLIENT_ID}" \
+                -H "CF-Access-Client-Secret: ${CF_ACCESS_CLIENT_SECRET}" \
+                "https://${API_HOST}/api/system-status" || echo 000)
+              echo "  attempt \$i: HTTP \$code"
+              case "\$code" in
+                200) echo "edge-ok (service token reached the backend through the tunnel)"; edge_ok=1; break ;;
+                530) echo "  (530/1033 = tunnel not connected; retrying)" ;;
+                302|401|403) echo "  (\$code = Access rejected the service token; retrying)" ;;
+              esac
+              sleep 6
+            done
+            if [ "\$edge_ok" -ne 1 ]; then
+              echo "== prod edge DOWN — cloudflared diagnostics =="
+              sudo systemctl status cloudflared-prod --no-pager -l 2>&1 | tail -n 30 || true
+              sudo journalctl -u cloudflared-prod --no-pager -n 40 2>&1 || true
+              exit 1
+            fi
+          fi
+          EOF
+
+          gcloud compute ssh "${VM_NAME}" \
+            --project "${GCP_PROJECT}" \
+            --zone "${VM_ZONE}" \
+            --tunnel-through-iap \
+            --quiet \
+            --command="bash -s" < /tmp/cp-remote-prod.sh
+
+          rm -f /tmp/cp-remote-prod.sh

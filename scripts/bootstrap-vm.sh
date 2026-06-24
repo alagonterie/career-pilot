@@ -83,6 +83,13 @@ CP_PORTAL_PUBLIC_URL="${CP_PORTAL_PUBLIC_URL:-}"
 # readEnvFile, never loaded into process.env). Unset → attribution.ts falls back
 # to a constant (still never stores a raw IP).
 VISIT_IP_HASH_SALT="${VISIT_IP_HASH_SALT:-}"
+# Origin-JWT (§24.165 D4): the Cloudflare Access team identifier + the api-app AUD
+# that access-jwt.ts validates the Cf-Access-Jwt-Assertion against. Written to
+# .env (the step-6b drop-in loads .env into the host process env → process.env
+# picks them up). Empty on dev → origin-JWT stays inert (fail-safe pass-through);
+# prod sets them from the GH `production` env via deploy-backend-prod.yml.
+CP_CF_ACCESS_TEAM="${CP_CF_ACCESS_TEAM:-}"
+CP_CF_ACCESS_AUD="${CP_CF_ACCESS_AUD:-}"
 
 # The agent image Dockerfile uses BuildKit cache mounts (RUN --mount=type=cache).
 # Ubuntu's docker.io defaults to the legacy builder, which rejects --mount; opt
@@ -148,6 +155,10 @@ TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
 # §24.74 visit-telemetry IP-hash salt. Read by src/attribution.ts via readEnvFile
 # (kept OUT of process.env). Empty line → readEnvFile skips it → constant fallback.
 VISIT_IP_HASH_SALT=${VISIT_IP_HASH_SALT}
+# §24.165 D4 origin-JWT — loaded into the host process env by the step-6b drop-in;
+# access-jwt.ts reads process.env.CF_ACCESS_TEAM/_AUD (empty → validation inert).
+CF_ACCESS_TEAM=${CP_CF_ACCESS_TEAM}
+CF_ACCESS_AUD=${CP_CF_ACCESS_AUD}
 EOF
 echo "  wrote $PROJECT_ROOT/.env"
 

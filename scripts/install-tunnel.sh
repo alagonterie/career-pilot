@@ -18,11 +18,16 @@
 # command line or the unit's ExecStart (the deploy step's transient `sudo env`
 # pass-in is the same channel every other deploy secret uses).
 #
-# RUN AS: root (via sudo). ENV: CLOUDFLARED_TOKEN (required).
+# RUN AS: root (via sudo). ENV: CLOUDFLARED_TOKEN (required); TUNNEL_ENV (dev|prod,
+# default dev — selects the unit name + env-file so a prod tunnel coexists with dev).
 set -euo pipefail
 
-UNIT_NAME="cloudflared-dev"
-ENV_FILE="/etc/cloudflared/dev.env"
+# §24.165 D5: per-env unit + env-file so a prod tunnel (TUNNEL_ENV=prod →
+# cloudflared-prod / prod.env) coexists with dev's cloudflared-dev on the shared
+# VM. Defaults to dev → the existing dev deploy path stays byte-identical.
+TUNNEL_ENV="${TUNNEL_ENV:-dev}"
+UNIT_NAME="cloudflared-${TUNNEL_ENV}"
+ENV_FILE="/etc/cloudflared/${TUNNEL_ENV}.env"
 
 [ "$(id -u)" -eq 0 ] || { echo "install-tunnel: must run as root (sudo)" >&2; exit 1; }
 [ -n "${CLOUDFLARED_TOKEN:-}" ] || { echo "install-tunnel: CLOUDFLARED_TOKEN is required" >&2; exit 1; }
@@ -52,18 +57,21 @@ printf 'TUNNEL_TOKEN=%s\n' "${token}" > "${ENV_FILE}"
 chmod 0600 "${ENV_FILE}"
 
 # 3. System unit — runs the remotely-managed tunnel from the token, restarts on
-#    failure so a transient drop self-heals.
-cat > "/etc/systemd/system/${UNIT_NAME}.service" <<'UNIT'
+#    failure so a transient drop self-heals. The unit name + EnvironmentFile are
+#    per-env (${UNIT_NAME} / ${ENV_FILE}) so a prod daemon never clobbers dev.
+#    NOTE: --no-autoupdate is an APP-level flag → it must precede the `tunnel`
+#    subcommand (cloudflared's canonical token-run form). Placing it after
+#    `tunnel` crash-loops the daemon on a flag-parse error (the unit shows
+#    "activating", never connects). This lives as a shell comment, not inside the
+#    unit, so the (now unquoted) heredoc below carries no backticks to expand.
+cat > "/etc/systemd/system/${UNIT_NAME}.service" <<UNIT
 [Unit]
-Description=cloudflared tunnel (career-pilot dev)
+Description=cloudflared tunnel (career-pilot ${TUNNEL_ENV})
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-EnvironmentFile=/etc/cloudflared/dev.env
-# --no-autoupdate is an APP-level flag → it must precede the `tunnel` subcommand
-# (cloudflared's canonical token-run form). Placing it after `tunnel` crash-loops
-# the daemon on a flag-parse error (the unit shows "activating", never connects).
+EnvironmentFile=${ENV_FILE}
 ExecStart=/usr/bin/cloudflared --no-autoupdate tunnel run
 Restart=on-failure
 RestartSec=5
