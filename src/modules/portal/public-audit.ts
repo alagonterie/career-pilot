@@ -135,7 +135,11 @@ export function publicApplicationRef(db: Database.Database, applicationId: strin
   }
 }
 
-export async function mirrorPipelineEvent(db: Database.Database, eventId: string): Promise<MirrorOutcome> {
+export async function mirrorPipelineEvent(
+  db: Database.Database,
+  eventId: string,
+  opts?: { forceSeq?: number },
+): Promise<MirrorOutcome> {
   let row: JoinedRow | undefined;
   try {
     row = db
@@ -253,13 +257,20 @@ export async function mirrorPipelineEvent(db: Database.Database, eventId: string
   });
 
   try {
+    // Re-mirror (resanitize) restores the row's ORIGINAL seq so a re-sanitized
+    // trace keeps its place in the seq-ordered activity feed; a first-time mirror
+    // appends with MAX(seq)+1. The seqSql is one of two constant strings (never
+    // user input), so interpolating it is injection-safe (§24.169 follow-up).
+    const useForcedSeq = typeof opts?.forceSeq === 'number';
+    const seqSql = useForcedSeq ? '@seq' : '(SELECT COALESCE(MAX(seq), 0) + 1 FROM public_audit_trail)';
     db.prepare(
       `INSERT INTO public_audit_trail
          (id, seq, ts, category, agent_name, proactive, application_ref, summary, details_json, source_pipeline_event_id)
-       VALUES (@id, (SELECT COALESCE(MAX(seq), 0) + 1 FROM public_audit_trail),
+       VALUES (@id, ${seqSql},
                @ts, @category, @agent_name, @proactive, @application_ref, @summary, @details_json, @source_pipeline_event_id)`,
     ).run({
       id: generateId(),
+      ...(useForcedSeq ? { seq: opts!.forceSeq } : {}),
       // Carry the SOURCE event's timestamp, not now() — so re-mirroring
       // (resanitizeApplicationAuditTrail) is idempotent and never re-dates a
       // trace to the moment it was re-sanitized (§24.169 follow-up).
@@ -326,7 +337,23 @@ export async function resanitizeApplicationAuditTrail(
   // best-effort/never-throws contract. Withheld rows (Pass 3 unavailable) are
   // intentionally not re-inserted.
   let deleted = 0;
+  // Capture each pipeline row's seq BEFORE the delete, keyed by source event,
+  // so the re-mirror can restore it (§24.169 follow-up). Without this, every
+  // re-mirrored trace gets a fresh MAX(seq)+1 and jumps to the END of the
+  // seq-ordered feed — the "old-dated trace at the newest position" the owner
+  // caught after a re-sanitize.
+  const priorSeqs = new Map<string, number>();
   try {
+    const prior = db
+      .prepare(
+        `SELECT source_pipeline_event_id AS eid, seq FROM public_audit_trail
+          WHERE category = 'pipeline'
+            AND source_pipeline_event_id IN (
+              SELECT id FROM pipeline_events WHERE application_id = ?
+            )`,
+      )
+      .all(applicationId) as Array<{ eid: string | null; seq: number }>;
+    for (const r of prior) if (r.eid) priorSeqs.set(r.eid, r.seq);
     const del = db
       .prepare(
         `DELETE FROM public_audit_trail
@@ -348,7 +375,8 @@ export async function resanitizeApplicationAuditTrail(
       .prepare('SELECT id FROM pipeline_events WHERE application_id = ? ORDER BY ts ASC')
       .all(applicationId) as Array<{ id: string }>;
     for (const { id } of events) {
-      if ((await mirrorPipelineEvent(db, id)) === 'inserted') rewritten++;
+      const forceSeq = priorSeqs.get(id);
+      if ((await mirrorPipelineEvent(db, id, forceSeq != null ? { forceSeq } : undefined)) === 'inserted') rewritten++;
     }
   } catch (err) {
     log.error('resanitizeApplicationAuditTrail: re-mirror failed', { applicationId, err });

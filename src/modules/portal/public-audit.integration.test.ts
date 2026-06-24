@@ -455,6 +455,34 @@ describe('mirrorPipelineEvent', () => {
       expect(rows[0].summary).not.toContain('Acme Corp');
     });
 
+    it('preserves the original seq on re-mirror so the row keeps its place in the feed (§24.169)', async () => {
+      seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a' });
+      seedEvent({ id: 'fe-1', application_id: 'app-1', payload: JSON.stringify({ note: 'first event' }) });
+      expect(await mirrorPipelineEvent(db, 'fe-1')).toBe('inserted');
+
+      // A later, higher-seq row from a DIFFERENT app. Before the fix, resanitize
+      // re-appended fe-1's row with a fresh MAX(seq)+1, landing it ABOVE this one
+      // (the "old-dated trace at the newest position" bug).
+      seedApp({ id: 'app-2', company_name: 'Globex Inc', obfuscated_label: 'health-a' });
+      seedEvent({ id: 'fe-2', application_id: 'app-2', payload: JSON.stringify({ note: 'later event' }) });
+      expect(await mirrorPipelineEvent(db, 'fe-2')).toBe('inserted');
+
+      const seqOf = (eid: string) =>
+        (
+          db.prepare('SELECT seq FROM public_audit_trail WHERE source_pipeline_event_id = ?').get(eid) as {
+            seq: number;
+          }
+        ).seq;
+      const seqBefore = seqOf('fe-1');
+      const maxBefore = (db.prepare('SELECT MAX(seq) AS m FROM public_audit_trail').get() as { m: number }).m;
+      expect(seqBefore).toBeLessThan(maxBefore); // fe-1 is NOT the newest row
+
+      await resanitizeApplicationAuditTrail(db, 'app-1');
+
+      // Re-mirrored in place — same seq, so it holds its chronological slot.
+      expect(seqOf('fe-1')).toBe(seqBefore);
+    });
+
     it('rewrites obfuscated→public: [REDACTED:<label>] replaced with the real name', async () => {
       seedApp({
         id: 'app-1',
