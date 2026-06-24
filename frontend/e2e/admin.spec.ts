@@ -143,7 +143,26 @@ function jsonRoute(body: unknown, status = 200) {
   return { status, contentType: 'application/json', body: JSON.stringify(body) }
 }
 
-/** Stub the five reads (+ the knob/control POSTs). `available:false` → every read 404s. */
+// §24.164: the owner-only Sandbox-runs feed (the admin page polls it on every tab).
+const SANDBOX_RUNS = {
+  runs: [
+    {
+      id: 'sb-e2e-1',
+      ts: '2026-06-23T17:00:00.000Z',
+      visitor_company: 'Globex',
+      visitor_role: 'Staff SWE',
+      jd_excerpt: 'Build the reconciliation service',
+      total_cost_cents: 84,
+      total_latency_ms: 153000,
+      status: 'completed',
+      expires_at: null,
+      ip_token: 'abcdef0123456789',
+    },
+  ],
+  stats: { total: 1, runsToday: 1, costTodayCents: 84, runs7d: 1 },
+}
+
+/** Stub the admin reads (+ the knob/control/sandbox POSTs). `available:false` → every read 404s. */
 async function stubAdmin(page: Page, available = true): Promise<void> {
   const read = (body: unknown) => (route: import('@playwright/test').Route) =>
     route.fulfill(available ? jsonRoute(body) : jsonRoute({ error: 'not_found' }, 404))
@@ -152,6 +171,10 @@ async function stubAdmin(page: Page, available = true): Promise<void> {
   await page.route('**/api/admin/pipeline', read(PIPELINE))
   await page.route('**/api/admin/contacts', read(CONTACTS))
   await page.route('**/api/admin/attribution', read(ATTRIBUTION))
+  await page.route('**/api/admin/sandbox-runs', async (route) => {
+    if (route.request().method() === 'POST') return route.fulfill(jsonRoute({ deleted: true }, 200))
+    return route.fulfill(available ? jsonRoute(SANDBOX_RUNS) : jsonRoute({ error: 'not_found' }, 404))
+  })
   await page.route('**/api/admin/knobs', async (route) => {
     if (route.request().method() === 'POST') return route.fulfill(jsonRoute({ applied: true }, 200))
     return route.fulfill(available ? jsonRoute(KNOBS) : jsonRoute({ error: 'not_found' }, 404))
