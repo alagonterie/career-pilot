@@ -141,10 +141,18 @@ resource "cloudflare_zero_trust_access_application" "onecli" {
 # Consumed by the VM's cloudflared daemon (deploy-backend.yml installs it as a
 # root systemd unit reading this from the GH `dev` env secret
 # CLOUDFLARED_DEV_TUNNEL_TOKEN). Sensitive: it authorizes dialing the tunnel.
-output "dev_tunnel_token" {
-  description = "cloudflared --token for the VM daemon. Set as GH dev env secret CLOUDFLARED_DEV_TUNNEL_TOKEN."
+output "tunnel_token" {
+  description = "cloudflared --token for the VM daemon (this workspace's env). Set as the env's GH secret: CLOUDFLARED_DEV_TUNNEL_TOKEN (dev) / CLOUDFLARED_PROD_TUNNEL_TOKEN (prod)."
   value       = cloudflare_zero_trust_tunnel_cloudflared.backend.tunnel_token
   sensitive   = true
+}
+
+# The api Access app's Application Audience (AUD) tag — what the backend's
+# origin-JWT (access-jwt.ts) validates the Worker-presented assertion against
+# (§24.165 D4). Set as the env's GH var CF_ACCESS_AUD.
+output "api_access_aud" {
+  description = "The api Access app AUD. Set as GH var CF_ACCESS_AUD (prod) for origin-JWT validation."
+  value       = cloudflare_zero_trust_access_application.api.aud
 }
 
 output "api_url" {
