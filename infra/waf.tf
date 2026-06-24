@@ -17,12 +17,23 @@
 # What IS free + host-scoped (so the api path is untouched): one rate-limiting
 # rule + one custom firewall rule, both pinned to the frontend host + the two
 # public mutation paths. `local.frontend_host` (cloudflare.tf) makes them
-# per-environment. A zone allows one ruleset per phase, so each lives in its own.
+# per-environment.
+#
+# §24.165 D7 — SAME-ZONE CONSTRAINT: a zone allows exactly ONE ruleset per phase,
+# and dev + prod share the `example.com` zone, so both envs can't each own a
+# phase ruleset. These are gated DEV-ONLY (count below) and DEFERRED on prod
+# because prod's protection doesn't need them: the Worker's Rate Limiting
+# (SANDBOX_BURST/CONTACT_BURST = 2/60s) is TIGHTER than the 30/10s rule here, and
+# Turnstile (live on both endpoints) + the backend caps (per-IP daily / global
+# $-budget / 300s wall) are the real ceiling. Follow-up (post-launch) if a prod
+# WAF belt is still wanted: free dev's zone slot and make these prod-only, or
+# unify one ruleset across both hosts.
 
 # Rate-limiting rule (http_ratelimit phase): a coarse edge flood-shield in FRONT
 # of the Worker — sheds gross floods on the public POST endpoints before the
 # Worker's own per-IP burst limiter even runs.
 resource "cloudflare_ruleset" "public_ratelimit" {
+  count       = var.environment == "prod" ? 0 : 1
   zone_id     = var.cloudflare_zone_id
   name        = "career-pilot ${var.environment} public rate limit"
   description = "Flood-shield the public mutation endpoints (§24.70)"
@@ -49,6 +60,7 @@ resource "cloudflare_ruleset" "public_ratelimit" {
 # belt for Turnstile against known-bad sources. Managed Challenge (not block)
 # keeps false positives recoverable for real humans.
 resource "cloudflare_ruleset" "public_custom" {
+  count       = var.environment == "prod" ? 0 : 1
   zone_id     = var.cloudflare_zone_id
   name        = "career-pilot ${var.environment} public custom WAF"
   description = "Challenge high-threat requests to the public mutation endpoints (§24.70)"
