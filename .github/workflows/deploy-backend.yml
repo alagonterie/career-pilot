@@ -137,7 +137,13 @@ jobs:
             curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
             sudo apt-get install -y nodejs
           fi
-          sudo npm install -g pnpm@10
+          # Guarded (§24.169): pnpm@10 is normally already installed, and an
+          # unconditional global reinstall RACES the concurrent prod deploy on the
+          # shared VM's /usr/lib/node_modules — npm's non-atomic global replace
+          # dies with ENOTEMPTY on the rename. Skip when pnpm 10 is already there.
+          if ! command -v pnpm >/dev/null 2>&1 || [ "\$(pnpm -v 2>/dev/null | cut -d. -f1)" != "10" ]; then
+            sudo npm install -g pnpm@10
+          fi
           # Ubuntu's docker.io ships a bare engine — install the Docker plugins
           # the stack needs: buildx (the agent image's RUN --mount=type=cache
           # BuildKit steps) + compose (OneCLI's gateway is a docker-compose stack).

@@ -124,7 +124,12 @@ jobs:
             curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
             sudo apt-get install -y nodejs
           fi
-          sudo npm install -g pnpm@10
+          # Guarded (§24.169): skip the global pnpm reinstall when pnpm 10 is
+          # already present — the unconditional install races the concurrent dev
+          # deploy on the shared VM's /usr/lib/node_modules (ENOTEMPTY).
+          if ! command -v pnpm >/dev/null 2>&1 || [ "\$(pnpm -v 2>/dev/null | cut -d. -f1)" != "10" ]; then
+            sudo npm install -g pnpm@10
+          fi
           sudo apt-get update -qq
           sudo apt-get install -y docker-buildx docker-compose-v2
 
