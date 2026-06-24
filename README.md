@@ -32,11 +32,12 @@ shadow-run buffer for soft-launching before any real outreach goes out.
 
 ## Status
 
-**Phase 9.7 — production-cutover prep.** The full system (owner agent,
-showcase portal, sandboxed simulator, and the six subagents) is **built and
-running on a Cloudflare-Access-gated dev environment**. The work in flight is
-the first public production release: the cutover runbook plus dev-side
-hardening. See `.specs/PROD_CUTOVER.md` and `STRATEGY.md §24.136`.
+**v1.0.0 — first public release.** The full system (owner agent, showcase
+portal, sandboxed simulator, and the six subagents) is **built, released, and
+running in production** behind Cloudflare: the public showcase at `hire.<DOMAIN>`,
+the owner control plane over Telegram, the budget-capped public sandbox, and an
+owner-only `/admin` control center behind Cloudflare Access. Release history is
+in `CHANGELOG.md`; the production cutover runbook is `.specs/PROD_CUTOVER.md`.
 
 See `.specs/` for the full architecture:
 
