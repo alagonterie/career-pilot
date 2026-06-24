@@ -13,6 +13,7 @@
  */
 import { randomUUID } from 'crypto';
 
+import { hashIp } from '../../attribution.js';
 import { setSimulatorOutputSink, submitSimulatorRun } from '../../channels/portal/adapter.js';
 import { killContainer } from '../../container-runner.js';
 import { getAgentGroupByFolder } from '../../db/agent-groups.js';
@@ -721,6 +722,100 @@ export function getRecentSimulatorRuns(limit?: number): Array<Partial<SimulatorR
         ORDER BY ts DESC LIMIT ?`,
     )
     .all(Math.max(1, Math.min(50, n))) as Array<Partial<SimulatorRunRow>>;
+}
+
+// ── §24.164: the owner-only Sandbox-runs read + early-delete ─────────────────────
+// The INVERSE of getRecentSimulatorRuns (the public metrics-only feed): behind the
+// admin gate the owner sees the full run — including the visitor's raw company/role
+// free-text — to monitor usage + abuse + quality. The raw client IP is NEVER
+// returned; it's folded to a stable salted token (`hashIp`) so repeat sources are
+// visible without exposing the address.
+
+/** One sandbox run for the owner Sandbox-runs tab. No raw IP — `ip_token` only. */
+export interface AdminSimulatorRun {
+  id: string;
+  ts: string;
+  visitor_company: string | null;
+  visitor_role: string | null;
+  jd_excerpt: string | null;
+  total_cost_cents: number | null;
+  total_latency_ms: number | null;
+  /** Derived (no stored status column): a run with a tailored output finished. */
+  status: 'completed' | 'incomplete';
+  expires_at: string | null;
+  /** A salted hash of the client IP — a stable per-source token for spotting repeat/abuse; never the raw IP. */
+  ip_token: string | null;
+}
+
+interface AdminRunDbRow {
+  id: string;
+  ts: string;
+  visitor_company: string | null;
+  visitor_role: string | null;
+  jd_excerpt: string | null;
+  total_cost_cents: number | null;
+  total_latency_ms: number | null;
+  tailored_resume_json: string | null;
+  tailored_resume: string | null;
+  expires_at: string | null;
+  client_ip: string | null;
+}
+
+/** Recent sandbox runs (newest first) with the owner-only detail. Default 50, cap 200. */
+export function getAdminSimulatorRuns(limit = 50): AdminSimulatorRun[] {
+  const n = Math.max(1, Math.min(200, limit));
+  const rows = getDb()
+    .prepare(
+      `SELECT id, ts, visitor_company, visitor_role, jd_excerpt, total_cost_cents, total_latency_ms,
+              tailored_resume_json, tailored_resume, expires_at, client_ip
+         FROM simulator_runs
+        ORDER BY ts DESC LIMIT ?`,
+    )
+    .all(n) as AdminRunDbRow[];
+  return rows.map((r) => ({
+    id: r.id,
+    ts: r.ts,
+    visitor_company: r.visitor_company,
+    visitor_role: r.visitor_role,
+    jd_excerpt: r.jd_excerpt,
+    total_cost_cents: r.total_cost_cents,
+    total_latency_ms: r.total_latency_ms,
+    status: r.tailored_resume_json || r.tailored_resume ? 'completed' : 'incomplete',
+    expires_at: r.expires_at,
+    ip_token: hashIp(r.client_ip),
+  }));
+}
+
+export interface SandboxRunStats {
+  /** Total persisted (non-expired) runs. */
+  total: number;
+  runsToday: number;
+  costTodayCents: number;
+  runs7d: number;
+}
+
+/** Aggregate header for the Sandbox-runs tab — runs today / 7d + today's spend. */
+export function getAdminSandboxStats(): SandboxRunStats {
+  const db = getDb();
+  const total = (db.prepare(`SELECT COUNT(*) AS n FROM simulator_runs`).get() as { n: number }).n;
+  const today = db
+    .prepare(
+      `SELECT COUNT(*) AS n, COALESCE(SUM(total_cost_cents), 0) AS c
+         FROM simulator_runs WHERE datetime(ts) >= datetime('now', 'start of day')`,
+    )
+    .get() as { n: number; c: number };
+  const wk = (
+    db.prepare(`SELECT COUNT(*) AS n FROM simulator_runs WHERE datetime(ts) >= datetime('now', '-7 days')`).get() as {
+      n: number;
+    }
+  ).n;
+  return { total, runsToday: today.n, costTodayCents: today.c, runs7d: wk };
+}
+
+/** Early-delete one sandbox run (before its TTL). Single-table — trace/output are
+ *  columns, no children. Returns true when a row was removed. */
+export function deleteSimulatorRun(id: string): boolean {
+  return getDb().prepare(`DELETE FROM simulator_runs WHERE id = ?`).run(id).changes > 0;
 }
 
 /**

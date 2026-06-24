@@ -291,8 +291,11 @@ function AboutPage() {
               short opaque code, so a click tells me which outreach it came from. That’s the whole point of a public
               job-search showcase. The log keeps a salted hash of your IP (enough to tell a repeat visit from a new one,
               without storing the address itself), a coarse country, and which page you landed on — held for a bounded
-              window, then deleted, and visible only to me behind an authenticated page. I deliberately turned down the
-              free third-party analytics beacon; I’d rather keep the whole thing first-party and legible.
+              window, then deleted, and visible only to me behind an authenticated page. A “watch it work” run works the
+              same way: the company, role, and job description you enter and a redacted trace of the run are stored
+              privately on the same terms — visible only to me, deleted after a bounded window — while the public
+              recent-runs list shows nothing but aggregate cost and runtime. I deliberately turned down the free
+              third-party analytics beacon; I’d rather keep the whole thing first-party and legible.
             </p>
           </S>
 

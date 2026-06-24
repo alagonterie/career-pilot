@@ -312,11 +312,7 @@ const INTERNAL_SUMMARIZE_MODEL = 'claude-haiku-4-5';
  * Resolves client-side in Claude Code, so it works whether the agent hits
  * `api.anthropic.com` directly or routes through Portkey (§24.44).
  */
-export function applyOrchestratorModel(
-  config: ContainerConfig,
-  group: AgentGroup,
-  db: Database.Database,
-): void {
+export function applyOrchestratorModel(config: ContainerConfig, group: AgentGroup, db: Database.Database): void {
   const knob =
     group.folder === 'career-pilot'
       ? 'owner_orchestrator_model'

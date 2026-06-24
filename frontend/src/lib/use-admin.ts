@@ -123,6 +123,41 @@ export function useAdminContacts(baseUrl: string, pollMs = 20000) {
   return usePolledJson<AdminContactsResponse>(`${baseUrl}/api/admin/contacts`, pollMs)
 }
 
+// ── §24.164: the owner-only Sandbox-runs view (full detail; the inverse of the
+// public metrics-only feed). `ip_token` is a salted hash — never the raw IP. ──
+export interface AdminSandboxRun {
+  id: string
+  ts: string
+  visitor_company: string | null
+  visitor_role: string | null
+  jd_excerpt: string | null
+  total_cost_cents: number | null
+  total_latency_ms: number | null
+  status: 'completed' | 'incomplete'
+  expires_at: string | null
+  ip_token: string | null
+}
+export interface AdminSandboxStats {
+  total: number
+  runsToday: number
+  costTodayCents: number
+  runs7d: number
+}
+export interface AdminSandboxRunsView {
+  runs: AdminSandboxRun[]
+  stats: AdminSandboxStats
+}
+
+/** Poll the owner Sandbox-runs feed (real visitor company/role — owner-only). */
+export function useAdminSandboxRuns(baseUrl: string, pollMs = 20000) {
+  return usePolledJson<AdminSandboxRunsView>(`${baseUrl}/api/admin/sandbox-runs`, pollMs)
+}
+
+/** Early-delete one sandbox run (purge its stored input before the TTL). */
+export function deleteAdminSandboxRun(baseUrl: string, id: string): Promise<AdminWriteResult> {
+  return postAdmin(baseUrl, { id }, '/api/admin/sandbox-runs')
+}
+
 /** Poll the included knob set (registry − ADMIN_DENY). */
 export function useAdminKnobs(baseUrl: string, pollMs = 20000) {
   return usePolledJson<DevKnobsResponse>(`${baseUrl}/api/admin/knobs`, pollMs)

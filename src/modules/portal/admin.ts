@@ -31,6 +31,13 @@ import { isDevEnv } from './dev-inspector.js';
 import { executeControlCommand, executeKillswitch } from './kill-switch.js';
 import { ADMIN_DENY, ADMIN_KNOB_KEYS, KNOB_SPECS, applyKnobWrite, buildKnobs, type KnobView } from './knob-registry.js';
 import { computeRunningTopology, getObservability } from './observability.js';
+import {
+  deleteSimulatorRun,
+  getAdminSandboxStats,
+  getAdminSimulatorRuns,
+  type AdminSimulatorRun,
+  type SandboxRunStats,
+} from './simulator.js';
 import { getSystemStatus, setLiveMode, type SystemStatus } from './system-modes.js';
 
 import { countRunningContainers } from '../../container-runtime.js';
@@ -246,6 +253,28 @@ export function buildAdminContacts(db: Database.Database, opts: { limit?: number
     )
     .all(limit) as AdminContact[];
   return { contacts };
+}
+
+// ── §24.164: the owner-only Sandbox-runs view (inverse of §24.162's public feed) ──
+
+export interface AdminSandboxRunsView {
+  runs: AdminSimulatorRun[];
+  stats: SandboxRunStats;
+}
+
+/** Recent sandbox runs with owner-only detail + the aggregate header. Reachability
+ *  is gated upstream (adminEnabled() in the dispatch). */
+export function buildAdminSandboxRuns(): AdminSandboxRunsView {
+  return { runs: getAdminSimulatorRuns(50), stats: getAdminSandboxStats() };
+}
+
+/** Early-delete one sandbox run (purge its stored input before the TTL). */
+export function applyAdminSandboxRunDelete(raw: unknown): { status: number; body: unknown } {
+  if (typeof raw !== 'object' || raw === null) return { status: 400, body: { error: 'expected a JSON object { id }' } };
+  const id = (raw as { id?: unknown }).id;
+  if (typeof id !== 'string' || id.length === 0) return { status: 400, body: { error: 'missing or non-string "id"' } };
+  const deleted = deleteSimulatorRun(id);
+  return deleted ? { status: 200, body: { id, deleted: true } } : { status: 404, body: { error: 'not_found', id } };
 }
 
 // ── §24.138: the Pipeline summary (owner view — REAL company names) ───────────

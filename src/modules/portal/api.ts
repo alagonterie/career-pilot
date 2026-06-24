@@ -45,9 +45,11 @@ import {
   adminEnabled,
   applyAdminControl,
   applyAdminKnobWrite,
+  applyAdminSandboxRunDelete,
   buildAdminContacts,
   buildAdminKnobs,
   buildAdminPipeline,
+  buildAdminSandboxRuns,
   buildAdminSummary,
   buildAttributionReport,
 } from './admin.js';
@@ -350,6 +352,28 @@ function handleAdminPipeline(res: http.ServerResponse, cors: Record<string, stri
 
 function handleAdminContacts(res: http.ServerResponse, cors: Record<string, string>): void {
   json(res, 200, buildAdminContacts(getDb()), cors);
+}
+
+/** §24.164: the owner-only Sandbox-runs read (full detail; the inverse of the
+ *  public metrics-only feed). Reachability is gated upstream by adminEnabled(). */
+function handleAdminSandboxRuns(res: http.ServerResponse, cors: Record<string, string>): void {
+  json(res, 200, buildAdminSandboxRuns(), cors);
+}
+
+/** §24.164: early-delete one sandbox run (purge before its TTL). */
+async function handleAdminSandboxRunDelete(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  cors: Record<string, string>,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch {
+    return json(res, 400, { error: 'invalid JSON body' }, cors);
+  }
+  const out = applyAdminSandboxRunDelete(body);
+  json(res, out.status, out.body, cors);
 }
 
 function handleAdminKnobs(res: http.ServerResponse, cors: Record<string, string>): void {
@@ -1050,6 +1074,9 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
       if (method === 'GET' && path === '/api/admin/summary') return await handleAdminSummary(res, cors);
       if (method === 'GET' && path === '/api/admin/pipeline') return handleAdminPipeline(res, cors);
       if (method === 'GET' && path === '/api/admin/contacts') return handleAdminContacts(res, cors);
+      if (method === 'GET' && path === '/api/admin/sandbox-runs') return handleAdminSandboxRuns(res, cors);
+      if (method === 'POST' && path === '/api/admin/sandbox-runs')
+        return await handleAdminSandboxRunDelete(req, res, cors);
       if (method === 'GET' && path === '/api/admin/knobs') return handleAdminKnobs(res, cors);
       if (method === 'POST' && path === '/api/admin/knobs') return await handleAdminKnobsWrite(req, res, cors);
       if (method === 'POST' && path === '/api/admin/control') return await handleAdminControl(req, res, cors);

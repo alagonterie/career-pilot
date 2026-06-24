@@ -1,7 +1,14 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { SimInput } from './SimInput'
+
+// SimInput links to /privacy via <Link> (§24.164); stub the router so the form
+// renders without a route tree.
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children, to: _to, ...props }: { children: ReactNode; to?: string }) => <a {...props}>{children}</a>,
+}))
 
 describe('SimInput (PORTAL §5.3 input view)', () => {
   it('blocks submit + shows errors when company/role are empty', async () => {

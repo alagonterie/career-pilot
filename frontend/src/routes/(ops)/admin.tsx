@@ -3,6 +3,7 @@ import { useState } from 'react'
 
 import { AdminModeControls } from '~/components/admin/AdminModeControls'
 import { ModelControls } from '~/components/admin/ModelControls'
+import { SandboxRunsPanel } from '~/components/admin/SandboxRunsPanel'
 import { KnobControls } from '~/components/dev/KnobControls'
 import { StateNote } from '~/components/states'
 import { Skeleton } from '~/components/ui/skeleton'
@@ -10,6 +11,7 @@ import { cn } from '~/lib/utils'
 import { seo } from '~/lib/seo'
 import {
   artifactLabel,
+  deleteAdminSandboxRun,
   postAdminControl,
   postAdminKnob,
   resetAdminKnob,
@@ -18,6 +20,7 @@ import {
   useAdminContacts,
   useAdminKnobs,
   useAdminPipeline,
+  useAdminSandboxRuns,
   useAdminSummary,
   type AdminAttributionLink,
   type AdminAttributionVisit,
@@ -45,12 +48,13 @@ export const Route = createFileRoute('/(ops)/admin')({
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
 
-type TabId = 'overview' | 'pipeline' | 'visitors' | 'contacts' | 'models' | 'system'
+type TabId = 'overview' | 'pipeline' | 'visitors' | 'contacts' | 'sandbox' | 'models' | 'system'
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'pipeline', label: 'Pipeline' },
   { id: 'visitors', label: 'Visitors' },
   { id: 'contacts', label: 'Contacts' },
+  { id: 'sandbox', label: 'Sandbox' },
   { id: 'models', label: 'Models' },
   { id: 'system', label: 'System' },
 ]
@@ -71,6 +75,7 @@ function AdminPage() {
   const contacts = useAdminContacts(API_BASE)
   const knobs = useAdminKnobs(API_BASE)
   const attribution = useAdminAttribution(API_BASE)
+  const sandboxRuns = useAdminSandboxRuns(API_BASE)
 
   // Cold 404 on the summary feed = the admin surface is disabled (or not this
   // stack) → the whole page is unavailable. This is the prod-degradation path.
@@ -135,6 +140,16 @@ function AdminPage() {
           ) : null}
           {tab === 'visitors' ? <VisitorsPanel data={attribution.data} /> : null}
           {tab === 'contacts' ? <ContactsPanel contacts={contacts.data?.contacts ?? []} /> : null}
+          {tab === 'sandbox' ? (
+            <SandboxRunsPanel
+              data={sandboxRuns.data}
+              onDelete={async (id) => {
+                const res = await deleteAdminSandboxRun(API_BASE, id)
+                if (res.ok) sandboxRuns.refresh() // drop the row immediately, no manual refresh
+                return res
+              }}
+            />
+          ) : null}
           {tab === 'models' ? (
             <section className="flex flex-col gap-4">
               {knobs.data ? (

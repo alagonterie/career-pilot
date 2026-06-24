@@ -18,9 +18,11 @@ import {
   adminEnabled,
   applyAdminControl,
   applyAdminKnobWrite,
+  applyAdminSandboxRunDelete,
   buildAdminContacts,
   buildAdminKnobs,
   buildAdminPipeline,
+  buildAdminSandboxRuns,
   buildAdminSummary,
   buildAttributionReport,
   liveModeBlockers,
@@ -146,6 +148,34 @@ describe('buildAdminSummary', () => {
     expect(s.health).toHaveProperty('counts');
     // findings are the actionable (non-ok) subset.
     expect(s.health.findings.every((f) => f.severity !== 'ok')).toBe(true);
+  });
+});
+
+describe('Sandbox runs (§24.164)', () => {
+  function seedRun(id: string, company: string): void {
+    getDb()
+      .prepare(
+        `INSERT INTO simulator_runs (id, ts, visitor_company, visitor_role, total_cost_cents, shareable, client_ip)
+         VALUES (?, ?, ?, 'SWE', 5, 1, '203.0.113.9')`,
+      )
+      .run(id, new Date().toISOString(), company);
+  }
+
+  it('buildAdminSandboxRuns rolls up runs + stats (owner detail; no raw IP)', () => {
+    seedRun('sb-1', 'Globex');
+    const view = buildAdminSandboxRuns();
+    expect(view.stats.total).toBe(1);
+    expect(view.runs[0].visitor_company).toBe('Globex');
+    expect(JSON.stringify(view.runs)).not.toContain('203.0.113.9'); // IP folded to a token
+  });
+
+  it('applyAdminSandboxRunDelete validates the id and reports the outcome', () => {
+    seedRun('sb-del', 'Initech');
+    expect(applyAdminSandboxRunDelete({}).status).toBe(400); // missing id
+    expect(applyAdminSandboxRunDelete({ id: 123 }).status).toBe(400); // non-string
+    expect(applyAdminSandboxRunDelete({ id: 'ghost' }).status).toBe(404); // unknown id
+    expect(applyAdminSandboxRunDelete({ id: 'sb-del' }).status).toBe(200); // hit
+    expect(buildAdminSandboxRuns().stats.total).toBe(0);
   });
 });
 

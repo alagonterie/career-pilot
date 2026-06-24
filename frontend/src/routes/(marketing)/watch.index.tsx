@@ -27,7 +27,7 @@ export const Route = createFileRoute('/(marketing)/watch/')({
     return seo({
       title: name ? `Watch me apply to your role — ${name}` : 'Watch me apply to your role',
       description:
-        'Name a company and role you’re hiring for — my job-search agent researches it and tailors my résumé + outreach to it, live. Nothing gets submitted; the tailored résumé is yours to download.',
+        'Name a company and role you’re hiring for — my job-search agent researches it and tailors my résumé + outreach to it, live. Nothing is submitted to any employer; the tailored résumé is yours to download.',
       path: '/watch',
     })
   },
@@ -63,8 +63,8 @@ function SimulatorPage() {
         <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Watch me apply to your role</h1>
         <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">
           Name a company and role you’re hiring for. The same agent stack running my real job search researches it and
-          tailors my résumé — plus a cold-outreach email — to it, live in your browser. Nothing gets submitted anywhere;
-          the tailored résumé is yours to download when it’s done.
+          tailors my résumé — plus a cold-outreach email — to it, live in your browser. Nothing is submitted to any
+          employer; the tailored résumé is yours to download when it’s done.
         </p>
       </header>
 

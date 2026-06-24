@@ -19,7 +19,10 @@ vi.mock('../../channels/portal/adapter.js', () => ({
 }));
 
 import {
+  deleteSimulatorRun,
   finalizeSimulatorRun,
+  getAdminSandboxStats,
+  getAdminSimulatorRuns,
   getRecentSimulatorRuns,
   getSimulatorResult,
   recordSimulatorOutput,
@@ -144,5 +147,91 @@ describe('getRecentSimulatorRuns — metrics only, newest first, filtered (§24.
       expect(r.visitor_role).toBeUndefined();
       expect(r.id).toBeUndefined();
     }
+  });
+});
+
+// §24.164: the owner-only Sandbox-runs read — the INVERSE of the public feed.
+function seedAdminRun(
+  id: string,
+  o: {
+    company?: string;
+    role?: string;
+    jd?: string;
+    cost?: number;
+    latency?: number;
+    ip?: string | null;
+    completed?: boolean;
+    ts?: string;
+  } = {},
+): void {
+  getDb()
+    .prepare(
+      `INSERT INTO simulator_runs
+         (id, ts, visitor_company, visitor_role, jd_excerpt, total_cost_cents, total_latency_ms,
+          tailored_resume_json, shareable, client_ip)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+    )
+    .run(
+      id,
+      o.ts ?? new Date().toISOString(),
+      o.company ?? 'Acme',
+      o.role ?? 'Staff SWE',
+      o.jd ?? null,
+      o.cost ?? null,
+      o.latency ?? null,
+      o.completed ? '{"x":1}' : null,
+      o.ip ?? null,
+    );
+}
+
+describe('getAdminSimulatorRuns — owner detail, no raw IP (§24.164)', () => {
+  it('returns the visitor free-text + derives status, newest-first', () => {
+    seedAdminRun('r-old', {
+      company: 'Globex',
+      jd: 'Ship',
+      completed: true,
+      ts: new Date(Date.now() - 60_000).toISOString(),
+    });
+    seedAdminRun('r-new', { company: 'Initech', completed: false, ts: new Date().toISOString() });
+    const runs = getAdminSimulatorRuns(10);
+    expect(runs.map((r) => r.id)).toEqual(['r-new', 'r-old']); // newest first
+    const globex = runs.find((r) => r.id === 'r-old')!;
+    expect(globex.visitor_company).toBe('Globex'); // owner sees the raw free-text (unlike the public feed)
+    expect(globex.jd_excerpt).toBe('Ship');
+    expect(globex.status).toBe('completed'); // has a tailored output
+    expect(runs.find((r) => r.id === 'r-new')!.status).toBe('incomplete');
+  });
+
+  it('folds the client IP to a stable token and NEVER returns the raw address', () => {
+    seedAdminRun('r-a', { ip: '203.0.113.7' });
+    seedAdminRun('r-b', { ip: '203.0.113.7' }); // same source
+    seedAdminRun('r-c', { ip: '198.51.100.4' });
+    const runs = getAdminSimulatorRuns(10);
+    const tok = Object.fromEntries(runs.map((r) => [r.id, r.ip_token]));
+    expect(JSON.stringify(runs)).not.toContain('203.0.113.7'); // raw IP never serialized
+    expect(tok['r-a']).toBe(tok['r-b']); // same IP → same token (repeat-source signal)
+    expect(tok['r-a']).not.toBe(tok['r-c']);
+    expect(tok['r-a']).not.toBe('203.0.113.7');
+  });
+});
+
+describe('getAdminSandboxStats + deleteSimulatorRun (§24.164)', () => {
+  it('counts runs + today spend', () => {
+    seedAdminRun('s1', { cost: 30 });
+    seedAdminRun('s2', { cost: 12 });
+    seedAdminRun('s-week', { cost: 99, ts: new Date(Date.now() - 3 * 86_400_000).toISOString() });
+    const stats = getAdminSandboxStats();
+    expect(stats.total).toBe(3);
+    expect(stats.runsToday).toBe(2);
+    expect(stats.costTodayCents).toBe(42);
+    expect(stats.runs7d).toBe(3);
+  });
+
+  it('early-delete removes one run and reports whether a row went', () => {
+    seedAdminRun('d1');
+    seedAdminRun('d2');
+    expect(deleteSimulatorRun('d1')).toBe(true);
+    expect(getAdminSimulatorRuns(10).map((r) => r.id)).toEqual(['d2']);
+    expect(deleteSimulatorRun('nope')).toBe(false); // unknown id
   });
 });

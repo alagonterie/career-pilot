@@ -91,6 +91,13 @@ function PrivacyPage() {
               sending a message.
             </p>
             <p className="leading-relaxed text-foreground/90">
+              When you run the “watch it work” simulator, the run is saved — that’s how you get a shareable result, and
+              how the abuse limits work. It keeps the company, role, and job description you enter, a redacted activity
+              trace, the run’s cost and runtime, and your IP address; it’s stored only in this service’s private
+              database, visible only to me, and deleted after a short retention window. The public “recent runs” list
+              shows aggregate cost and runtime only — never the text you typed.
+            </p>
+            <p className="leading-relaxed text-foreground/90">
               The fuller, plain-English version of this lives in{' '}
               <Link to="/about" hash="privacy" className="text-accent-cool hover:underline">
                 the About page

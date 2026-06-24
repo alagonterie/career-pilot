@@ -1,4 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
+import { Link } from '@tanstack/react-router'
 import * as React from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -117,8 +118,13 @@ export function SimInput({ onRun, disabled }: { onRun: (input: SimRunInput) => v
           </li>
         </ol>
         <p className="mt-3 text-xs">
-          Nothing gets submitted anywhere. No private data is touched, no DB writes. The run cost is reported
-          transparently.
+          Nothing is submitted to any employer. The run is saved — that&rsquo;s how you get a shareable result, and how
+          the abuse limits work: it keeps the company, role, and JD you enter, a redacted activity trace, the cost +
+          runtime, and your IP, visible only to me and deleted after a short window. More in the{' '}
+          <Link to="/privacy" className="underline hover:text-foreground">
+            privacy policy
+          </Link>
+          .
         </p>
       </div>
     </form>
