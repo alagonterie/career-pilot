@@ -855,6 +855,12 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     label: 'Drop audit on unmatched company',
     note: 'When on, an audit row whose company can’t be matched/anonymized is dropped (fail-safe over leaking).',
   },
+  sanitization_audit_redact_on_unmatched_company: {
+    type: 'boolean',
+    group: 'sanitization',
+    label: 'Redact (not drop) audit on unmatched company',
+    note: 'When on, a surviving company name is replaced in-place with its obfuscated handle and the trace is KEPT, instead of dropping the whole row. Takes precedence over the drop fail-safe.',
+  },
   sanitization_resanitize_on_application_update: {
     type: 'boolean',
     group: 'sanitization',

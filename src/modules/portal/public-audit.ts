@@ -164,7 +164,7 @@ export async function mirrorPipelineEvent(db: Database.Database, eventId: string
   }
 
   const payloadText = pipelineEventPublicText(row);
-  const { text: sanitized, ok } = await sanitizeForPublic(payloadText, {
+  let { text: sanitized, ok } = await sanitizeForPublic(payloadText, {
     application_id: row.application_id,
     db,
     obfuscatedLabel: row.obfuscated_label ?? undefined,
@@ -179,23 +179,28 @@ export async function mirrorPipelineEvent(db: Database.Database, eventId: string
   // Defense-in-depth: scan the sanitized text for any non-public real
   // company name. If something survived, drop the row rather than leak.
   // Operator can flip this off via sanitization_audit_drop_on_unmatched_company.
+  const redactOnLeak = readBoolPref(db, 'sanitization_audit_redact_on_unmatched_company', false);
   const dropOnLeak = readBoolPref(
     db,
     'sanitization_audit_drop_on_unmatched_company',
     DEFAULT_AUDIT_DROP_ON_UNMATCHED_COMPANY,
   );
-  if (dropOnLeak) {
+  // Defense-in-depth: a known non-public company name (or alias) that survived
+  // the passes. `redact` mode (kit-style §24.169) replaces every form of it with
+  // its obfuscated handle and KEEPS the row — the trace stays in the public
+  // stream, just genericized — rather than `drop` mode (default), which fails
+  // closed and withholds the whole row. Redact wins when both flags are set.
+  if (redactOnLeak || dropOnLeak) {
     try {
       // Alias-aware (§24.65 Δ): prose often uses a short form ("AMD") while
       // company_name holds the legal name ("Advanced Micro Devices, Inc") —
       // scanning the canonical name alone misses the form text actually uses.
       const nonPublic = db
         .prepare(
-          `SELECT company_name, company_aliases FROM applications WHERE public_state != 'public' AND company_name != ''`,
+          `SELECT company_name, company_aliases, obfuscated_label FROM applications WHERE public_state != 'public' AND company_name != ''`,
         )
-        .all() as { company_name: string; company_aliases: string | null }[];
-      const sanitizedLower = sanitized.toLowerCase();
-      for (const { company_name, company_aliases } of nonPublic) {
+        .all() as { company_name: string; company_aliases: string | null; obfuscated_label: string | null }[];
+      for (const { company_name, company_aliases, obfuscated_label } of nonPublic) {
         const needles = [company_name];
         if (company_aliases) {
           try {
@@ -209,8 +214,17 @@ export async function mirrorPipelineEvent(db: Database.Database, eventId: string
             // Unparseable aliases column — the name check still runs.
           }
         }
-        const leaked = needles.find((n) => sanitizedLower.includes(n.toLowerCase()));
-        if (leaked) {
+        // Re-test against the LIVE `sanitized` each pass (redaction mutates it).
+        const leaked = needles.find((n) => sanitized.toLowerCase().includes(n.toLowerCase()));
+        if (!leaked) continue;
+        if (redactOnLeak) {
+          const label = obfuscated_label ?? 'a company';
+          for (const n of needles) {
+            const re = new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+            sanitized = sanitized.replace(re, () => `[REDACTED:${label}]`);
+          }
+          log.info('mirrorPipelineEvent: redacted a surviving company name in-place', { eventId, label });
+        } else {
           log.warn('mirrorPipelineEvent: real company name survived sanitization — dropping row', {
             eventId,
             leaked,
@@ -221,8 +235,7 @@ export async function mirrorPipelineEvent(db: Database.Database, eventId: string
     } catch (err) {
       log.error('mirrorPipelineEvent: defense-in-depth scan failed', { eventId, err });
       // Continue — better to potentially leak than to silently fail closed
-      // when the operator hasn't configured strict mode. (Toggle this
-      // by setting sanitization_audit_drop_on_unmatched_company=false.)
+      // when the operator hasn't configured strict mode.
     }
   }
 
