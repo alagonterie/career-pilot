@@ -164,10 +164,14 @@ jobs:
 
           # Post-bootstrap smoke — the prod portal API answering on its loopback port
           # proves the host process is up and serving.
-          echo "== smoke: prod portal /api/system-status (:3004) =="
+          # 200, or 403 once origin_jwt_validation_enabled is on (a local curl
+          # carries no Cf-Access-Jwt-Assertion) — both prove the host process is up
+          # and serving. Only a connection failure (000) means down (§24.165 D4).
+          echo "== smoke: prod portal /api/system-status (:3004) — 200|403 = UP =="
           ok=0
           for i in \$(seq 1 12); do
-            if curl -fsS -m 5 http://127.0.0.1:3004/api/system-status; then echo; echo "portal-ok"; ok=1; break; fi
+            code=\$(curl -s -o /dev/null -m 5 -w '%{http_code}' http://127.0.0.1:3004/api/system-status || echo 000)
+            if [ "\$code" = "200" ] || [ "\$code" = "403" ]; then echo "portal-ok (HTTP \$code)"; ok=1; break; fi
             sleep 3
           done
           if [ "\$ok" -ne 1 ]; then
