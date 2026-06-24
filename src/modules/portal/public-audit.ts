@@ -62,6 +62,7 @@ function readBoolPref(db: Database.Database, key: string, fallback: boolean): bo
 interface JoinedRow {
   // pipeline_events
   id: string;
+  ts: string;
   application_id: string;
   kind: string;
   from_status: string | null;
@@ -139,7 +140,7 @@ export async function mirrorPipelineEvent(db: Database.Database, eventId: string
   try {
     row = db
       .prepare(
-        `SELECT fe.id, fe.application_id, fe.kind, fe.from_status, fe.to_status, fe.payload, fe.proactive,
+        `SELECT fe.id, fe.ts, fe.application_id, fe.kind, fe.from_status, fe.to_status, fe.payload, fe.proactive,
                 a.company_name, a.obfuscated_label, a.public_state
            FROM pipeline_events fe
            LEFT JOIN applications a ON fe.application_id = a.id
@@ -259,7 +260,10 @@ export async function mirrorPipelineEvent(db: Database.Database, eventId: string
                @ts, @category, @agent_name, @proactive, @application_ref, @summary, @details_json, @source_pipeline_event_id)`,
     ).run({
       id: generateId(),
-      ts: new Date().toISOString(),
+      // Carry the SOURCE event's timestamp, not now() — so re-mirroring
+      // (resanitizeApplicationAuditTrail) is idempotent and never re-dates a
+      // trace to the moment it was re-sanitized (§24.169 follow-up).
+      ts: row.ts,
       // Public-facing category (§24.77 D3) — the private source is pipeline_events.
       category: 'pipeline',
       // The public pipeline projection IS the pipeline-scribe's curated surface

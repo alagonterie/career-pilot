@@ -63,13 +63,14 @@ describe('mirrorPipelineEvent', () => {
     from_status?: string | null;
     to_status?: string | null;
     payload?: string;
+    ts?: string;
   }): void {
     db.prepare(
       `INSERT INTO pipeline_events (
          id, application_id, kind, from_status, to_status, payload, source, ts
        ) VALUES (
          @id, @application_id, @kind, @from_status, @to_status, @payload,
-         'agent', '2026-05-28T00:00:00Z'
+         'agent', @ts
        )`,
     ).run({
       id: opts.id,
@@ -78,6 +79,7 @@ describe('mirrorPipelineEvent', () => {
       from_status: opts.from_status ?? null,
       to_status: opts.to_status ?? null,
       payload: opts.payload ?? '{}',
+      ts: opts.ts ?? '2026-05-28T00:00:00Z',
     });
   }
 
@@ -268,6 +270,53 @@ describe('mirrorPipelineEvent', () => {
     expect(rows).toHaveLength(1);
     // PartnerCo leaked through (this is the OPERATOR override case).
     expect(rows[0].summary).toContain('PartnerCo');
+  });
+
+  it('redacts a surviving company in-place and KEEPS the row when redact mode is on (§24.169)', async () => {
+    seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a' });
+    // A 2nd non-public company whose name appears as a SUBSTRING ("GlobexCorp"):
+    // Pass 2's word-boundary pass misses it, but the substring defense-in-depth
+    // scan catches it — exactly the leak shape the redact mode is for.
+    seedApp({ id: 'app-2', company_name: 'Globex', obfuscated_label: 'health-a' });
+    seedEvent({
+      id: 'fe-1',
+      application_id: 'app-1',
+      payload: JSON.stringify({ note: 'partnership with GlobexCorp announced' }),
+    });
+
+    // Redact mode wins even though drop defaults on — the row is kept, not dropped.
+    db.prepare(
+      `INSERT INTO preferences (key, value, updated_at)
+       VALUES ('sanitization_audit_redact_on_unmatched_company', 'true', '2026-05-28T00:00:00Z')`,
+    ).run();
+
+    const outcome = await mirrorPipelineEvent(db, 'fe-1');
+    expect(outcome).toBe('inserted');
+
+    const rows = readAuditRows();
+    expect(rows).toHaveLength(1);
+    // The surviving name is swapped for the company's public handle, row kept.
+    expect(rows[0].summary).toContain('[REDACTED:health-a]');
+    expect(rows[0].summary).not.toContain('Globex');
+  });
+
+  it('carries the SOURCE event timestamp onto the mirrored row, not now() (§24.169)', async () => {
+    seedApp({ id: 'app-1', company_name: 'Acme Corp', obfuscated_label: 'fintech-a' });
+    seedEvent({
+      id: 'fe-1',
+      application_id: 'app-1',
+      ts: '2026-01-15T08:30:00.000Z',
+      payload: JSON.stringify({ note: 'great chat' }),
+    });
+
+    await mirrorPipelineEvent(db, 'fe-1');
+
+    const { ts } = db.prepare('SELECT ts FROM public_audit_trail WHERE source_pipeline_event_id = ?').get('fe-1') as {
+      ts: string;
+    };
+    // Must equal the source event's ts — re-mirroring (resanitize) has to be
+    // idempotent and never re-date a trace to the moment it was re-sanitized.
+    expect(ts).toBe('2026-01-15T08:30:00.000Z');
   });
 
   it('truncates summary to the configured max_chars preference', async () => {
