@@ -140,6 +140,12 @@ cat > "$PROJECT_ROOT/.env" <<EOF
 ENVIRONMENT=${CP_ENVIRONMENT}
 ASSISTANT_NAME=${CP_ASSISTANT_NAME}
 TZ=${CP_TZ}
+# Chat-SDK webhook listener port (src/webhook-server.ts reads WEBHOOK_PORT;
+# default 3000, binds 0.0.0.0). Per-env so prod (3003) doesn't collide with dev
+# on the shared VM — the listener takes NO inbound traffic (the VM has no public
+# ingress; Telegram long-polls) but must bind a FREE port or the host process
+# crashes on boot with EADDRINUSE (§24.165 — the third port, beyond portal/api).
+WEBHOOK_PORT=${CP_WEBHOOK_PORT}
 PORTKEY_API_KEY=${PORTKEY_API_KEY}
 PORTKEY_AI_PROVIDER=${CP_PORTKEY_AI_PROVIDER}
 PORTKEY_CONFIG_ID=${CP_PORTKEY_CONFIG_ID}

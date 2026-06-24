@@ -1,6 +1,11 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "career-pilot-portal",
+  // Prod (top-level) ships to the Terraform-managed custom domain (hire.<apex>),
+  // NOT workers.dev — disable the workers.dev route so `wrangler deploy` uploads
+  // the script without trying to register a (nonexistent) workers.dev subdomain
+  // (the dev env block sets this too; the custom-domain bind is applied by infra/).
+  "workers_dev": false,
   "compatibility_date": "2026-06-02",
   "compatibility_flags": ["nodejs_compat"],
   "main": "@tanstack/react-start/server-entry",
