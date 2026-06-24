@@ -13,7 +13,7 @@ fork version recorded in `package.json` — the two are never conflated.
 
 ## [Unreleased]
 
-## [1.0.0] - 2026-06-20
+## [1.0.0] - 2026-06-24
 
 The first public release: an autonomous job-search agent with a live showcase portal.
 
