@@ -1,4 +1,3 @@
-import { Link } from '@tanstack/react-router'
 import * as React from 'react'
 
 import { cn } from '~/lib/utils'
@@ -25,9 +24,11 @@ function source(token: string | null): string {
 /**
  * §24.164 — the owner-only Sandbox-runs tab. The INVERSE of the public §24.162
  * metrics-only feed: behind Access, the owner sees the full run (the visitor's raw
- * company/role free-text, the JD excerpt, cost/runtime, a per-source token) to
- * monitor usage + abuse + quality. Per-row: open the result page, or confirm-delete
- * to purge that run's stored input before its TTL. No raw IP is ever shown.
+ * company/role free-text, the full JD they entered, cost/runtime, a per-source
+ * token) to monitor usage + abuse + quality. Per-row: open the result page in a new
+ * tab, or confirm-delete to purge that run's stored input before its TTL. No raw IP
+ * is ever shown. `table-fixed` keeps the columns from shifting as a row's Details /
+ * Delete controls change width.
  */
 export function SandboxRunsPanel({
   data,
@@ -60,17 +61,17 @@ export function SandboxRunsPanel({
         </p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full min-w-[48rem] text-left text-sm">
+          <table className="w-full min-w-[58rem] table-fixed text-left text-sm">
             <thead>
               <tr className="border-b border-border text-[11px] uppercase tracking-wider text-muted-foreground">
-                <th className="py-2 pl-4 pr-4 font-medium">When</th>
-                <th className="py-2 pr-4 font-medium">Company</th>
-                <th className="py-2 pr-4 font-medium">Role</th>
-                <th className="py-2 pr-4 text-right font-medium">Cost</th>
-                <th className="py-2 pr-4 text-right font-medium">Runtime</th>
-                <th className="py-2 pr-4 font-medium">Status</th>
-                <th className="py-2 pr-4 font-medium">Source</th>
-                <th className="py-2 pr-4 font-medium">Actions</th>
+                <th className="w-28 py-2 pl-4 pr-3 font-medium">When</th>
+                <th className="py-2 pr-3 font-medium">Company</th>
+                <th className="py-2 pr-3 font-medium">Role</th>
+                <th className="w-16 py-2 pr-3 text-right font-medium">Cost</th>
+                <th className="w-20 py-2 pr-3 text-right font-medium">Runtime</th>
+                <th className="w-24 py-2 pr-3 font-medium">Status</th>
+                <th className="w-16 py-2 pr-3 font-medium">Source</th>
+                <th className="w-[15rem] py-2 pr-4 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">
@@ -100,17 +101,22 @@ function RunRow({ run, onDelete }: { run: AdminSandboxRun; onDelete: (id: string
     if (!res.ok) setError(res.error ?? `HTTP ${res.status}`)
   }
 
+  const actionBtn = 'font-mono text-[11px]'
   return (
     <>
       <tr data-testid={`sandbox-run-${run.id}`}>
-        <td className="py-2 pl-4 pr-4 font-mono text-xs tabular-nums text-muted-foreground">{fmtWhen(run.ts)}</td>
-        <td className="py-2 pr-4 text-foreground">{run.visitor_company ?? '—'}</td>
-        <td className="py-2 pr-4 text-foreground">{run.visitor_role ?? '—'}</td>
-        <td className="py-2 pr-4 text-right font-mono tabular-nums text-foreground">{fmtCost(run.total_cost_cents)}</td>
-        <td className="py-2 pr-4 text-right font-mono tabular-nums text-muted-foreground">
+        <td className="py-2 pl-4 pr-3 font-mono text-xs tabular-nums text-muted-foreground">{fmtWhen(run.ts)}</td>
+        <td className="truncate py-2 pr-3 text-foreground" title={run.visitor_company ?? undefined}>
+          {run.visitor_company ?? '—'}
+        </td>
+        <td className="truncate py-2 pr-3 text-foreground" title={run.visitor_role ?? undefined}>
+          {run.visitor_role ?? '—'}
+        </td>
+        <td className="py-2 pr-3 text-right font-mono tabular-nums text-foreground">{fmtCost(run.total_cost_cents)}</td>
+        <td className="py-2 pr-3 text-right font-mono tabular-nums text-muted-foreground">
           {fmtDur(run.total_latency_ms)}
         </td>
-        <td className="py-2 pr-4">
+        <td className="py-2 pr-3">
           <span
             className={cn(
               'inline-flex items-center rounded px-1.5 py-0.5 font-mono text-[10px] uppercase',
@@ -120,14 +126,25 @@ function RunRow({ run, onDelete }: { run: AdminSandboxRun; onDelete: (id: string
             {run.status}
           </span>
         </td>
-        <td className="py-2 pr-4 font-mono text-[11px] text-muted-foreground">{source(run.ip_token)}</td>
+        <td className="py-2 pr-3 font-mono text-[11px] text-muted-foreground">{source(run.ip_token)}</td>
         <td className="py-2 pr-4">
+          {/* Fixed-width column (table-fixed) so the Details/Delete state changes
+              below never reflow the data columns. */}
           <div className="flex items-center gap-2">
+            <a
+              href={`/watch/results/${run.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid={`sandbox-run-open-${run.id}`}
+              className={cn(actionBtn, 'text-accent-cool hover:underline')}
+            >
+              Open ↗
+            </a>
             <button
               type="button"
               data-testid={`sandbox-run-details-${run.id}`}
               onClick={() => setOpen((v) => !v)}
-              className="font-mono text-[11px] text-muted-foreground hover:text-foreground"
+              className={cn(actionBtn, 'text-muted-foreground hover:text-foreground')}
             >
               {open ? 'Hide' : 'Details'}
             </button>
@@ -156,7 +173,7 @@ function RunRow({ run, onDelete }: { run: AdminSandboxRun; onDelete: (id: string
                 type="button"
                 data-testid={`sandbox-run-delete-${run.id}`}
                 onClick={() => setConfirming(true)}
-                className="font-mono text-[11px] text-destructive/80 hover:text-destructive"
+                className={cn(actionBtn, 'text-destructive/80 hover:text-destructive')}
               >
                 Delete
               </button>
@@ -167,18 +184,15 @@ function RunRow({ run, onDelete }: { run: AdminSandboxRun; onDelete: (id: string
       {open ? (
         <tr className="bg-muted/30">
           <td colSpan={8} className="px-4 py-3">
-            <div className="flex flex-col gap-2 text-xs">
-              <div>
-                <span className="font-semibold text-foreground">What they entered (JD excerpt):</span>{' '}
-                <span className="text-muted-foreground">{run.jd_excerpt ? run.jd_excerpt : '— none —'}</span>
-              </div>
-              <Link
-                to="/watch/results/$id"
-                params={{ id: run.id }}
-                className="w-fit font-mono text-[11px] text-accent-cool hover:underline"
-              >
-                Open the result page ↗
-              </Link>
+            <div className="flex flex-col gap-1.5 text-xs">
+              <span className="font-semibold text-foreground">What they entered (job description):</span>
+              {run.jd_excerpt ? (
+                <pre className="max-h-56 overflow-y-auto whitespace-pre-wrap rounded border border-border bg-background px-3 py-2 font-sans text-[11px] leading-snug text-muted-foreground">
+                  {run.jd_excerpt}
+                </pre>
+              ) : (
+                <span className="text-muted-foreground">— none entered —</span>
+              )}
               {error ? <span className="text-[11px] text-destructive">{error}</span> : null}
             </div>
           </td>

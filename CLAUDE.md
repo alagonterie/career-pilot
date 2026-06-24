@@ -137,7 +137,7 @@ It checks every known failure shape (queue starvation, dead recurrence chains, o
 
 ## Memory system
 
-This project has a persistent memory at `C:\Users\janedoe\.claude\projects\C--Projects-career-pilot\memory\`. **Check `MEMORY.md` there first** for user role, project goal, locked decisions, current status. The memory persists across conversation compactions.
+This project has a persistent memory under your Claude Code projects directory (`~/.claude/projects/<project>/memory/`). **Check `MEMORY.md` there first** for user role, project goal, locked decisions, current status. The memory persists across conversation compactions.
 
 ---
 

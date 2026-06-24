@@ -691,7 +691,7 @@ The reason for normalizing *before* SimHashing rather than relying on SimHash's 
 
 ### Token-cost economics
 
-Per [the project's existing memory note on Claude validation cost](C:\Users\janedoe\.claude\projects\C--Projects-career-pilot\memory\reference_claude_validation_cost.md), Phase 2.x runs landed at ~$0.75 per validation. Phase 2.5 `scrape-jobs` runs need a budget envelope. Rough estimate:
+Per the project's existing memory note on Claude validation cost (`~/.claude/projects/<project>/memory/reference_claude_validation_cost.md`), Phase 2.x runs landed at ~$0.75 per validation. Phase 2.5 `scrape-jobs` runs need a budget envelope. Rough estimate:
 
 - **One ATS poll cycle (Greenhouse+Lever+Ashby, ~200 boards):** ~200 HTTP fetches × ~10KB JSON = ~2MB traffic; no LLM token cost (pure ingest + cheap normalize + rules-score).
 - **One HN month batch (~600 comments):** Either parse with regex+heuristics (no LLM cost) or one batched LLM extraction over chunks of comments (~$0.30 with Haiku/Sonnet, one-shot per month).

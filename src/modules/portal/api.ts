@@ -691,7 +691,10 @@ function handleSimulatorResult(res: http.ServerResponse, runId: string, cors: Re
   }
   // Don't ship the full tailored WorkProfile to the client (it renders to a PDF
   // server-side, §24.72 9.4b-r2); expose only whether the download is available.
-  const { tailored_resume_json, ...rest } = row;
+  // §24.164: also strip owner-only fields from this PUBLIC (shareable-link) response
+  // — the raw client_ip (a privacy leak to anyone holding the link) and the jd_excerpt
+  // (owner-monitoring data, not rendered on the result page; owner sees it via /admin).
+  const { tailored_resume_json, client_ip: _ip, jd_excerpt: _jd, ...rest } = row;
   json(res, 200, { ...rest, has_tailored_resume: tailored_resume_json != null }, cors);
 }
 

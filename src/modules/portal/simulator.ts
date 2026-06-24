@@ -35,7 +35,10 @@ const DEFAULT_RECENT_LIMIT = 10;
 /** Idle age past which an 'active' sandbox session is reaped — 3× the 5-min
  *  run ceiling, so a live run is never touched (B2). */
 const DEFAULT_SANDBOX_REAP_IDLE_SEC = 900;
-const JD_EXCERPT_MAX = 500;
+// §24.164: persist the full pasted JD (= MAX_JD, the input cap below) so the owner
+// Sandbox-runs view shows it un-truncated. It is NOT served on the public result
+// endpoint (stripped there) — owner-only via getAdminSimulatorRuns.
+const JD_EXCERPT_MAX = 4000;
 
 export interface SimulatorInput {
   company?: unknown;
@@ -374,6 +377,9 @@ export interface SimulatorRunRow {
   trace_json: string | null;
   /** The guardrail-validated tailored WorkProfile (§24.72 9.4b-r2), or null. */
   tailored_resume_json: string | null;
+  /** The CF-verified visitor IP (migration 132). Owner-only — stripped from the
+   *  public result response; never served to a shareable-link holder. */
+  client_ip: string | null;
 }
 
 const runs = new Map<string, RunAccumulator>();

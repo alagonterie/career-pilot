@@ -1,18 +1,9 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { AdminSandboxRun, AdminSandboxRunsView } from '~/lib/use-admin'
 
 import { SandboxRunsPanel } from './SandboxRunsPanel'
-
-// SandboxRunsPanel renders a <Link>, so it needs a router context. A thin stub
-// keeps the test from pulling the whole route tree.
-vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children, to: _to, params: _params, ...props }: { children: ReactNode; to?: string; params?: unknown }) => (
-    <a {...props}>{children}</a>
-  ),
-}))
 
 const ok = async () => ({ ok: true as const, status: 200 })
 
@@ -48,17 +39,24 @@ describe('SandboxRunsPanel', () => {
     expect(screen.getByText('abcdef')).toBeInTheDocument()
   })
 
+  it('the result link lives in the actions column and opens in a new tab', () => {
+    render(<SandboxRunsPanel data={VIEW} onDelete={ok} />)
+    const open = screen.getByTestId('sandbox-run-open-sb-1')
+    expect(open).toHaveAttribute('href', '/watch/results/sb-1')
+    expect(open).toHaveAttribute('target', '_blank')
+    expect(open).toHaveAttribute('rel', expect.stringContaining('noopener'))
+  })
+
   it('shows an empty state with no rows', () => {
     render(<SandboxRunsPanel data={{ runs: [], stats: VIEW.stats }} onDelete={ok} />)
     expect(screen.getByText(/No sandbox runs stored/i)).toBeInTheDocument()
   })
 
-  it('reveals the JD excerpt + the result link on Details', () => {
+  it('reveals the full JD on Details (no truncation)', () => {
     render(<SandboxRunsPanel data={VIEW} onDelete={ok} />)
     expect(screen.queryByText(/Build the reconciliation service/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByTestId('sandbox-run-details-sb-1'))
     expect(screen.getByText(/Build the reconciliation service/)).toBeInTheDocument()
-    expect(screen.getByText(/Open the result page/)).toBeInTheDocument()
   })
 
   it('confirm-gates delete and calls onDelete with the run id', async () => {
