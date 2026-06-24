@@ -144,6 +144,13 @@ describe('GET /api/pipeline', () => {
     const offer = body.applications.find((a) => a.application_ref === 'Anthropic')!;
     expect(offer.public_state).toBe('public');
     expect(offer.days_in_stage).toBe(2);
+
+    // PII-leak fix: the public key is an opaque hash, NEVER the raw
+    // `app-<company>-<role>` slug — yet still distinct per app (the React-keying
+    // need that two roles at one company rely on).
+    expect(screening.application_id).not.toBe('app-1');
+    expect(screening.application_id).toMatch(/^[a-f0-9]{16}$/);
+    expect(screening.application_id).not.toBe(offer.application_id);
   });
 
   it('reflects the site_lifecycle_state preference (§24.149 L2)', async () => {

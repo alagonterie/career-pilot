@@ -28,6 +28,7 @@
  * Later sub-milestones add: telemetry/architecture (done, 5.3), simulator
  * streams (5.5b), results (5.5c). See STRATEGY.md §10 + §24.15 + §24.19.
  */
+import { createHash } from 'crypto';
 import http from 'http';
 
 import { ensureMasterPdfLink, recordVisit, resolveLink } from '../../attribution.js';
@@ -209,6 +210,17 @@ function parseLearnings(learningsJson: string | null, publishedLearning: string 
   return [];
 }
 
+/** A stable, non-identifying public key for a pipeline card. The internal
+ * `application_id` is a human-readable slug (`app-<company>-<role>`) that would
+ * LEAK the real company name; the frontend only ever uses it as a React key to
+ * keep two roles at one company (shared `application_ref`) as distinct cards
+ * (board.test.tsx), so a deterministic hash gives the same uniqueness without
+ * the name. `/api/kit` keys publicly by `application_ref` + resolves the real id
+ * server-side, so this is the only public surface the raw id ever reached. */
+function publicAppKey(applicationId: string): string {
+  return createHash('sha256').update(applicationId).digest('hex').slice(0, 16);
+}
+
 function handlePipeline(res: http.ServerResponse, cors: Record<string, string>): void {
   const rows = getDb()
     .prepare(
@@ -220,8 +232,10 @@ function handlePipeline(res: http.ServerResponse, cors: Record<string, string>):
     .all() as PipelineViewRow[];
 
   const now = Date.now();
-  const applications = rows.map(({ kits_json, learnings_json, ...r }) => ({
+  const applications = rows.map(({ kits_json, learnings_json, application_id, ...r }) => ({
     ...r,
+    // Opaque hash, never the raw `app-<company>-<role>` slug (PII leak fix).
+    application_id: publicAppKey(application_id),
     days_in_stage: daysSince(r.stage_entered_at, now),
     days_in_pipeline: daysSince(r.applied_at, now),
     // §24.65: per-kit existence metadata for the drawer's "Interview prep"
