@@ -13,6 +13,24 @@ fork version recorded in `package.json` — the two are never conflated.
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-06-25
+
+Transparent, owner-controlled visit attribution.
+
+### Added
+
+- **Named visit sources** in the control center — mint a labeled source (say, a
+  LinkedIn link or a handed-out résumé), and get both a shareable link and a
+  matching résumé PDF that attribute to it, so you can see which channel each
+  visit came through. Sources can be copied, downloaded, and retired.
+
+### Changed
+
+- Attribution links are now transparent and self-describing — a readable
+  `?from=<source>` label you can see right in the address bar, replacing the
+  opaque short code, including the master résumé download. The visitor-privacy
+  disclosure on the About and Privacy pages was updated to match.
+
 ## [1.0.1] - 2026-06-25
 
 Owner control-center polish and a pipeline data-integrity fix.
