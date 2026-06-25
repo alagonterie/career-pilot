@@ -179,6 +179,87 @@ function WorkProfileEditor({ data, baseUrl, onSaved }: { data: AdminPersona; bas
   )
 }
 
+const LOCATION_TYPES = ['remote', 'hybrid', 'onsite'] as const
+
+/** location_pref is the §24.100 structured schema { type[], preferred_cities[] }, NOT
+ * free text — a plain string reaches neither the persona's ## Location nor
+ * lead-scoring's `location_specified` gate (so off-location leads aren't demoted).
+ * Toggles + a cities field build the canonical object. */
+function LocationField({ raw, baseUrl, onSaved }: { raw: unknown; baseUrl: string; onSaved: () => void }) {
+  const initial = (() => {
+    if (typeof raw === 'string' && raw) {
+      try {
+        const o = JSON.parse(raw) as { type?: unknown; preferred_cities?: unknown }
+        return {
+          type: Array.isArray(o.type) ? o.type.filter((t): t is string => typeof t === 'string') : [],
+          cities: Array.isArray(o.preferred_cities)
+            ? o.preferred_cities.filter((c): c is string => typeof c === 'string')
+            : [],
+        }
+      } catch {
+        // legacy bare string (the pre-fix shape) — can't structure it; start empty
+      }
+    }
+    return { type: [] as string[], cities: [] as string[] }
+  })()
+  const [types, setTypes] = useState<string[]>(initial.type)
+  const [cities, setCities] = useState(initial.cities.join(', '))
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const cityArr = cities
+    .split(',')
+    .map((c) => c.trim())
+    .filter(Boolean)
+  const dirty =
+    JSON.stringify(types) !== JSON.stringify(initial.type) || JSON.stringify(cityArr) !== JSON.stringify(initial.cities)
+
+  function toggle(t: string) {
+    setTypes((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]))
+  }
+  async function save() {
+    setSaving(true)
+    setErr(null)
+    const res = await postAdminPersona(baseUrl, 'location_pref', { type: types, preferred_cities: cityArr })
+    setSaving(false)
+    if (res.ok) onSaved()
+    else setErr(res.error ?? 'save failed')
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5 py-2" data-testid="persona-field-location_pref">
+      <div className="flex items-center justify-between">
+        <label className="text-xs font-medium text-muted-foreground">Location preference</label>
+        {dirty ? <SaveButton onClick={save} saving={saving} testid="persona-save-location_pref" /> : null}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {LOCATION_TYPES.map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => toggle(t)}
+            data-testid={`persona-loc-type-${t}`}
+            aria-pressed={types.includes(t)}
+            className={`rounded-full border px-2.5 py-0.5 text-[11px] capitalize ${
+              types.includes(t)
+                ? 'border-foreground bg-foreground text-background'
+                : 'border-border text-muted-foreground'
+            }`}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+      <input
+        value={cities}
+        onChange={(e) => setCities(e.target.value)}
+        placeholder="Preferred cities (comma-separated)"
+        className="w-full rounded border border-border bg-background px-2 py-1 text-sm"
+      />
+      {err ? <p className="text-[11px] text-red-500">{err}</p> : null}
+    </div>
+  )
+}
+
 export function PersonaPanel({
   data,
   baseUrl,
@@ -213,16 +294,25 @@ export function PersonaPanel({
           <h3 className="text-sm font-semibold">{g.title}</h3>
           {g.note ? <p className="mt-0.5 text-[11px] text-muted-foreground">{g.note}</p> : null}
           <div className="mt-1 divide-y divide-border/50">
-            {g.fields.map((f) => (
-              <Field
-                key={`${f}:${String(data.fields[f] ?? '')}`}
-                field={f}
-                raw={data.fields[f]}
-                readOnly={readonly.has(f)}
-                baseUrl={baseUrl}
-                onSaved={onSaved}
-              />
-            ))}
+            {g.fields.map((f) =>
+              f === 'location_pref' ? (
+                <LocationField
+                  key={`location_pref:${String(data.fields[f] ?? '')}`}
+                  raw={data.fields[f]}
+                  baseUrl={baseUrl}
+                  onSaved={onSaved}
+                />
+              ) : (
+                <Field
+                  key={`${f}:${String(data.fields[f] ?? '')}`}
+                  field={f}
+                  raw={data.fields[f]}
+                  readOnly={readonly.has(f)}
+                  baseUrl={baseUrl}
+                  onSaved={onSaved}
+                />
+              ),
+            )}
           </div>
         </section>
       ))}

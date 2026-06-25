@@ -12,7 +12,7 @@ const DATA: AdminPersona = {
     bio: 'Engineer',
     target_roles: JSON.stringify(['Staff Eng', 'Infra Lead']),
     skills: JSON.stringify(['Go', 'Postgres']),
-    location_pref: '{"remote":true}',
+    location_pref: '{"type":["remote","hybrid"],"preferred_cities":["Denver"]}',
     comp_floor: 185000,
     search_goals: 'Find a staff role',
     master_resume: 'resume text',
@@ -40,6 +40,14 @@ describe('PersonaPanel', () => {
     expect(screen.getByText('manual')).toBeInTheDocument() // honest work-profile provenance
     expect(screen.getByTestId('persona-blockers')).toHaveTextContent('comp_floor')
     expect(screen.getByTestId('persona-preview')).toHaveTextContent('Staff engineer persona')
+  })
+
+  it('renders location_pref as structured type-toggles + a cities field (not free text)', () => {
+    render(<PersonaPanel data={DATA} baseUrl="http://x" onSaved={vi.fn()} />)
+    expect(screen.getByTestId('persona-loc-type-remote')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('persona-loc-type-hybrid')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('persona-loc-type-onsite')).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByDisplayValue('Denver')).toBeInTheDocument()
   })
 
   it('marks gmail_account read-only', () => {
