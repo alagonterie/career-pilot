@@ -143,3 +143,34 @@ export function promoteLeadOnApplied(db: Database.Database, change: StatusTransi
     return null;
   }
 }
+
+export interface BackfillResult {
+  scanned: number;
+  promotions: Array<{ applicationId: string; leadId: string; via: LeadPromotion['via'] }>;
+}
+
+/**
+ * One-time backfill (§24.175): link leads for applications that ALREADY reached a
+ * submitted stage before the live promotion hook existed (the hook fires on the
+ * transition, which those apps are past). Reuses the exact runtime path
+ * (`promoteLeadOnApplied`), oldest application first so earlier applications claim
+ * leads first. Idempotent + safe to re-run (already-linked apps and already-linked
+ * leads are skipped). The caller controls commit vs. dry-run — wrap in a
+ * transaction and roll back to preview without writing.
+ */
+export function backfillLeadPromotions(db: Database.Database): BackfillResult {
+  const apps = db
+    .prepare(
+      `SELECT id, status FROM applications
+        WHERE upper(status) IN ('APPLIED', 'SCREENING', 'TECH_SCREEN', 'FINAL', 'OFFER', 'REJECTED')
+        ORDER BY applied_at ASC, created_at ASC`,
+    )
+    .all() as Array<{ id: string; status: string }>;
+
+  const promotions: BackfillResult['promotions'] = [];
+  for (const a of apps) {
+    const match = promoteLeadOnApplied(db, { application_id: a.id, to: a.status });
+    if (match) promotions.push({ applicationId: a.id, leadId: match.leadId, via: match.via });
+  }
+  return { scanned: apps.length, promotions };
+}

@@ -4,7 +4,7 @@ import { closeDb, getDb, initTestDb } from '../../db/connection.js';
 import { runMigrations } from '../../db/migrations/index.js';
 
 import { reactToStatusTransitions } from './interview-kit-trigger.js';
-import { promoteLeadOnApplied } from './lead-promotion.js';
+import { backfillLeadPromotions, promoteLeadOnApplied } from './lead-promotion.js';
 
 beforeEach(() => {
   closeDb();
@@ -170,5 +170,54 @@ describe('promoteLeadOnApplied', () => {
 
     reactToStatusTransitions(getDb(), getDb(), [{ application_id: 'app-1', from: 'BOOKMARKED', to: 'APPLIED' }]);
     expect(leadOf('lead-1')).toEqual({ status: 'applied', application_id: 'app-1' });
+  });
+});
+
+describe('backfillLeadPromotions', () => {
+  it('links leads for applications already in a submitted stage; skips BOOKMARKED + already-linked', () => {
+    // URL match (APPLIED)
+    seedApp('app-url', { status: 'APPLIED', job_url: 'https://boards.example.com/url-1' });
+    seedLead({ id: 'lead-url', source_url: 'https://boards.example.com/url-1' });
+    // company+title match (SCREENING, differing URL)
+    seedApp('app-ct', {
+      status: 'SCREENING',
+      job_url: 'https://ats/x',
+      company_name: 'Acme',
+      role_title: 'Backend Engineer',
+    });
+    seedLead({ id: 'lead-ct', source_url: 'https://board/y', company: 'Acme', title: 'Backend Engineer' });
+    // not submitted → not scanned
+    seedApp('app-book', { status: 'BOOKMARKED', job_url: 'https://boards.example.com/url-1' });
+    // submitted but no matching lead
+    seedApp('app-nomatch', { status: 'OFFER', job_url: 'https://none', company_name: 'Zzz', role_title: 'Nope' });
+    // already promoted (its lead is linked) → no double-link
+    seedApp('app-done', { status: 'APPLIED', job_url: 'https://boards.example.com/done' });
+    seedLead({
+      id: 'lead-done',
+      source_url: 'https://boards.example.com/done',
+      application_id: 'app-done',
+      status: 'applied',
+    });
+
+    const res = backfillLeadPromotions(getDb());
+
+    expect(res.scanned).toBe(4); // url, ct, nomatch, done — NOT the BOOKMARKED one
+    expect(res.promotions).toEqual(
+      expect.arrayContaining([
+        { applicationId: 'app-url', leadId: 'lead-url', via: 'url' },
+        { applicationId: 'app-ct', leadId: 'lead-ct', via: 'company_title' },
+      ]),
+    );
+    expect(res.promotions).toHaveLength(2);
+    expect(leadOf('lead-url')).toEqual({ status: 'applied', application_id: 'app-url' });
+    expect(leadOf('lead-ct')).toEqual({ status: 'applied', application_id: 'app-ct' });
+  });
+
+  it('is idempotent — a second run links nothing new', () => {
+    seedApp('app-1', { status: 'APPLIED', job_url: 'https://boards.example.com/eng-42' });
+    seedLead({ id: 'lead-1', source_url: 'https://boards.example.com/eng-42' });
+
+    expect(backfillLeadPromotions(getDb()).promotions).toHaveLength(1);
+    expect(backfillLeadPromotions(getDb()).promotions).toHaveLength(0);
   });
 });
