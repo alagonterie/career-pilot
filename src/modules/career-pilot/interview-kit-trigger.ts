@@ -21,6 +21,7 @@ import { log } from '../../log.js';
 
 import { archiveKitsForApplication } from './interview-kit-actions.js';
 import { hasActiveKit, isInterviewRoundStatus, isTerminalStatus } from './interview-kit-store.js';
+import { promoteLeadOnApplied } from './lead-promotion.js';
 
 /**
  * A status transition to react to. Structurally a superset of
@@ -84,9 +85,10 @@ export function enqueueKitWake(inDb: Database.Database, applicationId: string, r
 }
 
 /**
- * React to a batch of status transitions. On entry to an interview stage →
- * enqueue a kit wake (unless auto-gen is off or an active kit already exists for
- * that round). On entry to a terminal stage → archive the application's active
+ * React to a batch of status transitions. On entry to a submitted stage → promote
+ * the originating lead (§24.175, link + flip to `applied`). On entry to an interview
+ * stage → enqueue a kit wake (unless auto-gen is off or an active kit already exists
+ * for that round). On entry to a terminal stage → archive the application's active
  * kits (fire-and-forget; it touches Drive). Never throws.
  */
 export function reactToStatusTransitions(
@@ -98,6 +100,9 @@ export function reactToStatusTransitions(
   const autoGen = getConfig<boolean>(db, 'interview_kit_auto_generate', true);
   for (const c of changes) {
     try {
+      // §24.175: a transition into a submitted stage promotes the originating
+      // lead (link + flip to `applied`). No-op for non-submitted transitions.
+      promoteLeadOnApplied(db, c);
       if (isTerminalStatus(c.to)) {
         void archiveKitsForApplication(db, c.application_id).catch((err) =>
           log.error('interview-kit archive on terminal transition failed', { applicationId: c.application_id, err }),
