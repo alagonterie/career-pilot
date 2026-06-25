@@ -484,11 +484,15 @@ describe('public_audit_trail.seq', () => {
     expect(rows.map((r) => r.category)).toEqual(['pipeline', 'subagent_progress', 'pipeline']);
   });
 
-  it('re-mirrored rows after resanitize sort after surviving rows (fresh MAX+1 seq)', async () => {
-    // Two apps so a surviving row preserves the MAX counter when app-1's row
-    // is deleted + re-mirrored. (When ALL higher rows are deleted, MAX+1
-    // legitimately reuses a freed seq — acceptable for a forward tail, since
-    // new fetchers always re-read from the cursor.)
+  it('re-mirrored rows after resanitize RESTORE their original seq (keep their place) (§24.169 follow-up)', async () => {
+    // Two apps so a surviving row (app-2) sits at a HIGHER seq than app-1's. When
+    // app-1 is re-sanitized (its row deleted + re-mirrored), the row must KEEP
+    // its original seq — holding its chronological slot in the feed — NOT jump to
+    // the end with a fresh MAX+1 (the "old-dated trace at the newest position"
+    // that §24.169 follow-up `c1faf6f` deliberately fixed by restoring the seq).
+    const seqOf = (eid: string) =>
+      (db.prepare('SELECT seq FROM public_audit_trail WHERE source_pipeline_event_id = ?').get(eid) as { seq: number })
+        .seq;
     seedApp({
       id: 'app-1',
       company_name: 'Acme Corp',
@@ -501,17 +505,17 @@ describe('public_audit_trail.seq', () => {
 
     expect(await mirrorPipelineEvent(db, 'fe-1')).toBe('inserted'); // seq 1
     expect(await mirrorPipelineEvent(db, 'fe-2')).toBe('inserted'); // seq 2
-    const app2Seq = (
-      db.prepare("SELECT seq FROM public_audit_trail WHERE source_pipeline_event_id = 'fe-2'").get() as { seq: number }
-    ).seq;
+    const app1SeqBefore = seqOf('fe-1');
+    const app2Seq = seqOf('fe-2');
+    expect(app1SeqBefore).toBeLessThan(app2Seq); // app-1's row is the OLDER one
 
     db.prepare("UPDATE applications SET public_state = 'obfuscated' WHERE id = 'app-1'").run();
     expect(await resanitizeApplicationAuditTrail(db, 'app-1')).toEqual({ rewritten: 1, deleted: 1 });
 
-    const app1Seq = (
-      db.prepare("SELECT seq FROM public_audit_trail WHERE source_pipeline_event_id = 'fe-1'").get() as { seq: number }
-    ).seq;
-    expect(app1Seq).toBeGreaterThan(app2Seq);
+    // Restored in place: the re-mirrored row keeps its original seq, so it stays
+    // BELOW the surviving app-2 row instead of leaping to the newest position.
+    expect(seqOf('fe-1')).toBe(app1SeqBefore);
+    expect(seqOf('fe-1')).toBeLessThan(app2Seq);
 
     // No duplicate seq across the table.
     const all = seqs();
