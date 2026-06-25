@@ -24,7 +24,9 @@ on:
       - 'v*'
 
 concurrency:
-  group: deploy-backend-prod
+  # Shared `prod-deploy` group with deploy-frontend (master) so the two prod deploys
+  # serialize against the production Environment instead of racing (§24.170).
+  group: prod-deploy
   cancel-in-progress: false # never interrupt an in-flight prod provision
 
 permissions:

@@ -17,8 +17,12 @@ on:
       - '.github/workflows/deploy-frontend.yml'
 
 concurrency:
-  group: deploy-frontend-${{ github.ref }}
-  cancel-in-progress: true
+  # Prod deploys (master) share the `prod-deploy` group with deploy-backend-prod so
+  # the two never run concurrently against the production Environment (§24.170 — a
+  # tag-triggered backend deploy racing a frontend deploy left the env "inactive").
+  # Dev keeps its own per-ref group (latest-wins).
+  group: ${{ github.ref_name == 'master' && 'prod-deploy' || format('deploy-frontend-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.ref_name != 'master' }}
 
 jobs:
   deploy:
