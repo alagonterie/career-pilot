@@ -309,7 +309,7 @@ A compact `LiveTicker` showing the most recent 5 agent events, monospace, fading
   [  Watch live →  ]   ← link to /live
 ```
 
-The `◆ proactive` marker calls out events the agent initiated on its own — the cleanest hint a visitor gets that this isn't a chatbot, it's an autonomous worker.
+The `◆ proactive` marker calls out events that ran without anyone asking — work the agent picks up on a schedule (or from an incoming signal, like a recruiter's reply), not in response to a chat. It's the cleanest hint a visitor gets that this isn't a chatbot waiting for input. (§24.171: the copy says "on a schedule," not "on its own / autonomous" — the `proactive` flag is the trigger kind, not a claim of volition.)
 
 Compact, dense, monospace. This is the bridge from landing register to ops register. The visitor who clicks `Watch live →` is self-selecting into the deep view.
 
@@ -1154,7 +1154,7 @@ In `/pipeline` per-application timeline:
 2026-05-18  ◆ tailor-resume ran (initial application detected)
 ```
 
-The `◆` glyph is consistent across surfaces. Visitors learn its meaning quickly: "the agent did this on its own."
+The `◆` glyph is consistent across surfaces. Visitors learn its meaning quickly: "this ran without anyone asking" (§24.171 — scheduled/signal-triggered, not a claim the agent acted on a whim).
 
 ### 6.6 What's deliberately NOT proactive
 
