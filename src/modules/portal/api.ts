@@ -46,9 +46,11 @@ import {
   adminEnabled,
   applyAdminControl,
   applyAdminKnobWrite,
+  applyAdminPersonaWrite,
   applyAdminSandboxRunDelete,
   buildAdminContacts,
   buildAdminKnobs,
+  buildAdminPersona,
   buildAdminPipeline,
   buildAdminSandboxRuns,
   buildAdminSummary,
@@ -421,6 +423,25 @@ async function handleAdminControl(
     return json(res, 400, { error: 'invalid JSON body' }, cors);
   }
   const out = await applyAdminControl(getDb(), body);
+  json(res, out.status, out.body, cors);
+}
+
+function handleAdminPersona(res: http.ServerResponse, cors: Record<string, string>): void {
+  json(res, 200, buildAdminPersona(getDb()), cors);
+}
+
+async function handleAdminPersonaWrite(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  cors: Record<string, string>,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch {
+    return json(res, 400, { error: 'invalid JSON body' }, cors);
+  }
+  const out = applyAdminPersonaWrite(getDb(), body);
   json(res, out.status, out.body, cors);
 }
 
@@ -1097,6 +1118,8 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
       if (method === 'GET' && path === '/api/admin/knobs') return handleAdminKnobs(res, cors);
       if (method === 'POST' && path === '/api/admin/knobs') return await handleAdminKnobsWrite(req, res, cors);
       if (method === 'POST' && path === '/api/admin/control') return await handleAdminControl(req, res, cors);
+      if (method === 'GET' && path === '/api/admin/persona') return handleAdminPersona(res, cors);
+      if (method === 'POST' && path === '/api/admin/persona') return await handleAdminPersonaWrite(req, res, cors);
     }
 
     // Dev inspector (§24.42b): the whole `/api/dev/*` prefix is invisible

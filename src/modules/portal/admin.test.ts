@@ -18,9 +18,11 @@ import {
   adminEnabled,
   applyAdminControl,
   applyAdminKnobWrite,
+  applyAdminPersonaWrite,
   applyAdminSandboxRunDelete,
   buildAdminContacts,
   buildAdminKnobs,
+  buildAdminPersona,
   buildAdminPipeline,
   buildAdminSandboxRuns,
   buildAdminSummary,
@@ -286,5 +288,47 @@ describe('applyAdminControl (mode controls)', () => {
   it('rejects an unknown action + a non-object body', async () => {
     expect((await applyAdminControl(getDb(), { action: 'nope' })).status).toBe(400);
     expect((await applyAdminControl(getDb(), null)).status).toBe(400);
+  });
+});
+
+describe('buildAdminPersona / applyAdminPersonaWrite (§24.170)', () => {
+  it('reads an empty profile: null fields, blockers present, onboarding preview', () => {
+    const view = buildAdminPersona(getDb());
+    expect(view.fields.full_name).toBeNull();
+    expect(view.workProfile.source).toBeNull();
+    expect(view.blockers.length).toBeGreaterThan(0);
+    expect(typeof view.personaPreview).toBe('string');
+    expect(view.readonlyFields).toContain('gmail_account');
+  });
+
+  it('writes + normalizes simple, array, number, and protected_terms fields', () => {
+    expect(applyAdminPersonaWrite(getDb(), { field: 'full_name', value: 'Jane Doe' }).status).toBe(200);
+    expect(applyAdminPersonaWrite(getDb(), { field: 'target_roles', value: 'Staff Eng, Infra Lead' }).status).toBe(200);
+    expect(applyAdminPersonaWrite(getDb(), { field: 'comp_floor', value: '$185,000' }).status).toBe(200);
+    expect(applyAdminPersonaWrite(getDb(), { field: 'protected_terms', value: ['Acme', 'Globex'] }).status).toBe(200);
+
+    const view = buildAdminPersona(getDb());
+    expect(view.fields.full_name).toBe('Jane Doe');
+    expect(JSON.parse(view.fields.target_roles as string)).toEqual(['Staff Eng', 'Infra Lead']);
+    expect(view.fields.comp_floor).toBe(185000);
+    expect(JSON.parse(view.fields.protected_terms as string)).toEqual(['Acme', 'Globex']);
+  });
+
+  it('rejects an unknown field and the read-only gmail_account', () => {
+    expect(applyAdminPersonaWrite(getDb(), { field: 'nope', value: 'x' }).status).toBe(400);
+    expect(applyAdminPersonaWrite(getDb(), { field: 'gmail_account', value: 'a@b.com' }).status).toBe(400);
+  });
+
+  it('stores a valid work_profile as source=manual (never agent), validated', () => {
+    const wp = { name: 'Jane Doe', title: 'Software Engineer', experience: [], education: [], links: {} };
+    expect(applyAdminPersonaWrite(getDb(), { field: 'work_profile_json', value: wp }).status).toBe(200);
+    const view = buildAdminPersona(getDb());
+    expect(view.workProfile.source).toBe('manual');
+    expect(view.workProfile.json).not.toBeNull();
+  });
+
+  it('rejects a nameless work_profile (the honesty-floor bar) and stores nothing', () => {
+    expect(applyAdminPersonaWrite(getDb(), { field: 'work_profile_json', value: { experience: [] } }).status).toBe(400);
+    expect(buildAdminPersona(getDb()).workProfile.json).toBeNull();
   });
 });

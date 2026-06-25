@@ -177,7 +177,7 @@ export async function handleEmitColdEmail(
 
 // ── update_profile_field ───────────────────────────────────────────────────
 
-const PROFILE_FIELDS = new Set([
+export const PROFILE_FIELDS = new Set([
   'full_name',
   'display_name',
   'bio',
@@ -203,7 +203,10 @@ const PROFILE_FIELDS = new Set([
 // always finds the shape it expects. Without this, the agent storing
 // target_roles as a comma string or an over-escaped JSON string left the field
 // unparseable → it read as empty (the onboarding-stuck-at-5/6 bug).
-const ARRAY_PROFILE_FIELDS = new Set(['target_roles', 'skills']);
+// protected_terms (§24.134d) is array-shaped too — it isn't a PROFILE_FIELDS
+// onboarding step (the agent can't set it), but the /admin Persona editor
+// (§24.170) routes it through normalizeProfileValue, so it must coerce as an array.
+const ARRAY_PROFILE_FIELDS = new Set(['target_roles', 'skills', 'protected_terms']);
 const NUMBER_PROFILE_FIELDS = new Set(['comp_floor']);
 const OBJECT_PROFILE_FIELDS = new Set(['location_pref']);
 

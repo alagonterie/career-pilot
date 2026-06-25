@@ -23,14 +23,16 @@ import type Database from 'better-sqlite3';
 
 import { getDb, hasTable } from '../../db/connection.js';
 import { getConfig } from '../../get-config.js';
+import { PROFILE_FIELDS, normalizeProfileValue } from '../career-pilot/actions.js';
 import { type HealthFinding, runHealthChecks } from '../career-pilot/health.js';
-import { type CandidateProfile, readCandidateProfile } from '../career-pilot/render-persona.js';
+import { type CandidateProfile, readCandidateProfile, renderPersona } from '../career-pilot/render-persona.js';
 
 import { originJwtEnabled } from './access-jwt.js';
 import { isDevEnv } from './dev-inspector.js';
 import { executeControlCommand, executeKillswitch } from './kill-switch.js';
 import { ADMIN_DENY, ADMIN_KNOB_KEYS, KNOB_SPECS, applyKnobWrite, buildKnobs, type KnobView } from './knob-registry.js';
 import { computeRunningTopology, getObservability } from './observability.js';
+import { projectWorkProfile } from './profile.js';
 import {
   deleteSimulatorRun,
   getAdminSandboxStats,
@@ -413,4 +415,104 @@ export async function applyAdminControl(db: Database.Database, raw: unknown): Pr
   }
 
   return { status: 400, body: { error: `unknown action: ${String(action)}` } };
+}
+
+// ── §24.170: the Persona tab (owner-only candidate-profile editor) ─────────────
+//
+// candidate_profile fans out to the live agent (renderPersona host-fragment), the
+// public /api/profile identity, and the sanitizer's name redaction. This is the
+// prod-available view+edit surface — the dev-inspector is a dev-only destructive
+// re-onboarding harness. Owner-only behind the Access gate, like all of /admin.
+
+/** The candidate_profile columns the Persona tab shows: the agent's onboarding
+ * PROFILE_FIELDS + protected_terms (the redaction keep-list, not an onboarding
+ * step). work_profile_json is edited via its own validated path, below. */
+const PERSONA_DISPLAY_FIELDS = new Set<string>([...PROFILE_FIELDS, 'protected_terms']);
+
+/** Shown but NOT writable here: gmail_account is OAuth/OneCLI-managed — editing
+ * the address alone would desync it from the vault token. */
+const PERSONA_READONLY_FIELDS = new Set<string>(['gmail_account']);
+
+/** candidate_profile columns present at read but not on the CandidateProfile type. */
+interface PersonaRow extends CandidateProfile {
+  public_email: string | null;
+  work_profile_source: string | null;
+  work_profile_generated_at: string | null;
+}
+
+export interface AdminPersona {
+  /** Editable scalar/array fields, raw stored values (the client parses arrays). */
+  fields: Record<string, unknown>;
+  /** Fields shown read-only (e.g. gmail_account). */
+  readonlyFields: string[];
+  /** The work-profile + its HONEST provenance (source / generated_at). */
+  workProfile: { json: string | null; source: string | null; generated_at: string | null };
+  /** The markdown the agent will receive on its next session (renderPersona). */
+  personaPreview: string;
+  /** Required-but-missing fields blocking LIVE mode (empty → ready). */
+  blockers: string[];
+}
+
+/** The Persona tab read: editable fields + work-profile provenance + a live
+ * persona preview + the go-live readiness blockers. */
+export function buildAdminPersona(db: Database.Database): AdminPersona {
+  const profile = (db.prepare('SELECT * FROM candidate_profile WHERE id = 1').get() as PersonaRow | undefined) ?? null;
+  const row = profile as unknown as Record<string, unknown> | null;
+  const fields: Record<string, unknown> = {};
+  for (const f of PERSONA_DISPLAY_FIELDS) fields[f] = row ? (row[f] ?? null) : null;
+  return {
+    fields,
+    readonlyFields: [...PERSONA_READONLY_FIELDS],
+    workProfile: {
+      json: profile?.work_profile_json ?? null,
+      source: profile?.work_profile_source ?? null,
+      generated_at: profile?.work_profile_generated_at ?? null,
+    },
+    personaPreview: renderPersona(profile),
+    blockers: liveModeBlockers(profile),
+  };
+}
+
+/**
+ * The Persona tab write: one { field, value } at a time.
+ *   - work_profile_json → validated through the SAME `projectWorkProfile` the
+ *     agent uses; stored `source='manual'` (§24.170 D2 — never 'agent', so the
+ *     /work AI-provenance mark stays honest).
+ *   - any other display field (minus the read-only ones) → normalized via the
+ *     onboarding `normalizeProfileValue` and written. The field is allow-listed,
+ *     so the column interpolation is injection-safe.
+ */
+export function applyAdminPersonaWrite(db: Database.Database, raw: unknown): { status: number; body: unknown } {
+  if (typeof raw !== 'object' || raw === null) {
+    return { status: 400, body: { error: 'expected a JSON object { field, value }' } };
+  }
+  const { field, value } = raw as { field?: unknown; value?: unknown };
+  if (typeof field !== 'string') {
+    return { status: 400, body: { error: 'field (string) is required' } };
+  }
+  const now = new Date().toISOString();
+  // Ensure the single row exists (mirrors onboarding / set_work_profile).
+  db.prepare(`INSERT INTO candidate_profile (id, updated_at) VALUES (1, @now) ON CONFLICT(id) DO NOTHING`).run({ now });
+
+  if (field === 'work_profile_json') {
+    const rawWp = typeof value === 'string' ? value : JSON.stringify(value ?? null);
+    const projected = projectWorkProfile(rawWp);
+    if (!projected) {
+      return { status: 400, body: { error: 'work_profile must be a WorkProfile object with a non-empty name' } };
+    }
+    db.prepare(
+      `UPDATE candidate_profile
+          SET work_profile_json = @json, work_profile_source = 'manual',
+              work_profile_generated_at = @now, updated_at = @now
+        WHERE id = 1`,
+    ).run({ json: JSON.stringify(projected), now });
+    return { status: 200, body: { ok: true, field, source: 'manual', generated_at: now } };
+  }
+
+  if (!PERSONA_DISPLAY_FIELDS.has(field) || PERSONA_READONLY_FIELDS.has(field)) {
+    return { status: 400, body: { error: `field not editable on /admin: ${field}` } };
+  }
+  const normalized = normalizeProfileValue(field, value);
+  db.prepare(`UPDATE candidate_profile SET ${field} = @v, updated_at = @now WHERE id = 1`).run({ v: normalized, now });
+  return { status: 200, body: { ok: true, field, value: normalized } };
 }
