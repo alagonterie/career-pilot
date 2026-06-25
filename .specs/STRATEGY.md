@@ -7345,6 +7345,18 @@ Separately, the owner has **no structured view** of sandbox runs — §24.162 de
 
 ---
 
+## §24.172 — The `/architecture` sanitizer-modal axe flake: a fade-in race, not a contrast bug
+
+**Origin** (a `frontend-e2e` flake that recurred through the §24.171 prod push, 2026-06-25). `architecture.spec.ts:96` (the pub-sanitize node modal opens the live anonymization demo) intermittently failed its `AxeBuilder().analyze()` with color-contrast violations — `#55575a`@2.49, `#484a50`@2.04, the violet chip `#826cc3`@4.22, all below AA 4.5:1. It read like a too-dark palette ("worth a deliberate color nudge"). **It is not a contrast bug.**
+
+**Root cause.** The tokens are AA-bright when settled: `--muted-foreground` = `hsl(220 12% 80%)` (#c6cad2, ~12:1 on the card) and `--ai` = `hsl(255 92% 76%)` (#a68afa, ~5.5:1). The reported dark hexes are those exact tokens composited at **~35% opacity** — axe sampled the modal CONTENT *mid-fade-in*. `NodePanel`'s inner content `motion.div` plays `initial opacity 0 → animate opacity 1 (delay .2s, duration .2s)`, and the root `MotionConfig reducedMotion="user"` disables transform/layout animations but **keeps opacity** ones — so even under the test's `reducedMotion:'reduce'` the fade still ran, and axe (firing right after the content's `getByTestId` assertions resolved) raced it. At 35% opacity nothing short of white clears 4.5:1, so a color nudge would NOT have fixed it.
+
+**Fix.** Gate the content fade on `useReducedMotion()`: when reduced (the established axe/visual-test posture), the content mounts opaque (`initial={false}`, zero-duration transition) so axe always samples the settled, AA-bright state. Also a genuine a11y improvement — the reduced-motion preference now fully suppresses the fade, not just the `layoutId` grow. No color/token change; the settled pixels are unchanged, so no `@visual` re-bless.
+
+**Definition of done.** `NodePanel` content fade honors `useReducedMotion()`; `architecture.spec.ts:96` passes deterministically (repeat-run, no flake); frontend tsc + the suite green; no token/`@visual` change. Memory: [[status_current]] — corrects the "deferred color nudge" note.
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
