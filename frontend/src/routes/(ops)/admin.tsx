@@ -1,5 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useState } from 'react'
 
 import { AdminModeControls } from '~/components/admin/AdminModeControls'
 import { ContactsPanel } from '~/components/admin/ContactsPanel'
@@ -32,25 +31,6 @@ import {
   type AdminSummary,
 } from '~/lib/use-admin'
 
-// The owner-only `/admin` control-center (§24.138). Lives in the `(ops)` group
-// (shared header/rail) but is NOT in the public nav — reached by direct URL. Every
-// `/api/admin/*` endpoint 404s unless the admin surface is enabled (open on dev;
-// prod fails closed until the /admin Access app is wired + admin_api_enabled), so
-// on any other stack the page degrades to an "unavailable" note. `noindex`.
-export const Route = createFileRoute('/(ops)/admin')({
-  component: AdminPage,
-  head: () => {
-    const base = seo({
-      title: 'Admin — control center',
-      description: 'Owner-only operator control-center. Gated; served only behind Cloudflare Access.',
-      path: '/admin',
-    })
-    return { meta: [...base.meta, { name: 'robots', content: 'noindex' }] }
-  },
-})
-
-const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
-
 type TabId = 'overview' | 'pipeline' | 'leads' | 'visitors' | 'contacts' | 'sandbox' | 'models' | 'persona' | 'system'
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
@@ -64,8 +44,37 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'system', label: 'System' },
 ]
 
+// §24.176: the active tab lives in the URL (`?tab=<id>`) so tabs are deep-linkable
+// and browser back/forward step through them. `overview` is the default and stays
+// param-free (a clean `/admin`); an unknown tab also falls back to overview.
+function normalizeTab(v: unknown): TabId | undefined {
+  return typeof v === 'string' && v !== 'overview' && TABS.some((t) => t.id === v) ? (v as TabId) : undefined
+}
+
+// The owner-only `/admin` control-center (§24.138). Lives in the `(ops)` group
+// (shared header/rail) but is NOT in the public nav — reached by direct URL. Every
+// `/api/admin/*` endpoint 404s unless the admin surface is enabled (open on dev;
+// prod fails closed until the /admin Access app is wired + admin_api_enabled), so
+// on any other stack the page degrades to an "unavailable" note. `noindex`.
+export const Route = createFileRoute('/(ops)/admin')({
+  component: AdminPage,
+  // `?tab=<id>` drives the active tab (§24.176): deep-linkable + back/forward nav.
+  validateSearch: (search: Record<string, unknown>): { tab?: TabId } => ({ tab: normalizeTab(search.tab) }),
+  head: () => {
+    const base = seo({
+      title: 'Admin — control center',
+      description: 'Owner-only operator control-center. Gated; served only behind Cloudflare Access.',
+      path: '/admin',
+    })
+    return { meta: [...base.meta, { name: 'robots', content: 'noindex' }] }
+  },
+})
+
+const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
+
 function AdminPage() {
-  const [tab, setTab] = useState<TabId>('overview')
+  const tab: TabId = Route.useSearch().tab ?? 'overview'
+  const navigate = Route.useNavigate()
   const summary = useAdminSummary(API_BASE)
   const pipeline = useAdminPipeline(API_BASE)
   const contacts = useAdminContacts(API_BASE)
@@ -119,7 +128,7 @@ function AdminPage() {
                 type="button"
                 data-testid={`admin-tab-${t.id}`}
                 aria-current={tab === t.id ? 'page' : undefined}
-                onClick={() => setTab(t.id)}
+                onClick={() => navigate({ search: t.id === 'overview' ? {} : { tab: t.id }, resetScroll: false })}
                 className={cn(
                   '-mb-px rounded-t-md border-b-2 px-3 py-2 font-mono text-xs font-semibold transition-colors',
                   tab === t.id

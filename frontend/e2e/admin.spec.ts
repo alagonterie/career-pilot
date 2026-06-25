@@ -405,6 +405,24 @@ test.describe('/admin — control center (§24.138)', () => {
     await expect(page.getByTestId('leads-row')).toHaveCount(3)
   })
 
+  test('the active tab is URL-driven — deep-link + back/forward (§24.176)', async ({ page }) => {
+    await stubAdmin(page)
+
+    // Deep-link straight to a tab (SSR/first paint honors ?tab=).
+    await page.goto('/admin?tab=leads')
+    await expect(page.getByTestId('leads-panel')).toBeVisible()
+
+    // Clicking a tab writes the param; overview clears it (clean /admin).
+    await page.getByTestId('admin-tab-contacts').click()
+    await expect(page).toHaveURL(/[?&]tab=contacts/)
+    await expect(page.getByTestId('admin-contact-row')).toBeVisible()
+
+    // Back returns to the previous tab (history works).
+    await page.goBack()
+    await expect(page).toHaveURL(/[?&]tab=leads/)
+    await expect(page.getByTestId('leads-panel')).toBeVisible()
+  })
+
   test('a System-tab knob toggle POSTs the flipped value to /api/admin/knobs', async ({ page }) => {
     await stubAdmin(page)
     await page.goto('/admin')
