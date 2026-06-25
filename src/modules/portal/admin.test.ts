@@ -16,6 +16,7 @@ import { getLiveMode, getPauseState } from './system-modes.js';
 
 import {
   adminEnabled,
+  applyAdminAttributionWrite,
   applyAdminControl,
   applyAdminKnobWrite,
   applyAdminLeadsWrite,
@@ -118,6 +119,46 @@ describe('buildAttributionReport', () => {
     seedLink('out1', 'outreach', 'x.com', null);
     for (let i = 0; i < 5; i++) seedVisit(`v${i}`, 'out1', `ip${i}`, 'US', `2026-06-16T1${i}:00:00.000Z`);
     expect(buildAttributionReport(getDb(), { recentLimit: 2 }).recentVisits).toHaveLength(2);
+  });
+
+  it('carries expiresAt so the UI can mark a retired source (§24.177)', () => {
+    seedLink('live_src', 'owner_source', null, null);
+    applyAdminAttributionWrite(getDb(), { action: 'retire', slug: 'live_src' });
+    const row = buildAttributionReport(getDb()).links.find((l) => l.code === 'live_src')!;
+    expect(row.artifactType).toBe('owner_source');
+    expect(row.expiresAt).not.toBeNull();
+  });
+});
+
+describe('applyAdminAttributionWrite (§24.177 mint/retire)', () => {
+  it('mints an owner source that shows up in the report (live, not expired)', () => {
+    const out = applyAdminAttributionWrite(getDb(), { action: 'mint', slug: 'my_linkedin' });
+    expect(out.status).toBe(200);
+    expect(out.body).toEqual({ ok: true, code: 'my_linkedin' });
+    const row = buildAttributionReport(getDb()).links.find((l) => l.code === 'my_linkedin')!;
+    expect(row.artifactType).toBe('owner_source');
+    expect(row.expiresAt).toBeNull();
+  });
+
+  it('retires a minted source (soft — the row stays)', () => {
+    applyAdminAttributionWrite(getDb(), { action: 'mint', slug: 'gone_soon' });
+    const out = applyAdminAttributionWrite(getDb(), { action: 'retire', slug: 'gone_soon' });
+    expect(out.status).toBe(200);
+    expect(out.body).toEqual({ ok: true });
+    expect(buildAttributionReport(getDb()).links.some((l) => l.code === 'gone_soon')).toBe(true);
+  });
+
+  it('400s on a bad action, an invalid slug, the reserved slug, and a collision', () => {
+    expect(applyAdminAttributionWrite(getDb(), { action: 'nope', slug: 'x' }).status).toBe(400);
+    expect(applyAdminAttributionWrite(getDb(), { action: 'mint', slug: 'Bad Slug' }).status).toBe(400);
+    expect(
+      (applyAdminAttributionWrite(getDb(), { action: 'mint', slug: 'master_resume_pdf' }).body as { error: string })
+        .error,
+    ).toBe('reserved_slug');
+    applyAdminAttributionWrite(getDb(), { action: 'mint', slug: 'dupe' });
+    expect(
+      (applyAdminAttributionWrite(getDb(), { action: 'mint', slug: 'dupe' }).body as { error: string }).error,
+    ).toBe('slug_taken');
   });
 });
 

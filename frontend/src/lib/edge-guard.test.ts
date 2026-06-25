@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { guardPublicMutation, verifyTurnstile, type GuardEnv, type RateLimit } from './edge-guard'
+import { guardPublicMutation, guardVisitBeacon, verifyTurnstile, type GuardEnv, type RateLimit } from './edge-guard'
 
 function siteverifyOnce(body: Record<string, unknown>): void {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ json: () => Promise.resolve(body) } as unknown as Response))
@@ -82,5 +82,28 @@ describe('guardPublicMutation', () => {
 
   it('fail-opens past a missing RL binding and skips verify with no secret (local dev)', async () => {
     expect(await guardPublicMutation(post('/api/simulator'), {})).toBeNull()
+  })
+})
+
+describe('guardVisitBeacon (§24.177 — RL-only, no Turnstile)', () => {
+  it('ignores non-POST / non-/api/visit paths', async () => {
+    const env: GuardEnv = { VISIT_BURST: passRl() }
+    expect(await guardVisitBeacon(new Request('https://h/api/visit'), env)).toBeNull()
+    expect(await guardVisitBeacon(post('/api/contact'), env)).toBeNull()
+  })
+
+  it('429s when the visit burst is exceeded', async () => {
+    const res = await guardVisitBeacon(post('/api/visit'), { VISIT_BURST: blockRl() })
+    expect(res?.status).toBe(429)
+    expect(await res?.json()).toMatchObject({ error: 'rate_limited' })
+  })
+
+  it('forwards (null) when the burst passes — and NEVER calls Turnstile', async () => {
+    siteverifyOnce({ success: false }) // would 403 if it were consulted
+    expect(await guardVisitBeacon(post('/api/visit'), { VISIT_BURST: passRl(), TURNSTILE_SECRET: 's' })).toBeNull()
+  })
+
+  it('fail-opens past a missing binding (local dev)', async () => {
+    expect(await guardVisitBeacon(post('/api/visit'), {})).toBeNull()
   })
 })

@@ -286,16 +286,20 @@ function AboutPage() {
           <S meta={M.privacy}>
             <p className="text-balance leading-relaxed text-foreground/90">
               This site keeps a <strong className="font-semibold text-foreground">first-party</strong> log of visits —
-              no third-party trackers, no cross-site cookies, no ad-tech. When the agent puts a link to this showcase
-              into something it sends out — a cold-outreach email, or a résumé that gets forwarded — that link carries a
-              short opaque code, so a click tells me which outreach it came from. That’s the whole point of a public
-              job-search showcase. The log keeps a salted hash of your IP (enough to tell a repeat visit from a new one,
-              without storing the address itself), a coarse country, and which page you landed on — held for a bounded
-              window, then deleted, and visible only to me behind an authenticated page. A “watch it work” run works the
-              same way: the company, role, and job description you enter and a redacted trace of the run are stored
-              privately on the same terms — visible only to me, deleted after a bounded window — while the public
-              recent-runs list shows nothing but aggregate cost and runtime. I deliberately turned down the free
-              third-party analytics beacon; I’d rather keep the whole thing first-party and legible.
+              no third-party trackers, no cross-site cookies, no ad-tech. When I share a link to this showcase — on my
+              LinkedIn, on a résumé I hand out, or in a cold-outreach email the agent sends — that link carries a short
+              note of where it came from, so a click tells me which channel found me. For anything I post or hand out
+              that note is a <strong className="font-semibold text-foreground">plain-text label</strong> you can read
+              right in the address bar (something like <code className="font-mono text-sm">?from=my_linkedin</code>) —
+              not even hidden in a code; a one-to-one outreach email keeps a short unique code so I can tell which
+              company opened it. That’s the whole point of a public job-search showcase. The log keeps a salted hash of
+              your IP (enough to tell a repeat visit from a new one, without storing the address itself), a coarse
+              country, and which page you landed on — held for a bounded window, then deleted, and visible only to me
+              behind an authenticated page. A “watch it work” run works the same way: the company, role, and job
+              description you enter and a redacted trace of the run are stored privately on the same terms — visible
+              only to me, deleted after a bounded window — while the public recent-runs list shows nothing but aggregate
+              cost and runtime. I deliberately turned down the free third-party analytics beacon; I’d rather keep the
+              whole thing first-party and legible.
             </p>
           </S>
 

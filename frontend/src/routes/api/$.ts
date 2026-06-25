@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { env } from 'cloudflare:workers'
 
-import { guardPublicMutation, type GuardEnv } from '~/lib/edge-guard'
+import { guardPublicMutation, guardVisitBeacon, type GuardEnv } from '~/lib/edge-guard'
 
 /**
  * BFF proxy — `/api/*` (STRATEGY §24.39 D12).
@@ -43,6 +43,9 @@ const STRIP_REQUEST_HEADERS = [
   'x-forwarded-host',
   'content-length',
   'cf-access-jwt-assertion',
+  // Re-derived from CF below (never trust a client-supplied geo on the visit beacon).
+  'x-cp-client-ip',
+  'x-cp-country',
 ]
 
 async function proxy(request: Request): Promise<Response> {
@@ -64,12 +67,15 @@ async function proxy(request: Request): Promise<Response> {
   if (e.CF_ACCESS_CLIENT_ID) headers.set('CF-Access-Client-Id', e.CF_ACCESS_CLIENT_ID)
   if (e.CF_ACCESS_CLIENT_SECRET) headers.set('CF-Access-Client-Secret', e.CF_ACCESS_CLIENT_SECRET)
   // Forward the CF-verified client IP for the backend's per-IP simulator cap
-  // (§24.70). ALWAYS derive from cf-connecting-ip — never trust a client-supplied
-  // x-cp-client-ip (overwrite when CF set one, strip it otherwise) so the cap
-  // can't be evaded by rotating a spoofed header.
+  // (§24.70) + the §24.177 visit beacon. ALWAYS derive from cf-connecting-ip —
+  // never trust a client-supplied x-cp-client-ip (the strip-list drops any inbound
+  // one) so the cap/attribution can't be evaded by rotating a spoofed header.
   const clientIp = request.headers.get('cf-connecting-ip')
   if (clientIp) headers.set('x-cp-client-ip', clientIp)
-  else headers.delete('x-cp-client-ip')
+  // The coarse country the visit beacon records (§24.177) — also CF-derived only.
+  const cf = (request as unknown as { cf?: { country?: string } }).cf
+  const country = cf?.country ?? request.headers.get('cf-ipcountry')
+  if (country) headers.set('x-cp-country', country)
 
   const hasBody = request.method !== 'GET' && request.method !== 'HEAD'
   const res = await fetch(target, {
@@ -103,9 +109,14 @@ export const Route = createFileRoute('/api/$')({
     handlers: {
       GET: ({ request }) => proxy(request),
       // Public mutations (`/api/contact`, `/api/simulator`) run the edge guard —
-      // Workers-RL burst + Turnstile (§24.70) — before the forward; a non-null
-      // result short-circuits with 429/403. Every other POST blind-forwards.
-      POST: async ({ request }) => (await guardPublicMutation(request, env as unknown as GuardEnv)) ?? proxy(request),
+      // Workers-RL burst + Turnstile (§24.70). The visit beacon (`/api/visit`,
+      // §24.177) runs an RL-ONLY guard (no Turnstile — it has no widget). A
+      // non-null result short-circuits with 429/403; every other POST forwards.
+      POST: async ({ request }) => {
+        const e = env as unknown as GuardEnv
+        const blocked = (await guardVisitBeacon(request, e)) ?? (await guardPublicMutation(request, e))
+        return blocked ?? proxy(request)
+      },
       PUT: ({ request }) => proxy(request),
       PATCH: ({ request }) => proxy(request),
       DELETE: ({ request }) => proxy(request),

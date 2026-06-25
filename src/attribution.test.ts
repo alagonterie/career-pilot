@@ -12,13 +12,18 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   companyFromEmail,
   ensureMasterPdfLink,
+  fromPath,
   genCode,
   hashIp,
+  MASTER_PDF_SLUG,
   mintLink,
+  mintNamedLink,
   pruneVisitTelemetry,
+  recordFirstPartyVisit,
   recordVisit,
   refHost,
   resolveLink,
+  retireNamedLink,
   uaClass,
 } from './attribution.js';
 import { closeDb, getDb, initTestDb } from './db/connection.js';
@@ -129,15 +134,98 @@ describe('mintLink + resolveLink', () => {
     expect(resolveLink(minted!.code)).toBeNull();
   });
 
-  it('ensureMasterPdfLink returns ONE stable reused token', () => {
+  it('ensureMasterPdfLink is the ONE fixed, named, transparent source (§24.177 D4)', () => {
     const a = ensureMasterPdfLink();
     const b = ensureMasterPdfLink();
     expect(a).not.toBeNull();
+    // Fixed slug (not a random code) + the transparent `?from=` landing path.
+    expect(a!.code).toBe(MASTER_PDF_SLUG);
+    expect(a!.path).toBe('/?from=master_resume_pdf');
     expect(a!.code).toBe(b!.code);
     const count = getDb()
       .prepare("SELECT COUNT(*) AS n FROM attribution_link WHERE artifact_type = 'master_pdf'")
       .get() as { n: number };
     expect(count.n).toBe(1);
+    // It resolves as a known source (so the landing beacon will record it).
+    expect(resolveLink(MASTER_PDF_SLUG)).not.toBeNull();
+  });
+});
+
+describe('fromPath', () => {
+  it('builds the canonical transparent landing path', () => {
+    expect(fromPath('my_linkedin')).toBe('/?from=my_linkedin');
+    expect(fromPath(MASTER_PDF_SLUG)).toBe('/?from=master_resume_pdf');
+  });
+});
+
+describe('mintNamedLink + retireNamedLink (§24.177 D5)', () => {
+  it('mints an owner_source that resolves with the slug AS the code', () => {
+    const out = mintNamedLink('linkedin_profile');
+    expect(out).toEqual({ code: 'linkedin_profile' });
+    const link = resolveLink('linkedin_profile');
+    expect(link!.artifact_type).toBe('owner_source');
+    expect(link!.dest_path).toBe('/');
+  });
+
+  it('rejects an invalid slug, the reserved master slug, and a collision', () => {
+    expect(mintNamedLink('UPPER')).toEqual({ error: 'invalid_slug' });
+    expect(mintNamedLink('has space')).toEqual({ error: 'invalid_slug' });
+    expect(mintNamedLink('x'.repeat(41))).toEqual({ error: 'invalid_slug' });
+    expect(mintNamedLink(MASTER_PDF_SLUG)).toEqual({ error: 'reserved_slug' });
+    expect(mintNamedLink('dupe')).toEqual({ code: 'dupe' });
+    expect(mintNamedLink('dupe')).toEqual({ error: 'slug_taken' });
+  });
+
+  it('retire soft-stops an owner source (keeps the row + history) — not the master/outreach', () => {
+    mintNamedLink('conf_talk');
+    expect(retireNamedLink('conf_talk')).toEqual({ ok: true });
+    // Stops resolving (no NEW attribution) but the row survives.
+    expect(resolveLink('conf_talk')).toBeNull();
+    expect(getDb().prepare('SELECT 1 FROM attribution_link WHERE code = ?').get('conf_talk')).toBeTruthy();
+    // Unknown + non-owner_source links can't be retired here.
+    expect(retireNamedLink('nope')).toEqual({ ok: false, error: 'not_found' });
+    mintLink({ artifactType: 'outreach', company: 'x.com' });
+    expect(retireNamedLink(MASTER_PDF_SLUG)).toEqual({ ok: false, error: 'reserved_slug' });
+  });
+});
+
+describe('recordFirstPartyVisit (§24.177 D2/D3)', () => {
+  it('records a visit only for a KNOWN slug; a spoofed one is ignored', () => {
+    mintNamedLink('my_source');
+    expect(recordFirstPartyVisit({ slug: 'my_source', ip: '203.0.113.7' })).toEqual({ recorded: true });
+    expect(visits()).toHaveLength(1);
+    expect(visits()[0].link_code).toBe('my_source');
+    // Allow-list: an unknown/spoofed ?from= records nothing.
+    expect(recordFirstPartyVisit({ slug: 'totally_made_up', ip: '203.0.113.7' })).toEqual({
+      recorded: false,
+      reason: 'unknown',
+    });
+    expect(visits()).toHaveLength(1);
+  });
+
+  it('dedups a repeat (slug, ip) inside the window; a new IP or a 0 window records', () => {
+    mintNamedLink('src');
+    expect(recordFirstPartyVisit({ slug: 'src', ip: '1.1.1.1' }).recorded).toBe(true);
+    // Same (slug, ip) within the window → suppressed.
+    expect(recordFirstPartyVisit({ slug: 'src', ip: '1.1.1.1' })).toEqual({ recorded: false, reason: 'deduped' });
+    expect(visits()).toHaveLength(1);
+    // A different IP is a distinct visitor → recorded.
+    expect(recordFirstPartyVisit({ slug: 'src', ip: '2.2.2.2' }).recorded).toBe(true);
+    expect(visits()).toHaveLength(2);
+    // Window disabled (0) → no dedup, even for the same (slug, ip).
+    expect(recordFirstPartyVisit({ slug: 'src', ip: '1.1.1.1' }, { dedupWindowSec: 0 }).recorded).toBe(true);
+    expect(visits()).toHaveLength(3);
+  });
+
+  it('honors the telemetry_capture kill switch', () => {
+    mintNamedLink('src');
+    getDb()
+      .prepare(
+        "INSERT INTO preferences (key, value, updated_at) VALUES ('telemetry_capture', 'false', datetime('now'))",
+      )
+      .run();
+    expect(recordFirstPartyVisit({ slug: 'src', ip: '1.1.1.1' })).toEqual({ recorded: false, reason: 'disabled' });
+    expect(visits()).toHaveLength(0);
   });
 });
 

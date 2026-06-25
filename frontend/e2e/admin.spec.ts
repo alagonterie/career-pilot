@@ -115,9 +115,22 @@ const ATTRIBUTION = {
       company: 'anthropic.com',
       recipient: 'jane@anthropic.com',
       createdAt: '2026-06-16T10:00:00.000Z',
+      expiresAt: null,
       clicks: 3,
       uniqueVisitors: 2,
       lastClickAt: '2026-06-16T12:00:00.000Z',
+    },
+    {
+      // §24.177: an owner-minted named source — exposes copy / résumé-PDF / retire.
+      code: 'my_linkedin',
+      artifactType: 'owner_source',
+      company: null,
+      recipient: null,
+      createdAt: '2026-06-24T10:00:00.000Z',
+      expiresAt: null,
+      clicks: 5,
+      uniqueVisitors: 4,
+      lastClickAt: '2026-06-24T12:00:00.000Z',
     },
   ],
   recentVisits: [
@@ -311,7 +324,11 @@ async function stubAdmin(page: Page, available = true): Promise<void> {
   await page.route('**/api/admin/summary', read(SUMMARY))
   await page.route('**/api/admin/pipeline', read(PIPELINE))
   await page.route('**/api/admin/contacts', read(CONTACTS))
-  await page.route('**/api/admin/attribution', read(ATTRIBUTION))
+  await page.route('**/api/admin/attribution', async (route) => {
+    // §24.177: mint/retire POSTs return ok; the GET serves the read-model.
+    if (route.request().method() === 'POST') return route.fulfill(jsonRoute({ ok: true, code: 'x' }, 200))
+    return route.fulfill(available ? jsonRoute(ATTRIBUTION) : jsonRoute({ error: 'not_found' }, 404))
+  })
   await page.route('**/api/admin/sandbox-runs', async (route) => {
     if (route.request().method() === 'POST') return route.fulfill(jsonRoute({ deleted: true }, 200))
     return route.fulfill(available ? jsonRoute(SANDBOX_RUNS) : jsonRoute({ error: 'not_found' }, 404))
@@ -366,9 +383,16 @@ test.describe('/admin — control center (§24.138)', () => {
     expect(clamp.scrollH).toBeGreaterThan(clamp.clientH + 1) // content is clipped
     expect(clamp.clientH).toBeLessThan(96) // ~3 lines, not the full ~7-line message
 
-    // Visitors tab: the attribution browser.
+    // Visitors tab: the attribution browser + the §24.177 minting surface.
     await page.getByTestId('admin-tab-visitors').click()
     await expect(page.getByText('anthropic.com').first()).toBeVisible()
+    await expect(page.getByTestId('visitors-mint-form')).toBeVisible()
+    // An owner source exposes its per-source actions; outreach does not.
+    await expect(page.getByTestId('visitors-copy-my_linkedin')).toBeVisible()
+    await expect(page.getByTestId('visitors-download-my_linkedin')).toHaveAttribute(
+      'href',
+      /\/api\/admin\/attribution\/my_linkedin\/resume\.pdf$/,
+    )
 
     // Sandbox tab: the §24.164 owner runs view (migrated onto DataTable §24.174).
     await page.getByTestId('admin-tab-sandbox').click()
@@ -421,6 +445,18 @@ test.describe('/admin — control center (§24.138)', () => {
     await page.goBack()
     await expect(page).toHaveURL(/[?&]tab=leads/)
     await expect(page.getByTestId('leads-panel')).toBeVisible()
+  })
+
+  test('the Visitors tab mints a named source — POSTs { mint, slug } (§24.177)', async ({ page }) => {
+    await stubAdmin(page)
+    await page.goto('/admin?tab=visitors')
+
+    await expect(page.getByTestId('visitors-mint-form')).toBeVisible()
+    await page.getByTestId('visitors-mint-slug').fill('conference_talk')
+
+    const reqP = page.waitForRequest((r) => r.url().includes('/api/admin/attribution') && r.method() === 'POST')
+    await page.getByTestId('visitors-mint-submit').click()
+    expect((await reqP).postDataJSON()).toEqual({ action: 'mint', slug: 'conference_talk' })
   })
 
   test('a System-tab knob toggle POSTs the flipped value to /api/admin/knobs', async ({ page }) => {

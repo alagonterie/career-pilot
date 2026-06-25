@@ -33,6 +33,7 @@
     "sanitization_pass3_timeout_ms": 20000,
     "sanitization_public_summary_max_chars": 500,
     "sanitization_audit_drop_on_unmatched_company": true,
+    "sanitization_audit_redact_on_unmatched_company": false,
     "sanitization_resanitize_on_application_update": true,
     "kit_entity_redact_enabled": true,
     "kit_entity_redact_model": "claude-sonnet-4-6",
@@ -142,6 +143,7 @@
     "request_telemetry_prune_interval_sec": 3600,
     "visit_telemetry_retention_days": 90,
     "visit_telemetry_prune_interval_sec": 3600,
+    "visit_beacon_dedup_window_sec": 1800,
     "admin_api_enabled": false,
     "llm_fetch_timeout_ms": 20000,
     "llm_pricing_usd_per_mtok": {

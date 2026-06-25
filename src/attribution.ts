@@ -26,7 +26,23 @@ import { readEnvFile } from './env.js';
 import { getConfig } from './get-config.js';
 import { log } from './log.js';
 
-export type ArtifactType = 'outreach' | 'master_pdf';
+export type ArtifactType = 'outreach' | 'master_pdf' | 'owner_source';
+
+/**
+ * A named visit-source slug (§24.177): the transparent `?from=<slug>` token an
+ * owner mints from the Visitors tab. Lowercase/digits/underscore, ≤40 chars — it
+ * IS the `attribution_link.code`, and it lands a visitor in a URL bar, so it
+ * stays human-legible (the whole point) and safe to drop into a `Location`/query.
+ */
+export const VISIT_SLUG_RE = /^[a-z0-9_]{1,40}$/;
+
+/** The single fixed source for the master-résumé download (§24.177 D4). */
+export const MASTER_PDF_SLUG = 'master_resume_pdf';
+
+/** The canonical transparent landing path for a named source (§24.177 D1). */
+export function fromPath(slug: string): string {
+  return `/?from=${encodeURIComponent(slug)}`;
+}
 
 export interface AttributionLink {
   code: string;
@@ -183,26 +199,72 @@ export function mintLink(input: MintLinkInput): { code: string; path: string } |
 }
 
 /**
- * The single stable token for the anonymous master-résumé PDF footer — reused
- * across downloads (the master PDF carries no company, so per-download minting
- * would just inflate cardinality). Mints once, then returns the existing code.
+ * The single fixed token for the master-résumé PDF footer (§24.177 D4). The
+ * master download now attributes through the NAMED, transparent source
+ * `master_resume_pdf` (`?from=master_resume_pdf`) instead of an opaque `/r/<code>`
+ * — so the link in a forwarded résumé is self-describing. Idempotent
+ * (INSERT-OR-IGNORE on the fixed code); returns the `?from=` landing path.
+ * (Already-distributed PDFs carrying an old random `/r/` code still resolve.)
  */
 export function ensureMasterPdfLink(): { code: string; path: string } | null {
   try {
     const db = getDb();
     if (!hasTable(db, 'attribution_link')) return null;
-    const row = db
-      .prepare(
-        `SELECT code FROM attribution_link
-         WHERE artifact_type = 'master_pdf' AND (expires_at IS NULL OR expires_at > ?)
-         ORDER BY created_at DESC LIMIT 1`,
-      )
-      .get(new Date().toISOString()) as { code: string } | undefined;
-    if (row?.code) return { code: row.code, path: `/r/${row.code}` };
-    return mintLink({ artifactType: 'master_pdf' });
+    db.prepare(
+      `INSERT OR IGNORE INTO attribution_link
+         (code, artifact_type, company, recipient, application_id, dest_path, created_at, expires_at)
+       VALUES (?, 'master_pdf', NULL, NULL, NULL, '/', ?, NULL)`,
+    ).run(MASTER_PDF_SLUG, new Date().toISOString());
+    return { code: MASTER_PDF_SLUG, path: fromPath(MASTER_PDF_SLUG) };
   } catch (err) {
     log.warn('attribution: ensureMasterPdfLink failed', { err });
     return null;
+  }
+}
+
+/**
+ * Mint an owner-named visit source (§24.177 D5) — the Visitors-tab "new source"
+ * write. Validates the slug, rejects the reserved master slug + any collision,
+ * then inserts an `owner_source` row reusable as both a `?from=<slug>` link and a
+ * handed-out résumé PDF. Never throws.
+ */
+export function mintNamedLink(slug: string): { code: string } | { error: string } {
+  if (typeof slug !== 'string' || !VISIT_SLUG_RE.test(slug)) return { error: 'invalid_slug' };
+  if (slug === MASTER_PDF_SLUG) return { error: 'reserved_slug' };
+  try {
+    const db = getDb();
+    if (!hasTable(db, 'attribution_link')) return { error: 'unavailable' };
+    if (db.prepare('SELECT 1 FROM attribution_link WHERE code = ?').get(slug)) return { error: 'slug_taken' };
+    db.prepare(
+      `INSERT INTO attribution_link
+         (code, artifact_type, company, recipient, application_id, dest_path, created_at, expires_at)
+       VALUES (?, 'owner_source', NULL, NULL, NULL, '/', ?, NULL)`,
+    ).run(slug, new Date().toISOString());
+    return { code: slug };
+  } catch (err) {
+    log.warn('attribution: mintNamedLink failed', { slug, err });
+    return { error: 'mint_failed' };
+  }
+}
+
+/**
+ * Retire an owner-named source (§24.177 D5) — a soft stop: set `expires_at=now`
+ * so it stops attributing NEW visits but keeps the row + its historical clicks.
+ * Owner-sources only (never the auto-minted master/outreach links). Never throws.
+ */
+export function retireNamedLink(slug: string): { ok: boolean; error?: string } {
+  if (typeof slug !== 'string' || !VISIT_SLUG_RE.test(slug)) return { ok: false, error: 'invalid_slug' };
+  if (slug === MASTER_PDF_SLUG) return { ok: false, error: 'reserved_slug' };
+  try {
+    const db = getDb();
+    if (!hasTable(db, 'attribution_link')) return { ok: false, error: 'unavailable' };
+    const res = db
+      .prepare("UPDATE attribution_link SET expires_at = ? WHERE code = ? AND artifact_type = 'owner_source'")
+      .run(new Date().toISOString(), slug);
+    return res.changes > 0 ? { ok: true } : { ok: false, error: 'not_found' };
+  } catch (err) {
+    log.warn('attribution: retireNamedLink failed', { slug, err });
+    return { ok: false, error: 'retire_failed' };
   }
 }
 
@@ -254,6 +316,62 @@ export function recordVisit(input: RecordVisitInput): void {
     });
   } catch (err) {
     log.warn('attribution: recordVisit failed', { linkCode: input.linkCode, err });
+  }
+}
+
+/**
+ * Record one FIRST-PARTY visit from the landing-page beacon (§24.177 D2/D3).
+ * Unlike the `/r/<code>` redirect, the slug arrives in the URL bar, so this is
+ * the spam-facing path — it is hardened two ways:
+ *   - ALLOW-LIST: record only when `slug` resolves to a known, non-expired
+ *     attribution_link. A spoofed `?from=anything` resolves to nothing → ignored
+ *     (treated as a direct visit, no row, no injectable sources).
+ *   - WINDOWED WRITE-DEDUP per (slug, ip_hash): suppress a repeat row inside the
+ *     `visit_beacon_dedup_window_sec` window. THE load-bearing guard — collapses
+ *     refresh-spam OR scripted endpoint-hammering to one row per window (a client
+ *     guard is bypassable by curling the endpoint directly). No spend is at stake;
+ *     this just keeps the click counts honest + storage bounded.
+ * Best-effort, never throws; honors `telemetry_capture`.
+ */
+export function recordFirstPartyVisit(
+  input: {
+    slug?: string | null;
+    ip?: string | null;
+    country?: string | null;
+    userAgent?: string | null;
+    referrer?: string | null;
+  },
+  opts: { dedupWindowSec?: number } = {},
+): { recorded: boolean; reason?: 'unknown' | 'deduped' | 'disabled' | 'error' } {
+  try {
+    const db = getDb();
+    if (!getConfig<boolean>(db, 'telemetry_capture', true)) return { recorded: false, reason: 'disabled' };
+    const link = resolveLink(input.slug);
+    if (!link) return { recorded: false, reason: 'unknown' };
+
+    const windowSec = opts.dedupWindowSec ?? getConfig<number>(db, 'visit_beacon_dedup_window_sec', 1800);
+    const ipHash = hashIp(input.ip);
+    if (ipHash && windowSec > 0 && hasTable(db, 'visit_telemetry')) {
+      const since = new Date(Date.now() - windowSec * 1000).toISOString();
+      const dup = db
+        .prepare('SELECT 1 FROM visit_telemetry WHERE link_code = ? AND ip_hash = ? AND ts >= ? LIMIT 1')
+        .get(link.code, ipHash, since);
+      if (dup) return { recorded: false, reason: 'deduped' };
+    }
+
+    recordVisit({
+      linkCode: link.code,
+      path: '/',
+      ip: input.ip,
+      country: input.country,
+      userAgent: input.userAgent,
+      referrer: input.referrer,
+      details: { src: 'beacon' },
+    });
+    return { recorded: true };
+  } catch (err) {
+    log.warn('attribution: recordFirstPartyVisit failed', { slug: input.slug, err });
+    return { recorded: false, reason: 'error' };
   }
 }
 

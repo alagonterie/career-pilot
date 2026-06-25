@@ -17,6 +17,7 @@ import { useSiteLifecycle } from '~/lib/use-lifecycle'
 import { usePipeline } from '~/lib/use-pipeline'
 import { useReveal } from '~/lib/use-reveal'
 import { useTelemetry } from '~/lib/use-telemetry'
+import { useVisitBeacon } from '~/lib/use-visit-beacon'
 import { workProfile } from '~/lib/work-profile'
 import { cn } from '~/lib/utils'
 
@@ -47,6 +48,9 @@ function Home() {
   // Exclude turns: this 5-row teaser shows actions, not the per-turn cost seals
   // (those are the /live story) — so a stretch of turns can't blank the ticker.
   const { events, status, count } = useActivityStream(API_BASE, { exclude: ['turn'] })
+  // §24.177: if this load carried a transparent `?from=<slug>` source, fire the
+  // first-party visit beacon once (client-only; the server allow-lists the slug).
+  useVisitBeacon(API_BASE)
   const { data: pipeline, status: pipelineStatus } = usePipeline(API_BASE)
   const { data: telemetry, status: telemetryStatus } = useTelemetry(API_BASE)
   const apps = pipeline?.applications ?? []

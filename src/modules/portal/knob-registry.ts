@@ -407,6 +407,15 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     integer: true,
     note: 'How often the host sweep prunes aged visit_telemetry rows.',
   },
+  visit_beacon_dedup_window_sec: {
+    type: 'number',
+    group: 'telemetry',
+    label: 'Visit-beacon dedup window (s)',
+    min: 0,
+    max: 86_400,
+    integer: true,
+    note: 'Window for the §24.177 first-party visit beacon to collapse a repeat (slug, IP) to one row — the anti-spam guard. 0 disables dedup.',
+  },
 
   // ── health (§24.68) ──
   health_check_interval_sec: {

@@ -91,6 +91,12 @@ function PrivacyPage() {
               sending a message.
             </p>
             <p className="leading-relaxed text-foreground/90">
+              Some links to the site carry a short, human-readable label of where they came from — for example{' '}
+              <code className="font-mono text-sm">?from=my_linkedin</code>, visible right in your address bar — so I can
+              tell which channel a visit came through. It’s recorded with the visit below and visible only to me; a
+              private one-to-one outreach email uses a short unique code instead. There are no other trackers.
+            </p>
+            <p className="leading-relaxed text-foreground/90">
               When you run the “watch it work” simulator, the run is saved — that’s how you get a shareable result, and
               how the abuse limits work. It keeps the company, role, and job description you enter, a redacted activity
               trace, the run’s cost and runtime, and your IP address; it’s stored only in this service’s private

@@ -335,6 +335,7 @@ describe('buildDevKnobs', () => {
       'request_telemetry_prune_interval_sec',
       'request_telemetry_retention_days',
       'telemetry_capture',
+      'visit_beacon_dedup_window_sec',
       'visit_telemetry_prune_interval_sec',
       'visit_telemetry_retention_days',
     ]);

@@ -26,6 +26,7 @@ export interface GuardEnv {
   TURNSTILE_HOSTNAME?: string
   SANDBOX_BURST?: RateLimit
   CONTACT_BURST?: RateLimit
+  VISIT_BURST?: RateLimit
 }
 
 /** Per-path guard rule: which RL binding + the expected Turnstile action. */
@@ -113,5 +114,30 @@ export async function guardPublicMutation(request: Request, env: GuardEnv): Prom
       })
   }
 
+  return null
+}
+
+/**
+ * Guard the first-party visit beacon (`POST /api/visit`, §24.177 D3). RL-ONLY —
+ * deliberately NO Turnstile: the beacon fires automatically on a normal page load
+ * (no widget, no token), so challenging it would reject every legit visit. A
+ * per-IP Workers-RL burst sheds floods at the edge; the load-bearing honesty
+ * guard is the backend's windowed (slug, ip_hash) write-dedup. Returns a 429 to
+ * short-circuit, or null to forward. Fail-open if the binding is absent
+ * (local/test) — there's no spend at stake on this path.
+ */
+export async function guardVisitBeacon(request: Request, env: GuardEnv): Promise<Response | null> {
+  if (request.method !== 'POST') return null
+  if (new URL(request.url).pathname !== '/api/visit') return null
+  const limiter = env.VISIT_BURST
+  if (!limiter) return null
+  const ip = request.headers.get('cf-connecting-ip') ?? '0.0.0.0'
+  try {
+    const { success } = await limiter.limit({ key: ip })
+    if (!success)
+      return jsonResponse(429, { error: 'rate_limited', message: 'Too many requests — try again in a minute.' })
+  } catch {
+    /* fail-open on limiter error */
+  }
   return null
 }

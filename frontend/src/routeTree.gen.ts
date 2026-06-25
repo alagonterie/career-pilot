@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as opsRouteRouteImport } from './routes/(ops)/route'
 import { Route as marketingRouteRouteImport } from './routes/(marketing)/route'
 import { Route as marketingIndexRouteImport } from './routes/(marketing)/index'
+import { Route as VSplatRouteImport } from './routes/v/$'
 import { Route as RSplatRouteImport } from './routes/r/$'
 import { Route as ApiSplatRouteImport } from './routes/api/$'
 import { Route as opsPipelineRouteImport } from './routes/(ops)/pipeline'
@@ -46,6 +47,11 @@ const marketingIndexRoute = marketingIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => marketingRouteRoute,
+} as any)
+const VSplatRoute = VSplatRouteImport.update({
+  id: '/v/$',
+  path: '/v/$',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const RSplatRoute = RSplatRouteImport.update({
   id: '/r/$',
@@ -172,6 +178,7 @@ export interface FileRoutesByFullPath {
   '/pipeline': typeof opsPipelineRoute
   '/api/$': typeof ApiSplatRoute
   '/r/$': typeof RSplatRoute
+  '/v/$': typeof VSplatRoute
   '/': typeof marketingIndexRoute
   '/simulator/': typeof marketingSimulatorIndexRoute
   '/watch/': typeof marketingWatchIndexRoute
@@ -196,6 +203,7 @@ export interface FileRoutesByTo {
   '/pipeline': typeof opsPipelineRoute
   '/api/$': typeof ApiSplatRoute
   '/r/$': typeof RSplatRoute
+  '/v/$': typeof VSplatRoute
   '/': typeof marketingIndexRoute
   '/simulator': typeof marketingSimulatorIndexRoute
   '/watch': typeof marketingWatchIndexRoute
@@ -223,6 +231,7 @@ export interface FileRoutesById {
   '/(ops)/pipeline': typeof opsPipelineRoute
   '/api/$': typeof ApiSplatRoute
   '/r/$': typeof RSplatRoute
+  '/v/$': typeof VSplatRoute
   '/(marketing)/': typeof marketingIndexRoute
   '/(marketing)/simulator/': typeof marketingSimulatorIndexRoute
   '/(marketing)/watch/': typeof marketingWatchIndexRoute
@@ -249,6 +258,7 @@ export interface FileRouteTypes {
     | '/pipeline'
     | '/api/$'
     | '/r/$'
+    | '/v/$'
     | '/'
     | '/simulator/'
     | '/watch/'
@@ -273,6 +283,7 @@ export interface FileRouteTypes {
     | '/pipeline'
     | '/api/$'
     | '/r/$'
+    | '/v/$'
     | '/'
     | '/simulator'
     | '/watch'
@@ -299,6 +310,7 @@ export interface FileRouteTypes {
     | '/(ops)/pipeline'
     | '/api/$'
     | '/r/$'
+    | '/v/$'
     | '/(marketing)/'
     | '/(marketing)/simulator/'
     | '/(marketing)/watch/'
@@ -311,6 +323,7 @@ export interface RootRouteChildren {
   opsRouteRoute: typeof opsRouteRouteWithChildren
   ApiSplatRoute: typeof ApiSplatRoute
   RSplatRoute: typeof RSplatRoute
+  VSplatRoute: typeof VSplatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -335,6 +348,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof marketingIndexRouteImport
       parentRoute: typeof marketingRouteRoute
+    }
+    '/v/$': {
+      id: '/v/$'
+      path: '/v/$'
+      fullPath: '/v/$'
+      preLoaderRoute: typeof VSplatRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/r/$': {
       id: '/r/$'
@@ -551,6 +571,7 @@ const rootRouteChildren: RootRouteChildren = {
   opsRouteRoute: opsRouteRouteWithChildren,
   ApiSplatRoute: ApiSplatRoute,
   RSplatRoute: RSplatRoute,
+  VSplatRoute: VSplatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

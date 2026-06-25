@@ -31,7 +31,15 @@
 import { createHash } from 'crypto';
 import http from 'http';
 
-import { ensureMasterPdfLink, recordVisit, resolveLink } from '../../attribution.js';
+import {
+  ensureMasterPdfLink,
+  fromPath,
+  MASTER_PDF_SLUG,
+  recordFirstPartyVisit,
+  recordVisit,
+  resolveLink,
+  VISIT_SLUG_RE,
+} from '../../attribution.js';
 import { getDb } from '../../db/connection.js';
 import { countRunningContainers } from '../../container-runtime.js';
 import { getActiveSessions, getRunningSessions } from '../../db/sessions.js';
@@ -44,6 +52,7 @@ import { loadState, simStatePath } from '../career-pilot/recruiter-sim/runner.js
 import { validateAccessJwt } from './access-jwt.js';
 import {
   adminEnabled,
+  applyAdminAttributionWrite,
   applyAdminControl,
   applyAdminKnobWrite,
   applyAdminLeadsWrite,
@@ -289,10 +298,11 @@ async function handleResumePdf(res: http.ServerResponse, cors: Record<string, st
     return;
   }
   const url = getConfig<string>(getDb(), 'portal_public_url', '');
-  // §24.74: route the footer's host link through a stable /r/<code> token so a
-  // FORWARDED master résumé attributes its click-throughs (the displayed host
-  // stays bare). Only when a public URL is configured (else there's no footer
-  // link to tokenize); best-effort — a mint failure falls back to the plain host.
+  // §24.177 D4: route the footer's host link through the NAMED, transparent
+  // `?from=master_resume_pdf` source so a FORWARDED master résumé attributes its
+  // click-throughs (the displayed host stays bare; the tracked href is the query
+  // form, not an opaque /r/<code>). Only when a public URL is configured; best-
+  // effort — a mint failure falls back to the plain host.
   let footerLinkUrl: string | undefined;
   if (url) {
     const link = ensureMasterPdfLink();
@@ -345,6 +355,38 @@ function handleAttributionRedirect(
 }
 
 /**
+ * `POST /api/visit` (§24.177 D2) — the first-party landing-page beacon. The page
+ * fires it once after hydration when it loaded with `?from=<slug>`; we record a
+ * visit ONLY when the slug resolves to a known owner source (allow-list), with a
+ * windowed (slug, ip_hash) write-dedup as the anti-spam guard. Public (owner-
+ * gated nowhere — anyone can visit) but harmless: no spend, known slugs only, no
+ * row for a spoofed `?from=`. The CF signals (IP, country) arrive as the same
+ * `x-cp-*` headers the `/r/*` proxy sets; the visitor stays anonymous. Always
+ * 200s with `{ recorded }` (a beacon doesn't surface failures to the page).
+ */
+async function handleVisitBeacon(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  cors: Record<string, string>,
+): Promise<void> {
+  let body: { from?: unknown };
+  try {
+    body = ((await readJsonBody(req)) ?? {}) as { from?: unknown };
+  } catch {
+    return json(res, 400, { error: 'invalid JSON body' }, cors);
+  }
+  const h = req.headers;
+  const out = recordFirstPartyVisit({
+    slug: typeof body.from === 'string' ? body.from : null,
+    ip: (h['x-cp-client-ip'] as string | undefined) ?? null,
+    country: (h['x-cp-country'] as string | undefined) ?? null,
+    userAgent: (h['user-agent'] as string | undefined) ?? null,
+    referrer: (h['referer'] as string | undefined) ?? null,
+  });
+  json(res, 200, { ok: true, recorded: out.recorded }, cors);
+}
+
+/**
  * `GET /api/admin/attribution` (§24.74 D5) — the owner-only attribution browser:
  * minted `/r/<code>` links joined to their visit_telemetry clicks + the recent
  * visit feed. Reachability is gated upstream (`adminEnabled()` in the dispatch);
@@ -352,6 +394,61 @@ function handleAttributionRedirect(
  */
 function handleAdminAttribution(res: http.ServerResponse, cors: Record<string, string>): void {
   json(res, 200, buildAttributionReport(getDb()), cors);
+}
+
+/**
+ * `POST /api/admin/attribution` (§24.177 D5) — mint or retire an owner-named visit
+ * source. Owner-only (gated upstream by adminEnabled()). `{ action:'mint', slug }`
+ * / `{ action:'retire', slug }`; the slug rules + reserved/collision guards live
+ * in the attribution module.
+ */
+async function handleAdminAttributionWrite(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  cors: Record<string, string>,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch {
+    return json(res, 400, { error: 'invalid JSON body' }, cors);
+  }
+  const out = applyAdminAttributionWrite(getDb(), body);
+  json(res, out.status, out.body, cors);
+}
+
+/**
+ * `GET /api/admin/attribution/<slug>/resume.pdf` (§24.177 D6) — render the MASTER
+ * résumé on demand with the footer link pointed at `?from=<slug>`, so an owner can
+ * hand out a per-source résumé PDF whose click-throughs attribute to that source.
+ * Owner-only (gated upstream). No storage — deterministic from the slug + current
+ * master profile. 404 when the slug is unknown or no master profile is composed.
+ */
+async function handleAdminResumePdf(
+  res: http.ServerResponse,
+  slug: string,
+  cors: Record<string, string>,
+): Promise<void> {
+  if (!VISIT_SLUG_RE.test(slug)) return json(res, 400, { error: 'invalid_slug' }, cors);
+  let link = resolveLink(slug);
+  if (!link && slug === MASTER_PDF_SLUG) {
+    ensureMasterPdfLink();
+    link = resolveLink(slug);
+  }
+  if (!link) return json(res, 404, { error: 'unknown_source' }, cors);
+  const { profile, identity } = getPublicProfile();
+  if (!profile) return json(res, 404, { error: 'no_profile' }, cors);
+  const url = getConfig<string>(getDb(), 'portal_public_url', '');
+  const footerLinkUrl = url ? url.replace(/\/$/, '') + fromPath(slug) : undefined;
+  const buf = await renderResumePdf(profile, identity, masterFooter(url), url, { footerLinkUrl });
+  res.writeHead(200, {
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': `attachment; filename="resume-${slug}.pdf"`,
+    'Content-Length': String(buf.length),
+    'Cache-Control': 'no-store',
+    ...cors,
+  });
+  res.end(buf);
 }
 
 // ── §24.138: the /admin control-center read + write surface ───────────────────
@@ -1105,6 +1202,7 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
     if (method === 'GET' && path === '/api/observability') return await handleObservability(res, cors);
     if (method === 'GET' && path === '/api/architecture') return handleArchitecture(res, cors);
     if (method === 'GET' && path === '/api/system-status') return handleSystemStatus(res, cors);
+    if (method === 'POST' && path === '/api/visit') return await handleVisitBeacon(req, res, cors);
     if (method === 'POST' && path === '/api/contact') return await handleContact(req, res, cors);
     if (method === 'POST' && path === '/api/sanitize-demo') return await handleSanitizeDemo(req, res, cors);
     if (method === 'POST' && path === '/api/simulator') return await handleSimulatorStart(req, res, cors);
@@ -1129,7 +1227,15 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
     // knobs/destructive ops here by design.
     if (path.startsWith('/api/admin/')) {
       if (!adminEnabled()) return json(res, 404, { error: 'not_found', path }, cors);
+      // §24.177 D6: a per-source résumé PDF — `/api/admin/attribution/<slug>/resume.pdf`
+      // (checked before the exact-match read below; the slug is the named source).
+      if (method === 'GET' && path.startsWith('/api/admin/attribution/') && path.endsWith('/resume.pdf')) {
+        const slug = path.slice('/api/admin/attribution/'.length, -'/resume.pdf'.length);
+        if (slug.length > 0 && !slug.includes('/')) return await handleAdminResumePdf(res, slug, cors);
+      }
       if (method === 'GET' && path === '/api/admin/attribution') return handleAdminAttribution(res, cors);
+      if (method === 'POST' && path === '/api/admin/attribution')
+        return await handleAdminAttributionWrite(req, res, cors);
       if (method === 'GET' && path === '/api/admin/summary') return await handleAdminSummary(res, cors);
       if (method === 'GET' && path === '/api/admin/pipeline') return handleAdminPipeline(res, cors);
       if (method === 'GET' && path === '/api/admin/contacts') return handleAdminContacts(res, cors);

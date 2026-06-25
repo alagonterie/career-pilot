@@ -146,7 +146,9 @@ function AdminPage() {
             <PipelinePanel rows={pipeline.data?.applications ?? []} stageCounts={pipeline.data?.stageCounts ?? {}} />
           ) : null}
           {tab === 'leads' ? <LeadsPanel data={leads.data ?? null} baseUrl={API_BASE} onSaved={leads.refresh} /> : null}
-          {tab === 'visitors' ? <VisitorsPanel data={attribution.data} /> : null}
+          {tab === 'visitors' ? (
+            <VisitorsPanel data={attribution.data} baseUrl={API_BASE} onSaved={attribution.refresh} />
+          ) : null}
           {tab === 'contacts' ? <ContactsPanel contacts={contacts.data?.contacts ?? []} /> : null}
           {tab === 'sandbox' ? (
             <SandboxRunsPanel

@@ -16,6 +16,8 @@ export interface AdminAttributionLink {
   /** Owner-private (the address we cold-emailed) — only ever served behind the admin gate. */
   recipient: string | null
   createdAt: string
+  /** Non-null once retired (§24.177): a soft-stopped owner source keeps its history. */
+  expiresAt: string | null
   clicks: number
   uniqueVisitors: number
   lastClickAt: string | null
@@ -50,8 +52,16 @@ export function useAdminAttribution(baseUrl: string, pollMs = 8000) {
 /** A compact, human label for an artifact type (the link's source). */
 export function artifactLabel(artifactType: string): string {
   if (artifactType === 'outreach') return 'Outreach email'
-  if (artifactType === 'master_pdf') return 'Résumé PDF'
+  if (artifactType === 'master_pdf') return 'Master résumé'
+  if (artifactType === 'owner_source') return 'Named source'
   return artifactType
+}
+
+export type AdminAttributionWrite = { action: 'mint'; slug: string } | { action: 'retire'; slug: string }
+
+/** Mint or retire an owner-named visit source (§24.177 D5). Owner-only (404 elsewhere). */
+export function postAdminAttribution(baseUrl: string, body: AdminAttributionWrite): Promise<AdminWriteResult> {
+  return postAdmin(baseUrl, body, '/api/admin/attribution')
 }
 
 // ── §24.138: the control-center panels (Overview / Pipeline / Contacts / System) ──

@@ -21,6 +21,7 @@ import path from 'path';
 
 import type Database from 'better-sqlite3';
 
+import { mintNamedLink, retireNamedLink } from '../../attribution.js';
 import { getDb, hasTable } from '../../db/connection.js';
 import { getConfig } from '../../get-config.js';
 import { log } from '../../log.js';
@@ -74,6 +75,8 @@ export interface AttributionLinkRow {
   /** Owner-private (the address we cold-emailed) — only ever served behind the admin gate. */
   recipient: string | null;
   createdAt: string;
+  /** Non-null once retired (§24.177): a soft-stopped owner source keeps its history. */
+  expiresAt: string | null;
   clicks: number;
   uniqueVisitors: number;
   lastClickAt: string | null;
@@ -117,6 +120,7 @@ export function buildAttributionReport(db: Database.Database, opts: { recentLimi
   const links = db
     .prepare(
       `SELECT l.code, l.artifact_type AS artifactType, l.company, l.recipient, l.created_at AS createdAt,
+              l.expires_at AS expiresAt,
               COUNT(v.id) AS clicks, COUNT(DISTINCT v.ip_hash) AS uniqueVisitors, MAX(v.ts) AS lastClickAt
        FROM attribution_link l
        LEFT JOIN visit_telemetry v ON v.link_code = l.code
@@ -159,6 +163,41 @@ export function buildAttributionReport(db: Database.Database, opts: { recentLimi
     summary: { totalLinks: links.length, totalClicks, totalUniqueVisitors, byArtifact, topCountries },
   };
 }
+
+/**
+ * §24.177 D5 — the Visitors-tab write: mint or retire an owner-named visit source.
+ * The first writer on this surface (the rest of /admin is read + knobs). Validates
+ * the action + slug here; the table ops (slug rules, reserved-slug + collision
+ * guards, soft-retire) live in attribution.ts. Reachability is gated upstream by
+ * adminEnabled(). Maps the module's error codes to a 400 with a human message.
+ */
+export function applyAdminAttributionWrite(_db: Database.Database, raw: unknown): { status: number; body: unknown } {
+  const b = (raw ?? {}) as { action?: unknown; slug?: unknown };
+  const slug = typeof b.slug === 'string' ? b.slug.trim() : '';
+
+  if (b.action === 'mint') {
+    const out = mintNamedLink(slug);
+    if ('error' in out)
+      return { status: 400, body: { error: out.error, message: MINT_ERRORS[out.error] ?? out.error } };
+    return { status: 200, body: { ok: true, code: out.code } };
+  }
+  if (b.action === 'retire') {
+    const out = retireNamedLink(slug);
+    if (!out.ok) return { status: 400, body: { error: out.error, message: MINT_ERRORS[out.error ?? ''] ?? out.error } };
+    return { status: 200, body: { ok: true } };
+  }
+  return { status: 400, body: { error: 'bad_action', message: "action must be 'mint' or 'retire'" } };
+}
+
+const MINT_ERRORS: Record<string, string> = {
+  invalid_slug: 'A source name is lowercase letters, digits, and underscores (max 40).',
+  reserved_slug: 'That name is reserved for the master résumé source.',
+  slug_taken: 'A source with that name already exists.',
+  not_found: 'No owner source with that name.',
+  unavailable: 'The attribution store is unavailable.',
+  mint_failed: 'Could not create the source — try again.',
+  retire_failed: 'Could not retire the source — try again.',
+};
 
 // ── §24.138: the control-center knob surface (registry − ADMIN_DENY) ──────────
 
