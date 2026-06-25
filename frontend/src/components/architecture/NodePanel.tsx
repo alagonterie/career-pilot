@@ -1,4 +1,4 @@
-import { motion } from 'motion/react'
+import { motion, useReducedMotion } from 'motion/react'
 import * as React from 'react'
 
 import { AgentRef } from '~/components/AgentRef'
@@ -147,6 +147,12 @@ export function NodePanel({
 }) {
   const overlayRef = React.useRef<HTMLDivElement>(null)
   const panelRef = React.useRef<HTMLDivElement>(null)
+  // §24.172: the content opacity fade below must honor reduced-motion. The root
+  // `MotionConfig reducedMotion="user"` only suppresses transform/layout (the
+  // `layoutId` grow), NOT opacity — so without this the content still fades in
+  // for reduced-motion users, and an axe run that samples mid-fade reads every
+  // (settled-AA-bright) token at ~35% opacity as a false contrast violation.
+  const reduce = useReducedMotion()
 
   useDialog(node != null, onClose, panelRef, overlayRef)
 
@@ -188,8 +194,10 @@ export function NodePanel({
         className="relative z-10 max-h-[85vh] w-full overflow-y-auto rounded-t-2xl border border-border bg-card p-6 shadow-xl focus:outline-none sm:max-w-lg sm:rounded-lg"
       >
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1, transition: { delay: 0.2, duration: 0.2 } }}
+          // Reduced motion: mount opaque (no fade) — `initial={false}` snaps to
+          // the animate state. Otherwise fade in after the grow settles (§24.172).
+          initial={reduce ? false : { opacity: 0 }}
+          animate={{ opacity: 1, transition: reduce ? { duration: 0 } : { delay: 0.2, duration: 0.2 } }}
           exit={{ opacity: 0, transition: { duration: 0.1 } }}
           className="flex flex-col gap-6"
         >
