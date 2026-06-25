@@ -41,7 +41,12 @@ export function useVisitBeacon(apiBase: string): void {
     void fetch(`${apiBase}/api/visit`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ from: slug }),
+      // The beacon is a fetch FROM the portal page, so its HTTP Referer is the
+      // portal itself — useless for attribution. Send document.referrer (the page
+      // the visitor actually navigated FROM, e.g. a LinkedIn profile) so the
+      // backend records the real upstream source; empty (a direct/pasted nav, or
+      // a referrer the source stripped) → recorded as "direct".
+      body: JSON.stringify({ from: slug, ref: document.referrer || undefined }),
       keepalive: true,
     }).catch(() => {
       /* a beacon must never surface a failure to the page */

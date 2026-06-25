@@ -41,6 +41,25 @@ describe('useVisitBeacon', () => {
     expect(JSON.parse(init.body)).toEqual({ from: 'my_linkedin' })
   })
 
+  it('sends document.referrer as `ref` (the real upstream source, not the self-referer)', () => {
+    withSearch('?from=my_linkedin')
+    Object.defineProperty(document, 'referrer', { value: 'https://www.linkedin.com/in/someone', configurable: true })
+    const f = fetchSpy()
+    renderHook(() => useVisitBeacon(API))
+    expect(JSON.parse(f.mock.calls[0][1].body)).toEqual({
+      from: 'my_linkedin',
+      ref: 'https://www.linkedin.com/in/someone',
+    })
+    Object.defineProperty(document, 'referrer', { value: '', configurable: true })
+  })
+
+  it('omits `ref` when there is no referrer (direct / pasted nav)', () => {
+    withSearch('?from=my_linkedin')
+    const f = fetchSpy() // jsdom document.referrer defaults to ''
+    renderHook(() => useVisitBeacon(API))
+    expect(JSON.parse(f.mock.calls[0][1].body)).toEqual({ from: 'my_linkedin' })
+  })
+
   it('does NOT fire when there is no ?from=', () => {
     const f = fetchSpy()
     renderHook(() => useVisitBeacon(API))

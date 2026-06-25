@@ -361,7 +361,10 @@ function handleAttributionRedirect(
  * windowed (slug, ip_hash) write-dedup as the anti-spam guard. Public (owner-
  * gated nowhere — anyone can visit) but harmless: no spend, known slugs only, no
  * row for a spoofed `?from=`. The CF signals (IP, country) arrive as the same
- * `x-cp-*` headers the `/r/*` proxy sets; the visitor stays anonymous. Always
+ * `x-cp-*` headers the `/r/*` proxy sets; the visitor stays anonymous. The
+ * referrer comes from the body (`document.referrer`), NOT the HTTP `Referer`
+ * header — the beacon is a fetch FROM the portal page, so its header referer is
+ * the portal itself; `document.referrer` is the real upstream source. Always
  * 200s with `{ recorded }` (a beacon doesn't surface failures to the page).
  */
 async function handleVisitBeacon(
@@ -369,9 +372,9 @@ async function handleVisitBeacon(
   res: http.ServerResponse,
   cors: Record<string, string>,
 ): Promise<void> {
-  let body: { from?: unknown };
+  let body: { from?: unknown; ref?: unknown };
   try {
-    body = ((await readJsonBody(req)) ?? {}) as { from?: unknown };
+    body = ((await readJsonBody(req)) ?? {}) as { from?: unknown; ref?: unknown };
   } catch {
     return json(res, 400, { error: 'invalid JSON body' }, cors);
   }
@@ -381,7 +384,9 @@ async function handleVisitBeacon(
     ip: (h['x-cp-client-ip'] as string | undefined) ?? null,
     country: (h['x-cp-country'] as string | undefined) ?? null,
     userAgent: (h['user-agent'] as string | undefined) ?? null,
-    referrer: (h['referer'] as string | undefined) ?? null,
+    // The client-sent document.referrer (see the header note above); empty/absent
+    // → null ("direct"). Never the self-referential HTTP `Referer` header.
+    referrer: typeof body.ref === 'string' && body.ref ? body.ref : null,
   });
   json(res, 200, { ok: true, recorded: out.recorded }, cors);
 }
