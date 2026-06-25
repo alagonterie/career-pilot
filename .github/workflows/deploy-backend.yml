@@ -31,7 +31,11 @@ on:
       - '.github/workflows/deploy-backend.yml'
 
 concurrency:
-  group: deploy-backend-${{ github.ref }}
+  # Share the `dev-deploy` group with deploy-frontend so the dev backend + frontend
+  # deploys SERIALIZE against the one `dev` GitHub Environment (§24.170) instead of
+  # racing it "inactive" (both set `environment: dev`). This workflow only ever
+  # provisions the dev box, so the group is fixed.
+  group: dev-deploy
   cancel-in-progress: false # never interrupt an in-flight provision
 
 permissions:
