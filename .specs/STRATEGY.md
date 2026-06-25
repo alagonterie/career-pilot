@@ -7433,6 +7433,45 @@ Tie-break by highest `rules_score`. **One lead per application**: a guard (`SELE
 
 ---
 
+## §24.177 — Transparent visit attribution: owner-minted named sources + `?from=<slug>` (SPEC; build deferred)
+
+**Origin** (owner idea, 2026-06-25; spec'd now, build next session). Today's attribution links are opaque `/r/<random>` short codes (§24.74), **auto-minted only** (outreach footer + master-PDF footer). The owner wants (1) **friendlier, more transparent** visit URLs than `/r/rNr1xfxJ`, and (2) the ability to **mint named visit sources** from the `/admin` Visitors tab — each usable *both* as a raw link to post (LinkedIn, etc.) *and* as a résumé PDF to hand out, both attributing to that source — so LinkedIn-profile traffic, a handed-out résumé, and the master download are distinguishable. **Most of the infra already exists:** the `/r/` redirect resolves *any* `code` string (a readable code Just Works); the résumé PDF already hides the tracked href behind clean display text (`footerElement`/`trackedHref`); a per-source PDF is just `renderResumePdf(..., { footerLinkUrl })`; old links keep working for free. So this is a minting UX + a transparent URL/recording path + a disclosure refresh — **migration-free** (named codes are data-only; retire reuses the existing `expires_at`).
+
+**D1 — URL scheme: `?from=<slug>` canonical; `/v/<slug>` optional short alias; `/r/<code>` legacy.** The redirect always lands on `/` (never external), so:
+- **`<portal>/?from=<slug>`** — the canonical posted/embedded link: transparent + self-describing (the visitor sees the label in their bar). This is the evolution the schema reserved (`visit_telemetry.link_code` nullable "for a future first-party page-view beacon"; `details_json` reserved).
+- **`/v/<slug>`** — an *optional* short alias that is a **pure 302 to `/?from=<slug>`** (it does NOT record — the landing beacon is the sole recorder). For a tidy short link where characters are tight.
+- **`/r/<code>`** — legacy, **untouched**: resolves → records-at-redirect → 302s to `/`. Back-compat is free; old links keep resolving.
+- `<slug>`: validated `^[a-z0-9_]{1,40}$`, unique (it's the `attribution_link.code`).
+
+**D2 — Recording: a first-party visit beacon, known-slugs only.** A new owner-public endpoint (e.g. `POST /api/visit`) records into `visit_telemetry` when the landing page loads with `?from=<slug>`. **Allow-list:** record only when `<slug>` resolves to a known, non-expired `attribution_link`; an unknown/spoofed `?from=anything` is ignored (no row — treated as direct). Same fields the redirect captures (ip_hash, country, ua_class, referrer host, path). The client fires the beacon **once per page load** (a ref/sessionStorage guard against re-render double-fire — politeness, not a defense). The `?from=` param is left **visible** in the URL (that's the transparency); SSR does not record (client-only, post-hydration) so there's no SSR/hydration double-count.
+
+**D3 — Anti-spam (the load-bearing guard is server-side).** No spend/LLM is at stake — worst case is dashboard noise + rows, not cost — but keep counts honest and storage bounded:
+- **Windowed write-dedup per `(slug, ip_hash)`** — suppress a new row within a window (default ~30–60 min, a `getConfig` knob). Collapses single-source spam (refresh **or** scripted API-hammering) to one row per window → clicks stay meaningful, storage stays bounded. **THE load-bearing fix** (a client guard is bypassable by curling the endpoint directly).
+- Known-slugs-only (D2) — can't inject fake sources by hammering.
+- A per-IP **edge rate-limit** on the visit endpoint (the Worker already burst-caps the money paths per §24.70; extend to the cheap visit path).
+- Lean on the existing **bounded retention** prune (verify it covers `visit_telemetry` during build).
+- `uniqueVisitors` (salted-IP-hash `COUNT(DISTINCT ip_hash)`) is already spam-proof and stays the headline metric.
+
+**D4 — Two link classes, kept distinct.**
+- **Owner sources** (NEW): `artifact_type='owner_source'`, `code=<slug>`, owner-minted, reusable, broadcast. Friendly `?from=`.
+- **Master résumé PDF**: `ensureMasterPdfLink()` switches from a random code to the fixed named source **`master_resume_pdf`** (the master download now embeds `?from=master_resume_pdf`). Effectively an always-present owner source.
+- **Per-recipient outreach** (UNCHANGED): stays opaque per-recipient on `/r/<code>` — each cold-email send needs a *unique* token to attribute *which company* clicked, and the recipient barely sees it (1:1 private email). The friendly/minting scheme is for **broadcast** artifacts, not 1:1 sends. *(Explicit scope call — flag for owner at build: outreach could move to `?from=<unique>` too, but it gains nothing and the per-recipient token must stay unique.)*
+
+**D5 — Minting UX (the Visitors tab's first write).** Owner-only (`adminEnabled()`); an `applyAdminAttributionWrite` sibling to the read-only `buildAttributionReport`:
+- **New source** form: `slug` (validated, unique) → creates the `owner_source` row.
+- Per-source row actions: **Copy link** (`<portal>/?from=<slug>`) · **Download résumé PDF** (D6) · **Retire** (soft: set `expires_at=now` — stops new attribution, keeps the row + its historical visits).
+- Minted sources appear in the existing Links table, grouped/labeled by `artifact_type` (owner_source / master_pdf / outreach).
+
+**D6 — Per-source résumé PDF (on-demand, no storage).** An owner-gated endpoint (e.g. `GET /api/admin/attribution/<slug>/resume.pdf`) renders the **master** résumé via the existing `renderResumePdf(masterProfile, identity, footer, url, { footerLinkUrl: <portal>/?from=<slug> })`. The PDF already hides the tracking (clean display text, tracked href — `footerElement`/`trackedHref` unchanged). Deterministic from the slug + the current master profile (re-download = fresh résumé, same source). Filename `resume-<slug>.pdf`.
+
+**D7 — Sandbox "Watch it work" résumés stay UNTRACKED** (confirmed; they already are — no `footerLinkUrl` is passed to the tailored render). Rule: **attribution attaches only to artifacts the owner distributes** (master résumé, outreach, minted sources), never a visitor's demo résumé (tailored to the *visitor's* company → would mis-attribute). Minting is owner-only, never per-run.
+
+**D8 — Disclosure (net-positive transparency).** `/about` "Your privacy": "that link carries a **short opaque code**" → "carries a **plain-text label** of where the link came from (a résumé I handed out, my LinkedIn, …)". `/privacy` "Your visit": minor wording to match the readable source param. `/terms`: no change expected. This *strengthens* the story ("not even hidden in a code"). Re-bless any affected `@visual` snapshot.
+
+**Definition of done.** Migration-free (named codes are data-only; retire reuses `expires_at`). `POST /api/visit` beacon endpoint + windowed `(slug, ip_hash)` dedup + known-slug allow-list (host tests); `/v/<slug>` → `/?from=<slug>` redirect; `ensureMasterPdfLink` → `master_resume_pdf`; `applyAdminAttributionWrite` (mint/retire) + `GET /api/admin/attribution/<slug>/resume.pdf` (owner-gated); Visitors-tab mint form + per-source Copy-link / Download-PDF / Retire (+ panel tests + admin e2e stub); the landing-page `?from=` read + fire-once beacon (root/marketing route); edge rate-limit on the visit path (`frontend/wrangler.jsonc`); `/about` + `/privacy` copy + `@visual` re-bless; back-compat verified (`/r/<old>` still resolves + records); host + frontend tsc + suites green; deployed to dev. Memory: [[status_current]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
