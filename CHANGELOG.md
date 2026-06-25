@@ -13,6 +13,30 @@ fork version recorded in `package.json` — the two are never conflated.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-06-25
+
+Owner control-center polish and a pipeline data-integrity fix.
+
+### Added
+
+- **Leads tab** in the control center — inspect the agent's running pool of
+  discovered roles, see the deterministic match-score breakdown behind each, and
+  triage them (re-score, change status, archive).
+- A discovered role now links to its application automatically once one is
+  submitted, so the pipeline and the lead pool stay in sync.
+
+### Changed
+
+- Control-center tables paginate and offer sortable columns, on a single shared
+  table component across every tab.
+- The control center's active tab lives in the URL — tabs are deep-linkable and
+  the browser back/forward buttons move between them.
+
+### Fixed
+
+- The system-map detail panel honors the browser's reduced-motion setting for
+  its fade-in.
+
 ## [1.0.0] - 2026-06-24
 
 The first public release: an autonomous job-search agent with a live showcase portal.
