@@ -135,6 +135,25 @@ It checks every known failure shape (queue starvation, dead recurrence chains, o
 
 ---
 
+## Cutting a release (dev → prod)
+
+The product version line lives in **`CHANGELOG.md`** (Keep-a-Changelog; independent of the vendored NanoClaw fork version in `package.json`). The owner controls release timing; a `v*` tag is the ship-action. Three workflows fire — `release.yml` + `deploy-backend-prod.yml` on the **tag**, `deploy-frontend.yml` on **master** — and the two prod deploys share a `prod-deploy` concurrency group so they serialize (never race the `production` Environment).
+
+**The known-good sequence** (verified at v1.0.1, 2026-06-25):
+
+1. **Land + verify the work on `dev` first** (all CI green). `master` should be a clean fast-forward of `dev` (`git merge-base --is-ancestor origin/master dev`).
+2. **Write the `CHANGELOG.md` section** — add `## [x.y.z] - <date>` above the previous version (generic, no PII; Added/Changed/Fixed). **Verify it extracts** exactly as the release job will: `pnpm exec tsx scripts/changelog-section.ts vX.Y.Z CHANGELOG.md` (empty/absent ⇒ the release job FAILS by design). Commit + push to `dev`.
+3. **Tag FIRST, then master** — this ordering is load-bearing: the prod footer chip is computed at *build time* from `git tag --points-at HEAD`, so the tag must exist before `deploy-frontend` builds, or the chip falls back to `commit/<sha>` instead of `releases/tag/vX.Y.Z`.
+   - `git tag vX.Y.Z <release-commit>` → `git push origin vX.Y.Z` (fires `release` = GitHub Release from the changelog section, + `deploy-backend-prod` = the tagged commit onto `/opt/career-pilot`).
+   - `git push origin dev:master` (fast-forward → `deploy-frontend` prod; it queues behind the backend deploy via `prod-deploy`).
+4. **Watch all three green**: `release`, `deploy-backend-prod`, `deploy-frontend` (master). Confirm the chip from the frontend build log: `Version chip: vX.Y.Z (releases/tag/vX.Y.Z)`.
+5. **Run any one-time prod data step** the release needs (e.g. a backfill) AFTER the backend deploys: on the box, `cd /opt/career-pilot` (PROD — **not** `/opt/career-pilot-dev`), as the `career-pilot` user with env loaded, dry-run → eyeball → `--apply`.
+6. **Verify**: `gh release view vX.Y.Z` exists with the right notes; the prod footer shows the tag.
+
+Notes: **moving** an existing tag (re-release of the same version) is also supported — `release.yml` is idempotent (`gh release edit`), and force-pushing a `v*` tag re-fires both tag workflows (the `deployments` ruleset guards branches, not tags). For a tag-only chip refresh, re-run `deploy-frontend` via its `workflow_dispatch`.
+
+---
+
 ## Memory system
 
 This project has a persistent memory under your Claude Code projects directory (`~/.claude/projects/<project>/memory/`). **Check `MEMORY.md` there first** for user role, project goal, locked decisions, current status. The memory persists across conversation compactions.
