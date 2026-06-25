@@ -10,6 +10,8 @@ import {
 } from '~/lib/use-admin'
 import { cn } from '~/lib/utils'
 
+import { DataTable, type Column } from './DataTable'
+
 /**
  * The owner-only `/admin` Leads tab (§24.173) — the job_leads world-model the
  * orchestrator maintains (scrape-jobs writes it; the killer-match + close-detection
@@ -17,6 +19,10 @@ import { cn } from '~/lib/utils'
  * REASONS breakdown — the *why* behind a score) plus a small, safe triage surface:
  * change status, archive (soft-close), and re-score against the current profile.
  * No content edits (source-of-record from the board) or manual creation.
+ *
+ * The table rides the shared DataTable (§24.174): the row cells are columns, the
+ * per-lead score-reasons + triage controls are its `renderDetail` disclosure, and
+ * the filter bar drives a `resetKey` so changing a filter jumps back to page 1.
  */
 
 // The statuses the owner can set (mirrors the server allow-list — 'applied' is
@@ -155,6 +161,148 @@ function ScoreReasons({ reasons }: { reasons: unknown }) {
   )
 }
 
+// ── the table columns + the expandable detail ─────────────────────────────────
+
+const LEAD_COLUMNS: Column<AdminLead>[] = [
+  {
+    id: 'company',
+    header: 'Company',
+    cellClassName: 'text-foreground',
+    cell: (lead) => (
+      <span className="block max-w-[14rem] truncate" title={lead.company}>
+        {lead.company}
+      </span>
+    ),
+  },
+  {
+    id: 'role',
+    header: 'Role',
+    cellClassName: 'text-muted-foreground',
+    cell: (lead) => (
+      <span className="block max-w-[16rem] truncate" title={lead.title}>
+        {lead.title}
+      </span>
+    ),
+  },
+  { id: 'location', header: 'Location', cellClassName: 'text-muted-foreground', cell: (lead) => locationLabel(lead) },
+  {
+    id: 'comp',
+    header: 'Comp',
+    align: 'right',
+    cellClassName: 'font-mono tabular-nums text-muted-foreground',
+    cell: (lead) => fmtComp(lead),
+  },
+  {
+    id: 'score',
+    header: 'Score',
+    align: 'right',
+    cell: (lead) => (
+      <span className={cn('font-mono font-semibold tabular-nums', scoreTone(lead.rules_score))}>
+        {lead.rules_score ?? '—'}
+        {lead.llm_score != null ? (
+          <span className="ml-1 text-[10px] text-muted-foreground">/{lead.llm_score}</span>
+        ) : null}
+      </span>
+    ),
+  },
+  {
+    id: 'status',
+    header: 'Status',
+    cell: (lead) => (
+      <span className={cn('font-mono text-xs', STATUS_TONE[lead.status] ?? 'text-muted-foreground')}>
+        {lead.status}
+      </span>
+    ),
+  },
+  {
+    id: 'age',
+    header: 'Age',
+    cellClassName: 'font-mono text-xs text-muted-foreground',
+    cell: (lead) => fmtAgeHours(ageHoursOf(lead.first_seen_at)),
+  },
+]
+
+function LeadDetail({
+  lead,
+  busy,
+  onPost,
+}: {
+  lead: AdminLead
+  busy: string | null
+  onPost: (body: AdminLeadsWrite, busyKey: string) => void
+}) {
+  const settable = SETTABLE_STATUSES.includes(lead.status as (typeof SETTABLE_STATUSES)[number])
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <ScoreReasons reasons={lead.rules_score_reasons} />
+      </div>
+      {lead.snippet ? (
+        <p className="max-w-2xl text-[11px] leading-relaxed text-muted-foreground">{lead.snippet}…</p>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-3">
+        <a
+          href={lead.source_url}
+          target="_blank"
+          rel="noreferrer"
+          className="font-mono text-[11px] text-accent-cool hover:underline"
+        >
+          source ↗
+        </a>
+        {lead.apply_url ? (
+          <a
+            href={lead.apply_url}
+            target="_blank"
+            rel="noreferrer"
+            className="font-mono text-[11px] text-accent-cool hover:underline"
+          >
+            apply ↗
+          </a>
+        ) : null}
+        {lead.killer_match_pushed_at ? <span className="font-mono text-[11px] text-primary">◆ pushed</span> : null}
+        {lead.application_id ? (
+          <span className="font-mono text-[11px] text-muted-foreground">promoted → application</span>
+        ) : null}
+        {lead.closed_at ? (
+          <span className="font-mono text-[11px] text-muted-foreground">closed: {lead.closed_reason ?? '—'}</span>
+        ) : null}
+      </div>
+      {/* Triage actions */}
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">status</label>
+        <select
+          data-testid="leads-status-select"
+          value={settable ? lead.status : ''}
+          disabled={busy != null}
+          onChange={(e) => onPost({ action: 'set_status', id: lead.id, status: e.target.value }, `status-${lead.id}`)}
+          className="rounded-md border border-border bg-background px-2 py-1 font-mono text-[11px] text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {!settable ? (
+            <option value="" disabled>
+              {lead.status}
+            </option>
+          ) : null}
+          {SETTABLE_STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          data-testid="leads-rescore"
+          disabled={busy != null}
+          onClick={() => onPost({ action: 'rescore', id: lead.id }, `rescore-${lead.id}`)}
+          className="rounded-md border border-border px-2.5 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+          title="Recompute this lead's rules_score against the current profile"
+        >
+          {busy === `rescore-${lead.id}` ? 'Re-scoring…' : 'Re-score'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── the panel ─────────────────────────────────────────────────────────────────
 
 export function LeadsPanel({
@@ -172,7 +320,6 @@ export function LeadsPanel({
   const [company, setCompany] = useState('')
   const [includeClosed, setIncludeClosed] = useState(false)
   const [sort, setSort] = useState<SortKey>('rules_score')
-  const [expanded, setExpanded] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -338,171 +485,24 @@ export function LeadsPanel({
         </p>
       ) : null}
 
-      {/* Table */}
-      {filtered.length === 0 ? (
-        <p data-testid="leads-empty" className="text-sm text-muted-foreground">
-          No leads match this filter.
-        </p>
-      ) : (
-        <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full min-w-[48rem] text-left text-sm">
-            <thead>
-              <tr className="text-[10px] uppercase tracking-widest text-muted-foreground">
-                <th className="py-2 pl-4 pr-4 font-mono font-normal">Company</th>
-                <th className="py-2 pr-4 font-mono font-normal">Role</th>
-                <th className="py-2 pr-4 font-mono font-normal">Location</th>
-                <th className="py-2 pr-4 text-right font-mono font-normal">Comp</th>
-                <th className="py-2 pr-4 text-right font-mono font-normal">Score</th>
-                <th className="py-2 pr-4 font-mono font-normal">Status</th>
-                <th className="py-2 pr-4 font-mono font-normal">Age</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((lead) => (
-                <LeadRow
-                  key={lead.id}
-                  lead={lead}
-                  expanded={expanded === lead.id}
-                  onToggle={() => setExpanded((id) => (id === lead.id ? null : lead.id))}
-                  busy={busy}
-                  onPost={post}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {/* Table — the shared DataTable; the score-reasons + triage controls are the
+          expandable detail; the filter signature resets pagination to page 1. */}
+      <DataTable
+        columns={LEAD_COLUMNS}
+        rows={filtered}
+        rowKey={(lead) => lead.id}
+        rowTestId="leads-row"
+        detailTestId="leads-detail"
+        renderDetail={(lead) => <LeadDetail lead={lead} busy={busy} onPost={post} />}
+        resetKey={`${status}|${source}|${minScore}|${company}|${includeClosed}|${sort}`}
+        minWidthClass="min-w-[48rem]"
+        empty={
+          <p data-testid="leads-empty" className="text-sm text-muted-foreground">
+            No leads match this filter.
+          </p>
+        }
+      />
     </section>
-  )
-}
-
-function LeadRow({
-  lead,
-  expanded,
-  onToggle,
-  busy,
-  onPost,
-}: {
-  lead: AdminLead
-  expanded: boolean
-  onToggle: () => void
-  busy: string | null
-  onPost: (body: AdminLeadsWrite, busyKey: string) => void
-}) {
-  return (
-    <>
-      <tr
-        data-testid="leads-row"
-        onClick={onToggle}
-        className="cursor-pointer border-t border-border hover:bg-muted/30"
-      >
-        <td className="py-2 pl-4 pr-4 text-foreground">
-          <span className="block max-w-[14rem] truncate" title={lead.company}>
-            {lead.company}
-          </span>
-        </td>
-        <td className="py-2 pr-4 text-muted-foreground">
-          <span className="block max-w-[16rem] truncate" title={lead.title}>
-            {lead.title}
-          </span>
-        </td>
-        <td className="py-2 pr-4 text-muted-foreground">{locationLabel(lead)}</td>
-        <td className="py-2 pr-4 text-right font-mono tabular-nums text-muted-foreground">{fmtComp(lead)}</td>
-        <td className={cn('py-2 pr-4 text-right font-mono font-semibold tabular-nums', scoreTone(lead.rules_score))}>
-          {lead.rules_score ?? '—'}
-          {lead.llm_score != null ? (
-            <span className="ml-1 text-[10px] text-muted-foreground">/{lead.llm_score}</span>
-          ) : null}
-        </td>
-        <td className={cn('py-2 pr-4 font-mono text-xs', STATUS_TONE[lead.status] ?? 'text-muted-foreground')}>
-          {lead.status}
-        </td>
-        <td className="py-2 pr-4 font-mono text-xs text-muted-foreground">
-          {fmtAgeHours(ageHoursOf(lead.first_seen_at))}
-        </td>
-      </tr>
-      {expanded ? (
-        <tr data-testid="leads-detail" className="border-t border-border/60 bg-muted/20">
-          <td colSpan={7} className="px-4 py-3">
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-wrap items-center gap-3">
-                <ScoreReasons reasons={lead.rules_score_reasons} />
-              </div>
-              {lead.snippet ? (
-                <p className="max-w-2xl text-[11px] leading-relaxed text-muted-foreground">{lead.snippet}…</p>
-              ) : null}
-              <div className="flex flex-wrap items-center gap-3">
-                <a
-                  href={lead.source_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-mono text-[11px] text-accent-cool hover:underline"
-                >
-                  source ↗
-                </a>
-                {lead.apply_url ? (
-                  <a
-                    href={lead.apply_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="font-mono text-[11px] text-accent-cool hover:underline"
-                  >
-                    apply ↗
-                  </a>
-                ) : null}
-                {lead.killer_match_pushed_at ? (
-                  <span className="font-mono text-[11px] text-primary">◆ pushed</span>
-                ) : null}
-                {lead.application_id ? (
-                  <span className="font-mono text-[11px] text-muted-foreground">promoted → application</span>
-                ) : null}
-                {lead.closed_at ? (
-                  <span className="font-mono text-[11px] text-muted-foreground">
-                    closed: {lead.closed_reason ?? '—'}
-                  </span>
-                ) : null}
-              </div>
-              {/* Triage actions */}
-              <div className="flex flex-wrap items-center gap-2">
-                <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">status</label>
-                <select
-                  data-testid="leads-status-select"
-                  value={
-                    SETTABLE_STATUSES.includes(lead.status as (typeof SETTABLE_STATUSES)[number]) ? lead.status : ''
-                  }
-                  disabled={busy != null}
-                  onChange={(e) =>
-                    onPost({ action: 'set_status', id: lead.id, status: e.target.value }, `status-${lead.id}`)
-                  }
-                  className="rounded-md border border-border bg-background px-2 py-1 font-mono text-[11px] text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {!SETTABLE_STATUSES.includes(lead.status as (typeof SETTABLE_STATUSES)[number]) ? (
-                    <option value="" disabled>
-                      {lead.status}
-                    </option>
-                  ) : null}
-                  {SETTABLE_STATUSES.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  data-testid="leads-rescore"
-                  disabled={busy != null}
-                  onClick={() => onPost({ action: 'rescore', id: lead.id }, `rescore-${lead.id}`)}
-                  className="rounded-md border border-border px-2.5 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-                  title="Recompute this lead's rules_score against the current profile"
-                >
-                  {busy === `rescore-${lead.id}` ? 'Re-scoring…' : 'Re-score'}
-                </button>
-              </div>
-            </div>
-          </td>
-        </tr>
-      ) : null}
-    </>
   )
 }
 

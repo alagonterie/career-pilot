@@ -2,17 +2,20 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 
 import { AdminModeControls } from '~/components/admin/AdminModeControls'
+import { ContactsPanel } from '~/components/admin/ContactsPanel'
 import { LeadsPanel } from '~/components/admin/LeadsPanel'
 import { ModelControls } from '~/components/admin/ModelControls'
 import { PersonaPanel } from '~/components/admin/PersonaPanel'
+import { PipelinePanel } from '~/components/admin/PipelinePanel'
 import { SandboxRunsPanel } from '~/components/admin/SandboxRunsPanel'
+import { VisitorsPanel } from '~/components/admin/VisitorsPanel'
 import { KnobControls } from '~/components/dev/KnobControls'
 import { StateNote } from '~/components/states'
 import { Skeleton } from '~/components/ui/skeleton'
+import { fmtTs, usd } from '~/lib/admin-format'
 import { cn } from '~/lib/utils'
 import { seo } from '~/lib/seo'
 import {
-  artifactLabel,
   deleteAdminSandboxRun,
   postAdminControl,
   postAdminKnob,
@@ -26,10 +29,6 @@ import {
   useAdminPipeline,
   useAdminSandboxRuns,
   useAdminSummary,
-  type AdminAttributionLink,
-  type AdminAttributionVisit,
-  type AdminContact,
-  type AdminPipelineRow,
   type AdminSummary,
 } from '~/lib/use-admin'
 
@@ -64,15 +63,6 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'persona', label: 'Persona' },
   { id: 'system', label: 'System' },
 ]
-
-function fmtTs(iso: string | null): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
-
-const usd = (micro: number): string => `$${(micro / 1_000_000).toFixed(2)}`
 
 function AdminPage() {
   const [tab, setTab] = useState<TabId>('overview')
@@ -318,244 +308,5 @@ function Pill({ label, tone }: { label: string; tone: 'ok' | 'warn' | 'alert' })
       <span aria-hidden="true" className={cn('h-1.5 w-1.5 rounded-full', dot)} />
       {label}
     </span>
-  )
-}
-
-// ── Pipeline (owner view — real names) ────────────────────────────────────────
-
-function PipelinePanel({ rows, stageCounts }: { rows: AdminPipelineRow[]; stageCounts: Record<string, number> }) {
-  if (rows.length === 0) {
-    return <p className="text-sm text-muted-foreground">No applications in the pipeline yet.</p>
-  }
-  return (
-    <section className="flex flex-col gap-3">
-      <div className="flex flex-wrap gap-2">
-        {Object.entries(stageCounts).map(([stage, n]) => (
-          <span
-            key={stage}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-0.5 font-mono text-[11px] text-muted-foreground"
-          >
-            {stage}
-            <span className="font-semibold tabular-nums text-foreground">{n}</span>
-          </span>
-        ))}
-      </div>
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full min-w-[44rem] text-left text-sm">
-          <thead>
-            <tr className="text-[10px] uppercase tracking-widest text-muted-foreground">
-              <th className="py-2 pl-4 pr-4 font-mono font-normal">Company</th>
-              <th className="py-2 pr-4 font-mono font-normal">Role</th>
-              <th className="py-2 pr-4 font-mono font-normal">Stage</th>
-              <th className="py-2 pr-4 text-right font-mono font-normal">Win</th>
-              <th className="py-2 pr-4 font-mono font-normal">Last activity</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.application_id} className="border-t border-border">
-                <td className="py-2 pl-4 pr-4 text-foreground">
-                  <span className="flex max-w-[16rem] items-baseline gap-2">
-                    <span className="truncate" title={r.company_name ?? undefined}>
-                      {r.company_name ?? '—'}
-                    </span>
-                    <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-                      {r.obfuscated_label ?? ''}
-                    </span>
-                  </span>
-                </td>
-                <td className="py-2 pr-4 text-muted-foreground">
-                  <span className="block max-w-[14rem] truncate" title={r.role_title ?? undefined}>
-                    {r.role_title ?? '—'}
-                  </span>
-                </td>
-                <td className="py-2 pr-4 text-foreground">{r.stage}</td>
-                <td className="py-2 pr-4 text-right font-mono tabular-nums text-foreground">
-                  {r.win_confidence != null ? `${r.win_confidence}%` : '—'}
-                </td>
-                <td className="py-2 pr-4 font-mono text-xs text-muted-foreground">{fmtTs(r.last_activity_at)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  )
-}
-
-// ── Contacts (§24.121 store) ──────────────────────────────────────────────────
-
-function ContactsPanel({ contacts }: { contacts: AdminContact[] }) {
-  if (contacts.length === 0) {
-    return <p className="text-sm text-muted-foreground">No inbound contact submissions yet.</p>
-  }
-  return (
-    <div className="overflow-x-auto rounded-lg border border-border">
-      <table className="w-full min-w-[44rem] text-left text-sm">
-        <thead>
-          <tr className="text-[10px] uppercase tracking-widest text-muted-foreground">
-            <th className="py-2 pl-4 pr-4 font-mono font-normal">When</th>
-            <th className="py-2 pr-4 font-mono font-normal">From</th>
-            <th className="py-2 pr-4 font-mono font-normal">Company</th>
-            <th className="py-2 pr-4 font-mono font-normal">Message</th>
-            <th className="py-2 pr-4 font-mono font-normal">Sent</th>
-          </tr>
-        </thead>
-        <tbody>
-          {contacts.map((c) => (
-            <tr key={c.id} className="border-t border-border align-top" data-testid="admin-contact-row">
-              <td className="py-2 pl-4 pr-4 font-mono text-xs text-muted-foreground">{fmtTs(c.createdAt)}</td>
-              <td className="py-2 pr-4">
-                <span className="block text-foreground">{c.name ?? '—'}</span>
-                <span className="block break-all font-mono text-[11px] text-muted-foreground">{c.email ?? '—'}</span>
-              </td>
-              <td className="py-2 pr-4 text-muted-foreground">
-                <span className="block max-w-[12rem] truncate" title={c.company ?? undefined}>
-                  {c.company ?? '—'}
-                </span>
-                {c.role ? <span className="block text-[11px]">{c.role}</span> : null}
-              </td>
-              <td className="py-2 pr-4 text-muted-foreground">
-                {/* Long messages clamp to 3 lines (full text on hover) so one verbose
-                    submission can't blow out the row height / table width. The clamp
-                    is an inline style, not the `line-clamp-3` utility: the utility's
-                    `display:-webkit-box` lost the cascade here (a sibling utility won
-                    `display`), silently killing the clamp — inline style can't be
-                    out-specificity'd by a class. */}
-                <span
-                  data-testid="admin-contact-message"
-                  className="max-w-md break-words"
-                  title={c.message}
-                  style={{
-                    display: '-webkit-box',
-                    WebkitLineClamp: 3,
-                    WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden',
-                  }}
-                >
-                  {c.message}
-                </span>
-              </td>
-              <td className="py-2 pr-4 font-mono text-xs">
-                {c.delivered ? (
-                  <span className="text-accent-cool">✓</span>
-                ) : (
-                  <span className="text-destructive">✕</span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-// ── Visitors (the §24.74 attribution browser) ─────────────────────────────────
-
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="flex flex-col gap-1 rounded-lg border border-border bg-card px-4 py-3">
-      <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{label}</span>
-      <span className="font-mono text-2xl font-semibold tabular-nums text-foreground">{value}</span>
-    </div>
-  )
-}
-
-function LinkRow({ link }: { link: AdminAttributionLink }) {
-  return (
-    <tr className="border-t border-border">
-      <td className="py-2 pl-4 pr-4">
-        <span className="text-foreground">{artifactLabel(link.artifactType)}</span>
-        <span className="ml-2 font-mono text-[11px] text-muted-foreground">/r/{link.code}</span>
-      </td>
-      <td className="py-2 pr-4 text-foreground">{link.company ?? '—'}</td>
-      <td className="max-w-[16rem] break-all py-2 pr-4 text-muted-foreground">{link.recipient ?? '—'}</td>
-      <td className="py-2 pr-4 text-right font-mono tabular-nums text-foreground">{link.clicks}</td>
-      <td className="py-2 pr-4 text-right font-mono tabular-nums text-foreground">{link.uniqueVisitors}</td>
-      <td className="py-2 pr-4 font-mono text-xs text-muted-foreground">{fmtTs(link.lastClickAt)}</td>
-    </tr>
-  )
-}
-
-function VisitRow({ visit }: { visit: AdminAttributionVisit }) {
-  return (
-    <tr className="border-t border-border">
-      <td className="py-1.5 pl-4 pr-4 font-mono text-xs text-muted-foreground">{fmtTs(visit.ts)}</td>
-      <td className="py-1.5 pr-4 text-foreground">{visit.company ?? '—'}</td>
-      <td className="py-1.5 pr-4 text-muted-foreground">{visit.country ?? '—'}</td>
-      <td className="py-1.5 pr-4 text-muted-foreground">{visit.uaClass ?? '—'}</td>
-      <td className="max-w-[16rem] break-all py-1.5 pr-4 text-muted-foreground">{visit.referrer ?? 'direct'}</td>
-    </tr>
-  )
-}
-
-function VisitorsPanel({ data }: { data: ReturnType<typeof useAdminAttribution>['data'] }) {
-  if (!data) return <p className="text-sm text-muted-foreground">No attribution data yet.</p>
-  return (
-    <div className="flex flex-col gap-6">
-      <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Links" value={data.summary.totalLinks} />
-        <Stat label="Clicks" value={data.summary.totalClicks} />
-        <Stat label="Unique" value={data.summary.totalUniqueVisitors} />
-        <Stat label="Top country" value={data.summary.topCountries[0] ? data.summary.topCountries[0].country : '—'} />
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <h2 className="font-mono text-xs uppercase tracking-widest text-foreground">Links</h2>
-        {data.links.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No links minted yet. They're created automatically when the agent drafts outreach or renders the master
-            résumé.
-          </p>
-        ) : (
-          <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full min-w-[40rem] text-left text-sm">
-              <thead>
-                <tr className="text-[10px] uppercase tracking-widest text-muted-foreground">
-                  <th className="py-2 pl-4 pr-4 font-mono font-normal">Source</th>
-                  <th className="py-2 pr-4 font-mono font-normal">Company</th>
-                  <th className="py-2 pr-4 font-mono font-normal">Recipient</th>
-                  <th className="py-2 pr-4 text-right font-mono font-normal">Clicks</th>
-                  <th className="py-2 pr-4 text-right font-mono font-normal">Unique</th>
-                  <th className="py-2 pr-4 font-mono font-normal">Last click</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.links.map((l) => (
-                  <LinkRow key={l.code} link={l} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <h2 className="font-mono text-xs uppercase tracking-widest text-foreground">Recent visits</h2>
-        {data.recentVisits.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No clicks recorded yet.</p>
-        ) : (
-          <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full min-w-[36rem] text-left text-sm">
-              <thead>
-                <tr className="text-[10px] uppercase tracking-widest text-muted-foreground">
-                  <th className="py-2 pl-4 pr-4 font-mono font-normal">When</th>
-                  <th className="py-2 pr-4 font-mono font-normal">Company</th>
-                  <th className="py-2 pr-4 font-mono font-normal">Country</th>
-                  <th className="py-2 pr-4 font-mono font-normal">Device</th>
-                  <th className="py-2 pr-4 font-mono font-normal">Referrer</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.recentVisits.map((v, i) => (
-                  <VisitRow key={`${v.ts}-${i}`} visit={v} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-    </div>
   )
 }
