@@ -370,6 +370,11 @@ test.describe('/admin — control center (§24.138)', () => {
     await page.getByTestId('admin-tab-visitors').click()
     await expect(page.getByText('anthropic.com').first()).toBeVisible()
 
+    // Sandbox tab: the §24.164 owner runs view (migrated onto DataTable §24.174).
+    await page.getByTestId('admin-tab-sandbox').click()
+    await expect(page.getByTestId('sandbox-run-sb-e2e-1')).toBeVisible()
+    await expect(page.getByTestId('sandbox-run-open-sb-e2e-1')).toHaveAttribute('href', '/watch/results/sb-e2e-1')
+
     // System tab: the knob grid (registry − ADMIN_DENY).
     await page.getByTestId('admin-tab-system').click()
     await expect(page.getByTestId('knob-group-simulator')).toBeVisible()

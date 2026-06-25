@@ -16,12 +16,19 @@ import { cn } from '~/lib/utils'
 
 export type SortDir = 'asc' | 'desc'
 
+/** Passed to every `cell` so a control (e.g. a "Details" button) can drive its
+ * row's disclosure when `expandOnRowClick` is off. */
+export interface CellContext {
+  expanded: boolean
+  toggle: () => void
+}
+
 export interface Column<Row> {
   id: string
   header: ReactNode
   /** Cell + header alignment. Numeric/score columns use 'right'. */
   align?: 'left' | 'right'
-  cell: (row: Row) => ReactNode
+  cell: (row: Row, ctx: CellContext) => ReactNode
   /** Provide to make this column's header a click-to-sort toggle (desc → asc → off). */
   sort?: (row: Row) => number | string
   headerClassName?: string
@@ -33,16 +40,24 @@ export interface DataTableProps<Row> {
   rows: Row[]
   /** Stable React key; `index` is the absolute position in the (sorted) row set. */
   rowKey: (row: Row, index: number) => string
-  /** Rows per page before the pager appears (default 25). */
+  /** Rows per page before the pager appears (default 10). */
   pageSize?: number
   /** Tailwind min-width for the inner table (horizontal scroll past it). */
   minWidthClass?: string
+  /** Fixed table layout — columns keep their widths regardless of cell content
+   * (use with per-column width classes when a cell's controls change width). */
+  tableFixed?: boolean
   /** Rendered in place of the table when there are no rows. */
   empty?: ReactNode
-  rowTestId?: string
+  /** A static testid for every body row, or a per-row function. */
+  rowTestId?: string | ((row: Row, index: number) => string)
   rowClassName?: (row: Row) => string
-  /** Expandable disclosure under each row (makes the row clickable). One open at a time. */
+  /** Expandable disclosure under each row. One open at a time. */
   renderDetail?: (row: Row) => ReactNode
+  /** Whether clicking the row toggles its disclosure (default true when
+   * `renderDetail` is set). Turn OFF when the row carries its own controls and
+   * a specific cell drives the toggle via the cell context instead. */
+  expandOnRowClick?: boolean
   detailTestId?: string
   initialSort?: { columnId: string; dir: SortDir }
   /** When this changes, jump back to page 1 (e.g. a filter-state signature). */
@@ -58,12 +73,14 @@ export function DataTable<Row>({
   columns,
   rows,
   rowKey,
-  pageSize = 25,
+  pageSize = 10,
   minWidthClass = 'min-w-[44rem]',
+  tableFixed,
   empty,
   rowTestId,
   rowClassName,
   renderDetail,
+  expandOnRowClick = true,
   detailTestId,
   initialSort,
   resetKey,
@@ -103,7 +120,7 @@ export function DataTable<Row>({
   return (
     <div className="flex flex-col gap-2">
       <div className="overflow-x-auto rounded-lg border border-border">
-        <table className={cn('w-full text-left text-sm', minWidthClass)}>
+        <table className={cn('w-full text-left text-sm', tableFixed && 'table-fixed', minWidthClass)}>
           <thead>
             <tr className="text-[10px] uppercase tracking-widest text-muted-foreground">
               {columns.map((col, i) => {
@@ -145,28 +162,31 @@ export function DataTable<Row>({
             {pageRows.map((row, i) => {
               const key = rowKey(row, start + i)
               const isOpen = expanded === key
+              const toggle = () => setExpanded((k) => (k === key ? null : key))
+              const ctx: CellContext = { expanded: isOpen, toggle }
+              const rowClickable = !!renderDetail && expandOnRowClick
               return (
                 <Fragment key={key}>
                   <tr
-                    data-testid={rowTestId}
-                    onClick={renderDetail ? () => setExpanded((k) => (k === key ? null : key)) : undefined}
+                    data-testid={typeof rowTestId === 'function' ? rowTestId(row, start + i) : rowTestId}
+                    onClick={rowClickable ? toggle : undefined}
                     className={cn(
                       'border-t border-border',
-                      renderDetail && 'cursor-pointer hover:bg-muted/30',
+                      rowClickable && 'cursor-pointer hover:bg-muted/30',
                       rowClassName?.(row),
                     )}
                   >
-                    {columns.map((col, i) => (
+                    {columns.map((col, ci) => (
                       <td
                         key={col.id}
                         className={cn(
                           'py-2 pr-4',
-                          i === 0 && 'pl-4',
+                          ci === 0 && 'pl-4',
                           col.align === 'right' && 'text-right',
                           col.cellClassName,
                         )}
                       >
-                        {col.cell(row)}
+                        {col.cell(row, ctx)}
                       </td>
                     ))}
                   </tr>

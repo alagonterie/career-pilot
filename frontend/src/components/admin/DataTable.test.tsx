@@ -87,6 +87,34 @@ describe('DataTable', () => {
     expect(screen.queryByTestId('detail')).not.toBeInTheDocument()
   })
 
+  it('with expandOnRowClick off, a cell drives the disclosure (not a row click)', () => {
+    const cols: Column<Row>[] = [
+      ...COLS,
+      {
+        id: 'act',
+        header: 'Act',
+        cell: (_r, ctx) => <button onClick={ctx.toggle}>{ctx.expanded ? 'hide' : 'show'}</button>,
+      },
+    ]
+    render(
+      <DataTable
+        columns={cols}
+        rows={rows(2)}
+        rowKey={(r) => r.id}
+        rowTestId="row"
+        detailTestId="detail"
+        expandOnRowClick={false}
+        renderDetail={(r) => <span>detail {r.name}</span>}
+      />,
+    )
+    // a row click does NOT expand
+    fireEvent.click(screen.getAllByTestId('row')[0])
+    expect(screen.queryByTestId('detail')).not.toBeInTheDocument()
+    // the cell's button does
+    fireEvent.click(screen.getAllByText('show')[0])
+    expect(screen.getByTestId('detail')).toHaveTextContent('detail Row 0')
+  })
+
   it('resets to page 1 when resetKey changes', () => {
     const { rerender } = render(
       <DataTable columns={COLS} rows={rows(7)} rowKey={(r) => r.id} pageSize={3} rowTestId="row" resetKey="a" />,

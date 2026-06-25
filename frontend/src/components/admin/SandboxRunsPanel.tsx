@@ -3,6 +3,8 @@ import * as React from 'react'
 import { cn } from '~/lib/utils'
 import type { AdminSandboxRun, AdminSandboxRunsView, AdminWriteResult } from '~/lib/use-admin'
 
+import { DataTable, type CellContext, type Column } from './DataTable'
+
 function fmtWhen(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
@@ -27,9 +29,84 @@ function source(token: string | null): string {
  * company/role free-text, the full JD they entered, cost/runtime, a per-source
  * token) to monitor usage + abuse + quality. Per-row: open the result page in a new
  * tab, or confirm-delete to purge that run's stored input before its TTL. No raw IP
- * is ever shown. `table-fixed` keeps the columns from shifting as a row's Details /
- * Delete controls change width.
+ * is ever shown.
+ *
+ * Migrated onto the shared DataTable (§24.174) for pagination + a consistent shell.
+ * The row carries its own controls (Open / Delete) so the disclosure is driven by the
+ * Details button via the cell context, not a row click; `tableFixed` + per-column
+ * widths keep the data columns from reflowing as the Delete confirm changes width.
  */
+const DATA_COLUMNS: Column<AdminSandboxRun>[] = [
+  {
+    id: 'when',
+    header: 'When',
+    headerClassName: 'w-28',
+    cellClassName: 'font-mono text-xs tabular-nums text-muted-foreground',
+    sort: (r) => (r.ts ? new Date(r.ts).getTime() : 0),
+    cell: (r) => fmtWhen(r.ts),
+  },
+  {
+    id: 'company',
+    header: 'Company',
+    cellClassName: 'text-foreground',
+    cell: (r) => (
+      <span className="block truncate" title={r.visitor_company ?? undefined}>
+        {r.visitor_company ?? '—'}
+      </span>
+    ),
+  },
+  {
+    id: 'role',
+    header: 'Role',
+    cellClassName: 'text-foreground',
+    cell: (r) => (
+      <span className="block truncate" title={r.visitor_role ?? undefined}>
+        {r.visitor_role ?? '—'}
+      </span>
+    ),
+  },
+  {
+    id: 'cost',
+    header: 'Cost',
+    align: 'right',
+    headerClassName: 'w-16',
+    cellClassName: 'font-mono tabular-nums text-foreground',
+    sort: (r) => r.total_cost_cents ?? -1,
+    cell: (r) => fmtCost(r.total_cost_cents),
+  },
+  {
+    id: 'runtime',
+    header: 'Runtime',
+    align: 'right',
+    headerClassName: 'w-20',
+    cellClassName: 'font-mono tabular-nums text-muted-foreground',
+    sort: (r) => r.total_latency_ms ?? -1,
+    cell: (r) => fmtDur(r.total_latency_ms),
+  },
+  {
+    id: 'status',
+    header: 'Status',
+    headerClassName: 'w-24',
+    cell: (r) => (
+      <span
+        className={cn(
+          'inline-flex items-center rounded px-1.5 py-0.5 font-mono text-[10px] uppercase',
+          r.status === 'completed' ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
+        )}
+      >
+        {r.status}
+      </span>
+    ),
+  },
+  {
+    id: 'source',
+    header: 'Source',
+    headerClassName: 'w-16',
+    cellClassName: 'font-mono text-[11px] text-muted-foreground',
+    cell: (r) => source(r.ip_token),
+  },
+]
+
 export function SandboxRunsPanel({
   data,
   onDelete,
@@ -39,6 +116,19 @@ export function SandboxRunsPanel({
 }) {
   const runs = data?.runs ?? []
   const stats = data?.stats
+  // The actions column closes over `onDelete`; the data columns are static.
+  const columns = React.useMemo<Column<AdminSandboxRun>[]>(
+    () => [
+      ...DATA_COLUMNS,
+      {
+        id: 'actions',
+        header: 'Actions',
+        headerClassName: 'w-[15rem]',
+        cell: (r, ctx) => <RunActions run={r} ctx={ctx} onDelete={onDelete} />,
+      },
+    ],
+    [onDelete],
+  )
   return (
     <section className="flex flex-col gap-4">
       {/* Aggregate header — cross-checks the Overview `sandbox` spend + the public feed. */}
@@ -55,39 +145,49 @@ export function SandboxRunsPanel({
         stored input before its TTL.
       </p>
 
-      {runs.length === 0 ? (
-        <p className="rounded-lg border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
-          No sandbox runs stored.
-        </p>
-      ) : (
-        <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full min-w-[58rem] table-fixed text-left text-sm">
-            <thead>
-              <tr className="border-b border-border text-[11px] uppercase tracking-wider text-muted-foreground">
-                <th className="w-28 py-2 pl-4 pr-3 font-medium">When</th>
-                <th className="py-2 pr-3 font-medium">Company</th>
-                <th className="py-2 pr-3 font-medium">Role</th>
-                <th className="w-16 py-2 pr-3 text-right font-medium">Cost</th>
-                <th className="w-20 py-2 pr-3 text-right font-medium">Runtime</th>
-                <th className="w-24 py-2 pr-3 font-medium">Status</th>
-                <th className="w-16 py-2 pr-3 font-medium">Source</th>
-                <th className="w-[15rem] py-2 pr-4 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/60">
-              {runs.map((r) => (
-                <RunRow key={r.id} run={r} onDelete={onDelete} />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable
+        columns={columns}
+        rows={runs}
+        rowKey={(r) => r.id}
+        rowTestId={(r) => `sandbox-run-${r.id}`}
+        tableFixed
+        minWidthClass="min-w-[58rem]"
+        expandOnRowClick={false}
+        renderDetail={(r) => <RunDetail run={r} />}
+        empty={
+          <p className="rounded-lg border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
+            No sandbox runs stored.
+          </p>
+        }
+      />
     </section>
   )
 }
 
-function RunRow({ run, onDelete }: { run: AdminSandboxRun; onDelete: (id: string) => Promise<AdminWriteResult> }) {
-  const [open, setOpen] = React.useState(false)
+function RunDetail({ run }: { run: AdminSandboxRun }) {
+  return (
+    <div className="flex flex-col gap-1.5 text-xs">
+      <span className="font-semibold text-foreground">What they entered (job description):</span>
+      {run.jd_excerpt ? (
+        <pre className="max-h-56 overflow-y-auto whitespace-pre-wrap rounded border border-border bg-background px-3 py-2 font-sans text-[11px] leading-snug text-muted-foreground">
+          {run.jd_excerpt}
+        </pre>
+      ) : (
+        <span className="text-muted-foreground">— none entered —</span>
+      )}
+    </div>
+  )
+}
+
+function RunActions({
+  run,
+  ctx,
+  onDelete,
+}: {
+  run: AdminSandboxRun
+  ctx: CellContext
+  onDelete: (id: string) => Promise<AdminWriteResult>
+}) {
   const [confirming, setConfirming] = React.useState(false)
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
@@ -103,108 +203,58 @@ function RunRow({ run, onDelete }: { run: AdminSandboxRun; onDelete: (id: string
 
   const actionBtn = 'font-mono text-[11px]'
   return (
-    <>
-      <tr data-testid={`sandbox-run-${run.id}`}>
-        <td className="py-2 pl-4 pr-3 font-mono text-xs tabular-nums text-muted-foreground">{fmtWhen(run.ts)}</td>
-        <td className="truncate py-2 pr-3 text-foreground" title={run.visitor_company ?? undefined}>
-          {run.visitor_company ?? '—'}
-        </td>
-        <td className="truncate py-2 pr-3 text-foreground" title={run.visitor_role ?? undefined}>
-          {run.visitor_role ?? '—'}
-        </td>
-        <td className="py-2 pr-3 text-right font-mono tabular-nums text-foreground">{fmtCost(run.total_cost_cents)}</td>
-        <td className="py-2 pr-3 text-right font-mono tabular-nums text-muted-foreground">
-          {fmtDur(run.total_latency_ms)}
-        </td>
-        <td className="py-2 pr-3">
-          <span
-            className={cn(
-              'inline-flex items-center rounded px-1.5 py-0.5 font-mono text-[10px] uppercase',
-              run.status === 'completed' ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
-            )}
-          >
-            {run.status}
-          </span>
-        </td>
-        <td className="py-2 pr-3 font-mono text-[11px] text-muted-foreground">{source(run.ip_token)}</td>
-        <td className="py-2 pr-4">
-          {/* Fixed-width column (table-fixed) so the Details/Delete state changes
-              below never reflow the data columns. */}
-          <div className="flex items-center gap-2">
-            <a
-              href={`/watch/results/${run.id}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              data-testid={`sandbox-run-open-${run.id}`}
-              className={cn(actionBtn, 'text-accent-cool hover:underline')}
-            >
-              Open ↗
-            </a>
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-2">
+        <a
+          href={`/watch/results/${run.id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid={`sandbox-run-open-${run.id}`}
+          className={cn(actionBtn, 'text-accent-cool hover:underline')}
+        >
+          Open ↗
+        </a>
+        <button
+          type="button"
+          data-testid={`sandbox-run-details-${run.id}`}
+          onClick={ctx.toggle}
+          className={cn(actionBtn, 'text-muted-foreground hover:text-foreground')}
+        >
+          {ctx.expanded ? 'Hide' : 'Details'}
+        </button>
+        {confirming ? (
+          <span className="flex items-center gap-1.5" data-testid={`sandbox-run-confirm-${run.id}`}>
             <button
               type="button"
-              data-testid={`sandbox-run-details-${run.id}`}
-              onClick={() => setOpen((v) => !v)}
-              className={cn(actionBtn, 'text-muted-foreground hover:text-foreground')}
+              data-testid={`sandbox-run-delete-yes-${run.id}`}
+              onClick={() => void del()}
+              disabled={busy}
+              className="rounded bg-destructive px-1.5 py-0.5 font-mono text-[10px] font-semibold text-white hover:bg-destructive/90 disabled:opacity-40"
             >
-              {open ? 'Hide' : 'Details'}
+              Delete
             </button>
-            {confirming ? (
-              <span className="flex items-center gap-1.5" data-testid={`sandbox-run-confirm-${run.id}`}>
-                <button
-                  type="button"
-                  data-testid={`sandbox-run-delete-yes-${run.id}`}
-                  onClick={() => void del()}
-                  disabled={busy}
-                  className="rounded bg-destructive px-1.5 py-0.5 font-mono text-[10px] font-semibold text-white hover:bg-destructive/90 disabled:opacity-40"
-                >
-                  Delete
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirming(false)}
-                  disabled={busy}
-                  className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground hover:bg-muted"
-                >
-                  Cancel
-                </button>
-              </span>
-            ) : (
-              <button
-                type="button"
-                data-testid={`sandbox-run-delete-${run.id}`}
-                onClick={() => setConfirming(true)}
-                className={cn(actionBtn, 'text-destructive/80 hover:text-destructive')}
-              >
-                Delete
-              </button>
-            )}
-          </div>
-        </td>
-      </tr>
-      {open ? (
-        <tr className="bg-muted/30">
-          <td colSpan={8} className="px-4 py-3">
-            <div className="flex flex-col gap-1.5 text-xs">
-              <span className="font-semibold text-foreground">What they entered (job description):</span>
-              {run.jd_excerpt ? (
-                <pre className="max-h-56 overflow-y-auto whitespace-pre-wrap rounded border border-border bg-background px-3 py-2 font-sans text-[11px] leading-snug text-muted-foreground">
-                  {run.jd_excerpt}
-                </pre>
-              ) : (
-                <span className="text-muted-foreground">— none entered —</span>
-              )}
-              {error ? <span className="text-[11px] text-destructive">{error}</span> : null}
-            </div>
-          </td>
-        </tr>
-      ) : error && !open ? (
-        <tr>
-          <td colSpan={8} className="px-4 pb-2">
-            <span className="text-[11px] text-destructive">{error}</span>
-          </td>
-        </tr>
-      ) : null}
-    </>
+            <button
+              type="button"
+              onClick={() => setConfirming(false)}
+              disabled={busy}
+              className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground hover:bg-muted"
+            >
+              Cancel
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            data-testid={`sandbox-run-delete-${run.id}`}
+            onClick={() => setConfirming(true)}
+            className={cn(actionBtn, 'text-destructive/80 hover:text-destructive')}
+          >
+            Delete
+          </button>
+        )}
+      </div>
+      {error ? <span className="text-[11px] text-destructive">{error}</span> : null}
+    </div>
   )
 }
 

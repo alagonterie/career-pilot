@@ -52,10 +52,10 @@ describe('PipelinePanel', () => {
     expect(names()).toEqual(['HighCo', 'LowCo'])
   })
 
-  it('paginates past the page size', () => {
+  it('paginates past the page size (default 10/page)', () => {
     const rows = Array.from({ length: 30 }, (_, i) => row({ application_id: `a${i}`, company_name: `Co ${i}` }))
     render(<PipelinePanel rows={rows} stageCounts={{}} />)
-    expect(screen.getByTestId('datatable-range')).toHaveTextContent('Showing 1–25 of 30')
+    expect(screen.getByTestId('datatable-range')).toHaveTextContent('Showing 1–10 of 30')
   })
 
   it('shows the empty note with no applications', () => {
