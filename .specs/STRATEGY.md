@@ -7357,6 +7357,25 @@ Separately, the owner has **no structured view** of sandbox runs — §24.162 de
 
 ---
 
+## §24.173 — The `/admin` Leads tab: the job-leads world-model inspector + triage
+
+**Origin** (owner idea, 2026-06-25). `job_leads` (migration 110/120) is the orchestrator's continuously-maintained **world-model of discovered roles** — built by `scrape-jobs` (greenhouse/lever/google_jobs), host-scored (`rules_score` 0–100 + a structured `rules_score_reasons` breakdown), optionally Haiku-ranked (`llm_score`), swept by the killer-match push + the close-detection stale-sweep. Today it is reachable ONLY via raw SQL or the agent's own MCP tools — no human view exists. This is the owner-only view+triage surface, behind the same Access gate as the rest of `/admin`.
+
+**Decision — a "Leads" tab; BFF `buildAdminLeads` / `applyAdminLeadsWrite`.** Follows the established `buildAdminX` / `applyAdminX` pattern (gated by `adminEnabled()`), exactly like the §24.170 Persona tab.
+
+**D1 — Read: rollup + table + score-reasons detail.** The read returns (a) a **pool rollup** — active total, by-status + by-source counts, # LLM-scored, # killer-match-pushed in 24 h, # added in 24 h / 7 d, the newest-lead age, and the closed total — the world-model's heartbeat (it cross-checks that `scrape-jobs` is feeding the pool); (b) the **active leads** (capped, `rules_score DESC`) and a separate **closed** array (capped, recent) so the client can toggle closed in without a second fetch; (c) per lead, the parsed `rules_score_reasons` (the keyword / comp / **location** / recency / source breakdown — the *why* behind a score) + a short description snippet (the full JD lives at `source_url`). Active-only by default; an include-closed toggle reveals the closed array. Filter/sort (status / source / min-score / company / order) is client-side over the fetched set (the pool is bounded; one poll, instant filtering).
+
+**D2 — Write: status / archive / re-score (a small, safe set).** Three owner overrides — no content edits (source-of-record from the board, overwritten on re-scrape) and no manual lead creation (`scrape-jobs`' job):
+- `set_status` — manual triage; reuses the agent's `VALID_STATUSES` (now exported from `job-lead-actions.ts` as the one source of truth), minus `applied` (which implies a promotion + `application_id` the owner shouldn't fake); `archived` is the existing soft-close (sets `closed_at` + `closed_reason`).
+- `rescore` — recompute one lead's deterministic `rules_score` from its stored columns against the CURRENT `candidate_profile`, reusing `computeRulesScore` + `profileFromRow`. The high-value lever after a scoring/profile change (e.g. the §24.100 location fix): refresh the ranking without waiting for a re-scrape. Touches only the host-deterministic `rules_score` — never the agent's `llm_score`.
+- `rescore_all` — the same recompute across all active leads in one transaction (re-score the whole pool with the fixed logic).
+
+**Security.** Real company names + roles, owner-only behind Access (like the rest of `/admin`). Writes are allow-listed (status set, action enum); no arbitrary SQL.
+
+**Definition of done.** `buildAdminLeads` + `applyAdminLeadsWrite` in `admin.ts` (gated, allow-listed, rescore via `computeRulesScore`); `GET/POST /api/admin/leads`; a Leads tab + `LeadsPanel` (rollup + filter/sort + expandable score-reasons detail + the row actions + include-closed toggle); host tsc + the `admin` suite green; frontend tsc + a panel test green; e2e stub; `@visual` n/a (admin not in the snapshot set); deployed to dev. Memory: [[status_current]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
