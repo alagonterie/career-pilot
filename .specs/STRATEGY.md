@@ -7421,6 +7421,18 @@ Tie-break by highest `rules_score`. **One lead per application**: a guard (`SELE
 
 ---
 
+## §24.176 — The `/admin` active tab is URL-driven (deep-link + back/forward)
+
+**Origin** (owner ask, 2026-06-25, pre-v1.0.1). `/admin` held its active tab in local `useState`, so switching tabs didn't touch the URL — no deep-link, no browser back/forward through tabs. Every *other* tab/param surface (`pipeline`, `dashboard`, `kit`, `contact`, `momentum`, `live`) already drives state from the URL via TanStack search params; `/admin` was the lone holdout.
+
+**Decision — `?tab=<id>` via `validateSearch` + `Route.useSearch`/`useNavigate`.** Copies the established `pipeline.tsx` `?app=` deep-link pattern (§24.57/§24.58): a route `validateSearch` normalizes `tab` against the canonical `TABS` list; the component reads `Route.useSearch().tab ?? 'overview'` and a tab click `navigate({ search: { tab } })` (push — so back/forward step through tabs; `resetScroll: false`). `overview` is the default and stays **param-free** (a clean `/admin`); an unknown/invalid `tab` also falls back to overview. SSR-honored, so a `/admin?tab=leads` deep-link paints the right tab on first load. No new deps, no backend, no migration — a localized change to `routes/(ops)/admin.tsx`.
+
+**Scope.** Top-level tab only. The *inner* state (the Leads filter bar, the shared `DataTable`'s page/sort/expanded-row — currently internal component state) is deliberately **out of scope**; URL-driving it would need a controlled-state API on `DataTable` + per-tab param schemas, a separate larger slice.
+
+**Definition of done.** `validateSearch` + `normalizeTab` on the route; `useState` tab → `useSearch`/`useNavigate`; tab buttons navigate (overview clears the param); an e2e (`admin.spec.ts`) asserting deep-link + URL-on-click + back-restores-tab; the existing admin e2e still green unchanged (tab clicks still drive content); frontend tsc clean; `@visual` n/a. Memory: [[status_current]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
