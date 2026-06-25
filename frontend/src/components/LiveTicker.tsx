@@ -3,6 +3,8 @@ import type { ReactNode } from 'react'
 
 import { EventSourceLabel } from '~/components/EventSourceLabel'
 import { InfoTip } from '~/components/InfoTip'
+import { RedactedText } from '~/components/Redaction'
+import { COMPANY_REF_LINK_TITLE } from '~/components/pipeline/CompanyHandle'
 import { LiveCursor, StateNote } from '~/components/states'
 import type { StreamStatus } from '~/lib/sse'
 import { type AuditEvent, isDispatchLifecycle } from '~/lib/use-activity-stream'
@@ -54,8 +56,9 @@ export function LiveTicker({
             Agent activity
           </h2>
           <InfoTip label="Agent activity" align="text">
-            A live feed of what my agents are doing right now. The ◆ proactive marker flags the actions the agent kicked
-            off on its own — it’s an autonomous worker, not a chatbot waiting for input.
+            A live feed of what my agents are doing right now. The ◆ proactive marker flags work that runs on a schedule
+            — roles scouted, recruiter replies watched — surfaced without anyone having to ask. The unmarked lines are
+            reactive: the agent answering something I asked directly.
           </InfoTip>
         </span>
         {action}
@@ -91,7 +94,7 @@ export function LiveTicker({
                   <span
                     data-testid="proactive-marker"
                     className="text-primary"
-                    title="proactive — the agent initiated this on its own"
+                    title="proactive — ran without anyone asking; the agent works on a schedule, not just when prompted"
                   >
                     ◆ proactive
                   </span>
@@ -109,6 +112,7 @@ export function LiveTicker({
                       to="/pipeline"
                       search={{ app: e.application_ref }}
                       data-testid="ticker-ref-link"
+                      title={COMPANY_REF_LINK_TITLE}
                       className="mr-2 text-muted-foreground underline decoration-muted-foreground/50 decoration-dotted underline-offset-2 transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       [{e.application_ref}]
@@ -123,7 +127,12 @@ export function LiveTicker({
                       ▸ dispatched
                     </span>
                   ) : (
-                    <span className="text-foreground">{e.summary}</span>
+                    // §24.171: render the summary through RedactedText so an
+                    // [AI_REDACTED] / [REDACTED:label] token shows the §24.134d chip
+                    // here too — parity with the /dashboard LogStream.
+                    <span className="text-foreground">
+                      <RedactedText text={e.summary} />
+                    </span>
                   )}
                 </span>
                 {e.model_used ? <span className="text-muted-foreground">{e.model_used}</span> : null}

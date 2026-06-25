@@ -7,6 +7,7 @@ import { EventSourceLabel } from '~/components/EventSourceLabel'
 import { InfoTip } from '~/components/InfoTip'
 import { LiveIndicator } from '~/components/LiveIndicator'
 import { RedactedText } from '~/components/Redaction'
+import { COMPANY_REF_LINK_TITLE } from '~/components/pipeline/CompanyHandle'
 import { LiveCursor, StateNote } from '~/components/states'
 import type { StreamStatus } from '~/lib/sse'
 import { type AuditEvent, isDispatchLifecycle } from '~/lib/use-activity-stream'
@@ -447,7 +448,7 @@ export function LogStream({
                     <span
                       data-testid="trace-proactive"
                       className="text-primary"
-                      title="proactive — the agent initiated this on its own"
+                      title="proactive — ran without anyone asking; the agent works on a schedule, not just when prompted"
                     >
                       ◆
                     </span>
@@ -465,6 +466,7 @@ export function LogStream({
                         to="/pipeline"
                         search={{ app: row.e.application_ref }}
                         data-testid="trace-ref-link"
+                        title={COMPANY_REF_LINK_TITLE}
                         className="mr-2 text-muted-foreground underline decoration-muted-foreground/50 decoration-dotted underline-offset-2 transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         [{row.e.application_ref}]

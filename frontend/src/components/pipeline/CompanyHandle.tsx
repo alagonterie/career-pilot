@@ -14,7 +14,21 @@ import { cn } from '~/lib/utils'
  * caller's type styling.
  */
 
-const ANON_TITLE = 'Company anonymized — a stable handle kept while this hiring process is live.'
+/**
+ * The canonical anonymization sentence (§24.137) — the ONE voice for "this
+ * company shows as a stable handle while its hiring process is live." Exported
+ * (§24.171) so the agent-trace refs on `/` + `/dashboard` (and the Recent-outcomes
+ * handle) reuse it verbatim instead of inventing a second phrasing.
+ */
+export const ANON_HANDLE_TITLE = 'Company anonymized — a stable handle kept while this hiring process is live.'
+
+/**
+ * The same sentence for a company ref that is ALSO a deep-link into the /pipeline
+ * drawer (§24.60 / §24.171): the trace-stream refs and the Recent-outcomes rows.
+ * Carries both the "what is this handle" explanation and the "what happens on
+ * click" affordance the owner asked for, in one hover.
+ */
+export const COMPANY_REF_LINK_TITLE = `${ANON_HANDLE_TITLE} Opens this application in the pipeline.`
 
 // Shared so the chip and its legend can never drift. Matches the company tier in
 // `Redaction.tsx` (muted fill, inset ring); `text-[0.92em]` sits the pill a touch
@@ -32,7 +46,7 @@ export const ANON_HANDLE_CHIP =
  */
 export function HandleChip({ label, testId, className }: { label: ReactNode; testId?: string; className?: string }) {
   return (
-    <span data-testid={testId} title={ANON_TITLE} className={cn(ANON_HANDLE_CHIP, 'cursor-help', className)}>
+    <span data-testid={testId} title={ANON_HANDLE_TITLE} className={cn(ANON_HANDLE_CHIP, 'cursor-help', className)}>
       {label}
     </span>
   )

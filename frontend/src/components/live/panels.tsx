@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { InfoTip } from '~/components/InfoTip'
 import { MultiSparkline } from '~/components/Sparkline'
 import { ModeBanner } from '~/components/architecture/ModeBanner'
+import { COMPANY_REF_LINK_TITLE } from '~/components/pipeline/CompanyHandle'
 import { StateNote } from '~/components/states'
 import { Skeleton } from '~/components/ui/skeleton'
 import type { ArchitectureData, SystemMode } from '~/lib/use-architecture'
@@ -590,7 +591,15 @@ export function RecentOutcomesPanel({ apps, status }: { apps: PipelineApplicatio
                       </span>
                     ) : null}
                     <span className="truncate text-foreground group-hover:underline">
-                      {isPublic ? a.application_ref : `[${a.application_ref}]`}
+                      {isPublic ? (
+                        a.application_ref
+                      ) : (
+                        // §24.171: the anonymized handle gets the same hover
+                        // explanation as the trace-stream refs (the §24.137 voice) —
+                        // a first-time visitor reads `[health-a]` and learns it's a
+                        // privacy handle, not a glitch. Public rows show the real name.
+                        <span title={COMPANY_REF_LINK_TITLE}>[{a.application_ref}]</span>
+                      )}
                     </span>
                   </span>
                   <span className="flex items-center gap-2">

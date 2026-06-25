@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
+import { COMPANY_REF_LINK_TITLE } from '~/components/pipeline/CompanyHandle'
 import type { ArchitectureData, SystemMode } from '~/lib/use-architecture'
 import type { PipelineApplication } from '~/lib/use-pipeline'
 import type { TelemetryView } from '~/lib/use-telemetry'
@@ -228,6 +229,14 @@ describe('PipelineCompact + RecentOutcomes', () => {
   it('renders each outcome as a deep-link into the /pipeline drawer (§24.57)', () => {
     render(<RecentOutcomesPanel apps={APPS} />)
     expect(screen.getAllByTestId('recent-outcome-link')).toHaveLength(2)
+  })
+
+  it('explains the anonymized handle via a hover title; a revealed public row shows the real name plainly (§24.171)', () => {
+    render(<RecentOutcomesPanel apps={APPS} />)
+    // obfuscated → the bracketed handle carries the one anonymization voice (§24.137)
+    expect(screen.getByText('[fintech-a]')).toHaveAttribute('title', COMPANY_REF_LINK_TITLE)
+    // public → the real name shows plainly, no handle title (it's been revealed)
+    expect(screen.getByText('devtools-b')).not.toHaveAttribute('title')
   })
 
   it('stamps each row with the activity DAY in the viewer’s local time (§24.147)', () => {

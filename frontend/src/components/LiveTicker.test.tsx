@@ -2,26 +2,30 @@ import { render, screen } from '@testing-library/react'
 import type * as React from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
+import { COMPANY_REF_LINK_TITLE } from '~/components/pipeline/CompanyHandle'
 import type { AuditEvent } from '~/lib/use-activity-stream'
 
 // Isolate from the router — the ticker [ref] is a <Link> into the /pipeline
 // drawer (§24.60). The anchor stand-in builds the href from to+search so the
-// link target stays assertable.
+// link target stays assertable, and forwards `title` so the §24.171 handle
+// explanation is assertable too.
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
     to,
     search,
     children,
     className,
+    title,
     'data-testid': testId,
   }: {
     to?: string
     search?: { app?: string }
     children?: React.ReactNode
     className?: string
+    title?: string
     'data-testid'?: string
   }) => (
-    <a href={search?.app ? `${to}?app=${search.app}` : to} className={className} data-testid={testId}>
+    <a href={search?.app ? `${to}?app=${search.app}` : to} className={className} title={title} data-testid={testId}>
       {children}
     </a>
   ),
@@ -123,6 +127,39 @@ describe('LiveTicker', () => {
     const link = screen.getByTestId('ticker-ref-link')
     expect(link).toHaveAttribute('href', '/pipeline?app=fintech-a')
     expect(link).toHaveTextContent('[fintech-a]')
+  })
+
+  it('explains the company handle via a hover title on the deep-link (§24.171)', () => {
+    render(
+      <LiveTicker
+        status="open"
+        events={[ev({ seq: 1, category: 'pipeline', application_ref: 'health-a', summary: 'advanced' })]}
+      />,
+    )
+    // The handle is a privacy alias, not a glitch — the title carries the one
+    // anonymization voice (§24.137), parity with the /dashboard trace ref.
+    expect(screen.getByTestId('ticker-ref-link')).toHaveAttribute('title', COMPANY_REF_LINK_TITLE)
+  })
+
+  it('renders an [AI_REDACTED] token in the summary as the §24.134d chip — parity with /dashboard (§24.171)', () => {
+    render(
+      <LiveTicker
+        status="open"
+        events={[
+          ev({
+            seq: 1,
+            category: 'subagent_progress',
+            agent_name: 'research-company',
+            summary: 'mapped [AI_REDACTED] and its market position',
+          }),
+        ]}
+      />,
+    )
+    const chip = screen.getByTestId('redaction-chip')
+    expect(chip).toHaveAttribute('data-tier', 'ai')
+    expect(chip).toHaveTextContent('redacted')
+    // the raw token never reaches the DOM as visible text
+    expect(screen.queryByText(/\[AI_REDACTED\]/)).not.toBeInTheDocument()
   })
 
   it('renders a page-supplied header action (the watch-live link slot — §24.35 Pass A)', () => {

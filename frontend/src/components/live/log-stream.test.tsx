@@ -2,26 +2,30 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import type * as React from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
+import { COMPANY_REF_LINK_TITLE } from '~/components/pipeline/CompanyHandle'
 import type { AuditEvent } from '~/lib/use-activity-stream'
 
 // Isolate from the router — the trace [ref] is a <Link> into the /pipeline
 // drawer (§24.60). The anchor stand-in builds the href from to+search so the
-// link target stays assertable.
+// link target stays assertable, and forwards `title` so the §24.171 handle
+// explanation is assertable too.
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
     to,
     search,
     children,
     className,
+    title,
     'data-testid': testId,
   }: {
     to?: string
     search?: { app?: string }
     children?: React.ReactNode
     className?: string
+    title?: string
     'data-testid'?: string
   }) => (
-    <a href={search?.app ? `${to}?app=${search.app}` : to} className={className} data-testid={testId}>
+    <a href={search?.app ? `${to}?app=${search.app}` : to} className={className} title={title} data-testid={testId}>
       {children}
     </a>
   ),
@@ -194,6 +198,11 @@ describe('LogStream', () => {
     const link = screen.getByTestId('trace-ref-link')
     expect(link).toHaveAttribute('href', '/pipeline?app=fintech-a')
     expect(link).toHaveTextContent('[fintech-a]')
+  })
+
+  it('explains the company handle via a hover title on the deep-link (§24.171)', () => {
+    render(<LogStream events={[EVENTS[0]]} status="open" count={1} />)
+    expect(screen.getByTestId('trace-ref-link')).toHaveAttribute('title', COMPANY_REF_LINK_TITLE)
   })
 
   it('carries the single "cast" InfoTip on the header — the six agents, one tip (§24.60)', () => {
