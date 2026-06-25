@@ -35,7 +35,16 @@ jobs:
         # Exits 1 (failing the job) when the tagged version has no CHANGELOG
         # section — so a release is never cut with empty notes.
         run: pnpm exec tsx scripts/changelog-section.ts "${{ github.ref_name }}" CHANGELOG.md > release-notes.md
-      - name: Create the GitHub Release
+      - name: Create or update the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" --title "${{ github.ref_name }}" --notes-file release-notes.md
+        # Idempotent (§24.170): a MOVED/re-pushed tag re-fires this workflow, and
+        # `gh release create` 422s when the release already exists. Update it in
+        # place instead — re-point the release at the tag's new commit + refresh
+        # the notes — so a tag move never leaves a red X.
+        run: |
+          if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
+            gh release edit "${{ github.ref_name }}" --target "${{ github.sha }}" --notes-file release-notes.md
+          else
+            gh release create "${{ github.ref_name }}" --title "${{ github.ref_name }}" --notes-file release-notes.md
+          fi
