@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 
+import { InfoTip } from '~/components/InfoTip'
 import {
   postAdminLeads,
   type AdminLead,
@@ -218,7 +219,43 @@ export function LeadsPanel({
         className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:p-5"
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-mono text-xs uppercase tracking-widest text-foreground">Lead pool</h2>
+          <h2 className="flex items-center gap-1.5 font-mono text-xs uppercase tracking-widest text-foreground">
+            Lead pool
+            {/* The status vocabulary is subtle (and mostly latent today) — one
+                header-level explainer, the §24.60 "cast InfoTip" pattern. */}
+            <InfoTip label="lead statuses">
+              <span className="mb-1 block font-semibold normal-case tracking-normal text-foreground">
+                Lead statuses
+              </span>
+              <ul className="flex flex-col gap-1 normal-case tracking-normal">
+                <li>
+                  <span className="font-mono text-foreground">new</span> — just discovered; the default (most leads stay
+                  here)
+                </li>
+                <li>
+                  <span className="font-mono text-foreground">reviewed</span> — triaged, parked for now
+                </li>
+                <li>
+                  <span className="font-mono text-foreground">queued</span> — slated to act on (research / tailor /
+                  outreach)
+                </li>
+                <li>
+                  <span className="font-mono text-foreground">applied</span> — promoted to a real application
+                </li>
+                <li>
+                  <span className="font-mono text-foreground">rejected</span> — actively passed on
+                </li>
+                <li>
+                  <span className="font-mono text-foreground">archived</span> — removed from the active pool (a
+                  soft-close)
+                </li>
+              </ul>
+              <span className="mt-1.5 block normal-case tracking-normal">
+                Today these mostly change by hand here — the agent has the tool but doesn&apos;t advance them on its own
+                yet. The 14-day stale-sweep closes a lead without changing its status.
+              </span>
+            </InfoTip>
+          </h2>
           <button
             type="button"
             data-testid="leads-rescore-all"

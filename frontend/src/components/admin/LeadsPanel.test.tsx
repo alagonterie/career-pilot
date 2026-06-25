@@ -126,4 +126,13 @@ describe('LeadsPanel', () => {
     render(<LeadsPanel data={DATA} baseUrl="http://x" onSaved={vi.fn()} />)
     expect(screen.getByTestId('leads-rescore-all')).toHaveTextContent('Re-score all active (2)')
   })
+
+  it('explains the status vocabulary via the header InfoTip (incl. the honest "mostly manual" note)', () => {
+    render(<LeadsPanel data={DATA} baseUrl="http://x" onSaved={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'About: lead statuses' }))
+    const panel = screen.getByTestId('info-tip-panel')
+    expect(panel).toHaveTextContent('queued')
+    expect(panel).toHaveTextContent('archived')
+    expect(panel).toHaveTextContent(/doesn’t advance them on its own|doesn't advance them on its own/)
+  })
 })
