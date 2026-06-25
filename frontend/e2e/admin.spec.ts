@@ -162,6 +162,33 @@ const SANDBOX_RUNS = {
   stats: { total: 1, runsToday: 1, costTodayCents: 84, runs7d: 1 },
 }
 
+const PERSONA = {
+  fields: {
+    full_name: 'Jane Doe',
+    display_name: 'Jane',
+    bio: 'Engineer',
+    target_roles: JSON.stringify(['Staff Eng']),
+    skills: JSON.stringify(['Go']),
+    location_pref: '{"remote":true}',
+    comp_floor: 185000,
+    search_goals: 'staff role',
+    master_resume: 'resume',
+    github_url: null,
+    linkedin_url: null,
+    x_url: null,
+    website_url: null,
+    public_email: null,
+    brand_color_hsl: null,
+    headshot_path: null,
+    protected_terms: JSON.stringify([]),
+    gmail_account: 'jane@gmail.com',
+  },
+  readonlyFields: ['gmail_account'],
+  workProfile: { json: '{"name":"Jane Doe"}', source: 'seed', generated_at: '2026-06-24T00:00:00.000Z' },
+  personaPreview: '# Jane Doe',
+  blockers: [],
+}
+
 /** Stub the admin reads (+ the knob/control/sandbox POSTs). `available:false` → every read 404s. */
 async function stubAdmin(page: Page, available = true): Promise<void> {
   const read = (body: unknown) => (route: import('@playwright/test').Route) =>
@@ -180,6 +207,7 @@ async function stubAdmin(page: Page, available = true): Promise<void> {
     return route.fulfill(available ? jsonRoute(KNOBS) : jsonRoute({ error: 'not_found' }, 404))
   })
   await page.route('**/api/admin/control', (route) => route.fulfill(jsonRoute({ liveMode: true }, 200)))
+  await page.route('**/api/admin/persona', read(PERSONA))
 }
 
 test.describe('/admin — control center (§24.138)', () => {
