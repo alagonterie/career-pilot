@@ -7313,6 +7313,24 @@ Separately, the owner has **no structured view** of sandbox runs — §24.162 de
 
 ---
 
+## §24.170 — The `/admin` Persona tab: the owner-only candidate-profile editor
+
+**Origin** (owner idea, 2026-06-24). `candidate_profile` (the single-row persona table, migration 105 + ALTERs) is the one source that fans out to three places: the **live agent** (`renderPersona` → the `candidate.md` host-fragment, injected at the next spawn), the **public identity** (`/api/profile` + the `/work` page), and the **sanitizer** (`full_name`/`display_name` are redaction targets). Today it is writable only by the agent's conversational onboarding (`handleUpdateProfileField`, one field per turn) or raw SQL. The dev-inspector READS it (`/api/dev/persona`) but is a **dev-only destructive re-onboarding test harness** (delete the row / NULL a field to re-trigger onboarding) — not an editor, and absent on prod. The gap: a real view+edit surface, available on prod behind the existing owner-only Access gate.
+
+**Decision — a "Persona" tab; BFF `buildAdminPersona` / `applyAdminPersonaWrite`.** Follows the established `buildAdminX` / `applyAdminX` pattern in `admin.ts`, gated by `adminEnabled()` like every admin endpoint. The read returns the editable field set + the work-profile provenance + a `renderPersona` preview + `liveModeBlockers`. The write reuses the onboarding normalizer — `coerceProfileFieldValue` + the `PROFILE_FIELDS` allow-list (`actions.ts`) — so there is no new validation and no arbitrary-column write.
+
+**D1 — Field groups + controls.** Identity (`full_name`, `display_name`, `bio`); Search & fit (`target_roles` / `skills` chips, `location_pref`, `comp_floor`, `search_goals`); Links & contact (github / linkedin / x / website / `public_email`); Branding (`brand_color_hsl`, `headshot_path`); Redaction (`protected_terms` chips); Account (`gmail_account`, read-only — OAuth/OneCLI-managed). Inline edit per field, typed control per column.
+
+**D2 — `work_profile_json` is MANUALLY editable, honestly attributed.** No regenerate button: the work-profile is agent-composed via `set_work_profile`, so a host recompose would need either an agent turn or a second composer that drifts from the agent's — unacceptable for the honesty-floor-critical résumé source. Instead a validated JSON editor: the edit runs through the SAME `projectWorkProfile` the agent's write + `/api/profile` use (a malformed/nameless edit is rejected before it lands), then stored with **`source='manual'`** — never 'agent'. The `/work` provenance marker already claims AI composition ONLY when `source === 'agent'` (`experience.tsx`), so a manual edit shows no false AI mark — exactly like the existing `source='seed'` prod value.
+
+**D3 — Propagation is legible.** The tab states an edit applies to the agent on its next session, shows the `renderPersona` preview (what the agent will actually receive), and surfaces `liveModeBlockers` inline — so the tab doubles as the go-live readiness view.
+
+**Security.** Real owner PII, but only ever behind the owner-only Cloudflare Access app (the same surface already serving the résumé/pipeline on `/admin`); values are never logged and never committed. The `PROFILE_FIELDS` allow-list blocks arbitrary-column writes.
+
+**Definition of done.** `buildAdminPersona` + `applyAdminPersonaWrite` in `admin.ts` (gated, allow-listed, `work_profile` via `projectWorkProfile` → `source='manual'`); a Persona tab + `PersonaPanel` (inline edit + JSON editor + persona preview + blockers); the simple fields round-trip through `coerceProfileFieldValue`; host tsc + the `admin` suite green; frontend tsc + the panel test green; `@visual` re-blessed; deployed. Memory: [[status_current]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
