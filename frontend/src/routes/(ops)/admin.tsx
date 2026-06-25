@@ -3,6 +3,7 @@ import { useState } from 'react'
 
 import { AdminModeControls } from '~/components/admin/AdminModeControls'
 import { ModelControls } from '~/components/admin/ModelControls'
+import { PersonaPanel } from '~/components/admin/PersonaPanel'
 import { SandboxRunsPanel } from '~/components/admin/SandboxRunsPanel'
 import { KnobControls } from '~/components/dev/KnobControls'
 import { StateNote } from '~/components/states'
@@ -19,6 +20,7 @@ import {
   useAdminAttribution,
   useAdminContacts,
   useAdminKnobs,
+  useAdminPersona,
   useAdminPipeline,
   useAdminSandboxRuns,
   useAdminSummary,
@@ -48,7 +50,7 @@ export const Route = createFileRoute('/(ops)/admin')({
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
 
-type TabId = 'overview' | 'pipeline' | 'visitors' | 'contacts' | 'sandbox' | 'models' | 'system'
+type TabId = 'overview' | 'pipeline' | 'visitors' | 'contacts' | 'sandbox' | 'models' | 'persona' | 'system'
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'pipeline', label: 'Pipeline' },
@@ -56,6 +58,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'contacts', label: 'Contacts' },
   { id: 'sandbox', label: 'Sandbox' },
   { id: 'models', label: 'Models' },
+  { id: 'persona', label: 'Persona' },
   { id: 'system', label: 'System' },
 ]
 
@@ -76,6 +79,7 @@ function AdminPage() {
   const knobs = useAdminKnobs(API_BASE)
   const attribution = useAdminAttribution(API_BASE)
   const sandboxRuns = useAdminSandboxRuns(API_BASE)
+  const persona = useAdminPersona(API_BASE)
 
   // Cold 404 on the summary feed = the admin surface is disabled (or not this
   // stack) → the whole page is unavailable. This is the prod-degradation path.
@@ -165,6 +169,9 @@ function AdminPage() {
                 only.
               </p>
             </section>
+          ) : null}
+          {tab === 'persona' ? (
+            <PersonaPanel data={persona.data ?? null} baseUrl={API_BASE} onSaved={persona.refresh} />
           ) : null}
           {tab === 'system' ? (
             <section className="flex flex-col gap-4">

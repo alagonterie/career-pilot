@@ -216,3 +216,28 @@ export function postAdminControl(
 ): Promise<AdminWriteResult> {
   return postAdmin(baseUrl, body, '/api/admin/control')
 }
+
+// ── §24.170: the Persona tab (owner-only candidate-profile editor) ──
+export interface AdminPersona {
+  /** Editable fields, raw stored values (array fields are JSON-array strings). */
+  fields: Record<string, unknown>
+  /** Fields shown read-only (e.g. gmail_account — OAuth/OneCLI-managed). */
+  readonlyFields: string[]
+  /** The work-profile + its HONEST provenance (source / generated_at). */
+  workProfile: { json: string | null; source: string | null; generated_at: string | null }
+  /** The markdown the agent receives on its next session (renderPersona). */
+  personaPreview: string
+  /** Required-but-missing fields blocking LIVE mode (empty → ready). */
+  blockers: string[]
+}
+
+/** Poll the owner candidate-profile editor view. */
+export function useAdminPersona(baseUrl: string, pollMs = 30000) {
+  return usePolledJson<AdminPersona>(`${baseUrl}/api/admin/persona`, pollMs)
+}
+
+/** Write one candidate_profile field (server normalizes + allow-lists; work_profile_json
+ * is validated + stored source='manual'). */
+export function postAdminPersona(baseUrl: string, field: string, value: unknown): Promise<AdminWriteResult> {
+  return postAdmin(baseUrl, { field, value }, '/api/admin/persona')
+}
