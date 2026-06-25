@@ -23,9 +23,17 @@ import type Database from 'better-sqlite3';
 
 import { getDb, hasTable } from '../../db/connection.js';
 import { getConfig } from '../../get-config.js';
+import { log } from '../../log.js';
 import { PROFILE_FIELDS, normalizeProfileValue } from '../career-pilot/actions.js';
 import { type HealthFinding, runHealthChecks } from '../career-pilot/health.js';
+import { VALID_STATUSES } from '../career-pilot/job-lead-actions.js';
+import {
+  computeRulesScore,
+  profileFromRow,
+  type CandidateProfileForScoring,
+} from '../career-pilot/lead-rules-score.js';
 import { type CandidateProfile, readCandidateProfile, renderPersona } from '../career-pilot/render-persona.js';
+import type { JobLeadPayload } from '../career-pilot/scrape-jobs/types.js';
 
 import { originJwtEnabled } from './access-jwt.js';
 import { isDevEnv } from './dev-inspector.js';
@@ -515,4 +523,281 @@ export function applyAdminPersonaWrite(db: Database.Database, raw: unknown): { s
   const normalized = normalizeProfileValue(field, value);
   db.prepare(`UPDATE candidate_profile SET ${field} = @v, updated_at = @now WHERE id = 1`).run({ v: normalized, now });
   return { status: 200, body: { ok: true, field, value: normalized } };
+}
+
+// ── §24.173: the Leads tab (the job_leads world-model — inspect + triage) ──────
+//
+// job_leads is the orchestrator's continuously-maintained pool of discovered
+// roles (scrape-jobs writes it; the killer-match + close-detection sweeps tend
+// it). This is the owner-only view+triage surface — REAL company names, behind
+// the Access gate like all of /admin. Reads are the pool rollup + the leads;
+// writes are a small, safe set (status / archive / re-score), never content
+// edits (source-of-record from the board) or manual creation (scrape-jobs' job).
+
+/** A lead row as served to /admin (real company; rules_score_reasons parsed). The
+ * full JD is NOT shipped — only a short snippet; source_url has the original. */
+export interface AdminLead {
+  id: string;
+  source: string;
+  source_url: string;
+  apply_url: string | null;
+  title: string;
+  company: string;
+  company_domain: string | null;
+  location_raw: string | null;
+  is_remote: number | null;
+  workplace_type: string | null;
+  comp_min_usd: number | null;
+  comp_max_usd: number | null;
+  comp_currency: string | null;
+  comp_period: string | null;
+  rules_score: number | null;
+  rules_score_reasons: unknown;
+  llm_score: number | null;
+  llm_scored_at: string | null;
+  status: string;
+  status_changed_at: string;
+  first_seen_at: string;
+  last_seen_at: string;
+  source_posted_at: string | null;
+  closed_at: string | null;
+  closed_reason: string | null;
+  killer_match_pushed_at: string | null;
+  application_id: string | null;
+  snippet: string | null;
+}
+
+export interface AdminLeadsRollup {
+  activeTotal: number;
+  closedTotal: number;
+  byStatus: Record<string, number>;
+  bySource: Record<string, number>;
+  llmScored: number;
+  pushed24h: number;
+  added24h: number;
+  added7d: number;
+  newestAgeHours: number | null;
+}
+
+export interface AdminLeadsView {
+  rollup: AdminLeadsRollup;
+  /** Active leads (closed_at IS NULL), rules_score DESC, capped. */
+  leads: AdminLead[];
+  /** Recently-closed leads, closed_at DESC, capped — the client toggles these in. */
+  closed: AdminLead[];
+}
+
+// The owner can set every lifecycle status EXCEPT 'applied' — that one implies a
+// promotion + an application_id link the agent owns; setting it by hand would
+// leave an inconsistent (applied-but-unlinked) lead.
+const OWNER_SETTABLE_LEAD_STATUSES = new Set([...VALID_STATUSES].filter((s) => s !== 'applied'));
+
+const ADMIN_LEAD_COLS = `id, source, source_url, apply_url, title, company, company_domain,
+  location_raw, is_remote, workplace_type, comp_min_usd, comp_max_usd, comp_currency, comp_period,
+  rules_score, rules_score_reasons, llm_score, llm_scored_at,
+  status, status_changed_at, first_seen_at, last_seen_at, source_posted_at,
+  closed_at, closed_reason, killer_match_pushed_at, application_id,
+  substr(description_text, 1, 200) AS snippet`;
+
+const ADMIN_LEADS_ACTIVE_CAP = 300;
+const ADMIN_LEADS_CLOSED_CAP = 120;
+
+function parseLeadReasons(rows: AdminLead[]): AdminLead[] {
+  for (const r of rows) {
+    if (typeof r.rules_score_reasons === 'string') {
+      try {
+        r.rules_score_reasons = JSON.parse(r.rules_score_reasons);
+      } catch {
+        /* leave as string */
+      }
+    }
+  }
+  return rows;
+}
+
+/** The Leads tab read: the pool rollup + the active leads + the recently-closed
+ * set (the client toggles closed in). Empty on an un-migrated DB. */
+export function buildAdminLeads(db: Database.Database): AdminLeadsView {
+  const empty: AdminLeadsView = {
+    rollup: {
+      activeTotal: 0,
+      closedTotal: 0,
+      byStatus: {},
+      bySource: {},
+      llmScored: 0,
+      pushed24h: 0,
+      added24h: 0,
+      added7d: 0,
+      newestAgeHours: null,
+    },
+    leads: [],
+    closed: [],
+  };
+  if (!hasTable(db, 'job_leads')) return empty;
+
+  const now = Date.now();
+  const iso24h = new Date(now - 86_400_000).toISOString();
+  const iso7d = new Date(now - 7 * 86_400_000).toISOString();
+  const count = (sql: string, ...params: unknown[]): number => (db.prepare(sql).get(...params) as { n: number }).n;
+
+  const activeTotal = count(`SELECT COUNT(*) AS n FROM job_leads WHERE closed_at IS NULL`);
+  const closedTotal = count(`SELECT COUNT(*) AS n FROM job_leads WHERE closed_at IS NOT NULL`);
+
+  const byStatus: Record<string, number> = {};
+  for (const r of db
+    .prepare(`SELECT status, COUNT(*) AS n FROM job_leads WHERE closed_at IS NULL GROUP BY status`)
+    .all() as { status: string; n: number }[]) {
+    byStatus[r.status] = r.n;
+  }
+  const bySource: Record<string, number> = {};
+  for (const r of db
+    .prepare(`SELECT source, COUNT(*) AS n FROM job_leads WHERE closed_at IS NULL GROUP BY source`)
+    .all() as { source: string; n: number }[]) {
+    bySource[r.source] = r.n;
+  }
+
+  const llmScored = count(`SELECT COUNT(*) AS n FROM job_leads WHERE closed_at IS NULL AND llm_score IS NOT NULL`);
+  const pushed24h = count(`SELECT COUNT(*) AS n FROM job_leads WHERE killer_match_pushed_at >= ?`, iso24h);
+  const added24h = count(`SELECT COUNT(*) AS n FROM job_leads WHERE first_seen_at >= ?`, iso24h);
+  const added7d = count(`SELECT COUNT(*) AS n FROM job_leads WHERE first_seen_at >= ?`, iso7d);
+
+  const newest = db.prepare(`SELECT MAX(first_seen_at) AS m FROM job_leads WHERE closed_at IS NULL`).get() as {
+    m: string | null;
+  };
+  const newestAgeHours = newest.m ? Math.max(0, Math.floor((now - new Date(newest.m).getTime()) / 3_600_000)) : null;
+
+  const leads = parseLeadReasons(
+    db
+      .prepare(
+        `SELECT ${ADMIN_LEAD_COLS} FROM job_leads WHERE closed_at IS NULL ORDER BY rules_score DESC, first_seen_at DESC LIMIT ?`,
+      )
+      .all(ADMIN_LEADS_ACTIVE_CAP) as AdminLead[],
+  );
+  const closed = parseLeadReasons(
+    db
+      .prepare(`SELECT ${ADMIN_LEAD_COLS} FROM job_leads WHERE closed_at IS NOT NULL ORDER BY closed_at DESC LIMIT ?`)
+      .all(ADMIN_LEADS_CLOSED_CAP) as AdminLead[],
+  );
+
+  return {
+    rollup: { activeTotal, closedTotal, byStatus, bySource, llmScored, pushed24h, added24h, added7d, newestAgeHours },
+    leads,
+    closed,
+  };
+}
+
+/** Map a stored job_leads row to the JobLeadPayload subset computeRulesScore
+ * reads, so a re-score recomputes the deterministic score from the CURRENT
+ * normalized columns (not raw_payload, which is the un-normalized API response). */
+function leadRowToScorePayload(row: Record<string, unknown>): JobLeadPayload {
+  return {
+    source: row.source as JobLeadPayload['source'],
+    source_board_token: null,
+    source_job_id: String(row.source_job_id ?? ''),
+    source_url: String(row.source_url ?? ''),
+    title: String(row.title ?? ''),
+    company: String(row.company ?? ''),
+    location_raw: (row.location_raw as string | null) ?? null,
+    is_remote: row.is_remote == null ? null : Boolean(row.is_remote),
+    remote_region: (row.remote_region as JobLeadPayload['remote_region']) ?? null,
+    comp_min_usd: (row.comp_min_usd as number | null) ?? null,
+    comp_max_usd: (row.comp_max_usd as number | null) ?? null,
+    description_text: (row.description_text as string | null) ?? null,
+    source_posted_at: (row.source_posted_at as string | null) ?? null,
+  };
+}
+
+/** Recompute one lead's deterministic rules_score against an already-parsed
+ * profile (so a bulk re-score parses the profile once). Returns null if gone. */
+function rescoreLead(
+  db: Database.Database,
+  id: string,
+  profile: CandidateProfileForScoring,
+): { rules_score: number; reasons: Record<string, unknown> } | null {
+  const row = db.prepare(`SELECT * FROM job_leads WHERE id = ?`).get(id) as Record<string, unknown> | undefined;
+  if (!row) return null;
+  const { score, reasons } = computeRulesScore(leadRowToScorePayload(row), profile);
+  db.prepare(`UPDATE job_leads SET rules_score = @score, rules_score_reasons = @reasons WHERE id = @id`).run({
+    id,
+    score,
+    reasons: JSON.stringify(reasons),
+  });
+  return { rules_score: score, reasons };
+}
+
+function readScoringProfile(db: Database.Database): CandidateProfileForScoring {
+  const row = db.prepare('SELECT * FROM candidate_profile WHERE id = 1').get() as Record<string, unknown> | null;
+  return profileFromRow(row);
+}
+
+/**
+ * The Leads tab write. One JSON action:
+ *   { action: 'set_status', id, status, reason? } — owner triage (allow-listed
+ *     statuses minus 'applied'); 'archived' soft-closes (closed_at + reason).
+ *   { action: 'rescore', id }   — recompute one lead's deterministic rules_score
+ *     against the current candidate_profile (never touches llm_score).
+ *   { action: 'rescore_all' }   — the same recompute across all active leads.
+ */
+export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { status: number; body: unknown } {
+  if (typeof raw !== 'object' || raw === null) {
+    return { status: 400, body: { error: 'expected a JSON object { action }' } };
+  }
+  if (!hasTable(db, 'job_leads')) return { status: 404, body: { error: 'job_leads not migrated' } };
+  const body = raw as { action?: unknown; id?: unknown; status?: unknown; reason?: unknown };
+  const action = body.action;
+
+  if (action === 'set_status') {
+    const id = typeof body.id === 'string' ? body.id : '';
+    const status = typeof body.status === 'string' ? body.status : '';
+    const reason = typeof body.reason === 'string' ? body.reason : null;
+    if (!id) return { status: 400, body: { error: 'id (string) is required' } };
+    if (!OWNER_SETTABLE_LEAD_STATUSES.has(status)) {
+      return { status: 400, body: { error: `status must be one of: ${[...OWNER_SETTABLE_LEAD_STATUSES].join(', ')}` } };
+    }
+    const existing = db.prepare('SELECT status FROM job_leads WHERE id = ?').get(id) as { status: string } | undefined;
+    if (!existing) return { status: 404, body: { error: `no job_lead with id "${id}"` } };
+    const now = new Date().toISOString();
+    if (status === 'archived') {
+      db.prepare(
+        `UPDATE job_leads SET status = 'archived', status_changed_at = @now, closed_at = @now, closed_reason = @reason WHERE id = @id`,
+      ).run({ id, now, reason: reason ?? 'manual' });
+    } else {
+      db.prepare(`UPDATE job_leads SET status = @status, status_changed_at = @now WHERE id = @id`).run({
+        id,
+        status,
+        now,
+      });
+    }
+    log.info('admin: job_lead status set', { id, from: existing.status, to: status });
+    return { status: 200, body: { ok: true, id, from: existing.status, to: status } };
+  }
+
+  if (action === 'rescore') {
+    const id = typeof body.id === 'string' ? body.id : '';
+    if (!id) return { status: 400, body: { error: 'id (string) is required' } };
+    const result = rescoreLead(db, id, readScoringProfile(db));
+    if (!result) return { status: 404, body: { error: `no job_lead with id "${id}"` } };
+    log.info('admin: job_lead rescored', { id, rules_score: result.rules_score });
+    return {
+      status: 200,
+      body: { ok: true, id, rules_score: result.rules_score, rules_score_reasons: result.reasons },
+    };
+  }
+
+  if (action === 'rescore_all') {
+    const profile = readScoringProfile(db);
+    const ids = (db.prepare(`SELECT id FROM job_leads WHERE closed_at IS NULL`).all() as { id: string }[]).map(
+      (r) => r.id,
+    );
+    let rescored = 0;
+    db.transaction(() => {
+      for (const id of ids) {
+        if (rescoreLead(db, id, profile)) rescored += 1;
+      }
+    })();
+    log.info('admin: job_leads rescored (all active)', { rescored });
+    return { status: 200, body: { ok: true, rescored } };
+  }
+
+  return { status: 400, body: { error: `unknown action: ${String(action)}` } };
 }

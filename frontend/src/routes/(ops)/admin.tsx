@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 
 import { AdminModeControls } from '~/components/admin/AdminModeControls'
+import { LeadsPanel } from '~/components/admin/LeadsPanel'
 import { ModelControls } from '~/components/admin/ModelControls'
 import { PersonaPanel } from '~/components/admin/PersonaPanel'
 import { SandboxRunsPanel } from '~/components/admin/SandboxRunsPanel'
@@ -20,6 +21,7 @@ import {
   useAdminAttribution,
   useAdminContacts,
   useAdminKnobs,
+  useAdminLeads,
   useAdminPersona,
   useAdminPipeline,
   useAdminSandboxRuns,
@@ -50,10 +52,11 @@ export const Route = createFileRoute('/(ops)/admin')({
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3001'
 
-type TabId = 'overview' | 'pipeline' | 'visitors' | 'contacts' | 'sandbox' | 'models' | 'persona' | 'system'
+type TabId = 'overview' | 'pipeline' | 'leads' | 'visitors' | 'contacts' | 'sandbox' | 'models' | 'persona' | 'system'
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'pipeline', label: 'Pipeline' },
+  { id: 'leads', label: 'Leads' },
   { id: 'visitors', label: 'Visitors' },
   { id: 'contacts', label: 'Contacts' },
   { id: 'sandbox', label: 'Sandbox' },
@@ -80,6 +83,7 @@ function AdminPage() {
   const attribution = useAdminAttribution(API_BASE)
   const sandboxRuns = useAdminSandboxRuns(API_BASE)
   const persona = useAdminPersona(API_BASE)
+  const leads = useAdminLeads(API_BASE)
 
   // Cold 404 on the summary feed = the admin surface is disabled (or not this
   // stack) → the whole page is unavailable. This is the prod-degradation path.
@@ -142,6 +146,7 @@ function AdminPage() {
           {tab === 'pipeline' ? (
             <PipelinePanel rows={pipeline.data?.applications ?? []} stageCounts={pipeline.data?.stageCounts ?? {}} />
           ) : null}
+          {tab === 'leads' ? <LeadsPanel data={leads.data ?? null} baseUrl={API_BASE} onSaved={leads.refresh} /> : null}
           {tab === 'visitors' ? <VisitorsPanel data={attribution.data} /> : null}
           {tab === 'contacts' ? <ContactsPanel contacts={contacts.data?.contacts ?? []} /> : null}
           {tab === 'sandbox' ? (

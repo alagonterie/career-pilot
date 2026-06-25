@@ -241,3 +241,68 @@ export function useAdminPersona(baseUrl: string, pollMs = 30000) {
 export function postAdminPersona(baseUrl: string, field: string, value: unknown): Promise<AdminWriteResult> {
   return postAdmin(baseUrl, { field, value }, '/api/admin/persona')
 }
+
+// ── §24.173: the Leads tab (the job_leads world-model — inspect + triage) ──
+export interface AdminLead {
+  id: string
+  source: string
+  source_url: string
+  apply_url: string | null
+  title: string
+  company: string
+  company_domain: string | null
+  location_raw: string | null
+  is_remote: number | null
+  workplace_type: string | null
+  comp_min_usd: number | null
+  comp_max_usd: number | null
+  comp_currency: string | null
+  comp_period: string | null
+  rules_score: number | null
+  /** The parsed rules_score reasons breakdown (keyword/comp/location/recency/source). */
+  rules_score_reasons: unknown
+  llm_score: number | null
+  llm_scored_at: string | null
+  status: string
+  status_changed_at: string
+  first_seen_at: string
+  last_seen_at: string
+  source_posted_at: string | null
+  closed_at: string | null
+  closed_reason: string | null
+  killer_match_pushed_at: string | null
+  application_id: string | null
+  /** ~200-char excerpt of the JD; the full posting is at source_url. */
+  snippet: string | null
+}
+export interface AdminLeadsRollup {
+  activeTotal: number
+  closedTotal: number
+  byStatus: Record<string, number>
+  bySource: Record<string, number>
+  llmScored: number
+  pushed24h: number
+  added24h: number
+  added7d: number
+  newestAgeHours: number | null
+}
+export interface AdminLeadsView {
+  rollup: AdminLeadsRollup
+  leads: AdminLead[]
+  closed: AdminLead[]
+}
+
+/** Poll the owner job-leads world-model (real company names — owner-only). */
+export function useAdminLeads(baseUrl: string, pollMs = 20000) {
+  return usePolledJson<AdminLeadsView>(`${baseUrl}/api/admin/leads`, pollMs)
+}
+
+export type AdminLeadsWrite =
+  | { action: 'set_status'; id: string; status: string; reason?: string }
+  | { action: 'rescore'; id: string }
+  | { action: 'rescore_all' }
+
+/** Triage / re-score a lead (server allow-lists the status set + the action enum). */
+export function postAdminLeads(baseUrl: string, body: AdminLeadsWrite): Promise<AdminWriteResult> {
+  return postAdmin(baseUrl, body, '/api/admin/leads')
+}

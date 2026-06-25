@@ -92,7 +92,10 @@ function toSummary(p: JobLeadPayload): PostingSummary {
 // ── record_job_lead ────────────────────────────────────────────────────────
 
 const VALID_SOURCES = new Set<Source>(['greenhouse', 'lever', 'google_jobs']);
-const VALID_STATUSES = new Set(['new', 'reviewed', 'queued', 'applied', 'rejected', 'archived']);
+/** The job_leads lifecycle vocabulary — exported as the ONE source of truth so the
+ * owner-only /admin Leads tab (§24.173) shares the exact allow-list the agent's
+ * `update_job_lead_status` enforces, rather than re-declaring it. */
+export const VALID_STATUSES = new Set(['new', 'reviewed', 'queued', 'applied', 'rejected', 'archived']);
 
 export async function handleRecordJobLead(
   content: Record<string, unknown>,

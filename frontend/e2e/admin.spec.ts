@@ -189,6 +189,120 @@ const PERSONA = {
   blockers: [],
 }
 
+const LEADS = {
+  rollup: {
+    activeTotal: 2,
+    closedTotal: 1,
+    byStatus: { new: 1, reviewed: 1 },
+    bySource: { greenhouse: 2 },
+    llmScored: 1,
+    pushed24h: 0,
+    added24h: 1,
+    added7d: 2,
+    newestAgeHours: 5,
+  },
+  leads: [
+    {
+      id: 'lead-1',
+      source: 'greenhouse',
+      source_url: 'https://x/1',
+      apply_url: null,
+      title: 'Senior Software Engineer',
+      company: 'Globex',
+      company_domain: null,
+      location_raw: 'Remote',
+      is_remote: 1,
+      workplace_type: 'remote',
+      comp_min_usd: 180000,
+      comp_max_usd: 220000,
+      comp_currency: 'USD',
+      comp_period: 'year',
+      rules_score: 82,
+      rules_score_reasons: {
+        keyword_match: { score: 15, title_hits: 1, desc_hits: 2, matched: ['Go'] },
+        comp: { score: 20, floor: 170000 },
+        location: { score: 8, is_remote: true },
+        recency: { score: 15, age_hours: 3 },
+        source_mult: { source: 'greenhouse', multiplier: 1.1 },
+      },
+      llm_score: 74,
+      llm_scored_at: '2026-06-24T00:00:00Z',
+      status: 'reviewed',
+      status_changed_at: '2026-06-24T00:00:00Z',
+      first_seen_at: '2026-06-24T00:00:00Z',
+      last_seen_at: '2026-06-24T00:00:00Z',
+      source_posted_at: '2026-06-24T00:00:00Z',
+      closed_at: null,
+      closed_reason: null,
+      killer_match_pushed_at: null,
+      application_id: null,
+      snippet: 'Build distributed systems',
+    },
+    {
+      id: 'lead-2',
+      source: 'greenhouse',
+      source_url: 'https://x/2',
+      apply_url: null,
+      title: 'Backend Engineer',
+      company: 'Initech',
+      company_domain: null,
+      location_raw: 'NYC',
+      is_remote: 0,
+      workplace_type: 'onsite',
+      comp_min_usd: null,
+      comp_max_usd: null,
+      comp_currency: 'USD',
+      comp_period: null,
+      rules_score: 40,
+      rules_score_reasons: { keyword_match: { score: 15 }, location: { score: -30, off_location: true } },
+      llm_score: null,
+      llm_scored_at: null,
+      status: 'new',
+      status_changed_at: '2026-06-25T00:00:00Z',
+      first_seen_at: '2026-06-25T00:00:00Z',
+      last_seen_at: '2026-06-25T00:00:00Z',
+      source_posted_at: '2026-06-25T00:00:00Z',
+      closed_at: null,
+      closed_reason: null,
+      killer_match_pushed_at: null,
+      application_id: null,
+      snippet: null,
+    },
+  ],
+  closed: [
+    {
+      id: 'lead-3',
+      source: 'greenhouse',
+      source_url: 'https://x/3',
+      apply_url: null,
+      title: 'Platform Engineer',
+      company: 'Hooli',
+      company_domain: null,
+      location_raw: null,
+      is_remote: null,
+      workplace_type: null,
+      comp_min_usd: null,
+      comp_max_usd: null,
+      comp_currency: 'USD',
+      comp_period: null,
+      rules_score: 60,
+      rules_score_reasons: {},
+      llm_score: null,
+      llm_scored_at: null,
+      status: 'archived',
+      status_changed_at: '2026-06-22T00:00:00Z',
+      first_seen_at: '2026-06-20T00:00:00Z',
+      last_seen_at: '2026-06-20T00:00:00Z',
+      source_posted_at: null,
+      closed_at: '2026-06-22T00:00:00Z',
+      closed_reason: 'stale',
+      killer_match_pushed_at: null,
+      application_id: null,
+      snippet: null,
+    },
+  ],
+}
+
 /** Stub the admin reads (+ the knob/control/sandbox POSTs). `available:false` → every read 404s. */
 async function stubAdmin(page: Page, available = true): Promise<void> {
   const read = (body: unknown) => (route: import('@playwright/test').Route) =>
@@ -208,6 +322,10 @@ async function stubAdmin(page: Page, available = true): Promise<void> {
   })
   await page.route('**/api/admin/control', (route) => route.fulfill(jsonRoute({ liveMode: true }, 200)))
   await page.route('**/api/admin/persona', read(PERSONA))
+  await page.route('**/api/admin/leads', async (route) => {
+    if (route.request().method() === 'POST') return route.fulfill(jsonRoute({ ok: true }, 200))
+    return route.fulfill(available ? jsonRoute(LEADS) : jsonRoute({ error: 'not_found' }, 404))
+  })
 }
 
 test.describe('/admin — control center (§24.138)', () => {
@@ -260,6 +378,26 @@ test.describe('/admin — control center (§24.138)', () => {
     const a11y = await new AxeBuilder({ page }).analyze()
     expect(a11y.violations).toEqual([])
     expect(consoleErrors).toEqual([])
+  })
+
+  test('the Leads tab shows the pool rollup + a lead with its score-reasons breakdown (§24.173)', async ({ page }) => {
+    await stubAdmin(page)
+    await page.goto('/admin')
+    await page.getByTestId('admin-tab-leads').click()
+
+    await expect(page.getByTestId('leads-panel')).toBeVisible()
+    await expect(page.getByTestId('leads-rollup')).toContainText('Active')
+    // active-only by default → 2 rows; sorted rules_score DESC (Globex 82 first).
+    await expect(page.getByTestId('leads-row')).toHaveCount(2)
+
+    // expand the top lead → its rules_score reasons breakdown (the "why").
+    await page.getByTestId('leads-row').first().click()
+    await expect(page.getByTestId('leads-detail')).toBeVisible()
+    await expect(page.getByTestId('leads-score-reasons')).toContainText('keyword')
+
+    // include-closed reveals the archived lead.
+    await page.getByTestId('leads-include-closed').check()
+    await expect(page.getByTestId('leads-row')).toHaveCount(3)
   })
 
   test('a System-tab knob toggle POSTs the flipped value to /api/admin/knobs', async ({ page }) => {

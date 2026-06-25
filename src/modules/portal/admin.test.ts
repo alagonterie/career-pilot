@@ -18,10 +18,12 @@ import {
   adminEnabled,
   applyAdminControl,
   applyAdminKnobWrite,
+  applyAdminLeadsWrite,
   applyAdminPersonaWrite,
   applyAdminSandboxRunDelete,
   buildAdminContacts,
   buildAdminKnobs,
+  buildAdminLeads,
   buildAdminPersona,
   buildAdminPipeline,
   buildAdminSandboxRuns,
@@ -330,5 +332,136 @@ describe('buildAdminPersona / applyAdminPersonaWrite (§24.170)', () => {
   it('rejects a nameless work_profile (the honesty-floor bar) and stores nothing', () => {
     expect(applyAdminPersonaWrite(getDb(), { field: 'work_profile_json', value: { experience: [] } }).status).toBe(400);
     expect(buildAdminPersona(getDb()).workProfile.json).toBeNull();
+  });
+});
+
+describe('buildAdminLeads / applyAdminLeadsWrite (§24.173)', () => {
+  type LeadOverrides = {
+    id: string;
+    source?: string;
+    status?: string;
+    rules_score?: number;
+    rules_score_reasons?: string;
+    title?: string;
+    description_text?: string | null;
+    first_seen_at?: string;
+    last_seen_at?: string;
+    source_posted_at?: string | null;
+    llm_score?: number | null;
+    killer_match_pushed_at?: string | null;
+    closed_at?: string | null;
+    closed_reason?: string | null;
+  };
+  function seedLead(over: LeadOverrides): void {
+    const now = '2026-06-20T00:00:00.000Z';
+    const d = {
+      source: 'greenhouse',
+      status: 'new',
+      rules_score: 50,
+      rules_score_reasons: '{"keyword_match":{"score":15}}',
+      title: 'Senior Software Engineer',
+      description_text: null as string | null,
+      first_seen_at: now,
+      last_seen_at: now,
+      source_posted_at: now as string | null,
+      llm_score: null as number | null,
+      killer_match_pushed_at: null as string | null,
+      closed_at: null as string | null,
+      closed_reason: null as string | null,
+      ...over,
+    };
+    getDb()
+      .prepare(
+        `INSERT INTO job_leads
+           (id, source, source_job_id, source_url, content_fingerprint, title, company,
+            first_seen_at, last_seen_at, status, status_changed_at, rules_score, rules_score_reasons,
+            description_text, source_posted_at, llm_score, killer_match_pushed_at, closed_at, closed_reason)
+         VALUES
+           (@id, @source, @id, 'https://x/' || @id, 'fp-' || @id, @title, 'Globex',
+            @first_seen_at, @last_seen_at, @status, @first_seen_at, @rules_score, @rules_score_reasons,
+            @description_text, @source_posted_at, @llm_score, @killer_match_pushed_at, @closed_at, @closed_reason)`,
+      )
+      .run(d);
+  }
+
+  it('is empty on a bare DB', () => {
+    const v = buildAdminLeads(getDb());
+    expect(v.leads).toHaveLength(0);
+    expect(v.closed).toHaveLength(0);
+    expect(v.rollup.activeTotal).toBe(0);
+  });
+
+  it('rolls up the pool + splits active vs closed, active sorted by rules_score', () => {
+    seedLead({ id: 'a', rules_score: 30, status: 'new' });
+    seedLead({ id: 'b', rules_score: 80, status: 'reviewed', llm_score: 71, source: 'lever' });
+    seedLead({
+      id: 'c',
+      rules_score: 90,
+      status: 'new',
+      closed_at: '2026-06-21T00:00:00.000Z',
+      closed_reason: 'stale',
+    });
+
+    const v = buildAdminLeads(getDb());
+    expect(v.rollup.activeTotal).toBe(2);
+    expect(v.rollup.closedTotal).toBe(1);
+    expect(v.rollup.byStatus).toEqual({ new: 1, reviewed: 1 });
+    expect(v.rollup.bySource).toEqual({ greenhouse: 1, lever: 1 });
+    expect(v.rollup.llmScored).toBe(1);
+    // active leads sorted rules_score DESC; the closed one is excluded.
+    expect(v.leads.map((l) => l.id)).toEqual(['b', 'a']);
+    expect(v.closed.map((l) => l.id)).toEqual(['c']);
+    // rules_score_reasons is parsed to an object, not the raw JSON string.
+    expect(typeof v.leads[0].rules_score_reasons).toBe('object');
+  });
+
+  it('set_status transitions a lead; archived soft-closes it', () => {
+    seedLead({ id: 'a', status: 'new' });
+    expect(applyAdminLeadsWrite(getDb(), { action: 'set_status', id: 'a', status: 'reviewed' }).status).toBe(200);
+    expect(buildAdminLeads(getDb()).leads[0].status).toBe('reviewed');
+
+    // archived → soft-close: leaves the active set, lands in closed with a reason.
+    expect(
+      applyAdminLeadsWrite(getDb(), { action: 'set_status', id: 'a', status: 'archived', reason: 'junk' }).status,
+    ).toBe(200);
+    const v = buildAdminLeads(getDb());
+    expect(v.leads).toHaveLength(0);
+    expect(v.closed[0]).toMatchObject({ id: 'a', status: 'archived', closed_reason: 'junk' });
+  });
+
+  it('refuses applied (agent-owned) + an unknown status + an unknown id', () => {
+    seedLead({ id: 'a' });
+    expect(applyAdminLeadsWrite(getDb(), { action: 'set_status', id: 'a', status: 'applied' }).status).toBe(400);
+    expect(applyAdminLeadsWrite(getDb(), { action: 'set_status', id: 'a', status: 'nope' }).status).toBe(400);
+    expect(applyAdminLeadsWrite(getDb(), { action: 'set_status', id: 'ghost', status: 'reviewed' }).status).toBe(404);
+    expect(applyAdminLeadsWrite(getDb(), { action: 'bogus' }).status).toBe(400);
+  });
+
+  it('rescore recomputes the deterministic rules_score against the current profile', () => {
+    getDb()
+      .prepare(
+        `INSERT INTO candidate_profile (id, target_roles, updated_at)
+         VALUES (1, '["Software Engineer"]', '2026-06-06T00:00:00Z')`,
+      )
+      .run();
+    // Seed with a deliberately-wrong stored score; the title hits the target role.
+    seedLead({ id: 'a', rules_score: 0, rules_score_reasons: '{}', title: 'Senior Software Engineer' });
+
+    const out = applyAdminLeadsWrite(getDb(), { action: 'rescore', id: 'a' });
+    expect(out.status).toBe(200);
+    const body = out.body as { rules_score: number; rules_score_reasons: Record<string, unknown> };
+    expect(body.rules_score).toBeGreaterThan(0); // recomputed from the keyword match
+    expect(body.rules_score_reasons).toHaveProperty('keyword_match');
+    // persisted
+    expect(buildAdminLeads(getDb()).leads[0].rules_score).toBe(body.rules_score);
+  });
+
+  it('rescore_all recomputes every ACTIVE lead (closed excluded)', () => {
+    seedLead({ id: 'a', rules_score: 0 });
+    seedLead({ id: 'b', rules_score: 0 });
+    seedLead({ id: 'c', rules_score: 0, closed_at: '2026-06-21T00:00:00.000Z', closed_reason: 'stale' });
+    const out = applyAdminLeadsWrite(getDb(), { action: 'rescore_all' });
+    expect(out.status).toBe(200);
+    expect((out.body as { rescored: number }).rescored).toBe(2);
   });
 });
