@@ -13,6 +13,30 @@ fork version recorded in `package.json` — the two are never conflated.
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-06-26
+
+Morning-automation reliability and agent-prompt hygiene.
+
+### Fixed
+
+- The daily morning automation could redundantly re-run a background sub-agent
+  and leave a recurring job stuck — its container was being reclaimed while a
+  sub-agent was still working. The container now stays alive for the full
+  duration of a sub-agent task, so the morning routine completes in one clean
+  pass.
+- Repaired a vocabulary guard so internal terminology no longer surfaces in the
+  public activity trace.
+
+### Changed
+
+- The daily automation now applies a detected pipeline change — advancing an
+  application's stage and preparing its interview kit — at detection time rather
+  than deferring it into the morning briefing. The briefing is now a lighter
+  read-and-report step, so heavy background work can't delay the digest.
+- Internal agent-instruction cleanup: removed developer-facing notes and
+  configuration-dependent literals from the runtime agent persona (no behavior
+  change).
+
 ## [1.0.2] - 2026-06-25
 
 Transparent, owner-controlled visit attribution.
