@@ -326,22 +326,19 @@ is exactly `[scheduled trigger: daily-briefing]`.
    If state is null → curator hasn't run yet (first day on the
    system); proceed with leads-only briefing.
 
-0.5. Apply the scribe's pending suggestions. For each entry in
-   `state.suggestions[]` whose `action` is a status move
-   (`mark_applied` / `mark_interviewing`): if
-   `approval_scope.update_application_status` allows auto-applying it
-   (transitional moves are auto under the default `if_terminal`), call
-   `update_application({ id: target_id })` to set the status the
-   evidence implies (e.g. "moving to the next round" → TECH_SCREEN).
-   This is the single place the overnight scribe's findings become real
-   state — and an interview-round advance applied here is what fires the
-   host's interview-kit cascade. Terminal moves (`mark_rejected` /
-   `mark_offer`) are NOT auto-applied: carry them into the briefing
-   below as a one-line confirm ("Looks like Acme rejected — mark it?").
-   Non-status suggestions (`create_lead`, `confirm_match`,
-   `draft_followup`) are out of scope for this step. Don't emit a
-   separate "Notify after" one-liner for an auto-applied move — the
-   briefing you're about to send IS the acknowledgment; fold it into the
+0.5. Suggestions are normally already applied. The 07:30 scribe trigger
+   applies the auto-applicable transitional suggestions and fires the kit
+   cascade (§24.180), so by now you're reading POST-action state — usually
+   there's nothing to apply, just report it below. **Safety net:** if a
+   transitional suggestion in `state.suggestions[]` is clearly NOT yet
+   reflected in its application's current status (the 07:30 turn was
+   interrupted), apply it now per the same rules —
+   `update_application({ id })` for an auto-applicable `mark_applied` /
+   `mark_interviewing`; NEVER re-apply an advance that already happened.
+   Terminal moves (`mark_rejected` / `mark_offer`) still surface here as a
+   one-line confirm ("Looks like Acme rejected — mark it?"), never
+   auto-applied. Don't emit a separate "Notify after" line for anything
+   applied — the briefing IS the acknowledgment; fold it into the
    attention section.
 
 1. mcp__nanoclaw__query_job_leads({
@@ -529,11 +526,16 @@ Calendar deltas, classifies new messages, links them to applications
 and leads, and writes a materialized pipeline-state read-model that the
 briefing + on-demand replies + killer-match suppression all consume.
 You don't do the classification work — the subagent does. You dispatch
-it and let it persist. **This trigger is materialize-only: you emit NO
-`<message>` on it, ever.** Its only job is to refresh pipeline state so
-the 08:00 daily-briefing — which reads the same `attention[]` you just
-materialized — can surface everything in one place. A 07:30 push would
-just duplicate that briefing 30 minutes early. Quiet is a feature.
+it, let it persist, then ACT on what it found.
+
+**This trigger ACTS but stays SILENT (§24.180).** "Quiet is a feature"
+means you emit NO `<message>` on this trigger, ever — it does NOT mean
+you do nothing. You apply the scribe's auto-applicable suggestions here
+(advancing statuses, which fires the host's interview-kit cascade), so
+the heavy overnight work lands at 07:30 and the 08:00 daily-briefing is
+a light read-and-report turn. Reading the same post-action state, the
+08:00 briefing is the single place the owner hears about it, once — a
+07:30 push would just duplicate that briefing 30 minutes early.
 
 **Workflow:**
 
@@ -547,11 +549,27 @@ just duplicate that briefing 30 minutes early. Quiet is a feature.
    (Most runs are cheap-out — empty deltas, no work needed.
     That's healthy.)
 
-2. SILENT. Emit ONLY an <internal> audit note (new email_events
-   count, cheap_out, cost_usd from the subagent's return). NO
-   <message> block — not for same-day items, not for an offer,
-   not for anything. There is no "push now" branch on this
-   trigger; the 08:00 briefing surfaces it all, once.
+2. Apply the scribe's pending suggestions (the step the 08:00 briefing
+   used to own — §24.180 moved it here). Read the fresh state
+   (mcp__nanoclaw__read_pipeline_state), then for each entry in
+   state.suggestions[] whose action is a transitional status move
+   (mark_applied / mark_interviewing) that
+   approval_scope.update_application_status allows auto-applying (auto
+   under the default if_terminal), call update_application({ id:
+   target_id }) to set the status the evidence implies (e.g. "moving to
+   the next round" → TECH_SCREEN). An interview-round advance here fires
+   the host's interview-kit cascade — let it run; building the kit now
+   (07:30) instead of inline at 08:00 is the whole point. Terminal moves
+   (mark_rejected / mark_offer) need a confirm you can't send silently —
+   do NOT apply them here; leave them for the 08:00 briefing to surface
+   as a one-line confirm. Non-status suggestions (create_lead /
+   confirm_match / draft_followup) are out of scope for this step.
+
+3. SILENT. Emit ONLY an <internal> audit note (new email_events count,
+   suggestions applied, cheap_out, cost_usd). NO <message> block — not
+   for same-day items, not for an offer, not for anything. There is no
+   "push now" branch on this trigger; the 08:00 briefing surfaces it
+   all, once.
 ```
 
 **On-demand pattern.** When the candidate asks "what's the state of
