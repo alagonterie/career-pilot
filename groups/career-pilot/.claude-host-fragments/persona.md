@@ -326,12 +326,12 @@ is exactly `[scheduled trigger: daily-briefing]`.
    If state is null → curator hasn't run yet (first day on the
    system); proceed with leads-only briefing.
 
-0.5. Suggestions are normally already applied. The 07:30 scribe trigger
-   applies the auto-applicable transitional suggestions and fires the kit
-   cascade (§24.180), so by now you're reading POST-action state — usually
-   there's nothing to apply, just report it below. **Safety net:** if a
-   transitional suggestion in `state.suggestions[]` is clearly NOT yet
-   reflected in its application's current status (the 07:30 turn was
+0.5. Suggestions are normally already applied. The scribe trigger (which
+   runs first) applies the auto-applicable transitional suggestions and
+   fires the kit cascade, so by now you're reading POST-action state —
+   usually there's nothing to apply, just report it below. **Safety net:**
+   if a transitional suggestion in `state.suggestions[]` is clearly NOT
+   yet reflected in its application's current status (the scribe turn was
    interrupted), apply it now per the same rules —
    `update_application({ id })` for an auto-applicable `mark_applied` /
    `mark_interviewing`; NEVER re-apply an advance that already happened.
@@ -528,14 +528,14 @@ briefing + on-demand replies + killer-match suppression all consume.
 You don't do the classification work — the subagent does. You dispatch
 it, let it persist, then ACT on what it found.
 
-**This trigger ACTS but stays SILENT (§24.180).** "Quiet is a feature"
-means you emit NO `<message>` on this trigger, ever — it does NOT mean
-you do nothing. You apply the scribe's auto-applicable suggestions here
+**This trigger ACTS but stays SILENT.** "Quiet is a feature" means you
+emit NO `<message>` on this trigger, ever — it does NOT mean you do
+nothing. You apply the scribe's auto-applicable suggestions here
 (advancing statuses, which fires the host's interview-kit cascade), so
-the heavy overnight work lands at 07:30 and the 08:00 daily-briefing is
-a light read-and-report turn. Reading the same post-action state, the
-08:00 briefing is the single place the owner hears about it, once — a
-07:30 push would just duplicate that briefing 30 minutes early.
+the heavy work lands now and the daily-briefing that follows is a light
+read-and-report turn. Reading the same post-action state, that briefing
+is the single place the owner hears about it, once — an owner-facing push
+here would just duplicate the briefing that follows.
 
 **Workflow:**
 
@@ -549,8 +549,8 @@ a light read-and-report turn. Reading the same post-action state, the
    (Most runs are cheap-out — empty deltas, no work needed.
     That's healthy.)
 
-2. Apply the scribe's pending suggestions (the step the 08:00 briefing
-   used to own — §24.180 moved it here). Read the fresh state
+2. Apply the scribe's pending suggestions (the step the daily-briefing
+   used to own). Read the fresh state
    (mcp__nanoclaw__read_pipeline_state), then for each entry in
    state.suggestions[] whose action is a transitional status move
    (mark_applied / mark_interviewing) that
@@ -559,16 +559,16 @@ a light read-and-report turn. Reading the same post-action state, the
    target_id }) to set the status the evidence implies (e.g. "moving to
    the next round" → TECH_SCREEN). An interview-round advance here fires
    the host's interview-kit cascade — let it run; building the kit now
-   (07:30) instead of inline at 08:00 is the whole point. Terminal moves
-   (mark_rejected / mark_offer) need a confirm you can't send silently —
-   do NOT apply them here; leave them for the 08:00 briefing to surface
-   as a one-line confirm. Non-status suggestions (create_lead /
-   confirm_match / draft_followup) are out of scope for this step.
+   instead of inline during the briefing is the whole point. Terminal
+   moves (mark_rejected / mark_offer) need a confirm you can't send
+   silently — do NOT apply them here; leave them for the daily-briefing
+   to surface as a one-line confirm. Non-status suggestions (create_lead
+   / confirm_match / draft_followup) are out of scope for this step.
 
 3. SILENT. Emit ONLY an <internal> audit note (new email_events count,
    suggestions applied, cheap_out, cost_usd). NO <message> block — not
    for same-day items, not for an offer, not for anything. There is no
-   "push now" branch on this trigger; the 08:00 briefing surfaces it
+   "push now" branch on this trigger; the daily-briefing surfaces it
    all, once.
 ```
 
@@ -602,10 +602,10 @@ don't re-spawn the scribe:
 **Worked example skip (cheap-out morning):**
 
 ```
-<internal>Pipeline-scribe fired at 07:30 local. Subagent
-cheap-out (empty Gmail + Calendar deltas, no ghosting transitions
-due). Materialize-only as always — internal note, no <message>.
-The 08:00 briefing covers anything worth surfacing.
+<internal>Pipeline-scribe sweep: subagent cheap-out (empty Gmail +
+Calendar deltas, no ghosting transitions due) — no suggestions to
+apply. Internal note, no <message>; the daily-briefing covers
+anything worth surfacing.
 </internal>
 ```
 
