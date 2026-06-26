@@ -48,7 +48,11 @@ export function openInboundDb(): Database {
   // so the singleton survives for the rest of the test.
   if (_testMode && _inbound) {
     const db = _inbound;
-    return { prepare: (sql: string) => db.prepare(sql), exec: (sql: string) => db.exec(sql), close: () => {} } as unknown as Database;
+    return {
+      prepare: (sql: string) => db.prepare(sql),
+      exec: (sql: string) => db.exec(sql),
+      close: () => {},
+    } as unknown as Database;
   }
   const db = new Database(DEFAULT_INBOUND_PATH, { readonly: true });
   db.exec('PRAGMA busy_timeout = 5000');
@@ -149,6 +153,47 @@ export function clearContainerToolInFlight(): void {
 }
 
 /**
+ * Tool-call nesting depth (§24.178). A subagent dispatch surfaces as a parent
+ * `Task` tool whose Pre/PostToolUse bracket the ENTIRE subagent run; the
+ * subagent's OWN nested tool calls (record_progress, the Drive persist, …) fire
+ * the same hooks on the same singleton container_state row. Tracking depth lets
+ * the in-flight marker reflect the OUTERMOST tool and clear only when it
+ * completes — without this, a nested PostToolUse erased the parent `Task` marker
+ * mid-subagent, so during the subagent's event-silent generation gaps the host
+ * saw "no tool in flight + stale heartbeat" and reaped the container at the
+ * short ops idle ceiling, mid-turn (the §24.114 mechanism this repairs assumed a
+ * single, non-nested tool). Module-scoped (per-process) — resets to 0 on every
+ * fresh container spawn, so any unbalanced-hook leak is bounded by container life.
+ */
+let _toolDepth = 0;
+
+/**
+ * Mark a tool as starting (PreToolUse). Writes container_state only on the
+ * outermost entry (depth 0→1) so the OUTERMOST tool's ceiling governs the whole
+ * nested run; inner calls just deepen the count. Pair every call with exactly
+ * one popToolInFlight() (PostToolUse / PostToolUseFailure).
+ */
+export function pushToolInFlight(tool: string, declaredTimeoutMs: number | null): void {
+  if (_toolDepth === 0) setContainerToolInFlight(tool, declaredTimeoutMs);
+  _toolDepth++;
+}
+
+/**
+ * Mark a tool as finished (PostToolUse). Clears container_state only when the
+ * outermost tool completes (depth → 0). Defensive: an extra/unbalanced pop is a
+ * no-op (clamped at 0) so a missed PreToolUse can't drive the depth negative and
+ * desync the marker.
+ */
+export function popToolInFlight(): void {
+  if (_toolDepth <= 0) {
+    _toolDepth = 0;
+    return;
+  }
+  _toolDepth--;
+  if (_toolDepth === 0) clearContainerToolInFlight();
+}
+
+/**
  * Touch the heartbeat file — replaces the old touchProcessing() DB writes.
  * The host checks this file's mtime for stale container detection.
  * A file touch is cheaper and avoids cross-boundary DB write contention.
@@ -179,6 +224,7 @@ export function clearStaleProcessingAcks(): void {
 /** For tests — creates in-memory DBs with the session schemas. */
 export function initTestSessionDb(): { inbound: Database; outbound: Database } {
   _testMode = true;
+  _toolDepth = 0; // §24.178: reset nesting depth so each test starts balanced
   _inbound = new Database(':memory:');
   _inbound.exec('PRAGMA foreign_keys = ON');
   _inbound.exec(`
@@ -257,6 +303,7 @@ export function closeSessionDb(): void {
   _inbound?.close();
   _inbound = null;
   _testMode = false;
+  _toolDepth = 0;
   _outbound?.close();
   _outbound = null;
 }

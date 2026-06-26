@@ -9,7 +9,7 @@ import {
   type Query,
 } from '@anthropic-ai/claude-agent-sdk';
 
-import { clearContainerToolInFlight, setContainerToolInFlight } from '../db/connection.js';
+import { popToolInFlight, pushToolInFlight } from '../db/connection.js';
 import { registerProvider } from './provider-registry.js';
 import type {
   AgentProvider,
@@ -511,17 +511,22 @@ const preToolUseHook: HookCallback = async (input) => {
   const declaredTimeoutMs =
     toolName === 'Bash' && typeof i.tool_input?.timeout === 'number' ? (i.tool_input.timeout as number) : null;
   try {
-    setContainerToolInFlight(toolName, declaredTimeoutMs);
+    // Nesting-aware (§24.178): a subagent dispatch surfaces as a parent `Task`
+    // whose Pre/Post bracket the whole subagent; the subagent's own nested tool
+    // calls fire this same hook. push/pop keep the OUTERMOST tool's marker set
+    // for the entire run so the host's in-flight ceiling extension (§24.114)
+    // isn't dropped mid-subagent by a nested PostToolUse.
+    pushToolInFlight(toolName, declaredTimeoutMs);
   } catch (err) {
     log(`PreToolUse: failed to record container_state: ${err instanceof Error ? err.message : String(err)}`);
   }
   return { continue: true };
 };
 
-/** Clear in-flight tool on PostToolUse / PostToolUseFailure. */
+/** Clear in-flight tool on PostToolUse / PostToolUseFailure (outermost only — §24.178). */
 const postToolUseHook: HookCallback = async () => {
   try {
-    clearContainerToolInFlight();
+    popToolInFlight();
   } catch (err) {
     log(`PostToolUse: failed to clear container_state: ${err instanceof Error ? err.message : String(err)}`);
   }
