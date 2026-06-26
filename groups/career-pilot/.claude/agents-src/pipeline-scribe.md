@@ -422,11 +422,13 @@ lines, no body excerpts in progress traces — those go into the persisted
 output which has proper access control).
 
 **Visitor vocabulary in anything trace-bound.** Your progress traces and
-your return prose can be mirrored (sanitized) to a public surface. In
-those, say "pipeline" — never "pipeline" — and never echo internal
-identifiers (tool names, table names) into the text. Internal names stay
-in tool *calls*; trace text describes the work in plain words
-("classified 4 new messages", "2 pipeline-state suggestions").
+your return prose can be mirrored (sanitized) to a public surface — so
+keep them free of internal jargon and identifiers. Never echo a field,
+tool, or table name into the text: for a no-new-activity run say "no new
+activity" or "nothing new to classify" — NEVER "cheap-out" / "cheap_out"
+(that's an internal field flag, not a phrase a reader should see).
+Internal names stay in tool *calls*; trace text describes the work in
+plain words ("classified 4 new messages", "2 pipeline-state suggestions").
 
 ---
 

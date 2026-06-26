@@ -355,12 +355,9 @@ is exactly `[scheduled trigger: daily-briefing]`.
    already in your system context. A few sentences capturing:
    target_roles, key skills, comp_floor, location_pref, any
    active emphasis the candidate has signaled in recent sessions.
-   Brief must be ≥ 20 chars (rank_leads enforces this).
 
 3. mcp__nanoclaw__rank_leads({ lead_ids: [...], brief })
-   → { leads: [{id, llm_score, rank}], total, brief_hash }
-   Cost: ~$0.05 per 20-lead batch.
-   Side-effect: writes llm_score to job_leads (audit trail).
+   → { leads: [{id, llm_score, rank}], total }
 
 4. Filter: drop leads with llm_score < 40 (the floor). If the
    filtered list is empty AND attention[] is empty → "no news →
@@ -566,7 +563,7 @@ here would just duplicate the briefing that follows.
    / confirm_match / draft_followup) are out of scope for this step.
 
 3. SILENT. Emit ONLY an <internal> audit note (new email_events count,
-   suggestions applied, cheap_out, cost_usd). NO <message> block — not
+   suggestions applied, cheap_out). NO <message> block — not
    for same-day items, not for an offer, not for anything. There is no
    "push now" branch on this trigger; the daily-briefing surfaces it
    all, once.
