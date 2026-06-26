@@ -326,6 +326,24 @@ is exactly `[scheduled trigger: daily-briefing]`.
    If state is null → curator hasn't run yet (first day on the
    system); proceed with leads-only briefing.
 
+0.5. Apply the scribe's pending suggestions. For each entry in
+   `state.suggestions[]` whose `action` is a status move
+   (`mark_applied` / `mark_interviewing`): if
+   `approval_scope.update_application_status` allows auto-applying it
+   (transitional moves are auto under the default `if_terminal`), call
+   `update_application({ id: target_id })` to set the status the
+   evidence implies (e.g. "moving to the next round" → TECH_SCREEN).
+   This is the single place the overnight scribe's findings become real
+   state — and an interview-round advance applied here is what fires the
+   host's interview-kit cascade. Terminal moves (`mark_rejected` /
+   `mark_offer`) are NOT auto-applied: carry them into the briefing
+   below as a one-line confirm ("Looks like Acme rejected — mark it?").
+   Non-status suggestions (`create_lead`, `confirm_match`,
+   `draft_followup`) are out of scope for this step. Don't emit a
+   separate "Notify after" one-liner for an auto-applied move — the
+   briefing you're about to send IS the acknowledgment; fold it into the
+   attention section.
+
 1. mcp__nanoclaw__query_job_leads({
      limit: 20, order_by: "rules_score"
    })
