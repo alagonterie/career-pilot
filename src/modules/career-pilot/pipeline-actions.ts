@@ -225,6 +225,10 @@ export async function handleGetGmailSyncState(
         // heals on the next run instead of needing a manual DB edit.
         history_id: usableHistoryId(row?.history_id),
         last_full_sync_at: row?.last_full_sync_at ?? null,
+        // §24.181: scope the container's full-sync (historyId-404 recovery) to the
+        // inbox so a recovery doesn't re-classify 30 days of All Mail (archived =
+        // already triaged). Knob-gated; the container reads this off the response.
+        fullsync_inbox_only: getConfig<boolean>(db, 'pipeline_scribe_fullsync_inbox_only', true),
       },
     });
   } catch (err) {

@@ -352,8 +352,15 @@ export const queryGmailDelta: McpToolDefinition = {
 
     // ── Real mode ───────────────────────────────────────────────────────
     try {
-      const stateRes = await sendAction<{ history_id: string | null }>('career_pilot.get_gmail_sync_state', {});
+      const stateRes = await sendAction<{ history_id: string | null; fullsync_inbox_only?: boolean }>(
+        'career_pilot.get_gmail_sync_state',
+        {},
+      );
       if (!stateRes.ok) return actionErr('query_gmail_delta (sync state)', stateRes.error);
+      // §24.181: scope the full-sync (historyId-404 recovery) to the inbox unless
+      // the host knob says otherwise — archived mail is already-triaged, and the
+      // calendar delta owns scheduling. Defaults on if the host omits the field.
+      const fullSyncInboxOnly = stateRes.data.fullsync_inbox_only !== false;
       // Guard the null→"null" stringification: a stored historyId of the literal
       // string "null"/"undefined"/"" is truthy but invalid — sending it as
       // startHistoryId 400s Gmail ("Invalid value at 'start_history_id', null").
@@ -406,11 +413,13 @@ export const queryGmailDelta: McpToolDefinition = {
         // first-run cost; subsequent runs are delta-only.
         fullSyncPerformed = true;
         const after = gmailDateFromLookback(lookbackDays);
+        // Inbox-scope the recovery window unless the knob opts into All Mail.
+        const query = fullSyncInboxOnly ? `after:${after} in:inbox` : `after:${after}`;
         let pageToken: string | undefined;
         const cap = 200;
         const seen = new Set<string>();
         do {
-          const qs = `q=${encodeURIComponent(`after:${after}`)}&maxResults=100${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
+          const qs = `q=${encodeURIComponent(query)}&maxResults=100${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
           const data = await gmailFetch<GmailMessagesListResponse>(`/gmail/v1/users/me/messages?${qs}`);
           for (const m of data.messages ?? []) {
             if (!seen.has(m.id)) {

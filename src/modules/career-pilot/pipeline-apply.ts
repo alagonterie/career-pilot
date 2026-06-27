@@ -17,7 +17,13 @@
 import type Database from 'better-sqlite3';
 
 import { log } from '../../log.js';
-import { type ApplicationStatus, upsertPublicPipelineView } from '../portal/public-pipeline-view.js';
+import {
+  type ApplicationStatus,
+  APPLICATION_STATUSES,
+  upsertPublicPipelineView,
+} from '../portal/public-pipeline-view.js';
+
+import { isTerminalStatus } from './interview-kit-store.js';
 
 /**
  * Email classification → application status. Mirrors the recruiter progression
@@ -28,11 +34,24 @@ const STATUS_BY_CLASSIFICATION: Record<string, ApplicationStatus> = {
   application_confirmation: 'APPLIED',
   screen_invite: 'SCREENING',
   onsite_invite: 'TECH_SCREEN',
+  // `next_round_update` is the recruiter's explicit "advancing you to the final
+  // round" signal. The scribe taxonomy reserves it for a genuine forward advance;
+  // a vague "still reviewing" acknowledgment or a Google-Calendar cancellation
+  // notice is `noise`, not this — so this mapping only fires on a real advance.
   next_round_update: 'FINAL',
   offer: 'OFFER',
   rejection: 'REJECTED',
   screen_rejection: 'REJECTED',
 };
+
+/**
+ * Forward rank of a status on the canonical ladder (`APPLICATION_STATUSES`).
+ * Unknown/empty → -1, so any real stage outranks it. Used by the monotonic
+ * guard to forbid backward non-terminal moves.
+ */
+function statusRank(status: string): number {
+  return APPLICATION_STATUSES.indexOf(status.toUpperCase() as ApplicationStatus);
+}
 
 export interface PipelineApplyChange {
   application_id: string;
@@ -82,7 +101,21 @@ export function applyPipelineFromEmailEvents(db: Database.Database): PipelineApp
         | { status: string | null }
         | undefined;
       if (!cur) continue; // no such application
-      if ((cur.status ?? '').toUpperCase() === status) continue; // already there
+      const curStatus = (cur.status ?? '').toUpperCase();
+      if (curStatus === status) continue; // already there
+
+      // Monotonic guard (§24.181). The "latest-mapped-email wins" rule above is
+      // intentional for terminal signals — a later rejection/offer legitimately
+      // closes an interviewing app, so terminal targets always apply. But a
+      // NON-terminal classification must never move an app backward (a stray or
+      // late `screen_invite` can't revert an agent-set `TECH_SCREEN`) nor
+      // resurrect a terminal app (a `screen_invite` can't un-reject). Without
+      // this, a single mis- or late-classified email yo-yos the board.
+      if (!isTerminalStatus(status)) {
+        if (isTerminalStatus(curStatus)) continue; // never un-terminal
+        if (statusRank(status) <= statusRank(curStatus)) continue; // forward-only
+      }
+
       db.prepare("UPDATE applications SET status = ?, last_activity_at = datetime('now') WHERE id = ?").run(
         status,
         appId,

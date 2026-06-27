@@ -756,6 +756,12 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     label: 'Curator skips classified mail',
     note: 'On (default): query_gmail_delta drops emails already classified on a prior run, so a full-sync does not re-process old noise. Off: a one-time full re-classification pass.',
   },
+  pipeline_scribe_fullsync_inbox_only: {
+    type: 'boolean',
+    group: 'curator',
+    label: 'Curator full-sync inbox-only',
+    note: 'On (default): a historyId-404 recovery full-sync queries only the inbox, so archived (already-triaged) mail is not re-classified. Off: the recovery scans All Mail in the lookback window.',
+  },
   close_detection_enabled: {
     type: 'boolean',
     group: 'curator',

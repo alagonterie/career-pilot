@@ -105,12 +105,12 @@ implication (safer to under-promote than over-promote).
 | `screen_rejection` | rejected_at_screen | "Unfortunately we won't be moving forward at this time", "decided to pursue other candidates" — at the recruiter-screen stage (before take-home / onsite). |
 | `take_home_delivery` | take_home_active | Email containing or linking to an assignment. Often has a deadline. Subject mentions "take-home", "coding exercise", "assignment". |
 | `onsite_invite` | onsite_scheduled | Multi-hour interview loop scheduling. May reference "onsite" explicitly OR "next round" with multiple sessions. Often follows a successful take-home. |
-| `next_round_update` | (transitional) | Process update without a strong forward/back signal — "still reviewing", "team is discussing", "we'll be in touch by X". Useful as evidence even though it doesn't change state. |
+| `next_round_update` | advancing_to_final | Recruiter EXPLICITLY advancing the candidate to a further / final interview round — "we'd like to proceed to a final conversation", "moving you to the final round", "the team was impressed and wants a final round". A forward signal (it advances the stage). Reserve it for an explicit advance: a vague "still reviewing / team is discussing / we'll be in touch by X" carries NO forward decision and is `noise`, not this. |
 | `offer` | offer | Comp + deadline. Use this only for actual offer text — "we'd like to extend an offer", explicit comp numbers, signing deadline. |
 | `rejection` | rejected | Post-onsite / post-take-home rejection. Same template as `screen_rejection` but later in the pipeline. |
 | `cold_recruiter_outreach` | new_lead_candidate | Recruiter introducing a role for a company the candidate hasn't applied to (no prior `applications` row, no prior `email_events` linked to the same company). Suggests `create_lead` in `suggestions[]`. |
 | `reference_check` | pre_offer_admin | Reference request, background check intake. Strong forward signal — offer is likely imminent. |
-| `noise` | none | Marketing emails, job-alert newsletters from boards (Greenhouse weekly digests, LinkedIn job alerts), unrelated personal mail. Classify as noise but persist the row — it tells future-you "we saw this and it was noise" so we don't re-classify on every run. |
+| `noise` | none | Marketing emails, job-alert newsletters from boards (Greenhouse weekly digests, LinkedIn job alerts), unrelated personal mail. **Also: Google-Calendar auto-notifications about a meeting** — an invitation, an "Updated invitation", an "Accepted:"/"Declined:" RSVP, or an "Appointment canceled" / reschedule notice. Those are scheduling artifacts, not recruiter-progression mail; the calendar delta is the source of truth for the meeting, so the Gmail copy is `noise`. Classify as noise but persist the row — it tells future-you "we saw this and it was noise" so we don't re-classify on every run. |
 | `unclassified` | none | Use sparingly — only when the message is genuinely ambiguous and a forced classification would be more wrong than honest uncertainty. Carries a low `confidence` and emits a `suggestions[].action='confirm_match'`. |
 
 ---
@@ -159,9 +159,14 @@ automatically or surface them for confirm.
 - **< 0.4**: classify as `unclassified` instead of guessing; surface for
   confirm.
 
-Terminal-state classifications (`offer`, `rejection`) get extra scrutiny —
-err toward `unclassified` if confidence is below 0.7. False positives at
-the pipeline's ends are the worst.
+Late-stage classifications get extra scrutiny — the terminal ones
+(`offer`, `rejection`) AND the final-round advance (`next_round_update`),
+since each jumps the board to a late stage. Err toward `noise` /
+`unclassified` when the message is really just an acknowledgment, a
+calendar artifact, or below 0.7 confidence. A canceled or rescheduled
+interview is NOT an advance — it's `noise` (the reschedule rides the
+calendar delta + an attention item). False positives at the pipeline's
+late stages are the worst.
 
 ---
 
@@ -394,6 +399,15 @@ auto-applied by the orchestrator).
   as `application_confirmation`, leave `linked_application_id=null`,
   emit `suggestions[].action='create_lead'` (so we backfill the lead
   record).
+
+- **A Google-Calendar cancellation / reschedule / decline notice.**
+  ("Appointment canceled: …", "Declined: …", a notice carrying a
+  rebooking link.) A canceled interview is NOT a pipeline-stage change —
+  do NOT classify it as `next_round_update` / `onsite_invite` / a
+  rejection. Classify the Gmail copy as `noise`; the reschedule is carried
+  by the calendar delta + an `attention[]` item (priority `action_owed`,
+  an `action_hint` to rebook) + a `draft_followup` suggestion if a nudge
+  is warranted. The candidate is still at whatever stage they had reached.
 
 - **The candidate's outbound mail showing up in the inbound delta.**
   Gmail labels include `SENT` for self-sent mail. Skip these — they're

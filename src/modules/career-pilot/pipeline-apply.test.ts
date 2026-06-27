@@ -91,4 +91,39 @@ describe('applyPipelineFromEmailEvents', () => {
     seedEvent(null, 'offer', '2026-05-15T00:00:00Z'); // unlinked (e.g. a lead, not an application)
     expect(applyPipelineFromEmailEvents(getDb()).converted).toBe(0);
   });
+
+  // ── monotonic guard (§24.181) ──────────────────────────────────────────────
+
+  it('does NOT downgrade an agent-set stage from an earlier-rank classification', () => {
+    // The agent advanced this app to TECH_SCREEN on judgment; the only mapped
+    // email is a (later) screen_invite → SCREENING. The converter must not
+    // revert it. This is the exact shape that, pre-guard, reverted the board.
+    seedApp('a1', 'TECH_SCREEN');
+    seedEvent('a1', 'screen_invite', '2026-06-26T15:27:00Z');
+    expect(applyPipelineFromEmailEvents(getDb()).converted).toBe(0);
+    expect(statusOf('a1')).toBe('TECH_SCREEN');
+  });
+
+  it('does NOT resurrect a terminal application from a non-terminal classification', () => {
+    seedApp('a1', 'REJECTED');
+    seedEvent('a1', 'screen_invite', '2026-06-26T00:00:00Z');
+    expect(applyPipelineFromEmailEvents(getDb()).converted).toBe(0);
+    expect(statusOf('a1')).toBe('REJECTED');
+  });
+
+  it('still lets a later rejection close an interviewing application (terminal wins)', () => {
+    seedApp('a1', 'TECH_SCREEN');
+    seedEvent('a1', 'rejection', '2026-06-26T00:00:00Z');
+    expect(applyPipelineFromEmailEvents(getDb()).converted).toBe(1);
+    expect(statusOf('a1')).toBe('REJECTED');
+  });
+
+  it('still advances next_round_update → FINAL when it is a genuine forward move', () => {
+    // The sim path: an app at TECH_SCREEN gets a real "advancing to final round"
+    // email. FINAL outranks TECH_SCREEN → the forward advance still applies.
+    seedApp('a1', 'TECH_SCREEN');
+    seedEvent('a1', 'next_round_update', '2026-06-26T00:00:00Z');
+    expect(applyPipelineFromEmailEvents(getDb()).converted).toBe(1);
+    expect(statusOf('a1')).toBe('FINAL');
+  });
 });

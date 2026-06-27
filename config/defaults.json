@@ -85,6 +85,7 @@
     "pipeline_scribe_max_attention_items": 10,
     "pipeline_scribe_skip_if_no_deltas": true,
     "pipeline_scribe_skip_classified_messages": true,
+    "pipeline_scribe_fullsync_inbox_only": true,
     "close_detection_enabled": true,
     "close_detection_cron": "0 6 * * *",
     "close_detection_threshold_days": 14,
