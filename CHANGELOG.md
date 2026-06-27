@@ -13,6 +13,24 @@ fork version recorded in `package.json` — the two are never conflated.
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-06-27
+
+Pipeline-accuracy hardening for the automated mail reader.
+
+### Fixed
+
+- A canceled or rescheduled interview (a calendar cancellation notice)
+  could be mis-read as a forward step and wrongly advance an application
+  to a later stage — generating a spurious interview-prep kit. Such
+  notices are now treated as scheduling updates, not stage changes, and
+  the pipeline board only moves a stage forward on a genuine signal (a
+  recruiter rejection or offer still closes it).
+
+### Added
+
+- A control-center toggle to scope the mailbox-recovery scan to the inbox
+  (default on), so a full re-sync no longer re-reads already-archived mail.
+
 ## [1.0.3] - 2026-06-26
 
 Morning-automation reliability and agent-prompt hygiene.
