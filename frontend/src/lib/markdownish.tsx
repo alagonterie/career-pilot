@@ -1,199 +1,179 @@
 import * as React from 'react'
+import Markdown, { type Components } from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
-import { Redaction, splitRedactionParts } from '~/components/Redaction'
-
-/**
- * The hand-rolled markdown-ish renderer (§24.31 Δ, extracted §24.65) — shared
- * by the simulator output pane and the /kit dossier. Handles the shapes the
- * agent emits AND the Google Docs→markdown export dialect the backfilled kits
- * arrive in (§24.65 Δ): `#`–`####` headings, `-`/`*`/`+` bullets, `1.`/`1)`
- * ordered lists, pipe tables, `---` rules, `**bold**` / `` `code` `` inline,
- * backslash-escaped punctuation (`\+`, `R\&D`), blank-line paragraphs. Still
- * no dependency.
- */
-
-/** Docs→markdown escapes literal punctuation (`\+`, `\*real\*`, `R\&D`) —
- * show the character, not the backslash. Applied to plain text segments only
- * (code spans stay raw). */
-function unescapeMd(text: string): string {
-  return text.replace(/\\([\\`*_{}[\]()#+\-.!&>~|"'])/g, '$1')
-}
+import { Redaction } from '~/components/Redaction'
+import { cn } from '~/lib/utils'
 
 /**
- * Render a plain (non-code) string with its redaction tokens as provenance chips
- * (§24.134d) and the rest as unescaped text. Shared by BOTH the `**bold**` branch
- * and the top-level plain branch so a `[…REDACTED…]` token chips identically
- * whether or not it sits inside bold — a bold token (`**[REDACTED:infra-d] …**`)
- * was previously unescaped straight to raw text, leaking the literal token onto
- * the kit (§24.147).
+ * The kit + simulator markdown renderer (§24.182, replacing the hand-rolled
+ * §24.31/§24.65 renderer). Real CommonMark + GFM via react-markdown + remark-gfm
+ * — italics, correctly-numbered ordered lists, nested lists, links, tables,
+ * blockquotes — styled to the app's design tokens. The `[…REDACTED…]` provenance
+ * tokens the sanitizer leaves in public-bound prose become <Redaction> chips.
+ *
+ * Safe by default: react-markdown renders NO raw HTML (we never add rehype-raw),
+ * so a sanitized section body can't inject markup.
+ *
+ * The chip splitting is a REHYPE pass (over the resolved HTML tree, not mdast) so
+ * a token is caught wherever it lands — inside bold, a table cell, a list item,
+ * or an undefined shortcut-reference `[label]`. The token grammar excludes both
+ * brackets in the label, so a malformed nested `[REDACTED:[AI_REDACTED]]` never
+ * mis-splits — the inner `[AI_REDACTED]` chips on its own instead of a broken
+ * half-token (§24.182 defense behind the server-side fix).
  */
-function renderWithRedactions(text: string, keyPrefix: string): React.ReactNode {
-  return splitRedactionParts(text).map((part, j) =>
-    part.token ? (
-      <Redaction key={`${keyPrefix}-${j}`} token={part.value} />
-    ) : (
-      <React.Fragment key={`${keyPrefix}-${j}`}>{unescapeMd(part.value)}</React.Fragment>
-    ),
-  )
+
+// [AI_REDACTED] | [<TYPE>_REDACTED] | [REDACTED:<label>] | [REDACTED]
+const REDACTION_TOKEN = /\[(?:[A-Z]+_)?REDACTED(?::[^[\]]+)?\]/g
+
+interface HastNode {
+  type: string
+  value?: string
+  tagName?: string
+  properties?: Record<string, unknown>
+  children?: HastNode[]
 }
 
-export function renderInline(text: string): React.ReactNode {
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g)
-  return parts.map((p, i) => {
-    if (p.startsWith('**') && p.endsWith('**') && p.length > 4) {
-      return (
-        <strong key={i} className="font-semibold text-foreground">
-          {renderWithRedactions(p.slice(2, -2), String(i))}
-        </strong>
-      )
-    }
-    if (p.startsWith('`') && p.endsWith('`') && p.length > 2) {
-      return (
-        <code key={i} className="rounded bg-muted px-1 font-mono text-[0.85em]">
-          {p.slice(1, -1)}
-        </code>
-      )
-    }
-    // §24.134d: a plain segment may carry redaction tokens — render each as a
-    // provenance-tiered chip, the rest as unescaped text.
-    return renderWithRedactions(p, String(i))
-  })
+/** Split one text value on redaction tokens; null when it carries none. */
+function splitTextOnTokens(value: string): HastNode[] | null {
+  REDACTION_TOKEN.lastIndex = 0
+  if (!REDACTION_TOKEN.test(value)) return null
+  REDACTION_TOKEN.lastIndex = 0
+  const out: HastNode[] = []
+  let last = 0
+  let m: RegExpExecArray | null
+  while ((m = REDACTION_TOKEN.exec(value)) !== null) {
+    if (m.index > last) out.push({ type: 'text', value: value.slice(last, m.index) })
+    out.push({ type: 'element', tagName: 'redaction', properties: { token: m[0] }, children: [] })
+    last = m.index + m[0].length
+  }
+  if (last < value.length) out.push({ type: 'text', value: value.slice(last) })
+  return out
 }
 
-const HR_RE = /^(-{3,}|\*{3,}|_{3,})$/
-const BULLET_RE = /^[-*+]\s+/
-const ORDERED_RE = /^\d+[.)]\s+/
-// A table separator row (`|---|---|` / `|:--|--:|`), tolerant of spacing.
-const TABLE_SEP_RE = /^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/
-
-/** Split one `| a | b |` row into trimmed cells. */
-function tableCells(line: string): string[] {
-  return line
-    .replace(/^\s*\|/, '')
-    .replace(/\|\s*$/, '')
-    .split('|')
-    .map((c) => c.trim())
-}
-
-function renderTable(lines: string[], key: string): React.ReactNode {
-  const hasHeader = lines.length > 1 && TABLE_SEP_RE.test(lines[1])
-  const header = hasHeader ? tableCells(lines[0]) : null
-  const body = (hasHeader ? lines.slice(2) : lines).map(tableCells)
-  return (
-    <div key={key} className="my-3 overflow-x-auto">
-      <table className="w-full border-collapse text-sm">
-        {header ? (
-          <thead>
-            <tr>
-              {header.map((c, i) => (
-                <th
-                  key={i}
-                  className="border border-border bg-muted/40 px-2 py-1.5 text-left font-mono text-[11px] uppercase tracking-wider text-muted-foreground"
-                >
-                  {renderInline(c)}
-                </th>
-              ))}
-            </tr>
-          </thead>
-        ) : null}
-        <tbody>
-          {body.map((row, r) => (
-            <tr key={r}>
-              {row.map((c, i) => (
-                <td key={i} className="border border-border px-2 py-1.5 align-top leading-relaxed text-foreground/90">
-                  {renderInline(c)}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-export function renderMarkdownish(text: string): React.ReactNode {
-  const lines = text.split('\n')
-  const out: React.ReactNode[] = []
-  let list: string[] = []
-  let ordered: string[] = []
-  let table: string[] = []
-
-  const flushList = (key: string): void => {
-    if (list.length > 0) {
-      out.push(
-        <ul key={`ul-${key}`} className="my-2 ml-4 list-disc space-y-1 text-sm leading-relaxed text-foreground/90">
-          {list.map((li, i) => (
-            <li key={i}>{renderInline(li)}</li>
-          ))}
-        </ul>,
-      )
-      list = []
-    }
-    if (ordered.length > 0) {
-      out.push(
-        <ol key={`ol-${key}`} className="my-2 ml-4 list-decimal space-y-1 text-sm leading-relaxed text-foreground/90">
-          {ordered.map((li, i) => (
-            <li key={i}>{renderInline(li)}</li>
-          ))}
-        </ol>,
-      )
-      ordered = []
-    }
-    if (table.length > 0) {
-      out.push(renderTable(table, `tbl-${key}`))
-      table = []
+/** Walk the hast tree, turning `[…REDACTED…]` text into `<redaction>` elements. */
+function splitRedactionsInTree(node: HastNode): void {
+  const children = node.children
+  if (!children) return
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i]
+    if (child.type === 'text' && typeof child.value === 'string') {
+      const parts = splitTextOnTokens(child.value)
+      if (parts) {
+        children.splice(i, 1, ...parts)
+        i += parts.length - 1
+      }
+    } else {
+      splitRedactionsInTree(child)
     }
   }
+}
 
-  lines.forEach((raw, i) => {
-    const line = raw.trimEnd()
-    const heading = line.match(/^(#{1,4})\s+(.*)$/)
-    // Pipe-table rows accumulate until a non-table line flushes the block.
-    if (line.trimStart().startsWith('|')) {
-      if (list.length > 0 || ordered.length > 0) flushList(String(i))
-      table.push(line.trim())
-      return
-    }
-    if (table.length > 0) flushList(String(i))
+function rehypeRedaction() {
+  return (tree: HastNode): void => splitRedactionsInTree(tree)
+}
 
-    if (HR_RE.test(line.trim())) {
-      flushList(String(i))
-      out.push(<hr key={`hr-${i}`} className="my-4 border-border" />)
-    } else if (heading) {
-      flushList(String(i))
-      const major = heading[1].length <= 2
-      out.push(
-        major ? (
-          <h3
-            key={`h-${i}`}
-            className="mt-4 font-mono text-xs font-semibold uppercase tracking-widest text-primary first:mt-0"
-          >
-            {renderInline(heading[2])}
-          </h3>
-        ) : (
-          <h4 key={`h-${i}`} className="mt-3 text-sm font-semibold text-foreground first:mt-0">
-            {renderInline(heading[2])}
-          </h4>
-        ),
-      )
-    } else if (BULLET_RE.test(line)) {
-      if (ordered.length > 0) flushList(String(i))
-      list.push(line.replace(BULLET_RE, ''))
-    } else if (ORDERED_RE.test(line)) {
-      if (list.length > 0) flushList(String(i))
-      ordered.push(line.replace(ORDERED_RE, ''))
-    } else if (line.length === 0) {
-      flushList(String(i))
-    } else {
-      flushList(String(i))
-      out.push(
-        <p key={`p-${i}`} className="my-2 text-sm leading-relaxed text-foreground/90 first:mt-0">
-          {renderInline(line)}
-        </p>,
-      )
-    }
-  })
-  flushList('end')
-  return out
+const REMARK_PLUGINS = [remarkGfm]
+const REHYPE_PLUGINS = [rehypeRedaction]
+
+// Style react-markdown's output to the app's tokens, preserving the look the
+// hand-rolled renderer produced. Headings collapse to two tiers (the kit renders
+// section bodies, so `#`/`##` are the "major" tier, `###`+ the "minor" tier).
+const H_MAJOR = 'mt-4 font-mono text-xs font-semibold uppercase tracking-widest text-primary first:mt-0'
+const H_MINOR = 'mt-3 text-sm font-semibold text-foreground first:mt-0'
+
+const COMPONENTS: Components = {
+  h1: ({ children }) => <h3 className={H_MAJOR}>{children}</h3>,
+  h2: ({ children }) => <h3 className={H_MAJOR}>{children}</h3>,
+  h3: ({ children }) => <h4 className={H_MINOR}>{children}</h4>,
+  h4: ({ children }) => <h4 className={H_MINOR}>{children}</h4>,
+  h5: ({ children }) => <h4 className={H_MINOR}>{children}</h4>,
+  h6: ({ children }) => <h4 className={H_MINOR}>{children}</h4>,
+  p: ({ children }) => <p className="my-2 text-sm leading-relaxed text-foreground/90 first:mt-0">{children}</p>,
+  ul: ({ children }) => (
+    <ul className="my-2 ml-4 list-disc space-y-1 text-sm leading-relaxed text-foreground/90 [&_ol]:my-1 [&_ul]:my-1">
+      {children}
+    </ul>
+  ),
+  ol: ({ children, start }) => (
+    <ol
+      start={start}
+      className="my-2 ml-4 list-decimal space-y-1 text-sm leading-relaxed text-foreground/90 [&_ol]:my-1 [&_ul]:my-1"
+    >
+      {children}
+    </ol>
+  ),
+  strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  a: ({ href, children }) => (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-primary underline underline-offset-2 hover:no-underline"
+    >
+      {children}
+    </a>
+  ),
+  hr: () => <hr className="my-4 border-border" />,
+  blockquote: ({ children }) => (
+    <blockquote className="my-2 border-l-2 border-border pl-3 text-sm italic text-muted-foreground">
+      {children}
+    </blockquote>
+  ),
+  code: ({ className, children }) =>
+    className ? (
+      <code className={cn('font-mono text-[0.85em]', className)}>{children}</code>
+    ) : (
+      <code className="rounded bg-muted px-1 font-mono text-[0.85em]">{children}</code>
+    ),
+  pre: ({ children }) => (
+    <pre className="my-2 overflow-x-auto rounded-md bg-muted p-3 text-[0.8em] leading-relaxed">{children}</pre>
+  ),
+  table: ({ children }) => (
+    <div className="my-3 overflow-x-auto">
+      <table className="w-full border-collapse text-sm">{children}</table>
+    </div>
+  ),
+  th: ({ children }) => (
+    <th className="border border-border bg-muted/40 px-2 py-1.5 text-left font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+      {children}
+    </th>
+  ),
+  td: ({ children }) => (
+    <td className="border border-border px-2 py-1.5 align-top leading-relaxed text-foreground/90">{children}</td>
+  ),
+}
+
+/** The custom `<redaction>` element rehypeRedaction emits → provenance chip. */
+const RedactionChip = ({ token }: { token?: string }) => <Redaction token={token ?? ''} />
+
+// react-markdown renders a custom hast element through a matching `components`
+// key at runtime; `redaction` isn't an HTML tag, so it lives past the typed set.
+const BLOCK_COMPONENTS = { ...COMPONENTS, redaction: RedactionChip } as Components
+
+// Inline variant: unwrap the block <p> so bold/tokens render inline (the /live
+// summary + the redaction integration). Everything else is shared.
+const INLINE_COMPONENTS = {
+  ...COMPONENTS,
+  redaction: RedactionChip,
+  p: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+} as Components
+
+/** Render a markdown string to styled React (block-level). */
+export function renderMarkdownish(text: string): React.ReactNode {
+  return (
+    <Markdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS} components={BLOCK_COMPONENTS}>
+      {text}
+    </Markdown>
+  )
+}
+
+/** Render a markdown string inline (no wrapping block), tokens as chips. */
+export function renderInline(text: string): React.ReactNode {
+  return (
+    <Markdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS} components={INLINE_COMPONENTS}>
+      {text}
+    </Markdown>
+  )
 }
