@@ -13,6 +13,25 @@ fork version recorded in `package.json` — the two are never conflated.
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-07-03
+
+Interview-kit rendering fidelity.
+
+### Fixed
+
+- Interview-kit pages now render their formatting faithfully: numbered
+  criteria count up correctly instead of every item showing "1.", emphasized
+  text renders as italics rather than showing raw asterisks, and nested lists,
+  tables, and links display properly. The kit's title block no longer surfaces
+  as an empty "additional section," and an anonymization marker can no longer
+  render as a broken chip.
+
+### Changed
+
+- The interview-kit Google Doc is now produced by native Markdown import, so
+  the document a candidate opens preserves headings, tables, nested lists, and
+  emphasis instead of a lossy approximation.
+
 ## [1.0.4] - 2026-06-27
 
 Pipeline-accuracy hardening for the automated mail reader.
