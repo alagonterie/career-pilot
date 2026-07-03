@@ -103,7 +103,16 @@ async function politeFetch(
   const t0 = Date.now();
   try {
     const res = await fetch(url, { headers, signal: controller.signal });
-    const ok = res.ok || res.status === 304;
+    // A 404/410 means the board token points at a board that no longer exists
+    // (the company renamed its board or moved ATS) — an expected, fail-soft
+    // config-drift condition the scan skips, NOT a fetch/provider failure. Count
+    // it as ok so a stale seed token can't inflate the provider error rate (the
+    // /architecture "Job search API" node) or trip a failure-streak health
+    // finding (§24.184). Real transient failures (403/429/5xx, network timeout)
+    // stay ok:false. The caller's `res.ok` check is unchanged, so a 404 board is
+    // still skipped (returns []) — only its telemetry classification changes.
+    const boardAbsent = res.status === 404 || res.status === 410;
+    const ok = res.ok || res.status === 304 || boardAbsent;
     recordRequestTelemetry({
       provider,
       surface: 'scrape-board',

@@ -273,7 +273,13 @@ export const NODES: ArchNode[] = [
     label: 'Job search API',
     region: 'container',
     probe: 'provider',
-    providers: ['serpapi', 'greenhouse', 'lever'],
+    // Health tracks ONLY the primary Job-search API (serpapi). The key-less ATS
+    // board scrapers (greenhouse/lever) are host-side best-effort: a dead/renamed
+    // seed token 404s (fail-soft, skipped) but was reddening this node even though
+    // the API itself was healthy (§24.184). The description still names the ATS
+    // fallback tier; only the health mapping is scoped. (host-onecli excludes them
+    // for a related reason.)
+    providers: ['serpapi'],
     description:
       'The job-search sources the scrape-jobs subagent works from. Its primary is a commercial Google-Jobs search index, queried directly with the API key injected in flight by the OneCLI gateway; when that’s rate-limited or down it falls back to public applicant-tracking job boards, which need no key. Fresh postings land in the job-leads pool the orchestrator continuously re-reads while scouting. Not an LLM call — plain HTTPS fetches.',
     source: 'container/agent-runner/src/mcp-tools/scrape-jobs.ts',

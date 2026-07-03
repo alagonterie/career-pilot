@@ -379,12 +379,14 @@ describe('NodePanel', () => {
     // The gateway's health must reflect only traffic that actually rides the
     // proxy with an injected secret. greenhouse/lever are host-side, key-less
     // public fetches — folding them in here misattributes non-gateway traffic
-    // (the §24.69 D6 "union" bug). cont-jobs keeps them as a subsystem aggregate.
+    // (the §24.69 D6 "union" bug). cont-jobs now maps ONLY serpapi too (§24.184):
+    // the ATS scrapers' dead-board-token 404s are fail-soft config drift, not API
+    // failures, and were reddening the node — the badge tracks the primary API.
     const gateway = byId('host-onecli')
     expect(gateway.providers).toEqual(['gmail', 'calendar', 'drive', 'serpapi', 'portkey'])
     expect(gateway.providers).not.toContain('greenhouse')
     expect(gateway.providers).not.toContain('lever')
-    expect(byId('cont-jobs').providers).toEqual(['serpapi', 'greenhouse', 'lever'])
+    expect(byId('cont-jobs').providers).toEqual(['serpapi'])
   })
 
   it('anchors the orchestrator source in the agent-runner tree, not the host provider config (§24.63)', () => {

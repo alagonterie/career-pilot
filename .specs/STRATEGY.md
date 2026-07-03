@@ -7576,6 +7576,22 @@ Tie-break by highest `rules_score`. **One lead per application**: a guard (`SELE
 
 ---
 
+## §24.184 — "Job search API" architecture node showed a false ~21% error rate: ATS dead-board 404s + node over-scoping
+
+**Owner report** (2026-07-03): the `/architecture` "Job search API" node rendered red/"Down" with a ~21% error rate, while SerpApi's own dashboard showed only clean daily queries.
+
+**Root cause (from prod telemetry).** The `cont-jobs` node maps to THREE `request_telemetry` providers — `['serpapi','greenhouse','lever']` — and shows the COMBINED error rate + the WORST status (`observability.ts` per-provider health; `NodePanel` `SUM(errors)/SUM(requests)`; `deriveProviderStatus` `'worst'` fold). SerpApi was clean (11 calls/24h; the lone "error" a client-side `operation was aborted` timeout the SerpApi server never sees). The red came from the **Lever ATS board scraper: 2/2 fetches = `HTTP 404` (a dead board token) → provider `down` → the worst-fold reddened the whole node.** `politeFetch` (`scrape-jobs/sources.ts`) recorded ANY non-2xx as `ok:false`, so a stale seed token (a company that renamed its board / moved ATS) looked like an outage.
+
+**Config-drift finding (flagged in the owner chat, NOT committed — it's the candidate's target list).** Tested every seed token in `groups/career-pilot/data/ats-targets.json` against the public ATS APIs: **10 of 27 are dead (404)** — 8/10 Lever and 2/17 Greenhouse. Owner to prune/re-discover (the container `discover_ats_board` tool grabs the current token from a careers page). Specific dead tokens live in the chat, never the repo.
+
+**Fixes.**
+- **D1 — telemetry honesty (host, `sources.ts` `politeFetch`).** A board-absent **404/410** is now recorded `ok:true` (a dead/renamed token is fail-soft config drift the scan skips, not a fetch/provider failure). Real transient failures (403/429/5xx, network timeout) stay `ok:false`. The caller's `res.ok` check is unchanged, so a 404 board is still skipped — only its telemetry classification changes. This also stops a stale token from tripping a `failure-streak:<provider>` health finding (`health.ts`).
+- **D2 — node scope (frontend, `nodes.ts`).** `cont-jobs` "Job search API" now maps health to `['serpapi']` only — matching its label and the sibling `host-onecli` node (which already excluded the host-side, key-less ATS fetches). The node's description still names the key-less ATS fallback tier (per §24.122); only the health mapping is scoped.
+
+**DoD.** `politeFetch` records a 404/410 as `ok:1` and a 5xx/network throw as `ok:0` (sources.telemetry.test.ts); `cont-jobs.providers === ['serpapi']` (diagram.test.tsx); host + frontend suites + typecheck + lint green. **Deploy:** the frontend node-scope fix ships to prod on the master push (no release — the node now reads SerpApi, which is clean/green); the host telemetry fix lands on dev and rides the next release (or a `deploy-backend-prod` dispatch if a `failure-streak` finding needs clearing sooner). **Spec deltas:** this §24.184. Memory: [[status_current]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
