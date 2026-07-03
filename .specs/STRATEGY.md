@@ -6686,7 +6686,7 @@ The third slice of §24.136 **Phase A**. A2 gives the product a **version identi
 - **D4-4 — `VITE_APP_VERSION` is build-time, resolved in `deploy-frontend.yml`.** Two build vars feed the chip, both with deterministic local fallbacks:
   - `VITE_APP_VERSION` — the display label.
   - `VITE_APP_VERSION_REF` — a **repo-relative path** the chip links to (`releases/tag/v1.0.0` or `commit/<full-sha>`); empty → the chip renders as plain text. The frontend composes the href as `${REPO_URL}/${REF}` so `REPO_URL` (site.ts) stays the **single source** for the host part.
-  - **master (prod):** label = the nearest `v*` tag (`git describe --tags --match 'v*' --abbrev=0`); REF = `releases/tag/<tag>` **iff** HEAD is exactly that tag (`git tag --points-at HEAD`), else `commit/<sha>` (an honest "prod is N commits past the last release"). Pre-first-tag fallback: label = short-sha, REF = `commit/<sha>`. Checkout uses `fetch-depth: 0` so tags are visible to `git describe`.
+  - **master (prod):** label = the nearest `v*` tag (`git describe --tags --match 'v*' --abbrev=0`); REF = `releases/tag/<tag>` — **always the latest release page** (amended §24.183: prod never links a bare commit, even when HEAD is a commit or two past the tag). Pre-first-tag fallback: label = short-sha, REF = `commit/<sha>`. Checkout uses `fetch-depth: 0` so tags are visible to `git describe`.
   - **dev:** label = `dev · <short-sha>`, REF = `commit/<full-sha>`.
   - **local / unset (`dev:mock`, `vite dev`, the @visual harness):** label = `dev`, REF = empty → a deterministic, link-free chip (no sha leaks into a visual baseline).
 - **D4-5 — the chip lives in `SiteFooter`, one token, byte-stable, NOT a resurrection of the §24.35 metadata footer.** A single muted version token next to the "Built with" credit (label, optionally linked). It carries **only** the version — no live status, no cache state, no build metadata (that multi-field footer was retired §24.35 and stays retired). `appVersion()` reads `import.meta.env` at **call time** (not module-eval) so it's `vi.stubEnv`-testable.
@@ -7563,6 +7563,16 @@ Tie-break by highest `rules_score`. **One lead per application**: a guard (`SELE
 **Prod data correction (re-projection, not migration).** The stored `markdown` for all prod kits is clean (post-migration-130; no NULL, no Docs-export artifacts). The defects live only in derived artifacts: after D3+D4 land + deploy, re-run `upsertPublicKitView` for the affected kits to regenerate `sections_json` (drops the nested token + the sealed front-matter). Existing Google Docs don't auto-refresh; optionally re-push them once for native-md formatting. No content rewrite, no agent re-run.
 
 **DoD.** `applyEntityRedactions` never nests inside an existing token (regression test); `parseKitSections` drops part-0 front-matter and keeps the zero-section fail-safe; `drive-client` sends `text/markdown` on create + update, `kitMarkdownToHtml` removed, callers + tests updated; the `/kit` renderer is react-markdown with chips via the remark plugin, `@visual` re-blessed; host vitest + frontend vitest green. **Box-verify (post-deploy):** re-projected `sections_json` has no `REDACTED:[` nested token and no sealed "Additional section"; `/kit` renders the rubric numbered 1–8, real italics, no literal markdown; the kit Doc opens with native formatting. **Spec deltas:** this §24.182. Memory: [[status_current]].
+
+---
+
+## §24.183 — Prod footer version-chip always links to the latest release (never a bare commit)
+
+**Owner ask** (2026-07-03): the prod footer chip linked to a bare commit whenever `master` sat a commit or two past the last `v*` tag (cosmetic frontend fixes ship straight to `master` with no version bump — the §24.182 follow-ups). The public showcase footer should always point at a clean **release page**; only dev should link to a commit.
+
+**Change (`deploy-frontend.yml`; D4-4 amended).** On `master`, `VITE_APP_VERSION_REF` is now `releases/tag/<nearest v* tag>` unconditionally — dropped the `git tag --points-at HEAD` exact-match gate that fell back to `commit/<sha>`. `git describe --tags --abbrev=0` returns the nearest reachable tag whether HEAD is exactly the tag or past it. `dev` still links to the commit; pre-first-tag still falls back to the short SHA. This trades the old "honest N-commits-past-the-release" signal (owner-accepted) for a stable release link — the *product-version line* doesn't move between releases, so a cosmetic commit legitimately still reads as the current release.
+
+**DoD.** A `master` build with HEAD past the tag emits `Version chip: v1.0.5 (releases/tag/v1.0.5)` and the deployed prod footer links to the release page; dev still links to its commit. Workflow-only (self-fires on the `.github/workflows/deploy-frontend.yml` path) — no code change (site.ts composes `${REPO_URL}/${REF}`; the footer test already covers both ref shapes). **Spec deltas:** this §24.183 + the §24.139 D4-4 amendment. Memory: [[status_current]].
 
 ---
 
