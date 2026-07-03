@@ -9,9 +9,12 @@
  * rather than reverse-engineering the gateway proxy URL + CA for an in-process
  * client.
  *
- * Pure builders (`buildMultipartRelated`, `kitMarkdownToHtml`, `docUrl`) are
- * exported for unit tests; the I/O functions are validated on the box (no
- * googleapis creds locally), like the injector.
+ * Pure builders (`buildMultipartRelated`, `docUrl`) are exported for unit tests;
+ * the I/O functions are validated on the box (no googleapis creds locally), like
+ * the injector. Kit Docs are created/updated by handing Drive the raw kit
+ * markdown as `text/markdown` — Drive's native importer converts it to a Doc
+ * (§24.182; confirmed in our `about.importFormats`), so there is no host-side
+ * markdown→HTML step.
  */
 import { execFile } from 'child_process';
 import crypto from 'crypto';
@@ -45,6 +48,9 @@ const DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files';
 const DRIVE_UPLOAD_BASE = 'https://www.googleapis.com/upload/drive/v3/files';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 const DOC_MIME = 'application/vnd.google-apps.document';
+/** Upload media type for kit Docs: Drive's native importer converts markdown to
+ * a Doc (§24.182). Present in `about.importFormats` for our account. */
+const KIT_UPLOAD_MIME = 'text/markdown';
 
 /** Resolve the `onecli` binary (the dev VM keeps it in ~/.local/bin, off the systemd PATH). */
 function onecliBin(): string {
@@ -173,81 +179,6 @@ export function docUrl(fileId: string): string {
   return `https://docs.google.com/document/d/${fileId}/edit`;
 }
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-/** Escape, then apply a small set of inline markdown → HTML transforms. */
-function inlineMd(s: string): string {
-  let t = escapeHtml(s);
-  t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
-  t = t.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2">$1</a>');
-  return t;
-}
-
-/**
- * Minimal markdown → HTML for kit Docs (Drive converts the HTML to a native
- * Doc). We author the kit markdown, so this only needs to cover its shapes:
- * ATX headings, `---` rules, unordered (`-`/`*`/`+`) and ordered (`1.`) lists,
- * **bold**, `code`, [links](), and blank-line-separated paragraphs. Anything
- * else falls through as a paragraph — never throws, never drops content.
- */
-export function kitMarkdownToHtml(md: string): string {
-  const lines = (md ?? '').replace(/\r\n/g, '\n').split('\n');
-  const out: string[] = [];
-  let listType: 'ul' | 'ol' | null = null;
-  const closeList = (): void => {
-    if (listType) {
-      out.push(`</${listType}>`);
-      listType = null;
-    }
-  };
-  const openList = (type: 'ul' | 'ol'): void => {
-    if (listType !== type) {
-      closeList();
-      out.push(`<${type}>`);
-      listType = type;
-    }
-  };
-
-  for (const rawLine of lines) {
-    const line = rawLine.replace(/\s+$/, '');
-    if (line.trim() === '') {
-      closeList();
-      continue;
-    }
-    const heading = /^(#{1,6})\s+(.*)$/.exec(line);
-    if (heading) {
-      closeList();
-      const level = heading[1].length;
-      out.push(`<h${level}>${inlineMd(heading[2])}</h${level}>`);
-      continue;
-    }
-    if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
-      closeList();
-      out.push('<hr />');
-      continue;
-    }
-    const unordered = /^\s*[-*+]\s+(.*)$/.exec(line);
-    if (unordered) {
-      openList('ul');
-      out.push(`<li>${inlineMd(unordered[1])}</li>`);
-      continue;
-    }
-    const ordered = /^\s*\d+\.\s+(.*)$/.exec(line);
-    if (ordered) {
-      openList('ol');
-      out.push(`<li>${inlineMd(ordered[1])}</li>`);
-      continue;
-    }
-    closeList();
-    out.push(`<p>${inlineMd(line.trim())}</p>`);
-  }
-  closeList();
-  return `<html><body>\n${out.join('\n')}\n</body></html>`;
-}
-
 function newBoundary(): string {
   return `cp_${crypto.randomBytes(12).toString('hex')}`;
 }
@@ -274,10 +205,16 @@ export interface CreatedDoc {
   url: string;
 }
 
-/** Create a native Google Doc from HTML inside `parentId`. Returns its id + URL, or null. */
-export async function createDoc(name: string, html: string, parentId: string): Promise<CreatedDoc | null> {
+/** Create a native Google Doc from kit `markdown` inside `parentId` — Drive's
+ * native importer converts it (§24.182). Returns its id + URL, or null. */
+export async function createDoc(name: string, markdown: string, parentId: string): Promise<CreatedDoc | null> {
   const boundary = newBoundary();
-  const body = buildMultipartRelated(boundary, { name, mimeType: DOC_MIME, parents: [parentId] }, 'text/html', html);
+  const body = buildMultipartRelated(
+    boundary,
+    { name, mimeType: DOC_MIME, parents: [parentId] },
+    KIT_UPLOAD_MIME,
+    markdown,
+  );
   try {
     const res = await gatewayMultipart('POST', `${DRIVE_UPLOAD_BASE}?uploadType=multipart&fields=id`, body, boundary);
     if (res.status >= 200 && res.status < 300 && typeof res.json?.id === 'string') {
@@ -292,11 +229,12 @@ export async function createDoc(name: string, html: string, parentId: string): P
   }
 }
 
-/** Replace an existing Doc's content with `html` (full-content replace), optionally renaming it. */
-export async function updateDocContent(fileId: string, html: string, name?: string): Promise<boolean> {
+/** Replace an existing Doc's content with kit `markdown` (full-content replace
+ * via Drive's native markdown import, §24.182), optionally renaming it. */
+export async function updateDocContent(fileId: string, markdown: string, name?: string): Promise<boolean> {
   const boundary = newBoundary();
   const meta: Record<string, unknown> = name ? { name } : {};
-  const body = buildMultipartRelated(boundary, meta, 'text/html', html);
+  const body = buildMultipartRelated(boundary, meta, KIT_UPLOAD_MIME, markdown);
   try {
     const res = await gatewayMultipart('PATCH', `${DRIVE_UPLOAD_BASE}/${fileId}?uploadType=multipart`, body, boundary);
     if (res.status >= 200 && res.status < 300) return true;

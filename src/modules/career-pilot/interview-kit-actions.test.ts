@@ -14,7 +14,6 @@ vi.mock('./drive-client.js', () => ({
   })),
   updateDocContent: vi.fn(async () => true),
   moveFile: vi.fn(async () => true),
-  kitMarkdownToHtml: (md: string) => `<html>${md}</html>`,
   docUrl: (id: string) => `https://docs.google.com/document/d/${id}/edit`,
 }));
 

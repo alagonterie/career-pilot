@@ -98,6 +98,19 @@ describe('kit-entity-redact', () => {
       // 'Go' must not nuke 'Google' or 'goes'
       expect(applyEntityRedactions('Google goes far with Go.', ['Go'])).toBe('Google goes far with [AI_REDACTED].');
     });
+    it('never redacts inside an existing [REDACTED:label] token — no nested token (§24.182)', () => {
+      // The model over-eagerly flags the pseudonym label sitting inside the
+      // Pass-2 company token. It must stay verbatim — not become
+      // [REDACTED:[AI_REDACTED]] (which the chip parser can't read).
+      const out = applyEntityRedactions('[REDACTED:health-a] Intelligence is the roadmap.', [
+        'health-a',
+        'Intelligence',
+      ]);
+      expect(out).toContain('[REDACTED:health-a]');
+      expect(out).not.toContain('[REDACTED:[AI_REDACTED]]');
+      // A real residue OUTSIDE the token is still redacted.
+      expect(out).toBe('[REDACTED:health-a] [AI_REDACTED] is the roadmap.');
+    });
   });
 
   describe('kitEntityRedactActive', () => {

@@ -135,11 +135,12 @@ function countItems(body: string): number {
  *    no section of their own (the frontend renders the part framing).
  *  - `###` headers (and any other `##`/`#` heading) open a section, classified
  *    against the known outline.
- *  - Non-empty content before the first heading becomes an 'unknown' preamble
- *    section (fail-safe: a `# Interview Kit — <Company> …` title line must
- *    never pass as content).
- *  - Markdown with no recognizable headings at all → one 'unknown' section
- *    holding everything (sealed by default downstream).
+ *  - Content before the first `## Part N` header (the `# Interview Kit — <Company>`
+ *    title + `**Role/Round/…**` front-matter, part 0) is DROPPED — never a real
+ *    section, and dropping is stricter than sealing (§24.182).
+ *  - Fail-safe: a kit with no recognizable part/section structure at all (a
+ *    heading-less blob) still surfaces as one sealed 'unknown' section, so a
+ *    catastrophically-malformed kit fails visible, not silently empty.
  */
 export function parseKitSections(markdown: string): ParsedKitSection[] {
   const out: ParsedKitSection[] = [];
@@ -152,9 +153,15 @@ export function parseKitSections(markdown: string): ParsedKitSection[] {
   const flush = (): void => {
     const body = buf.join('\n').trim();
     buf = [];
-    if (!current) {
-      if (body.length === 0) return;
-      out.push({ id: 'x-preamble', title: 'Preamble', part, cls: 'unknown', body, itemCount: countItems(body) });
+    // §24.182: an UNKNOWN section before the first `## Part N` header (part 0)
+    // is the kit title + `**Role/Round/…**` front-matter — the
+    // `# Interview Kit — <Company>` line and its metadata, never a real section.
+    // DROP it: dropping is stricter than sealing an "Additional section"
+    // placeholder, and the header UI already shows role/round/status. Known
+    // sections still emit even at part 0; in-part unknowns still seal downstream.
+    if (!current) return; // pre-heading content (the title / front-matter)
+    if (current.part === 0 && current.cls === 'unknown') {
+      current = null;
       return;
     }
     out.push({ ...current, body, itemCount: countItems(body) });
@@ -188,6 +195,18 @@ export function parseKitSections(markdown: string): ParsedKitSection[] {
     current = { ...classify(text), part };
   }
   flush();
+
+  // §24.182 fail-safe: a kit with no recognizable part/section structure at all
+  // (a heading-less blob) drops to nothing above. Surface it as one sealed
+  // 'unknown' section so a catastrophically-malformed kit fails visible, not
+  // silently empty — the part-0 drop only trims the title of well-formed kits.
+  if (out.length === 0) {
+    const body = markdown.trim();
+    if (body.length > 0) {
+      out.push({ id: 'x-preamble', title: 'Preamble', part: 0, cls: 'unknown', body, itemCount: countItems(body) });
+    }
+    return out;
+  }
 
   // De-duplicate ids (a drifted kit could repeat a heading) so TOC anchors stay unique.
   const seen = new Map<string, number>();

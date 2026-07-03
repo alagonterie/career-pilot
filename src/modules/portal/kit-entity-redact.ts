@@ -204,20 +204,48 @@ export function filterProtected(tokens: string[], keep: string[]): string[] {
   });
 }
 
-/** Deterministically replace each detected token (word-boundary, case-insensitive). */
+/**
+ * The shape of a redaction token already present in the text — the Pass-1 PII
+ * tokens (`[EMAIL_REDACTED]` …), the Pass-2 company token (`[REDACTED:<label>]`),
+ * Pass-1's bare `[REDACTED]`, or a prior belt pass (`[AI_REDACTED]`). Kept in
+ * sync with the frontend chip parser (`Redaction.tsx`). The capturing group lets
+ * a `String.split` keep the tokens as the odd-indexed segments.
+ */
+const EXISTING_REDACTION_TOKEN = /(\[(?:[A-Z]+_)?REDACTED(?::[^\]]+)?\])/g;
+
+/**
+ * Deterministically replace each detected token (word-boundary, case-insensitive)
+ * with the AI-provenance token — but NEVER inside a redaction token that is
+ * already there. The deterministic passes run BEFORE this belt, so the text
+ * already carries `[REDACTED:<label>]` / `[..._REDACTED]` markers; redacting a
+ * substring that lands inside one (e.g. the pseudonym label the model
+ * over-eagerly flags) would mint a nested `[REDACTED:[AI_REDACTED]]` the chip
+ * parser can't read (§24.182). Split on the existing markers and rewrite only
+ * the plain text between them.
+ */
 export function applyEntityRedactions(text: string, tokens: string[]): string {
-  let t = text;
+  if (tokens.length === 0) return text;
+  const patterns: RegExp[] = [];
   for (const token of tokens) {
     try {
       // (?<!\w)/(?!\w) like Pass 2 — handles tokens with leading/trailing
       // non-word chars uniformly (e.g. "Project-X").
-      const re = new RegExp(`(?<!\\w)${escapeRegex(token)}(?!\\w)`, 'gi');
-      t = t.replace(re, AI_REDACTION_TOKEN);
+      patterns.push(new RegExp(`(?<!\\w)${escapeRegex(token)}(?!\\w)`, 'gi'));
     } catch (err) {
       log.warn('kit-entity-redact: regex compile failed', { token, err });
     }
   }
-  return t;
+  // Capturing split → [plain, token, plain, token, …]; odd indices are existing
+  // redaction tokens and are passed through verbatim.
+  return text
+    .split(EXISTING_REDACTION_TOKEN)
+    .map((segment, i) => {
+      if (i % 2 === 1) return segment;
+      let s = segment;
+      for (const re of patterns) s = s.replace(re, AI_REDACTION_TOKEN);
+      return s;
+    })
+    .join('');
 }
 
 /**

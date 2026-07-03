@@ -84,11 +84,16 @@ describe('parseKitSections (§24.65)', () => {
     ]);
   });
 
-  it('treats content before any heading as an unknown preamble (a title line never passes as content)', () => {
-    const md = `Interview Kit — Wayne Enterprises — Tech Screen\n\n${CANONICAL_KIT}`;
+  it('drops the title front-matter before the first part instead of sealing it (§24.182)', () => {
+    const md = `# Interview Kit — Wayne Enterprises — Tech Screen\n\n**Role:** Senior Platform Engineer\n**Round:** Tech screen\n\n${CANONICAL_KIT}`;
     const sections = parseKitSections(md);
-    expect(sections[0]).toMatchObject({ id: 'x-preamble', cls: 'unknown', part: 0 });
-    expect(sections[0].body).toContain('Wayne Enterprises');
+    // The title/metadata block is gone — the first section is the real one.
+    expect(sections[0].id).toBe('your-role');
+    expect(sections.some((s) => s.part === 0)).toBe(false);
+    // Front-matter-only markers (the `# Interview Kit` title + `**Role:**`
+    // metadata) never survive as section content.
+    expect(sections.some((s) => s.body.includes('Interview Kit'))).toBe(false);
+    expect(sections.some((s) => s.body.includes('**Role:**'))).toBe(false);
   });
 
   it('classifies unrecognized headings as unknown, keeping the authored title for the projection to decide', () => {

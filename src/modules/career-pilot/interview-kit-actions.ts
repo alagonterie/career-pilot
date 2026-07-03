@@ -24,7 +24,7 @@ import { upsertPublicPipelineView } from '../portal/public-pipeline-view.js';
 import { upsertPublicKitView } from '../portal/public-kit-view.js';
 import type { Session } from '../../types.js';
 
-import { createDoc, createFolder, docUrl, kitMarkdownToHtml, moveFile, updateDocContent } from './drive-client.js';
+import { createDoc, createFolder, docUrl, moveFile, updateDocContent } from './drive-client.js';
 import {
   findKitsToArchive,
   getActiveKitsForApplication,
@@ -139,13 +139,14 @@ export async function handlePersistInterviewKit(
       return;
     }
 
-    const html = kitMarkdownToHtml(markdown);
+    // The kit Doc is Drive's native import of the raw markdown (§24.182) — no
+    // host-side HTML conversion.
     const existing = getKitByApplicationRound(db, applicationId, round);
 
     let driveFileId: string;
     let driveUrl: string;
     if (existing && existing.drive_file_id) {
-      const ok = await updateDocContent(existing.drive_file_id, html, title);
+      const ok = await updateDocContent(existing.drive_file_id, markdown, title);
       if (!ok) {
         writeResponse(inDb, requestId, {
           ok: false,
@@ -156,7 +157,7 @@ export async function handlePersistInterviewKit(
       driveFileId = existing.drive_file_id;
       driveUrl = existing.drive_url || docUrl(driveFileId);
     } else {
-      const created = await createDoc(title, html, folderId);
+      const created = await createDoc(title, markdown, folderId);
       if (!created) {
         writeResponse(inDb, requestId, {
           ok: false,
