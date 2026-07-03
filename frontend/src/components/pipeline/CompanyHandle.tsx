@@ -73,9 +73,11 @@ export function CompanyHandleLegend() {
       <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/80">
         Company handles
       </span>
+      {/* The non-breaking space keeps the last word ("closes.") from orphaning
+          onto its own line on desktop (a widow). */}
       <p className="text-[11px] leading-relaxed text-muted-foreground">
         <HandleChip label="infra-e" /> a company shown as a stable handle while its hiring process is live — the real
-        name appears once it closes.
+        name appears once it{'\u00A0'}closes.
       </p>
     </div>
   )
