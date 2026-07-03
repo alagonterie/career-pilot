@@ -68,7 +68,7 @@ export function CompanyHandleLegend() {
   return (
     <div
       data-testid="company-handle-legend"
-      className="flex max-w-xl flex-col gap-2 rounded-md border border-border bg-muted/30 px-3 py-2.5"
+      className="flex w-fit max-w-full flex-col gap-2 rounded-md border border-border bg-muted/30 px-3 py-2.5"
     >
       <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/80">
         Company handles
