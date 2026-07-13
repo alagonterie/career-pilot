@@ -26,19 +26,28 @@ import {
 import { isTerminalStatus } from './interview-kit-store.js';
 
 /**
- * Email classification → application status. Mirrors the recruiter progression
- * (confirmation → screen → onsite → next-round → offer) plus the two rejection
- * kinds. Unmapped classifications (e.g. `noise`) are ignored.
+ * Email classification → application status. Only classifications whose target
+ * status is UNAMBIGUOUS from the label alone belong here (confirmation → APPLIED,
+ * screen → SCREENING, onsite → TECH_SCREEN, offer/rejection → terminal). Unmapped
+ * classifications (e.g. `noise`) are ignored.
+ *
+ * `next_round_update` is deliberately ABSENT (§24.185). It is a generic "advancing
+ * you to a further round" signal, but the round it advances TO is not derivable
+ * from the label — the email body might name a System Design round, a final round,
+ * a CTO 1:1, or an onsite. The original `next_round_update → FINAL` mapping
+ * over-shot: a real "your next round is System Design" email jumped the board
+ * straight to the final lane, and — because SYS_DESIGN → FINAL is a FORWARD move —
+ * the §24.181 monotonic guard (backward-only) did not catch it, spawning a
+ * spurious final-round interview kit. Interview-round placement past the onsite is
+ * therefore agent-owned: the orchestrator reads the actual round name + calendar
+ * and sets the specific lane (it already does — it correctly set SYS_DESIGN for the
+ * very email that broke the converter). The classification itself stays valid; it
+ * just no longer drives the deterministic board.
  */
 const STATUS_BY_CLASSIFICATION: Record<string, ApplicationStatus> = {
   application_confirmation: 'APPLIED',
   screen_invite: 'SCREENING',
   onsite_invite: 'TECH_SCREEN',
-  // `next_round_update` is the recruiter's explicit "advancing you to the final
-  // round" signal. The scribe taxonomy reserves it for a genuine forward advance;
-  // a vague "still reviewing" acknowledgment or a Google-Calendar cancellation
-  // notice is `noise`, not this — so this mapping only fires on a real advance.
-  next_round_update: 'FINAL',
   offer: 'OFFER',
   rejection: 'REJECTED',
   screen_rejection: 'REJECTED',

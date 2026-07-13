@@ -118,12 +118,20 @@ describe('applyPipelineFromEmailEvents', () => {
     expect(statusOf('a1')).toBe('REJECTED');
   });
 
-  it('still advances next_round_update → FINAL when it is a genuine forward move', () => {
-    // The sim path: an app at TECH_SCREEN gets a real "advancing to final round"
-    // email. FINAL outranks TECH_SCREEN → the forward advance still applies.
-    seedApp('a1', 'TECH_SCREEN');
-    seedEvent('a1', 'next_round_update', '2026-06-26T00:00:00Z');
-    expect(applyPipelineFromEmailEvents(getDb()).converted).toBe(1);
-    expect(statusOf('a1')).toBe('FINAL');
+  it('does NOT deterministically advance on next_round_update — round placement is agent-owned (§24.185)', () => {
+    // Regression for the §24.185 bug. The converter cannot know WHICH round a
+    // generic "next round" email names (System Design? final? a CTO 1:1?). The
+    // original next_round_update → FINAL mapping over-shot: a real "your next round
+    // is System Design" email jumped an app already at SYS_DESIGN to FINAL (a
+    // FORWARD move the §24.181 backward-guard did not catch) and spawned a spurious
+    // final-round kit. The agent reads the round + calendar and sets the lane; the
+    // converter must leave next_round_update alone regardless of current stage.
+    seedApp('a-sysdesign', 'SYS_DESIGN');
+    seedEvent('a-sysdesign', 'next_round_update', '2026-07-03T00:19:49Z');
+    seedApp('a-techscreen', 'TECH_SCREEN');
+    seedEvent('a-techscreen', 'next_round_update', '2026-06-26T00:00:00Z');
+    expect(applyPipelineFromEmailEvents(getDb()).converted).toBe(0);
+    expect(statusOf('a-sysdesign')).toBe('SYS_DESIGN');
+    expect(statusOf('a-techscreen')).toBe('TECH_SCREEN');
   });
 });

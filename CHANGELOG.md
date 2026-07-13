@@ -13,6 +13,26 @@ fork version recorded in `package.json` — the two are never conflated.
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-07-13
+
+Pipeline-accuracy hardening (continued) and monitoring fidelity.
+
+### Fixed
+
+- An application could be pushed to the **final** round when the automated
+  mail reader saw a "next round" email that actually named an *earlier*
+  interview round (for example, a system-design round) — which also generated
+  a spurious final-round prep kit. The deterministic mail-to-board converter no
+  longer guesses the target round from a generic "next round" signal; that
+  placement is now owned by the agent, which reads the specific round named in
+  the email and on the calendar. A genuine rejection or offer still closes the
+  board as before.
+- The "Job search API" node on the architecture page could show a false
+  "Down" status or elevated error rate caused by dead or renamed job-board
+  tokens returning 404s. A board that has moved or been renamed is now treated
+  as skippable configuration drift rather than a request failure, and the
+  node's health reflects only the job-search index it is labeled for.
+
 ## [1.0.5] - 2026-07-03
 
 Interview-kit rendering fidelity.
