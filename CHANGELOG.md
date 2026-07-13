@@ -13,6 +13,20 @@ fork version recorded in `package.json` — the two are never conflated.
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-07-13
+
+Job-search reliability and monitoring fidelity.
+
+### Fixed
+
+- The job-search index's slower responses could exceed the client's
+  20-second timeout and be discarded as errors even though the query had
+  actually succeeded — which both dropped fresh job leads and made the
+  "Job search API" and "OneCLI gateway" nodes on the architecture page read
+  as degraded. The timeout is now 45 seconds, matching how long that source
+  can legitimately take, so those results land and the nodes reflect real
+  health.
+
 ## [1.0.6] - 2026-07-13
 
 Pipeline-accuracy hardening (continued) and monitoring fidelity.

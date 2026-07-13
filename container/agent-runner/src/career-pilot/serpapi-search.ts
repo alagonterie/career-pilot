@@ -30,7 +30,13 @@ const RESULTS_PER_PAGE = 10; // google_jobs returns up to 10/page
 const MAX_PAGES = 3; // quota guard — each page is one SerpApi search against the 250/mo free tier
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 30;
-const FETCH_TIMEOUT_MS = 20_000;
+// google_jobs scrapes Google Jobs live, so its latency tail runs long — observed
+// successes up to ~19s and completions pinned right at the old 20s ceiling. A 20s
+// abort discarded results SerpApi had actually produced (its dashboard showed the
+// query succeeding) AND, on a ~4-call daily batch, a single abort = 25% error rate
+// → the /architecture "Job search API" + "OneCLI gateway" nodes falsely read
+// degraded. 45s clears the tail with headroom (§24.186).
+const FETCH_TIMEOUT_MS = 45_000;
 const DESCRIPTION_TEXT_CAP = 2000; // matches the host adapters' cap (src/modules/career-pilot/scrape-jobs/sources.ts)
 
 /** Normalized payload — mirrors the host `JobLeadPayload` (src/modules/career-pilot/scrape-jobs/types.ts).
