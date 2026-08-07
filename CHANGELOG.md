@@ -38,6 +38,13 @@ An owner-side tool for applying to a specific role.
 - Tailored résumés are removed together with their lead when leads are purged.
   Archiving a lead keeps them.
 
+### Fixed
+
+- Cost reporting for work done by the more capable model read as unknown
+  rather than as a figure. Only the fast model had list pricing recorded, so
+  anything the capable model did — the interview-kit redaction pass, and now
+  résumé tailoring — contributed nothing to the spend view.
+
 ## [1.1.2] - 2026-08-07
 
 A correction to 1.1.1, found while repairing real leads.
