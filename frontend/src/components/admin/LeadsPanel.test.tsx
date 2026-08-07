@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AdminLead, AdminLeadsView } from '~/lib/use-admin'
 
@@ -134,5 +134,109 @@ describe('LeadsPanel', () => {
     expect(panel).toHaveTextContent('queued')
     expect(panel).toHaveTextContent('archived')
     expect(panel).toHaveTextContent(/doesn’t advance them on its own|doesn't advance them on its own/)
+  })
+})
+
+// ── §24.187: the batch-cleanup layer ─────────────────────────────────────────
+
+describe('LeadsPanel — batch cleanup (§24.187)', () => {
+  // The fixture leads are first_seen 2026-06-24; pin "now" 10 days later so the
+  // age filter has a deterministic boundary to bite on.
+  const NOW = new Date('2026-07-04T00:00:00Z')
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  function renderPanel(onSaved = vi.fn()) {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(NOW)
+    render(<LeadsPanel data={DATA} baseUrl="http://x" onSaved={onSaved} />)
+    return onSaved
+  }
+
+  it('shows a bulk bar whose count matches the visible rows', () => {
+    renderPanel()
+    expect(screen.getAllByTestId('leads-row')).toHaveLength(2)
+    expect(screen.getByTestId('leads-bulk-count')).toHaveTextContent('2')
+    expect(screen.getByTestId('leads-bulk-archive')).toHaveTextContent('Archive 2')
+    expect(screen.getByTestId('leads-bulk-delete')).toHaveTextContent('Delete 2')
+  })
+
+  it('the age filter narrows the visible set and the bulk count follows it', () => {
+    renderPanel()
+    // Everything is 10 days old: "older than 5d" keeps both, "older than 30d" none.
+    fireEvent.change(screen.getByTestId('leads-min-age'), { target: { value: '5' } })
+    expect(screen.getAllByTestId('leads-row')).toHaveLength(2)
+    expect(screen.getByTestId('leads-bulk-count')).toHaveTextContent('2')
+
+    fireEvent.change(screen.getByTestId('leads-min-age'), { target: { value: '30' } })
+    expect(screen.queryAllByTestId('leads-row')).toHaveLength(0)
+    // no rows → no batch bar at all (nothing to act on)
+    expect(screen.queryByTestId('leads-bulk-bar')).not.toBeInTheDocument()
+  })
+
+  it('archive is two-step and posts bulk_set_status over exactly the shown ids', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const onSaved = renderPanel()
+
+    // First click only arms — nothing is sent.
+    fireEvent.click(screen.getByTestId('leads-bulk-archive'))
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(screen.getByTestId('leads-bulk-archive-confirm')).toHaveTextContent('Confirm archive 2?')
+
+    fireEvent.click(screen.getByTestId('leads-bulk-archive-confirm'))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('http://x/api/admin/leads')
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      action: 'bulk_set_status',
+      status: 'archived',
+      ids: ['lead-1', 'lead-2'],
+    })
+    await waitFor(() => expect(onSaved).toHaveBeenCalled())
+  })
+
+  it('delete is two-step, sends confirm:true, and warns that promoted leads are skipped', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    renderPanel()
+
+    fireEvent.click(screen.getByTestId('leads-bulk-delete'))
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(screen.getByTestId('leads-bulk-delete-confirm')).toHaveTextContent('Confirm delete 2?')
+    expect(screen.getByTestId('leads-bulk-bar')).toHaveTextContent('promoted leads are skipped')
+
+    fireEvent.click(screen.getByTestId('leads-bulk-delete-confirm'))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    expect(JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))).toMatchObject({
+      action: 'bulk_delete',
+      confirm: true,
+      ids: ['lead-1', 'lead-2'],
+    })
+  })
+
+  it('changing a filter disarms an armed confirm (never fires against a different set)', () => {
+    renderPanel()
+    fireEvent.click(screen.getByTestId('leads-bulk-delete'))
+    expect(screen.getByTestId('leads-bulk-delete-confirm')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByTestId('leads-search'), { target: { value: 'Globex' } })
+    expect(screen.queryByTestId('leads-bulk-delete-confirm')).not.toBeInTheDocument()
+    expect(screen.getByTestId('leads-bulk-delete')).toHaveTextContent('Delete 1')
+  })
+
+  it('surfaces a server error instead of claiming success', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'nope' }), { status: 400 }))
+    vi.stubGlobal('fetch', fetchMock)
+    renderPanel()
+
+    fireEvent.click(screen.getByTestId('leads-bulk-archive'))
+    fireEvent.click(screen.getByTestId('leads-bulk-archive-confirm'))
+    await waitFor(() => expect(screen.getByTestId('leads-error')).toHaveTextContent('nope'))
+    expect(screen.queryByTestId('leads-note')).not.toBeInTheDocument()
   })
 })

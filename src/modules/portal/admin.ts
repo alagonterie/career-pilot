@@ -472,9 +472,12 @@ export async function applyAdminControl(db: Database.Database, raw: unknown): Pr
 // re-onboarding harness. Owner-only behind the Access gate, like all of /admin.
 
 /** The candidate_profile columns the Persona tab shows: the agent's onboarding
- * PROFILE_FIELDS + protected_terms (the redaction keep-list, not an onboarding
- * step). work_profile_json is edited via its own validated path, below. */
-const PERSONA_DISPLAY_FIELDS = new Set<string>([...PROFILE_FIELDS, 'protected_terms']);
+ * PROFILE_FIELDS + the two owner-ONLY fields — protected_terms (the redaction
+ * keep-list) and searching_since (§24.188, the hero's search-start anchor).
+ * Neither is a PROFILE_FIELDS onboarding step, so the agent's update_profile_field
+ * cannot set them; both are editable here. work_profile_json is edited via its
+ * own validated path, below. */
+const PERSONA_DISPLAY_FIELDS = new Set<string>([...PROFILE_FIELDS, 'protected_terms', 'searching_since']);
 
 /** Shown but NOT writable here: gmail_account is OAuth/OneCLI-managed — editing
  * the address alone would desync it from the vault token. */
@@ -641,6 +644,11 @@ const ADMIN_LEAD_COLS = `id, source, source_url, apply_url, title, company, comp
 const ADMIN_LEADS_ACTIVE_CAP = 300;
 const ADMIN_LEADS_CLOSED_CAP = 120;
 
+/** Max ids a single bulk write may carry (§24.187 D1). Comfortably above the
+ * active read cap, so "archive everything the filter shows" always fits in one
+ * request; low enough that a malformed client can't ask for an unbounded write. */
+const ADMIN_LEADS_BULK_CAP = 500;
+
 function parseLeadReasons(rows: AdminLead[]): AdminLead[] {
   for (const r of rows) {
     if (typeof r.rules_score_reasons === 'string') {
@@ -769,6 +777,20 @@ function readScoringProfile(db: Database.Database): CandidateProfileForScoring {
   return profileFromRow(row);
 }
 
+/** Validate a bulk `ids` payload (§24.187 D1) — a non-empty array of strings
+ * within the request cap. Returns the cleaned list or an error response. */
+function parseBulkIds(raw: unknown): { ids: string[] } | { error: { status: number; body: unknown } } {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return { error: { status: 400, body: { error: 'ids (non-empty string array) is required' } } };
+  }
+  if (raw.length > ADMIN_LEADS_BULK_CAP) {
+    return { error: { status: 400, body: { error: `ids exceeds the ${ADMIN_LEADS_BULK_CAP}-lead cap per request` } } };
+  }
+  const ids = raw.filter((v): v is string => typeof v === 'string' && v.length > 0);
+  if (ids.length === 0) return { error: { status: 400, body: { error: 'ids contained no usable lead ids' } } };
+  return { ids };
+}
+
 /**
  * The Leads tab write. One JSON action:
  *   { action: 'set_status', id, status, reason? } — owner triage (allow-listed
@@ -776,13 +798,24 @@ function readScoringProfile(db: Database.Database): CandidateProfileForScoring {
  *   { action: 'rescore', id }   — recompute one lead's deterministic rules_score
  *     against the current candidate_profile (never touches llm_score).
  *   { action: 'rescore_all' }   — the same recompute across all active leads.
+ *   { action: 'bulk_set_status', ids, status, reason? } — §24.187: set_status
+ *     across an explicit id list (the rows the owner's filter is showing).
+ *   { action: 'bulk_delete', ids, confirm } — §24.187: the hard purge. Requires
+ *     confirm:true and skips promoted (application_id) leads.
  */
 export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { status: number; body: unknown } {
   if (typeof raw !== 'object' || raw === null) {
     return { status: 400, body: { error: 'expected a JSON object { action }' } };
   }
   if (!hasTable(db, 'job_leads')) return { status: 404, body: { error: 'job_leads not migrated' } };
-  const body = raw as { action?: unknown; id?: unknown; status?: unknown; reason?: unknown };
+  const body = raw as {
+    action?: unknown;
+    id?: unknown;
+    ids?: unknown;
+    status?: unknown;
+    reason?: unknown;
+    confirm?: unknown;
+  };
   const action = body.action;
 
   if (action === 'set_status') {
@@ -821,6 +854,65 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
       status: 200,
       body: { ok: true, id, rules_score: result.rules_score, rules_score_reasons: result.reasons },
     };
+  }
+
+  // §24.187: the same triage as set_status, across the id list the owner's
+  // filter is showing. Transactional — the whole batch lands or none of it does.
+  if (action === 'bulk_set_status') {
+    const parsed = parseBulkIds(body.ids);
+    if ('error' in parsed) return parsed.error;
+    const status = typeof body.status === 'string' ? body.status : '';
+    const reason = typeof body.reason === 'string' ? body.reason : null;
+    if (!OWNER_SETTABLE_LEAD_STATUSES.has(status)) {
+      return { status: 400, body: { error: `status must be one of: ${[...OWNER_SETTABLE_LEAD_STATUSES].join(', ')}` } };
+    }
+    const now = new Date().toISOString();
+    // 'archived' soft-closes (closed_at + reason) exactly as the single-lead path
+    // does — the rollup's discovery history and any lead→application link survive.
+    const stmt =
+      status === 'archived'
+        ? db.prepare(
+            `UPDATE job_leads SET status = 'archived', status_changed_at = @now, closed_at = @now, closed_reason = @reason WHERE id = @id`,
+          )
+        : db.prepare(`UPDATE job_leads SET status = @status, status_changed_at = @now WHERE id = @id`);
+    let updated = 0;
+    db.transaction(() => {
+      for (const id of parsed.ids) {
+        const res =
+          status === 'archived' ? stmt.run({ id, now, reason: reason ?? 'manual' }) : stmt.run({ id, now, status });
+        updated += res.changes;
+      }
+    })();
+    const missing = parsed.ids.length - updated;
+    log.info('admin: job_leads bulk status set', { to: status, updated, missing });
+    return { status: 200, body: { ok: true, updated, missing, status } };
+  }
+
+  // §24.187: the hard purge — the one destructive action on this surface, so it
+  // is confirm-gated AND refuses promoted leads (an application_id row is the
+  // provenance for a real application on the public board; deleting it orphans
+  // that link). Refused rows are reported as `skipped`, never a failed batch.
+  if (action === 'bulk_delete') {
+    const parsed = parseBulkIds(body.ids);
+    if ('error' in parsed) return parsed.error;
+    if (body.confirm !== true) {
+      return { status: 400, body: { error: 'bulk_delete requires { confirm: true }' } };
+    }
+    const promoted = db.prepare(`SELECT id FROM job_leads WHERE id = ? AND application_id IS NOT NULL`);
+    const del = db.prepare(`DELETE FROM job_leads WHERE id = ? AND application_id IS NULL`);
+    let deleted = 0;
+    let skipped = 0;
+    db.transaction(() => {
+      for (const id of parsed.ids) {
+        if (promoted.get(id)) {
+          skipped += 1;
+          continue;
+        }
+        deleted += del.run(id).changes;
+      }
+    })();
+    log.info('admin: job_leads bulk deleted', { requested: parsed.ids.length, deleted, skipped });
+    return { status: 200, body: { ok: true, deleted, skipped } };
   }
 
   if (action === 'rescore_all') {

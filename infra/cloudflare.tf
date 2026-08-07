@@ -87,6 +87,33 @@ resource "cloudflare_zero_trust_access_application" "admin" {
   policies                  = [cloudflare_zero_trust_access_policy.owner_only.id]
 }
 
+# STANDBY (STRATEGY.md §24.189) — the KV namespace holding the standby flag + the
+# entry identity snapshot.
+#
+# Why KV and not the host DB: standby STOPS the GCP VM, so the flag that says
+# "we're on standby" cannot live in `system_modes` — that table is on the disk
+# being powered down. KV is the only store the Worker can still read (and the edge
+# console still write) with GCP gone.
+#
+# One namespace PER ENVIRONMENT: dev gets its own, so exercising standby on dev can
+# never black out the prod site. Terraform creates it; the id is surfaced as an
+# output and set as the `STANDBY_KV_NAMESPACE_ID` GitHub env var, which
+# deploy-frontend substitutes into the committed wrangler placeholder at build time
+# (so no account resource id is committed).
+#
+# The console + its endpoint live under `/admin/standby` + `/api/admin/standby`,
+# which the owner-only `admin` Access application above ALREADY covers (it matches
+# each path and everything under it) — so the edge console needs no new gate.
+resource "cloudflare_workers_kv_namespace" "standby" {
+  account_id = var.cloudflare_account_id
+  title      = "career-pilot-standby-${var.environment}"
+}
+
 output "frontend_url" {
   value = "https://${local.frontend_host}"
+}
+
+output "standby_kv_namespace_id" {
+  value       = cloudflare_workers_kv_namespace.standby.id
+  description = "Set as the STANDBY_KV_NAMESPACE_ID GitHub Environment variable for this env."
 }

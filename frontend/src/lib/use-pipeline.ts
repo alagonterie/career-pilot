@@ -90,6 +90,11 @@ export interface PipelineResponse {
    *  and /pipeline learn it without a second poll. Absent on an older backend →
    *  treated as `'active'`. Owner-flipped from /admin; never auto-inferred. */
   site_lifecycle?: 'active' | 'concluded'
+  /** The owner-set "searching since" anchor as `YYYY-MM` (§24.188), or null/absent
+   *  when unset — the hero then derives the month from the earliest application.
+   *  Rides this read-model for the same reason `site_lifecycle` does: it's the one
+   *  endpoint both the SSR hero seed and the client hook already fetch. */
+  searching_since?: string | null
 }
 
 export type PipelineStatus = PollStatus

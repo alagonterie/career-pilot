@@ -11,6 +11,7 @@ You're not going to break this thing. The kill switches exist so you can stop it
 | Symptom | Procedure |
 |---|---|
 | Something seems broken and I don't know what | [§0 Triage — start here](#0-triage--start-here) |
+| I'm not job-searching for a while and want the bill to stop | [§2.5 Standby](#25-standby--pause-the-search-and-stop-the-vm) |
 | I want to silence the bot for a few hours | [§1 Soft pause](#1-soft-pause-pause--resume) |
 | Cost is spiking / unexpected behavior / traffic surge | [§2 Emergency halt](#2-emergency-halt-halt--diagnose--resume) |
 | I think something's compromised / agent did something bad | [§3 Killswitch + SSH recovery](#3-killswitch--ssh-recovery) |
@@ -124,6 +125,55 @@ Queued webhook events (recruiter replies that arrived during the pause) fire in 
 **Recovery time:** minutes (depending on diagnosis).
 
 **Tip:** If you halted because of a *cost* concern specifically, consider resuming with `LIVE_MODE=false` first — let the system run in shadow for an hour to confirm the fix worked before flipping back to live.
+
+---
+
+## 2.5 Standby — pause the search and stop the VM
+
+**When:** You're not actively job-searching for a while — you took a break, you started somewhere, you're heads-down on something else — and you want the infrastructure bill to stop without losing anything. **This is not an incident procedure.** Everything above (§1–§3) is "something is wrong, stop it"; standby is a deliberate, planned pause, and the public site says so as a career statement rather than an outage.
+
+**What it does.** Snapshots your contact identity to the edge → switches the public site to a single standby page → halts the host cleanly → **stops** the GCP VM. Roughly $25–30/mo down to the ~$5/mo the 50 GB boot disk costs.
+
+**What it deliberately does NOT do:** destroy anything. The disk keeps both SQLite DBs, the OneCLI vault, the tunnel credentials and both checkouts, so resuming needs **no Gmail re-consent and no Telegram re-pair**. `terraform destroy` would save ~$4/mo more and cost you an afternoon plus manual OAuth — don't.
+
+### Going on standby
+
+1. Open **`https://hire.<domain>/admin/standby`** (owner-gated by the existing Access app).
+2. Optionally set the line shown publicly on the standby page.
+3. **Go on standby** → confirm.
+
+The public site flips within one KV propagation (~60 s worst case). A workflow then halts the host and stops the VM; watch it at `gh run watch` or in Actions.
+
+### Coming back
+
+1. Same page → **Resume the search** → confirm.
+2. The workflow starts the VM, waits for SSH, rolls overdue proactive work forward, resumes the host, and probes health through the tunnel.
+3. **The standby page stays up until that probe passes** — the site un-hides when it's actually live, not when you pressed the button.
+
+**Recovery time:** ~2–5 minutes (VM boot + tunnel reconnect + health probe).
+
+### If the workflow dispatch fails
+
+The console reports it rather than silently half-doing the job. Do it by hand:
+
+```bash
+# Stop
+gcloud compute instances stop career-pilot-host --zone us-central1-a
+# Start
+gcloud compute instances start career-pilot-host --zone us-central1-a
+```
+
+Then re-run the action from `/admin/standby` so the KV flag matches reality. If the page itself is unreachable, the flag can be forced from any machine with the Cloudflare token:
+
+```bash
+echo '{"mode":"active","vm":"running"}' > /tmp/s.json
+pnpm exec wrangler kv key put state --path /tmp/s.json --namespace-id "$STANDBY_KV_NAMESPACE_ID" --remote
+```
+
+### Things standby can't do for you
+
+- **Vendor subscriptions** billed monthly regardless of use (the job-search API plan) keep billing. Pause them in that vendor's own dashboard.
+- **LLM spend needs no separate switch** — with the VM stopped there's no agent, no cron and no sandbox, so model spend is zero on its own.
 
 ---
 

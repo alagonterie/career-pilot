@@ -71,8 +71,26 @@ jobs:
           VITE_TURNSTILE_SITE_KEY: ${{ vars.VITE_TURNSTILE_SITE_KEY }}
           TURNSTILE_SECRET: ${{ secrets.TURNSTILE_SECRET }}
           TURNSTILE_HOSTNAME: ${{ vars.TURNSTILE_HOSTNAME }}
+          # Standby (STRATEGY §24.189). The KV namespace is Terraform-created per
+          # environment; its real id is a GH env var, substituted into the committed
+          # placeholder at build time so no account resource id lands in the repo.
+          # GH_DISPATCH_TOKEN is a repo-scoped PAT (actions: write) — the only
+          # credential the edge holds; the standby workflow reaches GCP via WIF.
+          STANDBY_KV_NAMESPACE_ID: ${{ vars.STANDBY_KV_NAMESPACE_ID }}
+          GH_DISPATCH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
+          GH_DISPATCH_REPO: ${{ github.repository }}
+          GH_DISPATCH_REF: ${{ github.ref_name == 'master' && 'master' || 'dev' }}
         run: |
           if [ "${{ github.ref_name }}" = "dev" ]; then export CLOUDFLARE_ENV=dev; fi
+          # Swap the committed KV placeholder for this environment's real namespace
+          # id. Unset → the placeholder stays, the binding fails to resolve, and
+          # standby simply never engages (readStandbyState fails open to "live").
+          if [ -n "$STANDBY_KV_NAMESPACE_ID" ]; then
+            sed -i "s/standby_kv_placeholder/$STANDBY_KV_NAMESPACE_ID/g" wrangler.jsonc
+            echo "STANDBY_KV bound to $STANDBY_KV_NAMESPACE_ID"
+          else
+            echo "STANDBY_KV_NAMESPACE_ID unset — standby stays disabled on this deploy"
+          fi
           # Dev's client widget uses the always-pass Turnstile TEST site key (D5)
           # unless the GH dev env overrides it; prod must set a real GH env var.
           if [ "${{ github.ref_name }}" = "dev" ] && [ -z "$VITE_TURNSTILE_SITE_KEY" ]; then
@@ -127,4 +145,15 @@ jobs:
               "$TURNSTILE_SECRET" "$TURNSTILE_HOSTNAME" \
               | pnpm exec wrangler secret bulk --name "$WORKER_NAME"
             echo "Turnstile Worker secrets injected for $WORKER_NAME"
+          fi
+          # Standby dispatch credentials (§24.189 D4). Without them the console
+          # still flips the public page but reports that it could not dispatch the
+          # teardown — degraded and honest, never silently half-done.
+          if [ -n "$GH_DISPATCH_TOKEN" ]; then
+            printf '{"GH_DISPATCH_TOKEN":"%s","GH_REPO":"%s","GH_DISPATCH_REF":"%s"}' \
+              "$GH_DISPATCH_TOKEN" "$GH_DISPATCH_REPO" "$GH_DISPATCH_REF" \
+              | pnpm exec wrangler secret bulk --name "$WORKER_NAME"
+            echo "Standby dispatch secrets injected for $WORKER_NAME"
+          else
+            echo "GH_DISPATCH_TOKEN unset — the standby console can flip the page but not stop/start the VM"
           fi

@@ -34,6 +34,8 @@ type SeedEnv = {
 
 interface PipelineJson {
   applications?: PipelineApplication[]
+  /** §24.188: the owner-set `YYYY-MM` search-start anchor (null/absent = derive). */
+  searching_since?: string | null
 }
 interface TelemetryJson {
   local?: { agent_actions_24h?: number | null; last_activity_at?: string | null }
@@ -56,12 +58,20 @@ export const getHeroSeed = createServerFn({ method: 'GET' }).handler(async (): P
       fetch(`${base}/api/pipeline`, { headers, redirect: 'manual' }),
       fetch(`${base}/api/telemetry`, { headers, redirect: 'manual' }),
     ])
-    const apps = pipelineRes.ok ? (((await pipelineRes.json()) as PipelineJson).applications ?? []) : []
+    const pipeline = pipelineRes.ok ? ((await pipelineRes.json()) as PipelineJson) : null
+    const apps = pipeline?.applications ?? []
     const tel = telRes.ok ? ((await telRes.json()) as TelemetryJson).local : undefined
     // events:[] → heroStats returns only the two count segments; the last-activity
     // string is computed here from the telemetry ts (it stays out of heroStats so
     // the client can keep the seed string until the live stream supplies one).
-    const counts = heroStats({ apps, events: [], actionsIn24h: tel?.agent_actions_24h ?? null })
+    const counts = heroStats({
+      apps,
+      events: [],
+      actionsIn24h: tel?.agent_actions_24h ?? null,
+      // §24.188: the seed must apply the SAME override the client will, or the
+      // stat line would shift on the live takeover.
+      searchingSinceOverride: pipeline?.searching_since ?? null,
+    })
     const lastAt = tel?.last_activity_at ?? null
     return { counts, lastActivity: lastAt ? `last activity ${relativeAgo(lastAt)}` : null }
   } catch {

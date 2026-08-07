@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { InfoTip } from '~/components/InfoTip'
 import {
@@ -23,6 +23,13 @@ import { DataTable, type Column } from './DataTable'
  * The table rides the shared DataTable (§24.174): the row cells are columns, the
  * per-lead score-reasons + triage controls are its `renderDetail` disclosure, and
  * the filter bar drives a `resetKey` so changing a filter jumps back to page 1.
+ *
+ * §24.187 adds the BATCH layer on top: an "older than N days" filter (the missing
+ * primitive for "clear out everything from before I paused") plus a bulk bar that
+ * archives or hard-deletes exactly the rows the filter is currently showing. The
+ * batch acts on an explicit id list, never a filter spec the server re-derives —
+ * WYSIWYG is the safety story for a destructive control, so the count in the
+ * button is always the count in the table.
  */
 
 // The statuses the owner can set (mirrors the server allow-list — 'applied' is
@@ -317,11 +324,15 @@ export function LeadsPanel({
   const [status, setStatus] = useState('all')
   const [source, setSource] = useState('all')
   const [minScore, setMinScore] = useState('')
+  const [minAgeDays, setMinAgeDays] = useState('')
   const [company, setCompany] = useState('')
   const [includeClosed, setIncludeClosed] = useState(false)
   const [sort, setSort] = useState<SortKey>('rules_score')
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+  // The two-step confirm for the bulk actions — null, or which one is armed.
+  const [arming, setArming] = useState<'archive' | 'delete' | null>(null)
 
   const post = async (body: AdminLeadsWrite, busyKey: string): Promise<void> => {
     setBusy(busyKey)
@@ -336,12 +347,14 @@ export function LeadsPanel({
     if (!data) return []
     const pool = includeClosed ? [...data.leads, ...data.closed] : data.leads
     const min = minScore === '' ? null : Number(minScore)
+    const minAge = minAgeDays === '' ? null : Number(minAgeDays)
     const q = company.trim().toLowerCase()
     const rows = pool.filter(
       (l) =>
         (status === 'all' || l.status === status) &&
         (source === 'all' || l.source === source) &&
         (min == null || Number.isNaN(min) || (l.rules_score ?? 0) >= min) &&
+        (minAge == null || Number.isNaN(minAge) || (ageHoursOf(l.first_seen_at) ?? 0) >= minAge * 24) &&
         (q === '' || l.company.toLowerCase().includes(q) || l.title.toLowerCase().includes(q)),
     )
     const val = (l: AdminLead): number =>
@@ -353,7 +366,42 @@ export function LeadsPanel({
             ? (l.llm_score ?? -1)
             : (l.rules_score ?? -1)
     return [...rows].sort((a, b) => val(b) - val(a))
-  }, [data, status, source, minScore, company, includeClosed, sort])
+  }, [data, status, source, minScore, minAgeDays, company, includeClosed, sort])
+
+  // §24.187: the batch acts on exactly these rows. Disarm the confirm whenever
+  // the visible set changes, so an armed "delete 40" can never fire against a
+  // different 40 after a filter tweak.
+  const visibleIds = useMemo(() => filtered.map((l) => l.id), [filtered])
+  const bulkSignature = visibleIds.join(',')
+  useEffect(() => setArming(null), [bulkSignature])
+
+  const runBulk = async (kind: 'archive' | 'delete'): Promise<void> => {
+    const ids = visibleIds
+    if (ids.length === 0) return
+    setBusy(`bulk-${kind}`)
+    setError(null)
+    setNote(null)
+    const res =
+      kind === 'archive'
+        ? await postAdminLeads(baseUrl, {
+            action: 'bulk_set_status',
+            ids,
+            status: 'archived',
+            reason: 'batch cleanup',
+          })
+        : await postAdminLeads(baseUrl, { action: 'bulk_delete', ids, confirm: true })
+    setBusy(null)
+    setArming(null)
+    if (!res.ok) setError(res.error ?? `write failed (${res.status})`)
+    else {
+      setNote(
+        kind === 'archive'
+          ? `Archived ${ids.length} lead${ids.length === 1 ? '' : 's'}.`
+          : `Deleted up to ${ids.length} lead${ids.length === 1 ? '' : 's'} (promoted leads skipped).`,
+      )
+      onSaved()
+    }
+  }
 
   if (!data) return <p className="text-sm text-muted-foreground">No leads data yet.</p>
   const { rollup } = data
@@ -460,6 +508,17 @@ export function LeadsPanel({
           onChange={(e) => setMinScore(e.target.value)}
           className="w-24 rounded-md border border-border bg-background px-2 py-1 font-mono text-[11px] text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
+        {/* §24.187: the "clear out everything from before I paused" primitive —
+            min age in days, over first_seen_at. */}
+        <input
+          type="number"
+          inputMode="numeric"
+          placeholder="older than (d)"
+          value={minAgeDays}
+          data-testid="leads-min-age"
+          onChange={(e) => setMinAgeDays(e.target.value)}
+          className="w-28 rounded-md border border-border bg-background px-2 py-1 font-mono text-[11px] text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
         <input
           type="search"
           placeholder="company / title"
@@ -479,6 +538,83 @@ export function LeadsPanel({
         </label>
       </div>
 
+      {/* Batch bar (§24.187) — operates on exactly the rows the filters above
+          select. Both actions are two-step in place: the first click arms, the
+          second commits; any filter change disarms. */}
+      {filtered.length > 0 ? (
+        <div
+          data-testid="leads-bulk-bar"
+          className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2"
+        >
+          <span className="font-mono text-[11px] text-muted-foreground">
+            <span data-testid="leads-bulk-count" className="font-semibold tabular-nums text-foreground">
+              {filtered.length}
+            </span>{' '}
+            shown
+          </span>
+          <span className="text-border">·</span>
+          {arming === 'archive' ? (
+            <>
+              <button
+                type="button"
+                data-testid="leads-bulk-archive-confirm"
+                disabled={busy != null}
+                onClick={() => runBulk('archive')}
+                className="rounded-md border border-accent-cool px-2.5 py-1 font-mono text-[11px] text-accent-cool transition-colors hover:bg-accent-cool/10 disabled:opacity-50"
+              >
+                {busy === 'bulk-archive' ? 'Archiving…' : `Confirm archive ${filtered.length}?`}
+              </button>
+              <CancelButton onClick={() => setArming(null)} />
+            </>
+          ) : (
+            <button
+              type="button"
+              data-testid="leads-bulk-archive"
+              disabled={busy != null}
+              onClick={() => setArming('archive')}
+              className="rounded-md border border-border px-2.5 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+              title="Soft-close every shown lead — leaves the active pool, keeps its history"
+            >
+              Archive {filtered.length}
+            </button>
+          )}
+          {arming === 'delete' ? (
+            <>
+              <button
+                type="button"
+                data-testid="leads-bulk-delete-confirm"
+                disabled={busy != null}
+                onClick={() => runBulk('delete')}
+                className="rounded-md border border-destructive px-2.5 py-1 font-mono text-[11px] text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
+              >
+                {busy === 'bulk-delete' ? 'Deleting…' : `Confirm delete ${filtered.length}?`}
+              </button>
+              <CancelButton onClick={() => setArming(null)} />
+              <span className="font-mono text-[11px] text-muted-foreground">
+                permanent · promoted leads are skipped
+              </span>
+            </>
+          ) : (
+            <button
+              type="button"
+              data-testid="leads-bulk-delete"
+              disabled={busy != null}
+              onClick={() => setArming('delete')}
+              className="rounded-md border border-border px-2.5 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
+              title="Permanently remove every shown lead (leads promoted to an application are skipped)"
+            >
+              Delete {filtered.length}
+            </button>
+          )}
+        </div>
+      ) : null}
+
+      {note ? (
+        <p data-testid="leads-note" className="font-mono text-[11px] text-primary">
+          {note}
+        </p>
+      ) : null}
+
       {error ? (
         <p data-testid="leads-error" className="font-mono text-[11px] text-destructive">
           {error}
@@ -494,7 +630,7 @@ export function LeadsPanel({
         rowTestId="leads-row"
         detailTestId="leads-detail"
         renderDetail={(lead) => <LeadDetail lead={lead} busy={busy} onPost={post} />}
-        resetKey={`${status}|${source}|${minScore}|${company}|${includeClosed}|${sort}`}
+        resetKey={`${status}|${source}|${minScore}|${minAgeDays}|${company}|${includeClosed}|${sort}`}
         minWidthClass="min-w-[48rem]"
         empty={
           <p data-testid="leads-empty" className="text-sm text-muted-foreground">
@@ -503,6 +639,20 @@ export function LeadsPanel({
         }
       />
     </section>
+  )
+}
+
+/** The disarm control beside an armed bulk confirm. */
+function CancelButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      data-testid="leads-bulk-cancel"
+      onClick={onClick}
+      className="rounded-md px-2 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+    >
+      cancel
+    </button>
   )
 }
 

@@ -32,6 +32,7 @@ import { Route as marketingContactRouteImport } from './routes/(marketing)/conta
 import { Route as marketingAboutRouteImport } from './routes/(marketing)/about'
 import { Route as marketingWatchIndexRouteImport } from './routes/(marketing)/watch.index'
 import { Route as marketingSimulatorIndexRouteImport } from './routes/(marketing)/simulator.index'
+import { Route as opsAdminStandbyRouteImport } from './routes/(ops)/admin_.standby'
 import { Route as marketingWatchResultsIdRouteImport } from './routes/(marketing)/watch.results.$id'
 import { Route as marketingSimulatorResultsIdRouteImport } from './routes/(marketing)/simulator.results.$id'
 
@@ -148,6 +149,11 @@ const marketingSimulatorIndexRoute = marketingSimulatorIndexRouteImport.update({
   path: '/simulator/',
   getParentRoute: () => marketingRouteRoute,
 } as any)
+const opsAdminStandbyRoute = opsAdminStandbyRouteImport.update({
+  id: '/admin_/standby',
+  path: '/admin/standby',
+  getParentRoute: () => opsRouteRoute,
+} as any)
 const marketingWatchResultsIdRoute = marketingWatchResultsIdRouteImport.update({
   id: '/watch/results/$id',
   path: '/watch/results/$id',
@@ -180,6 +186,7 @@ export interface FileRoutesByFullPath {
   '/r/$': typeof RSplatRoute
   '/v/$': typeof VSplatRoute
   '/': typeof marketingIndexRoute
+  '/admin/standby': typeof opsAdminStandbyRoute
   '/simulator/': typeof marketingSimulatorIndexRoute
   '/watch/': typeof marketingWatchIndexRoute
   '/simulator/results/$id': typeof marketingSimulatorResultsIdRoute
@@ -205,6 +212,7 @@ export interface FileRoutesByTo {
   '/r/$': typeof RSplatRoute
   '/v/$': typeof VSplatRoute
   '/': typeof marketingIndexRoute
+  '/admin/standby': typeof opsAdminStandbyRoute
   '/simulator': typeof marketingSimulatorIndexRoute
   '/watch': typeof marketingWatchIndexRoute
   '/simulator/results/$id': typeof marketingSimulatorResultsIdRoute
@@ -233,6 +241,7 @@ export interface FileRoutesById {
   '/r/$': typeof RSplatRoute
   '/v/$': typeof VSplatRoute
   '/(marketing)/': typeof marketingIndexRoute
+  '/(ops)/admin_/standby': typeof opsAdminStandbyRoute
   '/(marketing)/simulator/': typeof marketingSimulatorIndexRoute
   '/(marketing)/watch/': typeof marketingWatchIndexRoute
   '/(marketing)/simulator/results/$id': typeof marketingSimulatorResultsIdRoute
@@ -260,6 +269,7 @@ export interface FileRouteTypes {
     | '/r/$'
     | '/v/$'
     | '/'
+    | '/admin/standby'
     | '/simulator/'
     | '/watch/'
     | '/simulator/results/$id'
@@ -285,6 +295,7 @@ export interface FileRouteTypes {
     | '/r/$'
     | '/v/$'
     | '/'
+    | '/admin/standby'
     | '/simulator'
     | '/watch'
     | '/simulator/results/$id'
@@ -312,6 +323,7 @@ export interface FileRouteTypes {
     | '/r/$'
     | '/v/$'
     | '/(marketing)/'
+    | '/(ops)/admin_/standby'
     | '/(marketing)/simulator/'
     | '/(marketing)/watch/'
     | '/(marketing)/simulator/results/$id'
@@ -489,6 +501,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof marketingSimulatorIndexRouteImport
       parentRoute: typeof marketingRouteRoute
     }
+    '/(ops)/admin_/standby': {
+      id: '/(ops)/admin_/standby'
+      path: '/admin/standby'
+      fullPath: '/admin/standby'
+      preLoaderRoute: typeof opsAdminStandbyRouteImport
+      parentRoute: typeof opsRouteRoute
+    }
     '/(marketing)/watch/results/$id': {
       id: '/(marketing)/watch/results/$id'
       path: '/watch/results/$id'
@@ -548,6 +567,7 @@ interface opsRouteRouteChildren {
   opsLiveRoute: typeof opsLiveRoute
   opsMomentumRoute: typeof opsMomentumRoute
   opsPipelineRoute: typeof opsPipelineRoute
+  opsAdminStandbyRoute: typeof opsAdminStandbyRoute
 }
 
 const opsRouteRouteChildren: opsRouteRouteChildren = {
@@ -560,6 +580,7 @@ const opsRouteRouteChildren: opsRouteRouteChildren = {
   opsLiveRoute: opsLiveRoute,
   opsMomentumRoute: opsMomentumRoute,
   opsPipelineRoute: opsPipelineRoute,
+  opsAdminStandbyRoute: opsAdminStandbyRoute,
 }
 
 const opsRouteRouteWithChildren = opsRouteRoute._addFileChildren(

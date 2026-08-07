@@ -13,6 +13,28 @@ fork version recorded in `package.json` — the two are never conflated.
 
 ## [Unreleased]
 
+### Added
+
+- **Standby mode.** A deliberate, reversible pause for when the job search
+  isn't running: the public site becomes a single page that says so plainly
+  and still offers a way to make contact, and the cloud VM behind it is
+  stopped rather than left idling. Controlled from an owner-only console that
+  runs entirely at the edge, so it keeps working while the backend is off —
+  which is what makes coming back a single click. Resuming waits for a health
+  check before the live site returns, and rolls any scheduled work that came
+  due during the pause forward to its next occurrence instead of firing a
+  backlog. Nothing is destroyed: databases, credentials and configuration all
+  survive the pause untouched.
+- **Batch lead cleanup.** The admin leads view can now archive or permanently
+  remove leads in bulk, acting on exactly the rows the current filters show,
+  with a new "older than N days" filter for clearing out a stale pool. Both
+  actions confirm before running; permanent deletion skips any lead already
+  promoted to a real application.
+- **A settable "searching since" date.** The month shown on the landing page
+  can now be set by the owner instead of always being derived from the oldest
+  application, so a deliberate break in the search doesn't read as a long
+  stretch of inactivity.
+
 ## [1.0.7] - 2026-07-13
 
 Job-search reliability and monitoring fidelity.

@@ -234,6 +234,24 @@ function publicAppKey(applicationId: string): string {
   return createHash('sha256').update(applicationId).digest('hex').slice(0, 16);
 }
 
+/**
+ * §24.188: the owner-set `YYYY-MM` search-start anchor, or null when unset (the
+ * hero then derives it from the earliest application, as before). Read
+ * defensively — the column is post-migration-144 and a bare test fixture may
+ * predate it, so a read failure degrades to "no override", never a 500.
+ */
+function readSearchingSince(): string | null {
+  try {
+    const row = getDb().prepare(`SELECT searching_since FROM candidate_profile WHERE id = 1`).get() as
+      | { searching_since: string | null }
+      | undefined;
+    const v = row?.searching_since;
+    return typeof v === 'string' && v.trim().length > 0 ? v.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 function handlePipeline(res: http.ServerResponse, cors: Record<string, string>): void {
   const rows = getDb()
     .prepare(
@@ -271,7 +289,14 @@ function handlePipeline(res: http.ServerResponse, cors: Record<string, string>):
   const site_lifecycle =
     getConfig<string>(getDb(), 'site_lifecycle_state', 'active') === 'concluded' ? 'concluded' : 'active';
 
-  json(res, 200, { applications, stage_counts, site_lifecycle }, cors);
+  // §24.188: the owner-set "searching since" anchor rides the same read-model,
+  // for the same reason — it's the ONE endpoint both the SSR hero seed and the
+  // client hook already fetch, so the override can't reach one and not the other
+  // (which would shift the stat line on hydration). Null = no override → the
+  // derived earliest-applied_at behavior, unchanged.
+  const searching_since = readSearchingSince();
+
+  json(res, 200, { applications, stage_counts, site_lifecycle, searching_since }, cors);
 }
 
 /**

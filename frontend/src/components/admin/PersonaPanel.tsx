@@ -15,7 +15,13 @@ const MULTILINE_FIELDS = new Set(['bio', 'master_resume', 'search_goals'])
 
 const GROUPS: { title: string; fields: string[]; note?: string }[] = [
   { title: 'Identity', fields: ['full_name', 'display_name', 'bio'] },
-  { title: 'Search & fit', fields: ['target_roles', 'skills', 'location_pref', 'comp_floor', 'search_goals'] },
+  {
+    title: 'Search & fit',
+    fields: ['target_roles', 'skills', 'location_pref', 'comp_floor', 'search_goals', 'searching_since'],
+    // §24.188: the hero's "searching since" anchor. Owner-only — the agent has no
+    // basis for deciding when the current search started, so it can't set it.
+    note: 'Searching since overrides the hero’s derived month (YYYY-MM). Leave blank to derive it from the earliest application.',
+  },
   { title: 'Résumé', fields: ['master_resume'] },
   { title: 'Links & contact', fields: ['github_url', 'linkedin_url', 'x_url', 'website_url', 'public_email'] },
   { title: 'Branding', fields: ['brand_color_hsl', 'headshot_path'] },
@@ -36,6 +42,7 @@ const LABELS: Record<string, string> = {
   location_pref: 'Location preference',
   comp_floor: 'Comp floor',
   search_goals: 'Search goals',
+  searching_since: 'Searching since (YYYY-MM)',
   master_resume: 'Master résumé',
   github_url: 'GitHub',
   linkedin_url: 'LinkedIn',

@@ -68,7 +68,14 @@ function Home() {
   //     doesn't recompute the relative time until the stream supplies the SAME
   //     event, so the takeover is a no-op width-wise).
   const statsReady = pipelineStatus !== 'loading' && telemetryStatus !== 'loading'
-  const liveCounts = heroStats({ apps, events: [], actionsIn24h: telemetry?.local.agent_actions_24h ?? null })
+  const liveCounts = heroStats({
+    apps,
+    events: [],
+    actionsIn24h: telemetry?.local.agent_actions_24h ?? null,
+    // §24.188: the owner-set search-start anchor, delivered on this same
+    // read-model so the seed above and this live value can't disagree.
+    searchingSinceOverride: pipeline?.searching_since ?? null,
+  })
   const counts = statsReady ? liveCounts : heroSeed.counts
   const liveLastActivity = events.length > 0 ? `last activity ${relativeAgo(events[events.length - 1].ts)}` : null
   const lastActivity = liveLastActivity ?? heroSeed.lastActivity

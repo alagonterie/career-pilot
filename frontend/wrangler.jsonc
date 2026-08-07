@@ -34,6 +34,15 @@
       { "name": "VISIT_BURST", "type": "ratelimit", "namespace_id": "1003", "simple": { "limit": 10, "period": 60 } }
     ]
   },
+  // §24.189 standby: the ONE piece of state that must outlive the origin. When the
+  // search goes on standby the GCP VM is stopped, so the flag saying so cannot live
+  // in `system_modes` — that table is on the disk we just powered down. KV is the
+  // only store the Worker can still read (and write, from the edge console) with
+  // GCP gone. The namespace is Terraform-created per environment; the id below is
+  // a PLACEHOLDER overwritten at deploy time from the GH env var, so no real
+  // account resource id is committed. Unbound → the site simply never enters
+  // standby (readStandbyState fails open to "live").
+  "kv_namespaces": [{ "binding": "STANDBY_KV", "id": "standby_kv_placeholder" }],
   // Named Cloudflare environments — selected at BUILD time by the vite plugin
   // (`CLOUDFLARE_ENV=dev vite build` -> flattened config -> `wrangler deploy`;
   // no CLOUDFLARE_ENV = the top-level prod config). The custom-domain binding
@@ -60,7 +69,11 @@
           { "name": "CONTACT_BURST", "type": "ratelimit", "namespace_id": "1002", "simple": { "limit": 2, "period": 60 } },
           { "name": "VISIT_BURST", "type": "ratelimit", "namespace_id": "1003", "simple": { "limit": 10, "period": 60 } }
         ]
-      }
+      },
+      // Non-inheritable across named environments (like the ratelimit bindings) —
+      // dev gets its OWN standby namespace, so testing standby on dev can never
+      // black out prod.
+      "kv_namespaces": [{ "binding": "STANDBY_KV", "id": "standby_kv_placeholder" }]
     }
   }
 }

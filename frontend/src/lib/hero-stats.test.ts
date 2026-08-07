@@ -159,6 +159,49 @@ describe('searchingSince (§24.149)', () => {
   })
 })
 
+describe('searchingSince — the owner override (§24.188)', () => {
+  const APPS = [app('applied', { applied_at: '2026-01-04T12:00:00Z' })]
+
+  it('prefers the owner-set YYYY-MM over the derived earliest application', () => {
+    expect(searchingSince(APPS, '2026-08')).toBe('Aug 2026')
+    // …and the derived value is what it would otherwise be
+    expect(searchingSince(APPS)).toBe('Jan 2026')
+  })
+
+  it('works with no applications at all (a resumed search before its first new apply)', () => {
+    expect(searchingSince([], '2026-08')).toBe('Aug 2026')
+  })
+
+  it('formats the override identically to the derived path (same month → same string)', () => {
+    expect(searchingSince([], '2026-01')).toBe(searchingSince(APPS))
+  })
+
+  it('is UTC-pinned — a January override never renders as the prior December', () => {
+    expect(searchingSince([], '2026-01')).toBe('Jan 2026')
+    expect(searchingSince([], '2026-12')).toBe('Dec 2026')
+  })
+
+  it('falls through to the derivation on an empty/null/malformed override', () => {
+    expect(searchingSince(APPS, null)).toBe('Jan 2026')
+    expect(searchingSince(APPS, '')).toBe('Jan 2026')
+    expect(searchingSince(APPS, 'August 2026')).toBe('Jan 2026')
+    expect(searchingSince(APPS, '2026-8')).toBe('Jan 2026') // storage is canonical YYYY-MM
+    // …and with nothing to fall back to, the segment is absent, never faked
+    expect(searchingSince([], 'nonsense')).toBeNull()
+  })
+
+  it('heroStats threads the override into the "searching since" segment', () => {
+    const out = heroStats({
+      apps: APPS,
+      events: [],
+      actionsIn24h: null,
+      searchingSinceOverride: '2026-08',
+    })
+    expect(out).toContain('searching since Aug 2026')
+    expect(out).not.toContain('searching since Jan 2026')
+  })
+})
+
 describe('heroStatPhase (§24.149 L1 — never a perpetual skeleton on a cold launch)', () => {
   it('shows the live stats whenever there is anything to show', () => {
     expect(heroStatPhase({ hasStats: true, ready: false, offline: false })).toBe('stats')

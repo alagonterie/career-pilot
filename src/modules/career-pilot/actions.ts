@@ -209,6 +209,12 @@ export const PROFILE_FIELDS = new Set([
 const ARRAY_PROFILE_FIELDS = new Set(['target_roles', 'skills', 'protected_terms']);
 const NUMBER_PROFILE_FIELDS = new Set(['comp_floor']);
 const OBJECT_PROFILE_FIELDS = new Set(['location_pref']);
+// §24.188: month-granularity date columns, stored as a bare `YYYY-MM` — the same
+// granularity the surface renders, so there's no day/timezone boundary to get
+// wrong between the SSR seed and the client. Like protected_terms this is an
+// owner-only Persona field (not a PROFILE_FIELDS onboarding step), but the
+// /admin editor routes it through here, so it must coerce.
+const MONTH_PROFILE_FIELDS = new Set(['searching_since']);
 
 /** Parse a string to a string[] — tolerating a double-encoded JSON string. */
 function tryParseStringArray(s: string): string[] | null {
@@ -246,14 +252,35 @@ function coerceStringArray(value: unknown): string[] {
 }
 
 /**
+ * Coerce an owner-supplied month to a canonical `YYYY-MM`, or null (§24.188).
+ * Accepts `2026-08`, `2026-08-01`, a full ISO timestamp, and `2026/8`; anything
+ * unparseable stores as NULL rather than a string that would render as
+ * "Invalid Date" on the public hero. Month-only by design — no day means no
+ * local-vs-UTC boundary to disagree about.
+ */
+export function coerceMonth(value: unknown): string | null {
+  if (typeof value === 'number') return null;
+  const s = String(value ?? '').trim();
+  if (!s) return null;
+  const m = /^(\d{4})[-/](\d{1,2})/.exec(s);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  if (!Number.isFinite(year) || year < 1900 || year > 2999) return null;
+  if (!Number.isFinite(month) || month < 1 || month > 12) return null;
+  return `${year}-${String(month).padStart(2, '0')}`;
+}
+
+/**
  * Normalize an `update_profile_field` value to its column's storage form before
  * binding: array fields → JSON-array text, comp_floor → a number, location_pref
- * → JSON-object text, everything else → a string (or null). Defensive against
- * however the agent serialized the value.
+ * → JSON-object text, month fields → `YYYY-MM`, everything else → a string (or
+ * null). Defensive against however the agent serialized the value.
  */
 export function normalizeProfileValue(field: string, value: unknown): string | number | null {
   if (value === undefined || value === null) return null;
   if (ARRAY_PROFILE_FIELDS.has(field)) return JSON.stringify(coerceStringArray(value));
+  if (MONTH_PROFILE_FIELDS.has(field)) return coerceMonth(value);
   if (NUMBER_PROFILE_FIELDS.has(field)) {
     if (typeof value === 'number') return Number.isFinite(value) ? value : null;
     const cleaned = String(value).replace(/[^0-9.-]/g, '');

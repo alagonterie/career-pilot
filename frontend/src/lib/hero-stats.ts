@@ -49,19 +49,48 @@ export interface HeroStatInputs {
    *  null while the poll is in flight. Must exclude turns so "agent actions in 24h"
    *  never contradicts the turn-excluding "last activity" on the same line. */
   actionsIn24h: number | null
+  /** `pipeline.searching_since` — the owner-set `YYYY-MM` search-start anchor
+   *  (§24.188). Unset → the segment derives from the earliest application. */
+  searchingSinceOverride?: string | null
   now?: number
 }
 
+/** Format a UTC instant as the hero's `Mon YYYY`. UTC-pinned so the SSR seed and
+ *  the client hydrate the IDENTICAL string (the relative `last activity` is the
+ *  only `now`-derived segment). */
+function monthLabel(ms: number): string {
+  return new Date(ms).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })
+}
+
 /**
- * "searching since {Mon YYYY}" — the earliest application's month, the honest
- * anchor for when the search began (§24.149, owner-requested). Absent until the
- * first application exists (at cold-start the "warming up" line owns that moment).
- * An ABSOLUTE date (no `now`), formatted in UTC so the SSR seed and the client
- * hydrate the IDENTICAL string (the relative `last activity` is the only
- * `now`-derived segment). Pure + testable; null when no application carries an
- * `applied_at`.
+ * "searching since {Mon YYYY}" — the honest anchor for when the search began
+ * (§24.149, owner-requested).
+ *
+ * Two sources, in order (§24.188):
+ *   1. `override` — the owner-set `candidate_profile.searching_since` (`YYYY-MM`),
+ *      delivered on the pipeline read-model. The derived value below silently
+ *      assumes the search ran CONTINUOUSLY since the first application, so after
+ *      a deliberate pause it reads as months of inactivity; only the owner knows
+ *      when the current search actually started.
+ *   2. the earliest application's `applied_at` — the original derivation, and
+ *      still the behavior when no override is set.
+ *
+ * Absent (null) when neither is available — at cold-start the "warming up" line
+ * owns that moment. Pure + testable; an unparseable override falls through to
+ * the derivation rather than rendering junk.
  */
-export function searchingSince(apps: PipelineApplication[]): string | null {
+export function searchingSince(apps: PipelineApplication[], override?: string | null): string | null {
+  if (override) {
+    // `YYYY-MM` → the 1st of that month at UTC midnight. Parsing the explicit
+    // `-01T00:00:00Z` form (not the bare `YYYY-MM`) keeps engines from applying
+    // any local-time interpretation.
+    const m = /^(\d{4})-(\d{2})$/.exec(override.trim())
+    if (m) {
+      const t = Date.parse(`${m[1]}-${m[2]}-01T00:00:00Z`)
+      if (Number.isFinite(t)) return monthLabel(t)
+    }
+  }
+
   let earliest = Infinity
   for (const a of apps) {
     if (!a.applied_at) continue
@@ -69,14 +98,20 @@ export function searchingSince(apps: PipelineApplication[]): string | null {
     if (Number.isFinite(t) && t < earliest) earliest = t
   }
   if (!Number.isFinite(earliest)) return null
-  return new Date(earliest).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })
+  return monthLabel(earliest)
 }
 
 /**
  * Build the hero stat segments. Returns `[]` (renders nothing — the reserved
  * line collapses to its min-height) until real data lands. Pure + testable.
  */
-export function heroStats({ apps, events, actionsIn24h, now = Date.now() }: HeroStatInputs): string[] {
+export function heroStats({
+  apps,
+  events,
+  actionsIn24h,
+  searchingSinceOverride = null,
+  now = Date.now(),
+}: HeroStatInputs): string[] {
   const out: string[] = []
 
   const active = activeApplicationCount(apps)
@@ -87,7 +122,7 @@ export function heroStats({ apps, events, actionsIn24h, now = Date.now() }: Hero
   if (active > 0) out.push(`${active} active application${active === 1 ? '' : 's'}`)
 
   // The "since when" anchor sits right after the count — "5 applications, since Mar".
-  const since = searchingSince(apps)
+  const since = searchingSince(apps, searchingSinceOverride)
   if (since) out.push(`searching since ${since}`)
 
   if (actionsIn24h != null && actionsIn24h > 0) {

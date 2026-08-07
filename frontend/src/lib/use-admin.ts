@@ -311,8 +311,13 @@ export type AdminLeadsWrite =
   | { action: 'set_status'; id: string; status: string; reason?: string }
   | { action: 'rescore'; id: string }
   | { action: 'rescore_all' }
+  // §24.187 batch cleanup — the ids are exactly the rows the filter is showing
+  // (WYSIWYG: the server never re-derives the selection).
+  | { action: 'bulk_set_status'; ids: string[]; status: string; reason?: string }
+  | { action: 'bulk_delete'; ids: string[]; confirm: true }
 
-/** Triage / re-score a lead (server allow-lists the status set + the action enum). */
+/** Triage / re-score / batch-clean leads (server allow-lists the status set + the
+ * action enum, caps the batch size, and confirm-gates the hard delete). */
 export function postAdminLeads(baseUrl: string, body: AdminLeadsWrite): Promise<AdminWriteResult> {
   return postAdmin(baseUrl, body, '/api/admin/leads')
 }

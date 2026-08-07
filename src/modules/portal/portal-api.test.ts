@@ -166,6 +166,24 @@ describe('GET /api/pipeline', () => {
     expect(body.site_lifecycle).toBe('concluded');
   });
 
+  it('carries the owner-set searching_since anchor, null when unset (§24.188)', async () => {
+    seedPipeline({ id: 'app-1', ref: 'fintech-a', status: 'APPLIED', stage: 'applied' });
+
+    // Unset → null, so the hero falls back to its derived earliest-applied month.
+    const before = (await (await fetch(`${base}/api/pipeline`)).json()) as { searching_since: string | null };
+    expect(before.searching_since).toBeNull();
+
+    getDb()
+      .prepare(
+        `INSERT INTO candidate_profile (id, searching_since, updated_at) VALUES (1, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET searching_since = excluded.searching_since`,
+      )
+      .run('2026-08', new Date().toISOString());
+
+    const after = (await (await fetch(`${base}/api/pipeline`)).json()) as { searching_since: string | null };
+    expect(after.searching_since).toBe('2026-08');
+  });
+
   it('returns null days when timestamps are missing', async () => {
     seedPipeline({ id: 'app-1', ref: 'fintech-a', status: 'BOOKMARKED', stage: 'bookmarked' });
     const res = await fetch(`${base}/api/pipeline`);

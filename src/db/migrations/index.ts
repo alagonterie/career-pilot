@@ -50,6 +50,7 @@ import { migration140 } from './140-contact-submissions.js';
 import { migration141 } from './141-candidate-protected-terms.js';
 import { migration142 } from './142-funnel-to-pipeline-rename.js';
 import { migration143 } from './143-master-pdf-named-source.js';
+import { migration144 } from './144-candidate-searching-since.js';
 
 export interface Migration {
   version: number;
@@ -107,6 +108,7 @@ const migrations: Migration[] = [
   migration141,
   migration142,
   migration143,
+  migration144,
 ];
 
 export function runMigrations(db: Database.Database): void {

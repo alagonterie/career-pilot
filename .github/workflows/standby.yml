@@ -1,0 +1,199 @@
+name: standby
+
+# STRATEGY.md §24.189 — the automation half of standby.
+#
+# Standby is the DELIBERATE hibernation of the job search (distinct from the
+# §7 /pause /halt /killswitch incident tiers): the public site becomes a single
+# standby page and the GCP VM is STOPPED, taking the bill from ~$25-30/mo to the
+# ~$5/mo the boot disk costs. It is dispatched by the edge console at
+# `/admin/standby` — the Cloudflare Worker holds only a repo-scoped PAT, and THIS
+# workflow reaches GCP through the existing Workload Identity Federation, so no
+# cloud credential ever sits at the edge (§24.189 D4).
+#
+# STOP, never destroy (§24.189 D1). The boot disk holds both SQLite DBs, the
+# OneCLI credential vault, the tunnel credentials and both checkouts; destroying
+# would save ~$4/mo more and turn resume into a full re-provision plus a manual
+# Gmail OAuth re-consent. The instance keeps everything and restarts in ~2 min
+# (linger + WantedBy=default.target bring the services back on boot).
+on:
+  workflow_dispatch:
+    inputs:
+      op:
+        description: 'stop = go on standby; start = resume the search'
+        type: choice
+        required: true
+        options: [stop, start]
+
+concurrency:
+  # Shares the prod deploy group: a stop must never race a deploy onto the same box.
+  group: prod-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # Workload Identity Federation
+
+jobs:
+  standby:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Authenticate to Google Cloud (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      # ── STOP ────────────────────────────────────────────────────────────────
+      # Halt the host FIRST so nothing is mid-flight (containers killed, new
+      # spawns blocked, recurrence chains frozen), then power the VM off.
+      - name: Halt the host, then stop the VM
+        if: inputs.op == 'stop'
+        env:
+          VM_NAME: ${{ vars.GCP_VM_NAME || 'career-pilot-host' }}
+          VM_ZONE: ${{ vars.GCP_ZONE || 'us-central1-a' }}
+          GCP_PROJECT: ${{ vars.GCP_PROJECT || 'career-pilot-497319' }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/cp-standby-enter.sh <<'EOF'
+          set -euo pipefail
+          cd /opt/career-pilot
+          set -a; . ./.env; set +a
+          sudo -u career-pilot env "PATH=$PATH" bash -c 'set -a; . ./.env; set +a; pnpm exec tsx scripts/standby.ts enter'
+          EOF
+          # A failed halt must NOT block the stop — the VM powering off achieves
+          # the same freeze; we just lose the clean shutdown. Report and continue.
+          gcloud compute ssh "${VM_NAME}" \
+            --project "${GCP_PROJECT}" --zone "${VM_ZONE}" --tunnel-through-iap --quiet \
+            --command="bash -s" < /tmp/cp-standby-enter.sh || echo "WARNING: clean halt failed; stopping the VM anyway"
+
+          gcloud compute instances stop "${VM_NAME}" --project "${GCP_PROJECT}" --zone "${VM_ZONE}" --quiet
+          echo "VM stopped."
+
+      # ── START ───────────────────────────────────────────────────────────────
+      - name: Start the VM
+        if: inputs.op == 'start'
+        env:
+          VM_NAME: ${{ vars.GCP_VM_NAME || 'career-pilot-host' }}
+          VM_ZONE: ${{ vars.GCP_ZONE || 'us-central1-a' }}
+          GCP_PROJECT: ${{ vars.GCP_PROJECT || 'career-pilot-497319' }}
+        run: |
+          set -euo pipefail
+          gcloud compute instances start "${VM_NAME}" --project "${GCP_PROJECT}" --zone "${VM_ZONE}" --quiet
+
+          # Wait for SSH. Services auto-start on boot (user linger +
+          # WantedBy=default.target for nanoclaw, multi-user.target for cloudflared),
+          # so reachable SSH means the stack is coming up on its own.
+          for i in $(seq 1 30); do
+            if gcloud compute ssh "${VM_NAME}" --project "${GCP_PROJECT}" --zone "${VM_ZONE}" \
+                 --tunnel-through-iap --quiet --command="true" 2>/dev/null; then
+              echo "SSH is up after ${i} attempt(s)."
+              break
+            fi
+            sleep 10
+          done
+
+      - name: Resume hygiene + unfreeze the host
+        if: inputs.op == 'start'
+        env:
+          VM_NAME: ${{ vars.GCP_VM_NAME || 'career-pilot-host' }}
+          VM_ZONE: ${{ vars.GCP_ZONE || 'us-central1-a' }}
+          GCP_PROJECT: ${{ vars.GCP_PROJECT || 'career-pilot-497319' }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/cp-standby-exit.sh <<'EOF'
+          set -euo pipefail
+          cd /opt/career-pilot
+          # Roll overdue proactive rows forward to their NEXT occurrence, then
+          # /resume. Order is load-bearing: resuming first would let the sweep fire
+          # the whole overdue pile before we could reschedule it (§24.189 D8).
+          sudo -u career-pilot env "PATH=$PATH" bash -c 'set -a; . ./.env; set +a; pnpm exec tsx scripts/standby.ts exit'
+          EOF
+          gcloud compute ssh "${VM_NAME}" \
+            --project "${GCP_PROJECT}" --zone "${VM_ZONE}" --tunnel-through-iap --quiet \
+            --command="bash -s" < /tmp/cp-standby-exit.sh
+
+      - name: Health probe through the tunnel
+        if: inputs.op == 'start'
+        env:
+          API_BASE: ${{ vars.BACKEND_API_BASE }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${API_BASE:-}" ]; then
+            echo "BACKEND_API_BASE unset — skipping the edge probe (the flag will still be cleared)."
+            exit 0
+          fi
+          # The tunnel has to reconnect after the boot, so give it room. The probe
+          # goes THROUGH Access with the service token, so a 200 proves the whole
+          # path (tunnel + origin), not just an Access challenge.
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+              -H "CF-Access-Client-Id: ${CF_ACCESS_CLIENT_ID}" \
+              -H "CF-Access-Client-Secret: ${CF_ACCESS_CLIENT_SECRET}" \
+              "${API_BASE%/}/api/system-status" || true)
+            if [ "$code" = "200" ]; then echo "Backend healthy after ${i} probe(s)."; exit 0; fi
+            sleep 10
+          done
+          echo "Backend did not answer 200 within the window."
+          exit 1
+
+      # Cleared LAST, and only on a green probe (§24.189 D5) — the public site
+      # un-hides when it is actually live, never the moment the button was pressed.
+      - name: Clear the standby flag
+        if: inputs.op == 'start'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          KV_NAMESPACE_ID: ${{ vars.STANDBY_KV_NAMESPACE_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KV_NAMESPACE_ID:-}" ]; then
+            echo "STANDBY_KV_NAMESPACE_ID unset — clear the flag from /admin/standby by hand."
+            exit 1
+          fi
+          printf '{"mode":"active","since":null,"note":null,"vm":"running","updatedAt":"%s"}' \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /tmp/standby-state.json
+          pnpm exec wrangler kv key put state --path /tmp/standby-state.json \
+            --namespace-id "${KV_NAMESPACE_ID}" --remote
+          echo "Standby cleared — the live site is back."
+
+      # On the stop path the flag was already set by the console BEFORE dispatch
+      # (so the site switched over instantly); this only records the final VM state.
+      - name: Record the stopped VM state
+        if: inputs.op == 'stop'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          KV_NAMESPACE_ID: ${{ vars.STANDBY_KV_NAMESPACE_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KV_NAMESPACE_ID:-}" ]; then
+            echo "STANDBY_KV_NAMESPACE_ID unset — skipping the vm-state write (standby itself is already on)."
+            exit 0
+          fi
+          # Preserve the console-written since/note; only advance `vm`.
+          existing=$(pnpm exec wrangler kv key get state --namespace-id "${KV_NAMESPACE_ID}" --remote 2>/dev/null || echo '{}')
+          node -e '
+            const cur = JSON.parse(process.argv[1] || "{}");
+            process.stdout.write(JSON.stringify({
+              mode: "standby",
+              since: cur.since ?? new Date().toISOString(),
+              note: cur.note ?? null,
+              vm: "stopped",
+              updatedAt: new Date().toISOString(),
+            }));
+          ' "$existing" > /tmp/standby-state.json
+          pnpm exec wrangler kv key put state --path /tmp/standby-state.json \
+            --namespace-id "${KV_NAMESPACE_ID}" --remote
+          echo "Recorded vm=stopped."

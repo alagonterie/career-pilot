@@ -37,6 +37,28 @@ describe('normalizeProfileValue', () => {
     expect(normalizeProfileValue('full_name', null)).toBeNull();
     expect(normalizeProfileValue('full_name', undefined)).toBeNull();
   });
+
+  // §24.188: searching_since is canonicalized to a bare YYYY-MM — the same
+  // granularity the hero renders, so there's no day/timezone boundary to disagree
+  // about between the SSR seed and the client.
+  it('canonicalizes searching_since to YYYY-MM from any reasonable owner input', () => {
+    expect(normalizeProfileValue('searching_since', '2026-08')).toBe('2026-08');
+    expect(normalizeProfileValue('searching_since', '2026-8')).toBe('2026-08'); // zero-padded
+    expect(normalizeProfileValue('searching_since', '2026-08-01')).toBe('2026-08');
+    expect(normalizeProfileValue('searching_since', '2026-08-14T09:30:00Z')).toBe('2026-08');
+    expect(normalizeProfileValue('searching_since', '2026/8')).toBe('2026-08');
+    expect(normalizeProfileValue('searching_since', '  2026-08  ')).toBe('2026-08');
+  });
+
+  it('stores NULL for a searching_since it cannot parse (never an "Invalid Date" string)', () => {
+    expect(normalizeProfileValue('searching_since', '')).toBeNull();
+    expect(normalizeProfileValue('searching_since', 'August 2026')).toBeNull();
+    expect(normalizeProfileValue('searching_since', '2026-13')).toBeNull(); // no 13th month
+    expect(normalizeProfileValue('searching_since', '2026-00')).toBeNull();
+    expect(normalizeProfileValue('searching_since', '1700-01')).toBeNull(); // out of range
+    expect(normalizeProfileValue('searching_since', 20268)).toBeNull();
+    expect(normalizeProfileValue('searching_since', null)).toBeNull();
+  });
 });
 
 describe('encodeSuffix', () => {

@@ -392,6 +392,7 @@ describe('buildAdminLeads / applyAdminLeadsWrite (§24.173)', () => {
     killer_match_pushed_at?: string | null;
     closed_at?: string | null;
     closed_reason?: string | null;
+    application_id?: string | null;
   };
   function seedLead(over: LeadOverrides): void {
     const now = '2026-06-20T00:00:00.000Z';
@@ -409,6 +410,7 @@ describe('buildAdminLeads / applyAdminLeadsWrite (§24.173)', () => {
       killer_match_pushed_at: null as string | null,
       closed_at: null as string | null,
       closed_reason: null as string | null,
+      application_id: null as string | null,
       ...over,
     };
     getDb()
@@ -416,11 +418,13 @@ describe('buildAdminLeads / applyAdminLeadsWrite (§24.173)', () => {
         `INSERT INTO job_leads
            (id, source, source_job_id, source_url, content_fingerprint, title, company,
             first_seen_at, last_seen_at, status, status_changed_at, rules_score, rules_score_reasons,
-            description_text, source_posted_at, llm_score, killer_match_pushed_at, closed_at, closed_reason)
+            description_text, source_posted_at, llm_score, killer_match_pushed_at, closed_at, closed_reason,
+            application_id)
          VALUES
            (@id, @source, @id, 'https://x/' || @id, 'fp-' || @id, @title, 'Globex',
             @first_seen_at, @last_seen_at, @status, @first_seen_at, @rules_score, @rules_score_reasons,
-            @description_text, @source_posted_at, @llm_score, @killer_match_pushed_at, @closed_at, @closed_reason)`,
+            @description_text, @source_posted_at, @llm_score, @killer_match_pushed_at, @closed_at, @closed_reason,
+            @application_id)`,
       )
       .run(d);
   }
@@ -504,5 +508,86 @@ describe('buildAdminLeads / applyAdminLeadsWrite (§24.173)', () => {
     const out = applyAdminLeadsWrite(getDb(), { action: 'rescore_all' });
     expect(out.status).toBe(200);
     expect((out.body as { rescored: number }).rescored).toBe(2);
+  });
+
+  // ── §24.187: batch cleanup ──────────────────────────────────────────────────
+
+  it('bulk_set_status archives every id in the batch (soft-close, one reason)', () => {
+    seedLead({ id: 'a' });
+    seedLead({ id: 'b' });
+    seedLead({ id: 'c' });
+
+    const out = applyAdminLeadsWrite(getDb(), {
+      action: 'bulk_set_status',
+      ids: ['a', 'b'],
+      status: 'archived',
+      reason: 'stale pool',
+    });
+    expect(out.status).toBe(200);
+    expect(out.body).toMatchObject({ updated: 2, missing: 0 });
+
+    const v = buildAdminLeads(getDb());
+    expect(v.leads.map((l) => l.id)).toEqual(['c']); // only the untouched one stays active
+    expect(v.closed.map((l) => l.id).sort()).toEqual(['a', 'b']);
+    expect(v.closed.every((l) => l.status === 'archived' && l.closed_reason === 'stale pool')).toBe(true);
+  });
+
+  it('bulk_set_status reports ids that no longer exist as `missing`', () => {
+    seedLead({ id: 'a' });
+    const out = applyAdminLeadsWrite(getDb(), { action: 'bulk_set_status', ids: ['a', 'ghost'], status: 'reviewed' });
+    expect(out.status).toBe(200);
+    expect(out.body).toMatchObject({ updated: 1, missing: 1 });
+  });
+
+  it('bulk_set_status refuses a bad status and a bad ids payload', () => {
+    seedLead({ id: 'a' });
+    expect(applyAdminLeadsWrite(getDb(), { action: 'bulk_set_status', ids: ['a'], status: 'applied' }).status).toBe(
+      400,
+    );
+    expect(applyAdminLeadsWrite(getDb(), { action: 'bulk_set_status', ids: [], status: 'reviewed' }).status).toBe(400);
+    expect(applyAdminLeadsWrite(getDb(), { action: 'bulk_set_status', ids: 'a', status: 'reviewed' }).status).toBe(400);
+    expect(
+      applyAdminLeadsWrite(getDb(), {
+        action: 'bulk_set_status',
+        ids: Array.from({ length: 501 }, (_, i) => `x${i}`),
+        status: 'reviewed',
+      }).status,
+    ).toBe(400);
+  });
+
+  it('bulk_delete hard-removes rows but only with confirm:true', () => {
+    seedLead({ id: 'a' });
+    seedLead({ id: 'b' });
+
+    // no confirm → refused, nothing removed
+    expect(applyAdminLeadsWrite(getDb(), { action: 'bulk_delete', ids: ['a', 'b'] }).status).toBe(400);
+    expect(buildAdminLeads(getDb()).rollup.activeTotal).toBe(2);
+
+    const out = applyAdminLeadsWrite(getDb(), { action: 'bulk_delete', ids: ['a', 'b'], confirm: true });
+    expect(out.status).toBe(200);
+    expect(out.body).toMatchObject({ deleted: 2, skipped: 0 });
+    expect(buildAdminLeads(getDb()).rollup.activeTotal).toBe(0);
+  });
+
+  it('bulk_delete skips promoted leads (an application_id link must not be orphaned)', () => {
+    getDb()
+      .prepare(
+        `INSERT INTO applications (id, company_name, obfuscated_label, role_title, status, applied_at, created_at)
+         VALUES ('app-1', 'Globex', 'a fintech company', 'Senior Software Engineer', 'applied',
+                 '2026-06-20T00:00:00.000Z', '2026-06-20T00:00:00.000Z')`,
+      )
+      .run();
+    seedLead({ id: 'plain' });
+    seedLead({ id: 'promoted', status: 'applied', application_id: 'app-1' });
+
+    const out = applyAdminLeadsWrite(getDb(), {
+      action: 'bulk_delete',
+      ids: ['plain', 'promoted'],
+      confirm: true,
+    });
+    expect(out.status).toBe(200);
+    expect(out.body).toMatchObject({ deleted: 1, skipped: 1 });
+    // the promoted lead survives the batch rather than failing it
+    expect(buildAdminLeads(getDb()).leads.map((l) => l.id)).toEqual(['promoted']);
   });
 });
