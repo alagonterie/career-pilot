@@ -11,6 +11,7 @@ import {
 import { cn } from '~/lib/utils'
 
 import { DataTable, type Column } from './DataTable'
+import { TailorResume } from './TailorResume'
 
 /**
  * The owner-only `/admin` Leads tab (§24.173) — the job_leads world-model the
@@ -232,10 +233,12 @@ const LEAD_COLUMNS: Column<AdminLead>[] = [
 function LeadDetail({
   lead,
   busy,
+  baseUrl,
   onPost,
 }: {
   lead: AdminLead
   busy: string | null
+  baseUrl: string
   onPost: (body: AdminLeadsWrite, busyKey: string) => void
 }) {
   const settable = SETTABLE_STATUSES.includes(lead.status as (typeof SETTABLE_STATUSES)[number])
@@ -323,6 +326,9 @@ function LeadDetail({
           {busy === `rescore-${lead.id}` ? 'Re-scoring…' : 'Re-score'}
         </button>
       </div>
+      {/* §24.191 — tailor a résumé to this specific lead. Owner-only surface; a
+          résumé naming a real employer never appears on a public route. */}
+      <TailorResume leadId={lead.id} baseUrl={baseUrl} />
     </div>
   )
 }
@@ -646,7 +652,7 @@ export function LeadsPanel({
         rowKey={(lead) => lead.id}
         rowTestId="leads-row"
         detailTestId="leads-detail"
-        renderDetail={(lead) => <LeadDetail lead={lead} busy={busy} onPost={post} />}
+        renderDetail={(lead) => <LeadDetail lead={lead} busy={busy} baseUrl={baseUrl} onPost={post} />}
         resetKey={`${status}|${source}|${minScore}|${minAgeDays}|${company}|${includeClosed}|${sort}`}
         minWidthClass="min-w-[48rem]"
         empty={

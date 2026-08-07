@@ -1021,6 +1021,21 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     options: MODEL_OPTIONS,
     note: 'The model the win-confidence scorer uses (§24.140 — Haiku by default; a heuristic 0–100 score, so Haiku is plenty). Applies to the next scoring run.',
   },
+  tailor_lead_model: {
+    type: 'enum',
+    group: 'models',
+    label: 'Host · lead résumé-tailoring model',
+    options: MODEL_OPTIONS,
+    note: 'The model that tailors a résumé to one lead from the Leads tab (§24.191 — Sonnet by default). This is the one output that goes to a real employer under your own name, so it gets the capable tier rather than the cheap one. Applies to the next generation.',
+  },
+  tailor_lead_daily_cap: {
+    type: 'number',
+    group: 'models',
+    label: 'Host · lead résumé-tailoring daily cap',
+    min: 0,
+    max: 200,
+    note: 'Maximum tailored résumés generated per day across all leads (§24.191). A backstop against a client looping on the generate action, not an expected limit — each run costs a few cents.',
+  },
   kit_entity_redact_model: {
     type: 'enum',
     group: 'models',

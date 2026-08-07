@@ -82,6 +82,7 @@ import { computeRunningTopology, emptyObservability, getObservability, sandboxSp
 import { getTelemetry } from './portkey-analytics.js';
 import { getPublicProfile, type WorkProfile } from './profile.js';
 import { masterFooter, renderResumePdf, tailoredFooter } from './resume-pdf.js';
+import { getTailoredResume, getTailoredResumesForLead, startTailorRun } from './tailor-lead-resume.js';
 import { buildSanitizeDemo } from './sanitize-demo.js';
 import { getRecentSimulatorRuns, getSimulatorResult, startSimulatorRun, type SimulatorInput } from './simulator.js';
 import {
@@ -572,6 +573,86 @@ async function handleAdminLeadsWrite(
   }
   const out = applyAdminLeadsWrite(getDb(), body);
   json(res, out.status, out.body, cors);
+}
+
+/**
+ * `POST /api/admin/leads/<id>/tailor` (§24.191) — claim + start one tailoring
+ * run. Returns 202 with the row id immediately; the client polls the list below.
+ * A live pending row for the same lead 409s rather than spending twice.
+ */
+async function handleAdminTailorStart(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  leadId: string,
+  cors: Record<string, string>,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch {
+    return json(res, 400, { error: 'invalid JSON body' }, cors);
+  }
+  const b = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+  const out = startTailorRun(getDb(), leadId, { jd: b.jd, notes: b.notes, attribute: b.attribute });
+  json(res, out.status, out.body, cors);
+}
+
+/** `GET /api/admin/leads/<id>/tailored` (§24.191) — this lead's tailoring runs,
+ *  newest first. Also the poll target while one is pending. `profile_json` is
+ *  omitted: the panel needs status + bio outcome, and the PDF endpoint is what
+ *  renders the content. */
+function handleAdminTailoredList(res: http.ServerResponse, leadId: string, cors: Record<string, string>): void {
+  const rows = getTailoredResumesForLead(getDb(), leadId).map(({ profile_json, ...rest }) => ({
+    ...rest,
+    has_resume: profile_json != null,
+  }));
+  json(res, 200, { runs: rows }, cors);
+}
+
+/**
+ * `GET /api/admin/tailored/<id>/resume.pdf` (§24.191) — render a stored tailored
+ * résumé. Same renderer and footer as the public simulator's gift, with the
+ * footer link pointed at this application's attribution source so a click-through
+ * from a real submission is attributable.
+ */
+async function handleAdminTailoredPdf(
+  res: http.ServerResponse,
+  id: string,
+  cors: Record<string, string>,
+): Promise<void> {
+  const row = getTailoredResume(getDb(), id);
+  if (!row || !row.profile_json) return json(res, 404, { error: 'no_tailored_resume' }, cors);
+  const lead = getDb().prepare(`SELECT title, company FROM job_leads WHERE id = ?`).get(row.lead_id) as
+    | { title: string; company: string }
+    | undefined;
+  let tailored: WorkProfile;
+  try {
+    tailored = JSON.parse(row.profile_json) as WorkProfile;
+  } catch {
+    return json(res, 404, { error: 'no_tailored_resume' }, cors);
+  }
+  const { identity } = getPublicProfile();
+  const url = getConfig<string>(getDb(), 'portal_public_url', '');
+  const footerLinkUrl = url && row.source_slug ? url.replace(/\/$/, '') + fromPath(row.source_slug) : undefined;
+  const buf = await renderResumePdf(
+    tailored,
+    identity,
+    tailoredFooter(lead?.company ?? null, lead?.title ?? null, row.created_at, url),
+    url,
+    { compact: true, footerLinkUrl },
+  );
+  const base = `resume-${(lead?.company ?? 'role').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}`.slice(
+    0,
+    60,
+  );
+  res.writeHead(200, {
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': `attachment; filename="${base || 'resume'}.pdf"`,
+    'Content-Length': String(buf.length),
+    'Cache-Control': 'no-store',
+    ...cors,
+  });
+  res.end(buf);
 }
 
 function handleAdminPersona(res: http.ServerResponse, cors: Record<string, string>): void {
@@ -1279,6 +1360,19 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
       if (method === 'POST' && path === '/api/admin/persona') return await handleAdminPersonaWrite(req, res, cors);
       if (method === 'GET' && path === '/api/admin/leads') return handleAdminLeads(res, cors);
       if (method === 'POST' && path === '/api/admin/leads') return await handleAdminLeadsWrite(req, res, cors);
+      // §24.191 — per-lead résumé tailoring. Owner-only by virtue of this
+      // prefix; a résumé naming a real employer never appears on a public route.
+      if (path.startsWith('/api/admin/leads/')) {
+        const rest = path.slice('/api/admin/leads/'.length);
+        const [leadId, sub] = rest.split('/');
+        if (leadId && sub === 'tailor' && method === 'POST')
+          return await handleAdminTailorStart(req, res, leadId, cors);
+        if (leadId && sub === 'tailored' && method === 'GET') return handleAdminTailoredList(res, leadId, cors);
+      }
+      if (method === 'GET' && path.startsWith('/api/admin/tailored/') && path.endsWith('/resume.pdf')) {
+        const id = path.slice('/api/admin/tailored/'.length, -'/resume.pdf'.length);
+        if (id.length > 0 && !id.includes('/')) return await handleAdminTailoredPdf(res, id, cors);
+      }
     }
 
     // Dev inspector (§24.42b): the whole `/api/dev/*` prefix is invisible

@@ -40,6 +40,8 @@
     "kit_entity_redact_budget_usd_per_day": 1.0,
     "kit_entity_redact_timeout_ms": 20000,
     "win_confidence_model": "claude-haiku-4-5",
+    "tailor_lead_model": "claude-sonnet-4-6",
+    "tailor_lead_daily_cap": 25,
     "quiet_hours": "22:00-07:00",
     "quiet_hours_tz": "",
     "telegram_proactive_frequency_cap_per_day": 0,

@@ -28,6 +28,11 @@ export const PIPELINE_DATA_TABLES = [
   'public_pipeline_view',
   'public_audit_trail',
   'learnings',
+  // §24.191 — a child of job_leads with ON DELETE CASCADE, but this wipe runs
+  // with FKs OFF (see wipeTables), so the cascade cannot reach it. Listed
+  // explicitly, ahead of its parent, so a dev reset never strands tailored
+  // résumés pointing at leads that no longer exist.
+  'tailored_resumes',
   'job_leads',
   'simulator_runs',
   'email_events',

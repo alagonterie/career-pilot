@@ -13,6 +13,31 @@ fork version recorded in `package.json` — the two are never conflated.
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-08-07
+
+An owner-side tool for applying to a specific role.
+
+### Added
+
+- **Tailor a résumé to a single job lead, from the leads view.** Reviewing a
+  discovered role and deciding to apply now leads straight into generating a
+  résumé aimed at that posting — the same tailoring the public simulator
+  performs, held to the same honesty rules: the summary and which
+  accomplishments to feature are chosen for the role, while employers, dates,
+  bullet wording, skills and education stay exactly as they read on the master
+  résumé. The job description can be pasted in from the real posting rather than
+  relying on what was scraped, and a short note can steer the emphasis. The
+  result downloads as a PDF and can be regenerated without losing earlier
+  versions.
+- The generated résumé states whether its summary was genuinely tailored or fell
+  back to the master summary, so it is clear what is being sent before it goes
+  out.
+- Click-throughs from a tailored résumé attribute to the company it was written
+  for, so a recruiter opening the portal from a submitted application is
+  visible as such.
+- Tailored résumés are removed together with their lead when leads are purged.
+  Archiving a lead keeps them.
+
 ## [1.1.2] - 2026-08-07
 
 A correction to 1.1.1, found while repairing real leads.

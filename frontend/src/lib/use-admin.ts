@@ -324,3 +324,52 @@ export type AdminLeadsWrite =
 export function postAdminLeads(baseUrl: string, body: AdminLeadsWrite): Promise<AdminWriteResult> {
   return postAdmin(baseUrl, body, '/api/admin/leads')
 }
+
+// ── §24.191: per-lead résumé tailoring ────────────────────────────────────────
+
+/** One tailoring run. `bio_outcome` is surfaced rather than merely logged: on a
+ *  résumé going to a named employer, a bio floored back to the master is the
+ *  difference between "tailored" and "my master résumé, reordered". */
+export interface TailoredRun {
+  id: string
+  lead_id: string
+  created_at: string
+  completed_at: string | null
+  status: 'pending' | 'ready' | 'failed'
+  jd_used: string | null
+  notes: string | null
+  bio_outcome: 'tailored' | 'fallback_stub' | 'fallback_unverified_number' | null
+  model: string | null
+  cost_cents: number | null
+  error: string | null
+  source_slug: string | null
+  has_resume: boolean
+}
+
+/** This lead's tailoring runs, newest first. Also the poll target while one is
+ *  pending. Returns [] on any failure — the panel degrades to "none yet". */
+export async function fetchTailoredRuns(baseUrl: string, leadId: string): Promise<TailoredRun[]> {
+  try {
+    const res = await fetch(`${baseUrl}/api/admin/leads/${encodeURIComponent(leadId)}/tailored`)
+    if (!res.ok) return []
+    const body = (await res.json()) as { runs?: TailoredRun[] }
+    return body.runs ?? []
+  } catch {
+    return []
+  }
+}
+
+/** Start a tailoring run. 409 `already_generating` means a live run already holds
+ *  the lock — the caller should poll rather than retry. */
+export function startTailoredRun(
+  baseUrl: string,
+  leadId: string,
+  body: { jd?: string; notes?: string; attribute?: boolean },
+): Promise<AdminWriteResult> {
+  return postAdmin(baseUrl, body, `/api/admin/leads/${encodeURIComponent(leadId)}/tailor`)
+}
+
+/** Where the rendered PDF lives (owner-gated; never a public route). */
+export function tailoredPdfUrl(baseUrl: string, runId: string): string {
+  return `${baseUrl}/api/admin/tailored/${encodeURIComponent(runId)}/resume.pdf`
+}
