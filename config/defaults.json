@@ -150,7 +150,8 @@
     "admin_api_enabled": false,
     "llm_fetch_timeout_ms": 20000,
     "llm_pricing_usd_per_mtok": {
-      "claude-haiku-4-5": { "input": 1.0, "output": 5.0, "cache_read": 0.1, "cache_write": 1.25 }
+      "claude-haiku-4-5": { "input": 1.0, "output": 5.0, "cache_read": 0.1, "cache_write": 1.25 },
+      "claude-sonnet-4-6": { "input": 3.0, "output": 15.0, "cache_read": 0.3, "cache_write": 3.75 }
     },
     "health_check_interval_sec": 3600,
     "health_stale_pending_threshold_sec": 900,
