@@ -52,8 +52,24 @@ console.log(`${rows.length} google_jobs lead(s) to examine.${APPLY ? '' : '  (dr
 
 const update = getDb().prepare(`UPDATE job_leads SET apply_url = @apply_url, apply_link_kind = @kind WHERE id = @id`);
 
-let improved = 0;
+// "Improved" must mean a genuinely different destination — not the same page with
+// its `?utm_source=google_jobs_apply` params stripped. Conflating the two would
+// report a tracking-param cleanup as if we'd found a better link.
+let redirected = 0;
+let cleaned = 0;
 let classifiedOnly = 0;
+
+/** Same page, ignoring query + trailing slash? */
+function samePage(a: string | null, b: string | null): boolean {
+  if (!a || !b) return false;
+  try {
+    const ua = new URL(a);
+    const ub = new URL(b);
+    return ua.host === ub.host && ua.pathname.replace(/\/$/, '') === ub.pathname.replace(/\/$/, '');
+  } catch {
+    return false;
+  }
+}
 let unchanged = 0;
 const byKind: Record<string, number> = {};
 
@@ -80,17 +96,22 @@ for (const r of rows) {
     continue;
   }
   if (urlChanged) {
-    improved += 1;
-    console.log(`${r.company} — ${r.id}`);
-    console.log(`   was: ${r.apply_url ?? '(none)'}`);
-    console.log(`   now: ${nextUrl}   [${nextKind}]`);
+    if (samePage(r.apply_url, nextUrl)) {
+      cleaned += 1;
+    } else {
+      redirected += 1;
+      console.log(`${r.company} — ${r.id}`);
+      console.log(`   was: ${r.apply_url ?? '(none)'}`);
+      console.log(`   now: ${nextUrl}   [${nextKind}]`);
+    }
   } else {
     classifiedOnly += 1;
   }
   if (APPLY) update.run({ id: r.id, apply_url: nextUrl, kind: nextKind });
 }
 
-console.log(`\nLink improved: ${improved}`);
+console.log(`\nRe-pointed to a better destination: ${redirected}`);
+console.log(`Same page, tracking params stripped: ${cleaned}`);
 console.log(`Classified only (link already best): ${classifiedOnly}`);
 console.log(`Unchanged: ${unchanged}`);
 console.log(`Link kinds: ${JSON.stringify(byKind)}`);

@@ -28,6 +28,21 @@ describe('classifyApplyLink (§24.190)', () => {
     expect(classifyApplyLink('https://www.glassdoor.com/job-listing/x', 'Acorns')).toBe('unknown');
   });
 
+  // Found by running the backfill against real prod leads: aggregators routinely
+  // list THEMSELVES as the employer, on a generic hosting platform. Matching any
+  // host label would "confirm" them as the company and hide exactly the leads
+  // whose real employer is unknown.
+  it('does NOT accept a company-named SUBDOMAIN of an unrelated domain', () => {
+    expect(classifyApplyLink('https://flexboard.9y.liveblog365.com/job/1', 'FlexBoard')).toBe('unknown');
+    expect(classifyApplyLink('https://remoteclickjobs-production.up.railway.app/job/x', 'remote click jobs')).toBe(
+      'unknown',
+    );
+  });
+
+  it('accepts YC job pages as direct (a company listing, not a reposter index)', () => {
+    expect(classifyApplyLink('https://www.ycombinator.com/companies/nango/jobs/KplJ2YB', 'Nango')).toBe('ats');
+  });
+
   it('is defensive about junk input', () => {
     expect(classifyApplyLink('not-a-url', 'Stripe')).toBe('unknown');
     expect(classifyApplyLink('', 'Stripe')).toBe('unknown');

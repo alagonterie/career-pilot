@@ -48,6 +48,8 @@ const ATS_HOST_SUFFIXES = [
   'eightfold.ai',
   'gem.com',
   'polymer.co',
+  // YC's job pages are the company's own listing, not a reposter's index.
+  'ycombinator.com',
 ];
 
 export type ApplyLinkKind = 'company' | 'ats' | 'aggregator' | 'unknown';
@@ -77,15 +79,29 @@ function companyToken(company: string): string {
     .replace(/[^a-z0-9]/g, '');
 }
 
-/** Does this host look like the hiring company's own? Compares each host label
- *  against the company token, so `careers.socket.dev` and `socket.dev` both match
- *  "Socket.dev" while `jobleads.com` does not. */
+/**
+ * Does this host look like the hiring company's OWN domain?
+ *
+ * Matches the company token against the REGISTRABLE domain (the last two labels)
+ * — not against any label anywhere in the host. That distinction is load-bearing:
+ * aggregators routinely list themselves as the employer on a generic hosting
+ * platform, e.g. company "FlexBoard" at `flexboard.9y.liveblog365.com` or
+ * "remote click jobs" at `remoteclickjobs-production.up.railway.app`. Matching any
+ * label would "confirm" those as the company and hide exactly the leads whose real
+ * employer is unknown. A genuine company site carries its name in the registrable
+ * domain (`stripe.com`, `careers.socket.dev` → `socket.dev`).
+ *
+ * Multi-part public suffixes (`.co.uk`) fall through to a non-match, which
+ * degrades to `aggregator` — the safe direction (flagged, never silently trusted).
+ */
 function isCompanyHost(host: string, company: string): boolean {
   const token = companyToken(company);
   if (token.length < 3) return false;
-  return host
-    .split('.')
-    .some((label) => label.length >= 3 && (label === token || token.startsWith(label) || label.startsWith(token)));
+  const labels = host.split('.');
+  if (labels.length < 2) return false;
+  const registrable = labels[labels.length - 2];
+  if (registrable.length < 3) return false;
+  return registrable === token || token.startsWith(registrable) || registrable.startsWith(token);
 }
 
 export function classifyApplyLink(url: string, company: string): ApplyLinkKind {
