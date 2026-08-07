@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { ACTIVE_STATE, isStandbyExempt, parseStandbySnapshot, parseStandbyState, standbyDuration } from './standby'
+import {
+  ACTIVE_STATE,
+  isStandbyExempt,
+  parseStandbySnapshot,
+  parseStandbyState,
+  parseStandbyVm,
+  standbyDuration,
+} from './standby'
 
 /**
  * §24.189. The load-bearing property throughout is FAIL OPEN: anything short of an
@@ -45,6 +52,21 @@ describe('parseStandbyState (§24.189)', () => {
     const parsed = parseStandbyState(JSON.stringify({ mode: 'standby', vm: 'exploded', note: '   ' }))
     expect(parsed.vm).toBe('unknown')
     expect(parsed.note).toBeNull()
+  })
+})
+
+describe('parseStandbyVm (§24.189 — the workflow-owned key)', () => {
+  it('accepts the known states as a bare string (what a one-line wrangler put writes)', () => {
+    expect(parseStandbyVm('stopped')).toBe('stopped')
+    expect(parseStandbyVm('running')).toBe('running')
+    expect(parseStandbyVm(' starting\n')).toBe('starting')
+  })
+
+  it('returns null for anything unrecognized, so a junk value simply does not overlay', () => {
+    expect(parseStandbyVm(null)).toBeNull()
+    expect(parseStandbyVm('')).toBeNull()
+    expect(parseStandbyVm('exploded')).toBeNull()
+    expect(parseStandbyVm('{"vm":"stopped"}')).toBeNull()
   })
 })
 

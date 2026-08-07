@@ -4,8 +4,10 @@ import {
   ACTIVE_STATE,
   STANDBY_PROFILE_KEY,
   STANDBY_STATE_KEY,
+  STANDBY_VM_KEY,
   parseStandbySnapshot,
   parseStandbyState,
+  parseStandbyVm,
   type StandbyMode,
   type StandbySnapshot,
   type StandbyState,
@@ -63,7 +65,13 @@ export async function readStandbyState(): Promise<StandbyState> {
   const ns = kv()
   if (!ns) return ACTIVE_STATE
   try {
-    return parseStandbyState(await ns.get(STANDBY_STATE_KEY))
+    const [stateRaw, vmRaw] = await Promise.all([ns.get(STANDBY_STATE_KEY), ns.get(STANDBY_VM_KEY)])
+    const state = parseStandbyState(stateRaw)
+    // The workflow owns the vm key (see STANDBY_VM_KEY) — overlay it when set, so
+    // "stopping" advances to "stopped" without either writer touching the other's
+    // record. A live record is authoritative for everything else.
+    const vm = parseStandbyVm(vmRaw)
+    return vm && state.mode === 'standby' ? { ...state, vm } : state
   } catch {
     return ACTIVE_STATE
   }
@@ -98,6 +106,10 @@ export async function writeStandbyState(next: {
     updatedAt: now,
   }
   await ns.put(STANDBY_STATE_KEY, JSON.stringify(record))
+  // Drop any vm value the previous cycle's workflow left behind, so a stale
+  // "stopped" can't overlay the fresh record. The workflow re-writes it once it
+  // knows where the VM actually got to.
+  await ns.delete(STANDBY_VM_KEY)
   return true
 }
 

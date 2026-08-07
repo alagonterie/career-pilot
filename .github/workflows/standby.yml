@@ -154,25 +154,38 @@ jobs:
       # un-hides when it is actually live, never the moment the button was pressed.
       - name: Clear the standby flag
         if: inputs.op == 'start'
+        # wrangler is a `frontend/` devDependency — `pnpm exec wrangler` does NOT
+        # resolve from the repo root, so these steps must run from frontend/ (same
+        # as deploy-frontend.yml).
+        working-directory: frontend
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           KV_NAMESPACE_ID: ${{ vars.STANDBY_KV_NAMESPACE_ID }}
         run: |
           set -euo pipefail
           if [ -z "${KV_NAMESPACE_ID:-}" ]; then
-            echo "STANDBY_KV_NAMESPACE_ID unset — clear the flag from /admin/standby by hand."
+            echo "::error::STANDBY_KV_NAMESPACE_ID unset — the VM is back up but the site is still showing the standby page. Clear it from /admin/standby."
             exit 1
           fi
           printf '{"mode":"active","since":null,"note":null,"vm":"running","updatedAt":"%s"}' \
             "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /tmp/standby-state.json
-          pnpm exec wrangler kv key put state --path /tmp/standby-state.json \
-            --namespace-id "${KV_NAMESPACE_ID}" --remote
+          if ! pnpm exec wrangler kv key put state --path /tmp/standby-state.json \
+                 --namespace-id "${KV_NAMESPACE_ID}" --remote; then
+            echo "::error::KV write failed — the VM is healthy but the site is still on the standby page. The most likely cause is CLOUDFLARE_API_TOKEN lacking 'Workers KV Storage: Edit'. Fix the token, or clear the flag from /admin/standby."
+            exit 1
+          fi
+          # Belt: drop the workflow-owned vm key so a stale value can't overlay the
+          # fresh live record (the reader overlays it only while on standby).
+          pnpm exec wrangler kv key delete vm --namespace-id "${KV_NAMESPACE_ID}" --remote || true
           echo "Standby cleared — the live site is back."
 
       # On the stop path the flag was already set by the console BEFORE dispatch
-      # (so the site switched over instantly); this only records the final VM state.
+      # (so the site switched over instantly); this only advances the last-reported
+      # VM state. It writes its OWN key — a bare status string — so it never has to
+      # read-modify-write the console's record (see STANDBY_VM_KEY in standby.ts).
       - name: Record the stopped VM state
         if: inputs.op == 'stop'
+        working-directory: frontend
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           KV_NAMESPACE_ID: ${{ vars.STANDBY_KV_NAMESPACE_ID }}
@@ -182,18 +195,8 @@ jobs:
             echo "STANDBY_KV_NAMESPACE_ID unset — skipping the vm-state write (standby itself is already on)."
             exit 0
           fi
-          # Preserve the console-written since/note; only advance `vm`.
-          existing=$(pnpm exec wrangler kv key get state --namespace-id "${KV_NAMESPACE_ID}" --remote 2>/dev/null || echo '{}')
-          node -e '
-            const cur = JSON.parse(process.argv[1] || "{}");
-            process.stdout.write(JSON.stringify({
-              mode: "standby",
-              since: cur.since ?? new Date().toISOString(),
-              note: cur.note ?? null,
-              vm: "stopped",
-              updatedAt: new Date().toISOString(),
-            }));
-          ' "$existing" > /tmp/standby-state.json
-          pnpm exec wrangler kv key put state --path /tmp/standby-state.json \
-            --namespace-id "${KV_NAMESPACE_ID}" --remote
-          echo "Recorded vm=stopped."
+          # Cosmetic only (the console's "vm (last reported)" row), so a failure
+          # here must not fail a successful teardown.
+          pnpm exec wrangler kv key put vm stopped \
+            --namespace-id "${KV_NAMESPACE_ID}" --remote \
+            || echo "::warning::could not record vm=stopped (standby itself is on and correct)"

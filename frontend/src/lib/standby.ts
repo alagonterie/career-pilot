@@ -49,6 +49,16 @@ export interface StandbySnapshot {
 
 export const STANDBY_STATE_KEY = 'state'
 export const STANDBY_PROFILE_KEY = 'profile'
+/**
+ * The last-reported VM state lives in its OWN key, deliberately.
+ *
+ * Two different writers touch standby: the edge console owns mode/since/note, and
+ * `standby.yml` owns "where the VM actually got to." Sharing one record would
+ * force the workflow into a read-modify-write against an eventually-consistent
+ * store — fragile to parse and racy against the console. Separate keys mean each
+ * writer does a blind whole-value put and neither can clobber the other's field.
+ */
+export const STANDBY_VM_KEY = 'vm'
 
 /** The safe default: a missing/unreadable record means the site is LIVE. Failing
  *  open is deliberate — a KV hiccup must never black out a working public site. */
@@ -61,6 +71,13 @@ export const ACTIVE_STATE: StandbyState = {
 }
 
 const VM_STATES = new Set<StandbyVmState>(['running', 'stopping', 'stopped', 'starting', 'unknown'])
+
+/** Parse the workflow-owned vm key — a bare state string, so the workflow can
+ *  write it with a one-line `wrangler kv key put` and no JSON assembly. Pure. */
+export function parseStandbyVm(raw: string | null | undefined): StandbyVmState | null {
+  const v = (raw ?? '').trim() as StandbyVmState
+  return VM_STATES.has(v) ? v : null
+}
 
 function str(v: unknown): string | null {
   return typeof v === 'string' && v.trim().length > 0 ? v.trim() : null
