@@ -21,7 +21,8 @@ Current model generations, and spend figures that can be trusted.
 
 - **Claude Sonnet 5 and Opus 5 are selectable** wherever a model can be chosen,
   alongside the previous generation, which is kept so any choice can be reverted
-  instantly. Résumé tailoring now runs on Sonnet 5 by default.
+  instantly. Résumé tailoring now runs on Sonnet 5 by default, with its output
+  and time limits re-measured against that model rather than the previous one.
 
 ### Fixed
 
