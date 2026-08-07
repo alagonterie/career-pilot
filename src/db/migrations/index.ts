@@ -51,6 +51,7 @@ import { migration141 } from './141-candidate-protected-terms.js';
 import { migration142 } from './142-funnel-to-pipeline-rename.js';
 import { migration143 } from './143-master-pdf-named-source.js';
 import { migration144 } from './144-candidate-searching-since.js';
+import { migration145 } from './145-job-leads-apply-link-kind.js';
 
 export interface Migration {
   version: number;
@@ -109,6 +110,7 @@ const migrations: Migration[] = [
   migration142,
   migration143,
   migration144,
+  migration145,
 ];
 
 export function runMigrations(db: Database.Database): void {

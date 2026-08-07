@@ -50,6 +50,12 @@ export interface JobLeadPayload {
   source_job_id: string;
   source_url: string;
   apply_url?: string | null;
+  /** How direct `apply_url` is (§24.190): 'company' (the employer's own site),
+   *  'ats' (a known applicant-tracking system), 'aggregator' (only a reposter's
+   *  link was available — which ALSO means `company` is unverified), or
+   *  'unknown'. Adapters that always link directly (greenhouse/lever) may omit it
+   *  and the writer defaults them to 'ats'. */
+  apply_link_kind?: 'company' | 'ats' | 'aggregator' | 'unknown' | null;
 
   title: string;
   company: string;

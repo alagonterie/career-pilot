@@ -160,7 +160,7 @@ export async function handleRecordJobLead(
     // application_id — those are downstream-owned.
     const stmt = db.prepare(`
       INSERT INTO job_leads (
-        id, source, source_board_token, source_job_id, source_url, apply_url,
+        id, source, source_board_token, source_job_id, source_url, apply_url, apply_link_kind,
         content_fingerprint, title, company, company_domain, location_raw,
         is_remote, workplace_type, remote_region, employment_type,
         comp_min_usd, comp_max_usd, comp_currency, comp_period, has_equity,
@@ -169,7 +169,7 @@ export async function handleRecordJobLead(
         rules_score, rules_score_reasons,
         status, status_changed_at, raw_payload
       ) VALUES (
-        @id, @source, @source_board_token, @source_job_id, @source_url, @apply_url,
+        @id, @source, @source_board_token, @source_job_id, @source_url, @apply_url, @apply_link_kind,
         @content_fingerprint, @title, @company, @company_domain, @location_raw,
         @is_remote, @workplace_type, @remote_region, @employment_type,
         @comp_min_usd, @comp_max_usd, @comp_currency, @comp_period, @has_equity,
@@ -182,6 +182,8 @@ export async function handleRecordJobLead(
         last_seen_at        = excluded.last_seen_at,
         title               = excluded.title,
         apply_url           = excluded.apply_url,
+        apply_link_kind     = excluded.apply_link_kind,
+        source_url          = excluded.source_url,
         location_raw        = excluded.location_raw,
         is_remote           = excluded.is_remote,
         workplace_type      = excluded.workplace_type,
@@ -204,6 +206,10 @@ export async function handleRecordJobLead(
       source_job_id: fp.source_job_id,
       source_url: fp.source_url,
       apply_url: fp.apply_url ?? null,
+      // §24.190. greenhouse/lever adapters hit the employer's own ATS board by
+      // construction, so they're 'ats' without needing to say so; only the
+      // aggregator-fed google_jobs path has to classify per-lead.
+      apply_link_kind: fp.apply_link_kind ?? (fp.source === 'google_jobs' ? 'unknown' : 'ats'),
       content_fingerprint: fingerprint,
       title: fp.title,
       company: fp.company,

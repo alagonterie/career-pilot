@@ -13,6 +13,37 @@ fork version recorded in `package.json` — the two are never conflated.
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-08-07
+
+Job leads now link where you can actually apply.
+
+### Fixed
+
+- **Lead links went to job-board reposters instead of the employer.**
+  When a posting was discovered through an aggregator, that aggregator's
+  URL was stored as the lead's link — often putting a mandatory signup
+  between you and the actual application — even when a direct link to the
+  company or its applicant-tracking system was already available in the
+  same data. Leads now prefer the employer's own site, then a real
+  applicant-tracking system, and fall back to a reposter only when
+  nothing direct exists anywhere.
+- **A lead sourced only through a reposter is now flagged as such**, in
+  the admin leads view and by the agent when it surfaces one. That flag
+  also warns that the company name on the lead is unverified: reposted
+  listings are where the sourced company is least reliable, and one was
+  observed filed under a different company than its own description
+  described. The system flags rather than guessing — it will not infer a
+  company name from the posting body.
+- Existing leads can be repaired in place with no re-scrape and no API
+  spend, since the necessary data was already stored.
+
+### Changed
+
+- The agent no longer promises behavior changes it has no way to keep.
+  When something is wrong at a structural level, it now says so and
+  offers to record it, instead of committing to "do better next time" in
+  a conversation that won't outlive the session.
+
 ## [1.1.0] - 2026-08-07
 
 Pausing the search, and clearing the decks.

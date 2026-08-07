@@ -258,6 +258,9 @@ export interface AdminLead {
   source: string
   source_url: string
   apply_url: string | null
+  /** §24.190 — how direct `apply_url` is. `aggregator` also means the company
+   *  name is unverified (least reliable on a reposted listing). */
+  apply_link_kind: 'company' | 'ats' | 'aggregator' | 'unknown' | null
   title: string
   company: string
   company_domain: string | null

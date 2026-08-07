@@ -31,6 +31,7 @@ function lead(over: Partial<AdminLead> & { id: string; company: string; rules_sc
     closed_reason: null,
     killer_match_pushed_at: null,
     application_id: null,
+    apply_link_kind: 'ats',
     snippet: null,
     ...over,
   }
@@ -106,6 +107,24 @@ describe('LeadsPanel', () => {
     // the triage controls are present in the detail
     expect(screen.getByTestId('leads-status-select')).toBeInTheDocument()
     expect(screen.getByTestId('leads-rescore')).toBeInTheDocument()
+  })
+
+  // §24.190 — the aggregator flag carries both the link and the company caveat.
+  it('flags an aggregator-only lead as company-unverified in the detail', () => {
+    const data: AdminLeadsView = {
+      ...DATA,
+      leads: [lead({ id: 'agg', company: 'VetsEZ', rules_score: 50, apply_link_kind: 'aggregator' })],
+    }
+    render(<LeadsPanel data={data} baseUrl="http://x" onSaved={vi.fn()} />)
+    fireEvent.click(screen.getAllByTestId('leads-row')[0])
+    expect(screen.getByTestId('leads-link-aggregator')).toHaveTextContent(/company unverified/i)
+    expect(screen.queryByTestId('leads-link-direct')).not.toBeInTheDocument()
+  })
+
+  it('marks a direct ATS lead as direct', () => {
+    render(<LeadsPanel data={DATA} baseUrl="http://x" onSaved={vi.fn()} />)
+    fireEvent.click(screen.getAllByTestId('leads-row')[0])
+    expect(screen.getByTestId('leads-link-direct')).toHaveTextContent(/direct ATS link/i)
   })
 
   it('surfaces the off-location demotion in the reasons breakdown', () => {

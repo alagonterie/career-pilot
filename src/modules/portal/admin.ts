@@ -583,6 +583,10 @@ export interface AdminLead {
   source: string;
   source_url: string;
   apply_url: string | null;
+  /** §24.190 — how direct apply_url is. 'aggregator' ALSO means the company
+   *  attribution is unverified (Google's company_name is least reliable on a
+   *  reposted listing). NULL on rows written before this existed. */
+  apply_link_kind: 'company' | 'ats' | 'aggregator' | 'unknown' | null;
   title: string;
   company: string;
   company_domain: string | null;
@@ -634,7 +638,7 @@ export interface AdminLeadsView {
 // leave an inconsistent (applied-but-unlinked) lead.
 const OWNER_SETTABLE_LEAD_STATUSES = new Set([...VALID_STATUSES].filter((s) => s !== 'applied'));
 
-const ADMIN_LEAD_COLS = `id, source, source_url, apply_url, title, company, company_domain,
+const ADMIN_LEAD_COLS = `id, source, source_url, apply_url, apply_link_kind, title, company, company_domain,
   location_raw, is_remote, workplace_type, comp_min_usd, comp_max_usd, comp_currency, comp_period,
   rules_score, rules_score_reasons, llm_score, llm_scored_at,
   status, status_changed_at, first_seen_at, last_seen_at, source_posted_at,

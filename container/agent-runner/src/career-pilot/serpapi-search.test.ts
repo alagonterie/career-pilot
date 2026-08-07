@@ -117,7 +117,9 @@ describe('normalizeGoogleJob', () => {
     expect(p!.source).toBe('google_jobs');
     expect(p!.source_job_id).toBe('eyJqb2JfdGl0bGUiOiJTZW5pb3Ig');
     expect(p!.source_url).toBe('https://jobs.ashbyhq.com/acorns/cf23e51e'); // prefers source_link
-    expect(p!.apply_url).toBe('https://jobs.ashbyhq.com/acorns/cf23e51e?utm_source=google_jobs_apply');
+    // §24.190: both links are the same Ashby page, so the tie-break prefers the
+    // canonical `source_link` over the `?utm_source=google_jobs_apply` variant.
+    expect(p!.apply_url).toBe('https://jobs.ashbyhq.com/acorns/cf23e51e');
     expect(p!.company).toBe('Acorns');
     expect(p!.is_remote).toBe(true);
     expect(p!.workplace_type).toBe('remote');
@@ -206,5 +208,49 @@ describe('searchGoogleJobs', () => {
 
   it('rejects an empty query', async () => {
     await expect(searchGoogleJobs({ query: '   ' })).rejects.toBeInstanceOf(SearchJobsError);
+  });
+});
+
+// ── §24.190: apply-link directness ranking ───────────────────────────────────
+
+describe('pickApplyLink / normalizeGoogleJob link directness (§24.190)', () => {
+  it('picks the direct link even when Google lists the aggregator FIRST', () => {
+    const p = normalizeGoogleJob(
+      {
+        ...REMOTE_JOB,
+        company_name: 'Socket.dev',
+        source_link: undefined,
+        share_link: undefined,
+        apply_options: [
+          { title: 'JobLeads', link: 'https://www.jobleads.com/us/job/abc' },
+          { title: 'Greenhouse', link: 'https://boards.greenhouse.io/socketdev/jobs/9' },
+        ],
+      },
+      NOW,
+    );
+    expect(p!.apply_url).toBe('https://boards.greenhouse.io/socketdev/jobs/9');
+    expect(p!.apply_link_kind).toBe('ats');
+    // source_url follows the same pick — the lead should not carry the aggregator anywhere.
+    expect(p!.source_url).toBe('https://boards.greenhouse.io/socketdev/jobs/9');
+  });
+
+  it('flags a lead whose only links are aggregators (company also unverified)', () => {
+    const p = normalizeGoogleJob(
+      {
+        ...REMOTE_JOB,
+        company_name: 'VetsEZ',
+        source_link: undefined,
+        share_link: undefined,
+        apply_options: [{ title: 'JobLeads', link: 'https://www.jobleads.com/us/job/abc' }],
+      },
+      NOW,
+    );
+    expect(p!.apply_link_kind).toBe('aggregator');
+  });
+
+  it('keeps classifying the previously-lucky fixture correctly', () => {
+    // This fixture passed before only because Google happened to order Ashby first.
+    const p = normalizeGoogleJob(REMOTE_JOB, NOW);
+    expect(p!.apply_link_kind).toBe('ats');
   });
 });

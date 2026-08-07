@@ -266,6 +266,23 @@ function LeadDetail({
             apply ↗
           </a>
         ) : null}
+        {/* §24.190: how direct that apply link is. An aggregator-only lead is
+            flagged because it carries TWO problems at once — the application may
+            be gated behind someone else's signup, AND the company name is
+            unverified (Google's company_name is least reliable on a repost). */}
+        {lead.apply_link_kind === 'aggregator' ? (
+          <span
+            data-testid="leads-link-aggregator"
+            className="font-mono text-[11px] text-amber-400"
+            title="No direct company or ATS link was available — this posting only reached us via a reposter, so the company name is unverified too."
+          >
+            ⚠ aggregator link · company unverified
+          </span>
+        ) : lead.apply_link_kind === 'company' || lead.apply_link_kind === 'ats' ? (
+          <span data-testid="leads-link-direct" className="font-mono text-[11px] text-primary">
+            ✓ direct {lead.apply_link_kind === 'ats' ? 'ATS' : 'company'} link
+          </span>
+        ) : null}
         {lead.killer_match_pushed_at ? <span className="font-mono text-[11px] text-primary">◆ pushed</span> : null}
         {lead.application_id ? (
           <span className="font-mono text-[11px] text-muted-foreground">promoted → application</span>
