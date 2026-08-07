@@ -20,6 +20,7 @@ import {
   ADMIN_KNOB_KEYS,
   ALL_KNOB_KEYS,
   KNOB_SPECS,
+  MODEL_OPTIONS,
   UNSPEC_KNOBS,
   applyKnobWrite,
   buildKnobs,
@@ -63,6 +64,56 @@ describe('coverage — every defaults.json preferences key is decided', () => {
     }
     for (const key of Object.keys(UNSPEC_KNOBS)) {
       expect(prefKeys.has(key), `UNSPEC_KNOBS["${key}"] is not a defaults.json preferences key`).toBe(true);
+    }
+  });
+});
+
+/**
+ * The dropdown and the pricing map are two separate lists that must agree, and
+ * nothing enforced that until now. `priceTokensMicrousd` returns null for an
+ * unknown model — correct (unknown ≠ free) but silent — so a model offered in the
+ * UI without a pricing row doesn't fail, it just makes every call on that model
+ * report no cost. That is exactly how Sonnet went unpriced from §24.134e until
+ * §24.191 caught it. These are the teeth.
+ */
+describe('model options are priced (§24.191)', () => {
+  function pricingMap(): Record<string, Record<string, number>> {
+    const raw = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'config', 'defaults.json'), 'utf8')) as {
+      preferences: { llm_pricing_usd_per_mtok: Record<string, Record<string, number>> };
+    };
+    return raw.preferences.llm_pricing_usd_per_mtok;
+  }
+
+  it('every selectable model has a pricing row, so no knob setting can blank the cost', () => {
+    const pricing = pricingMap();
+    for (const model of MODEL_OPTIONS) {
+      expect(
+        pricing[model],
+        `${model} is offered by a model knob but has no llm_pricing_usd_per_mtok row — every call on it would report an unknown cost`,
+      ).toBeTruthy();
+    }
+  });
+
+  it('every pricing row carries all four rates, so a partial row cannot under-report', () => {
+    const pricing = pricingMap();
+    for (const model of MODEL_OPTIONS) {
+      for (const rate of ['input', 'output', 'cache_read', 'cache_write']) {
+        const v = pricing[model]?.[rate];
+        expect(typeof v, `${model}.${rate} is missing — that term would silently price as 0`).toBe('number');
+        expect(v, `${model}.${rate} must be positive`).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('every model DEFAULT is a selectable option (a default the dropdown cannot show is unreachable)', () => {
+    const raw = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'config', 'defaults.json'), 'utf8')) as {
+      preferences: Record<string, unknown>;
+    };
+    for (const [key, value] of Object.entries(raw.preferences)) {
+      if (!key.endsWith('_model') || typeof value !== 'string' || value === '') continue;
+      expect([...MODEL_OPTIONS, 'inherit'], `${key} defaults to "${value}", which no model knob offers`).toContain(
+        value,
+      );
     }
   });
 });

@@ -95,7 +95,20 @@ const ORPHAN_POLL_NOTE =
  * `/admin` can't pin a model the gateway won't serve. Adding a model here requires
  * re-confirming Portkey serves it.
  */
-const MODEL_OPTIONS = ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-8'];
+/**
+ * The models any model knob may be set to.
+ *
+ * EXPORTED because it carries an invariant that lives outside this file: every
+ * entry must also have a row in `llm_pricing_usd_per_mtok` (config/defaults.json).
+ * `priceTokensMicrousd` returns null for a model it doesn't know — deliberately,
+ * since unknown ≠ free — so an option without pricing doesn't error, it just
+ * makes every call on that model report no cost, silently. That shipped twice
+ * (Sonnet had no row until §24.191, and it had gone unnoticed since the
+ * kit-redaction belt moved to Sonnet in §24.134e). `knob-registry.test.ts`
+ * asserts the two lists agree, so adding a model to the dropdown without pricing
+ * it now fails CI instead of blanking a cost field in production.
+ */
+export const MODEL_OPTIONS = ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-8'];
 /** Subagent model knobs additionally accept `inherit` (use the group's orchestrator model). */
 const MODEL_OPTIONS_INHERIT = [...MODEL_OPTIONS, 'inherit'];
 
