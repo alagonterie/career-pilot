@@ -83,13 +83,25 @@ jobs:
         run: |
           if [ "${{ github.ref_name }}" = "dev" ]; then export CLOUDFLARE_ENV=dev; fi
           # Swap the committed KV placeholder for this environment's real namespace
-          # id. Unset → the placeholder stays, the binding fails to resolve, and
-          # standby simply never engages (readStandbyState fails open to "live").
+          # id. When it's UNSET the binding line is REMOVED entirely rather than
+          # left holding the placeholder: Cloudflare validates namespace ids at
+          # deploy time and rejects an unknown one outright (`code: 10042`), so a
+          # committed placeholder would hard-fail every deploy on any stack that
+          # hasn't provisioned standby — a fork, or this repo before `terraform
+          # apply`. Removing it degrades the way the code already expects
+          # (readStandbyState fails open to "live", standby simply never engages).
+          # The committed binding is a single self-contained line so this stays a
+          # one-line edit rather than JSONC surgery.
           if [ -n "$STANDBY_KV_NAMESPACE_ID" ]; then
             sed -i "s/standby_kv_placeholder/$STANDBY_KV_NAMESPACE_ID/g" wrangler.jsonc
             echo "STANDBY_KV bound to $STANDBY_KV_NAMESPACE_ID"
           else
-            echo "STANDBY_KV_NAMESPACE_ID unset — standby stays disabled on this deploy"
+            sed -i '/standby_kv_placeholder/d' wrangler.jsonc
+            echo "STANDBY_KV_NAMESPACE_ID unset — binding removed; standby stays disabled on this deploy"
+          fi
+          # Fail loudly rather than shipping a Worker with a placeholder binding.
+          if grep -q standby_kv_placeholder wrangler.jsonc; then
+            echo "::error::wrangler.jsonc still contains the KV placeholder"; exit 1
           fi
           # Dev's client widget uses the always-pass Turnstile TEST site key (D5)
           # unless the GH dev env overrides it; prod must set a real GH env var.
