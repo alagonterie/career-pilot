@@ -13,6 +13,18 @@ fork version recorded in `package.json` — the two are never conflated.
 
 ## [Unreleased]
 
+## [1.1.5] - 2026-08-07
+
+### Fixed
+
+- **A tailored résumé printed its featured project with no description.** The
+  résumé is asked to choose which projects to feature by name only — on purpose,
+  so it can pick what fits the role without an opportunity to reword the project
+  itself — but choosing a project that way discarded the description, links and
+  tags recorded for it instead of carrying them across. Every part of a chosen
+  project is now taken from the master résumé unless it was genuinely rewritten
+  for the role. Re-generating an affected résumé restores the description.
+
 ## [1.1.4] - 2026-08-07
 
 Current model generations, and spend figures that can be trusted.

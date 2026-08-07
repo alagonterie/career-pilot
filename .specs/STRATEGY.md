@@ -7770,6 +7770,20 @@ Tie-break by highest `rules_score`. **One lead per application**: a guard (`SELE
 
 ---
 
+## §24.193 — The honesty guardrail's project floor was per-LIST but not per-FIELD, so a name-only selection printed a blank description
+
+**Owner report** (2026-08-07, on a real résumé generated for a live application): *"the generated resume for Stripe was mostly great, but it seems to have left out the whole description for the featured project."*
+
+**Root cause — in the §24.191 code, not the model.** The stored profile for that run holds `[{"name":"career-pilot","description":"","href":"…"}]`. `buildTailorPrompt` asks for projects **by name only** — deliberate, since selection is the useful signal and a rewritten project blurb is pure embellishment risk on a résumé going to a real employer. That arrives at `validateTailoredResume` as `{ name, description: '' }` (the projection defaults the required field to an empty string), and the merge was `{ ...p, name: m.name, href: m.href }` — forcing name and link from the master but keeping the AGENT's description. The empty string won and the featured project rendered with nothing under it. The sandbox never hit this because its persona asks for descriptions, so `p.description` was always populated there.
+
+**The generalisable miss.** Every other section already had the right floor — bio (stub/unverified-number → master), skills and education (always master), experience bullets (snapped to master verbatim), `descriptor`/`titles` (forced from master), `lookingFor` (falls back when empty) — and projects had a floor too, but only at the LIST level ("agent emitted none → use all of the master's"). Nobody had asked what happens when the agent emits the right *list* with empty *fields*. A floor that guards the container but not its contents isn't a floor.
+
+**Design (D1) — floor every descriptive project field, not just the list.** `description`, `bullets`, `tags`, `repo` and `href` all fall back to the master entry when the agent supplies nothing (whitespace-only counts as nothing). Selection stays the agent's; content is the master's unless the agent genuinely tailored it. This leaves the sandbox path unchanged — a real tailored description still wins — so one fix serves both callers, and name-only emission becomes complete rather than lossy.
+
+**DoD.** `validateTailoredResume({projects:[{name:'career-pilot'}]}, master)` returns the master's description, href and tags; a whitespace-only description is treated as absent; a genuinely tailored description still survives (the sandbox path is proven unchanged). Regenerating the reported Stripe résumé on prod produces a non-empty project description. Host + frontend suites green. **Deploy:** ships as **v1.1.5**. **Spec deltas:** this §24.193. Memory: [[status_current]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.

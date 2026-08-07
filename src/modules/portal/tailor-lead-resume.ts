@@ -112,6 +112,13 @@ function trimTo(v: unknown, max: number): string | null {
  *  - The bio is the one free-prose field, and it is floored back to the master
  *    when it is a stub OR cites a number absent from the master. Both floors are
  *    stated as rules, because a floored bio is a wasted generation.
+ *
+ * Projects are asked for BY NAME ONLY, on purpose: selection is the useful signal
+ * and a rewritten project blurb is pure embellishment risk on a résumé going to a
+ * real employer. The guardrail backfills each project's description, bullets, tags
+ * and links from the master — so name-only is complete, not lossy. (It was lossy
+ * once: before §24.193 the empty description won and the featured project printed
+ * blank.)
  */
 export function buildTailorPrompt(input: {
   company: string;

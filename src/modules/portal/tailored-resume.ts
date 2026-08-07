@@ -266,12 +266,29 @@ export function validateTailoredResume(emitted: unknown, master: WorkProfile): T
   // Projects: keep the agent's selection (filtered to real projects; tailored
   // descriptions allowed), but never silently drop them — the master's projects
   // are few and relevant, so fall back to ALL of them when the agent emits none.
+  //
+  // The per-FIELD floor matters as much as the per-list one. A caller may ask for
+  // projects BY NAME ONLY — the owner-side tailoring does exactly that, so the
+  // model can select without getting a chance to embellish — which arrives here
+  // as `{ name, description: '' }`. Spreading that over the master would keep the
+  // empty string and render a featured project with no description at all
+  // (observed on a real submitted résumé). So every descriptive field falls back
+  // to the master when the agent supplies nothing: selection is the agent's,
+  // content is the master's unless the agent genuinely tailored it.
   const masterProjByName = new Map(master.projects.map((p) => [norm(p.name), p]));
   const keptProjects = tailored.projects
     .filter((p) => masterProjByName.has(norm(p.name)))
     .map((p) => {
       const m = masterProjByName.get(norm(p.name))!;
-      return { ...p, name: m.name, href: m.href };
+      return {
+        ...p,
+        name: m.name,
+        href: m.href,
+        repo: m.repo,
+        description: p.description?.trim() ? p.description : m.description,
+        bullets: p.bullets?.length ? p.bullets : m.bullets,
+        tags: p.tags?.length ? p.tags : m.tags,
+      };
     });
   tailored.projects = keptProjects.length > 0 ? keptProjects : master.projects.map((p) => ({ ...p }));
 

@@ -250,6 +250,37 @@ describe('validateTailoredResume — quality floor: never a worse subset of the 
     expect(picked.profile!.projects.map((p) => p.name)).toEqual(['Helios']);
   });
 
+  /**
+   * Regression (§24.193). Observed on a résumé actually submitted to an employer:
+   * the featured project rendered with NO description at all. The owner-side
+   * tailoring asks for projects BY NAME ONLY — deliberately, so the model selects
+   * without a chance to embellish — which arrives as `description: ''`. That empty
+   * string was spread over the master entry and won, so the master's real
+   * description was discarded. Selection is the agent's; content is the master's
+   * unless the agent genuinely tailored it.
+   */
+  it('restores the master’s project description when the agent selects by name only', () => {
+    const out = validateTailoredResume({ projects: [{ name: 'career-pilot' }] }, MASTER);
+    const p = out.profile!.projects;
+    expect(p).toHaveLength(1);
+    expect(p[0].description).toBe('This portal.');
+    expect(p[0].href).toBe('https://example.com/cp');
+    expect(p[0].tags).toEqual(['AI']);
+  });
+
+  it('treats a whitespace-only description as absent, not as a tailored one', () => {
+    const out = validateTailoredResume({ projects: [{ name: 'Helios', description: '   ' }] }, MASTER);
+    expect(out.profile!.projects[0].description).toBe('A system.');
+  });
+
+  it('still keeps a genuinely tailored description (the sandbox path is unchanged)', () => {
+    const out = validateTailoredResume(
+      { projects: [{ name: 'Helios', description: 'Rewritten for this role.' }] },
+      MASTER,
+    );
+    expect(out.profile!.projects[0].description).toBe('Rewritten for this role.');
+  });
+
   it('lets the agent’s projectsFirst layout hint survive validation (§24.106)', () => {
     expect(validateTailoredResume({ projectsFirst: true }, MASTER).profile!.projectsFirst).toBe(true);
     // A normal emit leaves it Experience-first.
