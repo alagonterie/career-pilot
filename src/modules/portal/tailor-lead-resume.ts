@@ -38,16 +38,27 @@ const DEFAULT_DAILY_CAP = 25;
 /** The JD is owner-pasted; cap it so a full careers page can't blow the call. */
 export const MAX_TAILOR_JD = 12_000;
 export const MAX_TAILOR_NOTES = 1_000;
-/** Generous: the emission carries selected bullets verbatim. */
-const MAX_TOKENS = 4_000;
+/**
+ * The emission carries selected bullets verbatim, so it is long by design.
+ *
+ * Sized against MEASURED output, not a guess, and with headroom for the largest
+ * plausible résumé rather than the observed one: Sonnet 4.6 emitted ~1.1k tokens
+ * here, Sonnet 5 ~3.2k for the same lead — nearly 3× — which put the original
+ * 4k ceiling at 80% utilisation on an ordinary run. Truncation is a nasty
+ * failure here because it is silent at the API layer: the response returns 200
+ * with a JSON object cut mid-string, `extractJsonObject` finds nothing parseable,
+ * and the run burns its retry before failing. Headroom costs nothing when unused
+ * (output is billed per token emitted, not per token allowed).
+ */
+const MAX_TOKENS = 12_000;
 /**
  * This call is deliberately NOT bound by the shared `llm_fetch_timeout_ms` (20s).
  * That default suits the short host calls — a lead score, a redaction pass — where
- * failing fast is right. A tailoring emission is ~1200 output tokens on the
- * capable tier and lands in the 15–25s band, so 20s cuts off runs that were
- * about to succeed (observed: one run at 14.8s, the next killed at 20.0s). Same
- * shape as the SerpApi timeout that read as a degraded node: the ceiling has to
- * match how long the work legitimately takes, not how long we'd prefer.
+ * failing fast is right. A tailoring emission lands well past it: 15–26s on
+ * Sonnet 4.6 (one run completed at 14.8s, the next was killed at 20.0s), and
+ * 32.6s on Sonnet 5, which the shared default would fail EVERY time. Same shape
+ * as the SerpApi timeout that read as a degraded node: the ceiling has to match
+ * how long the work legitimately takes, not how long we'd prefer.
  */
 const DEFAULT_TAILOR_TIMEOUT_MS = 90_000;
 /** A pending row older than this is a crashed run, not a live one — it stops
