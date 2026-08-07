@@ -7784,6 +7784,24 @@ Tie-break by highest `rules_score`. **One lead per application**: a guard (`SELE
 
 ---
 
+## §24.194 — A section heading rendered alone above a blank half-page: §24.193 made the project block tall enough to stop fitting
+
+**Owner report** (2026-08-07, with a screenshot of the same live-application résumé): *"the featured project title gets rendered on page 1 followed by all the other content describing the featured project starting on page 2."*
+
+**Root cause — a latent flaw that §24.193 armed.** `projectRow` wrapped the whole entry in `wrap: false`. That was harmless for as long as a project was a name plus a one-line blurb — an unbreakable two-line block always fits. §24.193 restored the master's description AND its detail bullets, making the block ~8 lines; an unbreakable 8-line block that doesn't fit the page remainder jumps **wholesale** to the next page, stranding the heading. The screenshot's signature is the large blank gap under the heading, not a tight break at the page edge. `experienceRow` had already been given exactly this treatment in §24.158 — flat flow, small atomic header, per-bullet `wrap: false` — and the fix here is to bring projects into line with the section it already sits beside.
+
+**Design (D1) — entries flow; only small units are atomic.** `experienceRow`/`projectRow` become `experienceNodes`/`projectNodes`, returning FLAT section-level siblings instead of one wrapping View, with `withRowGap` re-attaching the inter-entry margin the wrapper used to provide. A project's first node is just the name+links line; an experience entry's is its compact header block. Each bullet stays individually unbreakable so a break falls between bullets.
+
+**Design (D2) — the heading is atomic with the section's first child.** Flat siblings alone still permit the tight case: the heading fits, the next line doesn't. `section()` now emits `heading + children[0]` inside one `wrap: false` unit. This makes each row builder's first child load-bearing — it must be small, because it is what travels with the heading — which is why D1's flattening is a prerequisite rather than a tidy-up: with a wrapping View, `children[0]` would be the entire entry and the atomic heading would re-create the wholesale jump.
+
+**Design (D3) — `minPresenceAhead` is documented but inert here, so it is not used.** react-pdf's own orphan/widow hint was the first attempt and the obvious answer. Measured against a reproducing fixture it changed **nothing** — on a `Text` or a `View`, at 4 lines through 30 (~320pt, most of a page). Recorded so the next person doesn't spend the same hour re-discovering it; the structural approach is what actually holds.
+
+**Design (D4) — two failure modes need two different tests.** An orphan check ("nothing but the fixed footer follows this heading on its page") catches the tight case but is BLIND to the reported one: once the heading is atomic with its lead, a wholesale jump moves both together and orphans nothing — it just wastes a third of a page. So a second test measures page FILL: across 650 swept layouts the worst bottom gap is 71pt with entries flowing and 211pt with the entry unbreakable, and the assertion sits at 120pt. Both fixes are verified by reversion: reverting D2 fails 6 orphan cases, reverting D1 fails the fill case.
+
+**DoD.** A 650-layout sweep (bullet counts × a single-line shifter that walks the break one line at a time × 1–2 projects) yields zero orphaned headings, down from 74; six of those reproducing configurations are pinned as `it.each` cases in `resume-pdf.render.test.ts`, and each is confirmed to fail with §24.194 reverted; the page-fill test holds every non-final page's content within 120pt of the bottom and fails when the project entry is made unbreakable again. Host suite green. **Deploy:** ships as **v1.1.6**. **Spec deltas:** this §24.194. Memory: [[status_current]].
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.

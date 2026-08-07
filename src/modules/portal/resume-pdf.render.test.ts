@@ -13,7 +13,7 @@ import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { describe, expect, it } from 'vitest';
 
 import type { Identity, WorkProfile } from './profile.js';
-import { masterFooter, renderResumePdf } from './resume-pdf.js';
+import { masterFooter, renderResumePdf, tailoredFooter } from './resume-pdf.js';
 
 /** Wrap plain bullet strings into the §24.161 `BulletItem[]` fixture shape. */
 const b = (...texts: string[]) => texts.map((text) => ({ text }));
@@ -272,5 +272,176 @@ describe('rendered résumé — structural guarantees', () => {
     );
     expect(atNormal.pageCount).toBeGreaterThanOrEqual(2); // a dense résumé spans 2+ at master density
     expect(atCompact.pageCount).toBeLessThanOrEqual(atNormal.pageCount); // compact reclaims, never adds
+  });
+});
+
+/**
+ * §24.194 — a section heading must never render with nothing beneath it.
+ *
+ * Reported on a résumé generated for a live application: "FEATURED PROJECT" sat
+ * alone at the bottom of page 1 with the project itself overleaf. Cause was the
+ * project row being one `wrap: false` block — harmless while a project was a name
+ * plus a one-line blurb, but §24.193 restored the master's description AND detail
+ * bullets, and an unbreakable ~8-line block that doesn't fit the page remainder
+ * jumps wholesale, stranding the heading above a blank half-page.
+ *
+ * The configurations below are not invented: they were found by sweeping bullet
+ * counts against a single-line shifter that walks the page break one line at a
+ * time, and each one orphans a heading when the fix is reverted (a 460-layout
+ * sweep goes from 48 orphaned headings to 0).
+ */
+describe('section headings are never orphaned (§24.194)', () => {
+  const HEADINGS = ['SUMMARY', "WHATI'MLOOKINGFOR", 'EXPERIENCE', 'FEATUREDPROJECT', 'PROJECTS', 'SKILLS', 'EDUCATION'];
+  const squash = (s: string): string => s.replace(/\s+/g, '').toUpperCase();
+
+  const LONG_BULLET =
+    'Architected the successor backend: CQRS with hybrid event sourcing over the live legacy database, single-round-trip transactional commits, and source generators enforcing the architecture at compile time.';
+
+  function fixture(nBullets: number, shift: number, nProjects: number): WorkProfile {
+    const project = (i: number) => ({
+      name: i === 0 ? 'career-pilot' : `side-project-${i}`,
+      description:
+        'An autonomous multi-agent AI system that runs a real software-engineering job search end to end, with a public showcase portal. Built solo.',
+      href: 'https://example.com',
+      // Verbatim from the sweep that found these cases — shortening them changes
+      // the line count and the configurations stop straddling a page break.
+      bullets: [
+        'An orchestrator agent coordinates six specialized subagents (company research, résumé tailoring, outreach, interview-kit generation, job sourcing and pipeline tracking) over an agent SDK, each in an isolated, budget-capped container with host-side approval gating.',
+        'Full-stack and production-grade: SSR on edge workers with a same-origin BFF proxying JSON + SSE to a zero-ingress tunnel; a cloud backend; Terraform-managed DNS/WAF; an anonymization layer for the public pipeline view.',
+        'All model traffic (agents and host) is routed and observed through a multi-model gateway with prompt caching and per-request telemetry.',
+        'Built spec-first — every change traces to a written spec — and held to a layered test suite: unit, integration, and end-to-end with visual-regression snapshots.',
+      ],
+    });
+    return {
+      name: 'Jordan Rivera',
+      title: 'Senior Software Engineer · Team Lead',
+      bio: ['Senior engineer and team lead with seven years building reliable, high-performance backend systems.'],
+      lookingFor: [
+        'Senior / Staff / Lead — backend, distributed systems, or developer platform',
+        ...Array.from({ length: shift }, (_, i) => `Additional preference line number ${i + 1}`),
+      ],
+      links: {},
+      experience: [
+        {
+          role: 'Senior Software Engineer & Team Lead',
+          company: 'Vertex Systems',
+          period: 'Sept 2019 — Present',
+          bullets: b(...Array.from({ length: nBullets }, () => LONG_BULLET)),
+        },
+      ],
+      projects: Array.from({ length: nProjects }, (_, i) => project(i)),
+      skills: ['TypeScript', 'Go', 'Rust'],
+      education: ['BS, Computer Science, Example University'],
+    };
+  }
+
+  /** Orphaned = nothing but the fixed footer follows the heading on its page. */
+  function orphaned(items: PdfInspection['items']): string[] {
+    const bad: string[] = [];
+    items.forEach((it, i) => {
+      if (!HEADINGS.includes(squash(it.str))) return;
+      const after = items.slice(i + 1).filter((n) => n.page === it.page && !n.str.startsWith('Auto-tailored'));
+      if (after.length === 0) bad.push(squash(it.str));
+    });
+    return bad;
+  }
+
+  // [bullets, shift, projects] — each orphans a heading with the §24.194 fix reverted.
+  // Found by sweeping 650 layouts with the fix reverted (74 reproduced). Each
+  // orphans the named heading without §24.194; all pass with it.
+  const CASES: [number, number, number][] = [
+    [9, 18, 1], // EDUCATION
+    [11, 18, 1], // SKILLS
+    [12, 0, 1], // EDUCATION
+    [6, 0, 2], // EDUCATION
+    [8, 0, 2], // SKILLS
+    [5, 20, 2], // SKILLS
+  ];
+
+  it.each(CASES)('keeps every heading with its content (bullets=%i shift=%i projects=%i)', async (nb, shift, np) => {
+    const buf = await renderResumePdf(
+      fixture(nb, shift, np),
+      FULL_IDENTITY,
+      tailoredFooter('Stripe', 'Backend Engineer', '2026-08-07', ''),
+      '',
+      { compact: true },
+    );
+    const { items, pageCount } = await inspectPdf(buf);
+    expect(pageCount).toBeGreaterThan(1); // the case must actually span a break to be meaningful
+    expect(orphaned(items)).toEqual([]);
+  });
+});
+
+/**
+ * §24.194, second failure mode. The orphan check above catches a heading left
+ * ALONE, but not the bug actually reported: a project emitted as one `wrap: false`
+ * block is too tall for the page remainder and jumps WHOLESALE, taking the heading
+ * with it (once the heading is atomic with its lead) and leaving a third of a page
+ * blank. No heading is orphaned in that layout, so only a fill measurement sees it.
+ *
+ * Measured across 650 layouts: worst bottom gap is 71pt with the entry flowing,
+ * 211pt with it unbreakable. 120pt sits cleanly between.
+ */
+describe('a page never breaks early leaving a large blank (§24.194)', () => {
+  const MAX_BOTTOM_GAP_PT = 120;
+
+  it('fills each page before breaking, with the project entry flowing', async () => {
+    // nb=13 shift=12 — the worst offender found when the entry is unbreakable.
+    const profile: WorkProfile = {
+      name: 'Jordan Rivera',
+      title: 'Senior Software Engineer · Team Lead',
+      bio: ['Senior engineer and team lead with seven years building reliable, high-performance backend systems.'],
+      lookingFor: [
+        'Senior / Staff / Lead — backend, distributed systems, or developer platform',
+        ...Array.from({ length: 12 }, (_, i) => `Additional preference line number ${i + 1}`),
+      ],
+      links: {},
+      experience: [
+        {
+          role: 'Senior Software Engineer & Team Lead',
+          company: 'Vertex Systems',
+          period: 'Sept 2019 — Present',
+          bullets: b(
+            ...Array.from(
+              { length: 13 },
+              () =>
+                'Architected the successor backend: CQRS with hybrid event sourcing over the live legacy database, single-round-trip transactional commits, and source generators enforcing the architecture at compile time.',
+            ),
+          ),
+        },
+      ],
+      projects: [
+        {
+          name: 'career-pilot',
+          description:
+            'An autonomous multi-agent AI system that runs a real software-engineering job search end to end, with a public showcase portal. Built solo.',
+          href: 'https://example.com',
+          bullets: [
+            'An orchestrator agent coordinates six specialized subagents (company research, résumé tailoring, outreach, interview-kit generation, job sourcing and pipeline tracking) over an agent SDK, each in an isolated, budget-capped container with host-side approval gating.',
+            'Full-stack and production-grade: SSR on edge workers with a same-origin BFF proxying JSON + SSE to a zero-ingress tunnel; a cloud backend; Terraform-managed DNS/WAF; an anonymization layer for the public pipeline view.',
+            'All model traffic (agents and host) is routed and observed through a multi-model gateway with prompt caching and per-request telemetry.',
+            'Built spec-first — every change traces to a written spec — and held to a layered test suite: unit, integration, and end-to-end with visual-regression snapshots.',
+          ],
+        },
+      ],
+      skills: ['TypeScript', 'Go', 'Rust'],
+      education: ['BS, Computer Science, Example University'],
+    };
+    const { items, pageCount } = await inspectPdf(
+      await renderResumePdf(
+        profile,
+        FULL_IDENTITY,
+        tailoredFooter('Stripe', 'Backend Engineer', '2026-08-07', ''),
+        '',
+        { compact: true },
+      ),
+    );
+    expect(pageCount).toBeGreaterThan(1);
+    for (let p = 1; p < pageCount; p++) {
+      const ys = items.filter((i) => i.page === p && !i.str.startsWith('Auto-tailored')).map((i) => i.y);
+      expect(ys.length).toBeGreaterThan(0);
+      // PDF origin is bottom-left, so the smallest y is the lowest content.
+      expect(Math.min(...ys), `page ${p} breaks early leaving a blank gap`).toBeLessThan(MAX_BOTTOM_GAP_PT);
+    }
   });
 });

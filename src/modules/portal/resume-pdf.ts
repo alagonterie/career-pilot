@@ -11,7 +11,7 @@
  */
 import path from 'node:path';
 
-import { createElement as h, type ReactElement, type ReactNode } from 'react';
+import { cloneElement, createElement as h, type ReactElement, type ReactNode } from 'react';
 
 import { Document, Font, Link, Page, StyleSheet, Text, View, renderToBuffer } from '@react-pdf/renderer';
 
@@ -105,6 +105,8 @@ function makeStyles(compact: boolean) {
 const NORMAL = makeStyles(false);
 const COMPACT = makeStyles(true);
 type Styles = ReturnType<typeof makeStyles>;
+/** One stylesheet entry — derived locally so no @react-pdf internal type is imported. */
+type PdfStyle = Styles[keyof Styles];
 
 /** Strip protocol, a leading `www.`, and a trailing slash for a compact, readable
  *  link label (§24.159 drops the `www.` — the real href keeps it). */
@@ -150,9 +152,34 @@ function contactSegments(id: Identity): { label: string; href: string }[] {
 }
 
 /** A titled section, or null when it has no content (omit — never invent). */
+/**
+ * §24.194 — a section heading never renders without content beneath it.
+ *
+ * The heading and the section's FIRST child share one `wrap: false` unit, so the
+ * pagination algorithm treats "heading + first line" as indivisible and moves
+ * both to the next page rather than stranding the heading. Everything after the
+ * first child flows normally, so a long section still breaks across pages
+ * wherever it naturally falls.
+ *
+ * `minPresenceAhead` — react-pdf's documented orphan/widow hint — was tried first
+ * and is INERT here: measured on a reproducing fixture it changed nothing on
+ * either a `Text` or a `View`, at values from 4 lines up to 30 (~320pt, most of a
+ * page). Hence the structural approach, which is verified by the sweep in
+ * `resume-pdf.render.test.ts`.
+ *
+ * This makes each row builder's first child load-bearing: it must be SMALL (a
+ * line or two), because it is what gets dragged onto the next page alongside the
+ * heading. Both builders are written that way deliberately.
+ */
 function section(s: Styles, heading: string, children: ReactNode[]): ReactElement | null {
   if (children.length === 0) return null;
-  return h(View, { style: s.section }, h(Text, { style: s.heading }, heading.toUpperCase()), ...children);
+  const [lead, ...rest] = children;
+  return h(
+    View,
+    { style: s.section },
+    h(View, { wrap: false }, h(Text, { style: s.heading }, heading.toUpperCase()), lead),
+    ...rest,
+  );
 }
 
 function header(
@@ -182,17 +209,21 @@ function header(
   );
 }
 
-function experienceRow(s: Styles, e: WorkProfile['experience'][number], key: number): ReactElement {
-  // §24.158: the entry FLOWS across the page break (no `wrap:false` on the
-  // container — a long entry that doesn't fit a page's remainder must not jump
-  // wholesale, orphaning the heading above a blank). The header block stays
-  // together, and each bullet is unbreakable so the break falls between bullets.
-  return h(
-    View,
-    { key, style: s.expRow },
+/**
+ * §24.158 + §24.194: an entry FLOWS across a page break — a long entry that
+ * doesn't fit the page remainder must not jump wholesale — so it is emitted as a
+ * FLAT list of section-level siblings rather than one wrapping View. Flat matters
+ * because `section()` keeps the heading atomic with the section's first child:
+ * with a wrapping View that child would be the whole entry, making the entry
+ * unbreakable again and reintroducing the very bug this guards. So the first node
+ * here is just the compact header block, and each bullet is separately
+ * unbreakable, letting the break fall between bullets.
+ */
+function experienceNodes(s: Styles, e: WorkProfile['experience'][number], key: number): ReactNode[] {
+  const nodes: ReactNode[] = [
     h(
       View,
-      { wrap: false },
+      { key: `e${key}h`, wrap: false },
       h(
         View,
         { style: s.expHead },
@@ -206,27 +237,48 @@ function experienceRow(s: Styles, e: WorkProfile['experience'][number], key: num
     ...e.bullets.map((b, j) =>
       h(
         View,
-        { key: j, style: s.bullet, wrap: false },
+        { key: `e${key}b${j}`, style: s.bullet, wrap: false },
         h(Text, { style: s.bulletDot }, '•'),
         h(Text, { style: s.bulletText }, ...rich(b.text)),
       ),
     ),
-  );
+  ];
+  return withRowGap(nodes, s.expRow);
 }
 
-function projectRow(
+/** Re-attach the inter-entry gap that the removed wrapping View used to provide,
+ *  by adding its margin to the entry's LAST node. Flattening must not silently
+ *  collapse the spacing between two entries. */
+function withRowGap(nodes: ReactNode[], gap: PdfStyle): ReactNode[] {
+  if (nodes.length === 0) return nodes;
+  const last = nodes[nodes.length - 1] as ReactElement<{ style?: PdfStyle | PdfStyle[] }>;
+  const existing = last.props.style;
+  const merged: PdfStyle[] = existing ? (Array.isArray(existing) ? [...existing, gap] : [existing, gap]) : [gap];
+  return [...nodes.slice(0, -1), cloneElement(last, { style: merged })];
+}
+
+function projectNodes(
   s: Styles,
   p: WorkProfile['projects'][number],
   key: number,
   portalHost: string | null,
   footerLinkUrl?: string,
-): ReactElement {
-  return h(
-    View,
-    { key, style: s.projRow, wrap: false },
+): ReactNode[] {
+  // §24.194: flat siblings, same as an experience entry and for the same reasons.
+  // This used to be one View with `wrap: false`, which was harmless while a
+  // project was a name plus a one-line blurb — it always fit. Once §24.193
+  // restored the master's description AND its detail bullets the block became
+  // ~8 lines, and an unbreakable 8-line block that doesn't fit the page remainder
+  // jumps WHOLESALE to the next page, stranding the "Featured project" heading
+  // above a blank half-page (observed on a real submitted résumé).
+  //
+  // The first node is deliberately just the name+links LINE: `section()` keeps it
+  // atomic with the heading, so that pairing must stay one line tall. The
+  // description follows as a flowing sibling.
+  const nodes: ReactNode[] = [
     h(
       Text,
-      {},
+      { key: `p${key}n`, wrap: false },
       h(Text, { style: s.projName }, p.name),
       p.href
         ? h(Link, { src: trackedHref(p.href, portalHost, footerLinkUrl), style: s.projLink }, `   ${cleanUrl(p.href)}`)
@@ -239,17 +291,22 @@ function projectRow(
           )
         : null,
     ),
-    p.description ? h(Text, { style: s.projDesc }, ...rich(p.description)) : null,
-    ...(p.bullets ?? []).map((b, j) =>
+  ];
+  if (p.description) nodes.push(h(Text, { key: `p${key}d`, style: s.projDesc }, ...rich(p.description)));
+  (p.bullets ?? []).forEach((b, j) =>
+    nodes.push(
       h(
         View,
-        { key: j, style: s.bullet, wrap: false },
+        { key: `p${key}b${j}`, style: s.bullet, wrap: false },
         h(Text, { style: s.bulletDot }, '•'),
         h(Text, { style: s.bulletText }, ...rich(b)),
       ),
     ),
-    p.tags && p.tags.length > 0 ? h(Text, { style: s.projTags }, p.tags.join('  ·  ')) : null,
   );
+  if (p.tags && p.tags.length > 0) {
+    nodes.push(h(Text, { key: `p${key}t`, style: s.projTags }, p.tags.join('  ·  ')));
+  }
+  return withRowGap(nodes, s.projRow);
 }
 
 /** Skills children: grouped (category → items) when `skillGroups` is present,
@@ -305,13 +362,13 @@ function buildResumeDocument(
   const experienceSection = section(
     s,
     'Experience',
-    profile.experience.map((e, i) => experienceRow(s, e, i)),
+    profile.experience.flatMap((e, i) => experienceNodes(s, e, i)),
   );
   // §24.157: a lone project reads as a deliberate "Featured Project"; 2+ → "Projects".
   const projectsSection = section(
     s,
     profile.projects.length === 1 ? 'Featured Project' : 'Projects',
-    profile.projects.map((p, i) => projectRow(s, p, i, portalHost, footerLinkUrl)),
+    profile.projects.flatMap((p, i) => projectNodes(s, p, i, portalHost, footerLinkUrl)),
   );
   const orderedCore = profile.projectsFirst
     ? [projectsSection, experienceSection]

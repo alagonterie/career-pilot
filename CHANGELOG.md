@@ -13,6 +13,19 @@ fork version recorded in `package.json` — the two are never conflated.
 
 ## [Unreleased]
 
+## [1.1.6] - 2026-08-07
+
+### Fixed
+
+- **A résumé section could print its heading at the bottom of a page with all of
+  its content on the next one**, leaving most of a page blank. A project was laid
+  out as a single indivisible block, which was harmless while a project was one
+  line long but not once the previous release restored its full description and
+  detail bullets — a block that no longer fit the space left on the page moved to
+  the next one in its entirety. Entries now flow across a page break the way work
+  history already did, and a heading always travels with the first line beneath
+  it.
+
 ## [1.1.5] - 2026-08-07
 
 ### Fixed
