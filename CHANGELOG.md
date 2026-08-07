@@ -13,6 +13,10 @@ fork version recorded in `package.json` — the two are never conflated.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-07
+
+Pausing the search, and clearing the decks.
+
 ### Added
 
 - **Standby mode.** A deliberate, reversible pause for when the job search
