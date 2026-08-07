@@ -40,6 +40,16 @@ export const MAX_TAILOR_JD = 12_000;
 export const MAX_TAILOR_NOTES = 1_000;
 /** Generous: the emission carries selected bullets verbatim. */
 const MAX_TOKENS = 4_000;
+/**
+ * This call is deliberately NOT bound by the shared `llm_fetch_timeout_ms` (20s).
+ * That default suits the short host calls — a lead score, a redaction pass — where
+ * failing fast is right. A tailoring emission is ~1200 output tokens on the
+ * capable tier and lands in the 15–25s band, so 20s cuts off runs that were
+ * about to succeed (observed: one run at 14.8s, the next killed at 20.0s). Same
+ * shape as the SerpApi timeout that read as a degraded node: the ceiling has to
+ * match how long the work legitimately takes, not how long we'd prefer.
+ */
+const DEFAULT_TAILOR_TIMEOUT_MS = 90_000;
 /** A pending row older than this is a crashed run, not a live one — it stops
  *  holding the lock so the owner isn't stuck behind a process that went away. */
 const PENDING_STALE_MS = 5 * 60_000;
@@ -325,7 +335,16 @@ export function startTailorRun(
      VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)`,
   ).run(id, leadId, new Date().toISOString(), jd, notes, model, sourceSlug);
 
-  void executeTailorRun(id, { company: lead.company, role: lead.title, jd, notes, master, model }).catch((err) => {
+  const timeoutMs = getConfig<number>(db, 'tailor_lead_timeout_ms', DEFAULT_TAILOR_TIMEOUT_MS);
+  void executeTailorRun(id, {
+    company: lead.company,
+    role: lead.title,
+    jd,
+    notes,
+    master,
+    model,
+    timeoutMs,
+  }).catch((err) => {
     log.error('tailor: run failed outside its own handler', { id, err });
   });
 
@@ -343,7 +362,15 @@ export function startTailorRun(
  */
 async function executeTailorRun(
   id: string,
-  ctx: { company: string; role: string; jd: string | null; notes: string | null; master: WorkProfile; model: string },
+  ctx: {
+    company: string;
+    role: string;
+    jd: string | null;
+    notes: string | null;
+    master: WorkProfile;
+    model: string;
+    timeoutMs: number;
+  },
 ): Promise<void> {
   const db = getDb();
   const finish = (patch: Partial<TailoredResumeRow>): void => {
@@ -379,13 +406,23 @@ async function executeTailorRun(
         messages,
         maxTokens: MAX_TOKENS,
         model: ctx.model,
+        timeoutMs: ctx.timeoutMs,
         traceId: id,
       });
       costMicro += res.costMicrousd ?? 0;
       text = res.text;
     } catch (err) {
       log.warn('tailor: LLM call failed', { id, attempt, err });
-      finish({ status: 'failed', error: 'The tailoring model call failed. Try again.', cost_cents: cents(costMicro) });
+      // Distinguish a timeout: it is the one failure the owner can act on
+      // (retry, or raise the knob), and a generic message would hide that.
+      const timedOut = /timeout|aborted/i.test(err instanceof Error ? err.message : String(err));
+      finish({
+        status: 'failed',
+        error: timedOut
+          ? `The model took longer than ${Math.round(ctx.timeoutMs / 1000)}s and the call was cut off. Try again, or raise the tailoring timeout.`
+          : 'The tailoring model call failed. Try again.',
+        cost_cents: cents(costMicro),
+      });
       return;
     }
 

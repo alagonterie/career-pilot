@@ -42,6 +42,7 @@
     "win_confidence_model": "claude-haiku-4-5",
     "tailor_lead_model": "claude-sonnet-4-6",
     "tailor_lead_daily_cap": 25,
+    "tailor_lead_timeout_ms": 90000,
     "quiet_hours": "22:00-07:00",
     "quiet_hours_tz": "",
     "telegram_proactive_frequency_cap_per_day": 0,

@@ -1036,6 +1036,14 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     max: 200,
     note: 'Maximum tailored résumés generated per day across all leads (§24.191). A backstop against a client looping on the generate action, not an expected limit — each run costs a few cents.',
   },
+  tailor_lead_timeout_ms: {
+    type: 'number',
+    group: 'models',
+    label: 'Host · lead résumé-tailoring timeout (ms)',
+    min: 20000,
+    max: 300000,
+    note: 'How long one tailoring call may take before it is cut off (§24.191). Deliberately far above the shared 20s host-fetch timeout: a full tailored résumé lands in the 15–25s band, and the shared default was observed cutting off a run that was about to succeed.',
+  },
   kit_entity_redact_model: {
     type: 'enum',
     group: 'models',
