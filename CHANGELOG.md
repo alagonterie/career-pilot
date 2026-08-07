@@ -13,6 +13,29 @@ fork version recorded in `package.json` — the two are never conflated.
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-08-07
+
+Current model generations, and spend figures that can be trusted.
+
+### Added
+
+- **Claude Sonnet 5 and Opus 5 are selectable** wherever a model can be chosen,
+  alongside the previous generation, which is kept so any choice can be reverted
+  instantly. Résumé tailoring now runs on Sonnet 5 by default.
+
+### Fixed
+
+- **A model could be offered for selection without anyone having recorded what
+  it costs**, in which case everything it did reported no cost at all — silently,
+  since an unknown price is deliberately not treated as free. The list of
+  selectable models and the list of recorded prices are now checked against each
+  other automatically, so a model can no longer be offered without a price, a
+  price can no longer be recorded with a missing rate, and neither list can drift
+  from the other unnoticed.
+- Corrected the recorded price for the previous top-tier model, which had been
+  entered at three times its actual rate. It had not yet reached a release, so no
+  spend figure was ever overstated.
+
 ## [1.1.3] - 2026-08-07
 
 An owner-side tool for applying to a specific role.

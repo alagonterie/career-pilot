@@ -107,8 +107,26 @@ const ORPHAN_POLL_NOTE =
  * kit-redaction belt moved to Sonnet in §24.134e). `knob-registry.test.ts`
  * asserts the two lists agree, so adding a model to the dropdown without pricing
  * it now fails CI instead of blanking a cost field in production.
+ *
+ * Both prior generations are kept alongside the current ones. Removing an option
+ * would invalidate any `preferences` row already pointing at it (the knob writer
+ * validates against this list), so a rollback would need a deploy — exactly when
+ * you least want one.
+ *
+ * Sonnet 5 is priced at its STANDARD rate ($3/$15), not its introductory rate
+ * ($2/$10, in effect through 2026-08-31). The intro rate would be exact for a few
+ * weeks and then silently 50% low forever, with nothing to remind anyone; the
+ * standard rate merely over-states a little until it becomes exactly right and
+ * stays that way. Prefer the error that self-corrects over the one that needs a
+ * diary entry.
  */
-export const MODEL_OPTIONS = ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-8'];
+export const MODEL_OPTIONS = [
+  'claude-haiku-4-5',
+  'claude-sonnet-4-6',
+  'claude-sonnet-5',
+  'claude-opus-4-8',
+  'claude-opus-5',
+];
 /** Subagent model knobs additionally accept `inherit` (use the group's orchestrator model). */
 const MODEL_OPTIONS_INHERIT = [...MODEL_OPTIONS, 'inherit'];
 

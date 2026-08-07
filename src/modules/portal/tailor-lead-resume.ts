@@ -32,7 +32,7 @@ import { validateTailoredResume } from './tailored-resume.js';
 /** The one output in this system that goes to a real employer under the
  *  candidate's name — Sonnet, not the Haiku default, and named explicitly
  *  rather than left to the caller's default (§24.163 direction). */
-const DEFAULT_TAILOR_MODEL = 'claude-sonnet-4-6';
+const DEFAULT_TAILOR_MODEL = 'claude-sonnet-5';
 /** Bounds accidental spend if a client ever loops on the generate action. */
 const DEFAULT_DAILY_CAP = 25;
 /** The JD is owner-pasted; cap it so a full careers page can't blow the call. */
