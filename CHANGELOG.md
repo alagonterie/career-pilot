@@ -13,6 +13,22 @@ fork version recorded in `package.json` — the two are never conflated.
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-08-07
+
+A correction to 1.1.1, found while repairing real leads.
+
+### Fixed
+
+- **Some job-board reposters were being trusted as the employer.** Sites that
+  list themselves as the hiring company — on a generic hosting platform, with
+  the company name only as a subdomain — were marked as a direct company link
+  and shown with the "direct" badge. That hid exactly the leads whose real
+  employer is unknown, which is the opposite of what the previous release set
+  out to do. A lead now only counts as the employer's own site when the company
+  name is in the domain itself, not merely somewhere in the hostname.
+- Y Combinator job pages are recognised as direct company listings rather than
+  being flagged as reposters.
+
 ## [1.1.1] - 2026-08-07
 
 Job leads now link where you can actually apply.
