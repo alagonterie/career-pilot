@@ -152,6 +152,17 @@ The public site flips within one KV propagation (~60 s worst case). A workflow t
 
 **Recovery time:** ~2–5 minutes (VM boot + tunnel reconnect + health probe).
 
+### Prerequisites (one-time)
+
+Standby needs three things wired, and it degrades honestly when they aren't:
+
+| | Status | Effect if missing |
+|---|---|---|
+| `STANDBY_KV_NAMESPACE_ID` (GH env var, per env) | provisioned by Terraform → `terraform output standby_kv_namespace_id` | Binding removed at deploy; standby never engages (site stays live) |
+| `GH_DISPATCH_TOKEN` (GH env secret; fine-grained PAT, `Actions: write`) | web UI only — no API can mint a PAT | Console flips the public page but can't stop/start the VM |
+| **`standby.yml` present on `master`** | ships with the next release | Dispatch 404s — GitHub only exposes a workflow to `workflow_dispatch` once the file is on the **default branch** |
+| `CLOUDFLARE_API_TOKEN` with `Workers KV Storage: Edit` | — | Resume starts the VM but can't clear the flag; site stays on the standby page |
+
 ### If the workflow dispatch fails
 
 The console reports it rather than silently half-doing the job. Do it by hand:

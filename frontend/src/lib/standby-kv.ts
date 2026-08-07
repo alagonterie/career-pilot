@@ -180,7 +180,15 @@ export async function dispatchStandbyWorkflow(op: 'stop' | 'start'): Promise<{ o
     // A successful dispatch is 204 No Content.
     if (res.status === 204) return { ok: true }
     const body = await res.text()
-    return { ok: false, error: `github dispatch failed (${res.status}): ${body.slice(0, 200)}` }
+    // 404 is the expected shape of the most likely misconfiguration, and the
+    // generic body ("Not Found") gives no clue: GitHub only exposes a workflow to
+    // `workflow_dispatch` once the file exists on the repo's DEFAULT branch, so a
+    // standby workflow that has only landed on `dev` is invisible to this call.
+    const hint =
+      res.status === 404
+        ? ' — standby.yml must exist on the default branch to be dispatchable (merge it to master), and the token needs Actions: write on this repo'
+        : ''
+    return { ok: false, error: `github dispatch failed (${res.status}): ${body.slice(0, 200)}${hint}` }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'dispatch failed' }
   }
