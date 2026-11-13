@@ -7802,6 +7802,26 @@ Tie-break by highest `rules_score`. **One lead per application**: a guard (`SELE
 
 ---
 
+## §24.195 — One Opus: Opus 5.5 replaces every other Opus option; and a new application had no win-confidence rationale until the next mail pass
+
+**Owner request** (2026-11-13): *"replace all opus models in the system with opus 5.5 — i don't want any other opus version as an option anymore"*, and separately: *"need a data fix on the only open app to show whatever its description is. no description showing on the portal."*
+
+**Design (D1) — `MODEL_OPTIONS` carries exactly one Opus.** `claude-opus-4-8` and `claude-opus-5` are removed; `claude-opus-5-5` is added, with a pricing row transcribed from the published table ($4 in / $20 out / $0.20 cache-read / $5 cache-write per MTok — note the cache-read rate is 0.05× input, not the 0.1× of earlier rows; transcribed, not derived, per §24.192 D4). Probed live through the gateway before listing, as D6 of §24.163 requires: `claude-opus-5-5` → HTTP 200. The two retired pricing rows go with their options — cost is priced at record time and stored, so historical telemetry is unaffected.
+
+**Design (D2) — this reverses §24.192 D5's "keep the prior generation", so a migration carries the stored choices.** §24.192 kept old options because removing one strands any `preferences` row pointing at it (the knob writer validates against the list; the readers do not, so a stranded row would keep running the retired model while `/admin` could no longer show it). The owner has now asked for exactly that removal, so migration 147 rewrites every `preferences` row whose value is a retired Opus ID to `claude-opus-5-5` — value-matched across all keys rather than a key list, so a model knob added later can't be missed. Prod held four such rows at the time (`sanitization_pass3_model`, `kit_entity_redact_model`, `tailor_lead_model`, `owner_model_build_interview_kit`). Idempotent; a no-op on a DB with none.
+
+**Design (D3) — a guard so a second Opus can't creep back.** `knob-registry.test.ts` asserts exactly one `MODEL_OPTIONS` entry matches `claude-opus-*`, alongside the §24.192 pricing guards.
+
+**What is deliberately NOT changed.** The `model: opus` alias in subagent frontmatter and `ANTHROPIC_DEFAULT_OPUS_MODEL` are a tier alias, not a version — the latter is a backstop that resolves to the group's orchestrator model (§24.163). Display fixtures (`opus-4-8` in the dev/e2e seed and the blessed `@visual` snapshots) and the illustrative `opus-4-7` strings in PORTAL.md mock-ups are sample data, not selectable models.
+
+**Behavioral notes for Opus 5.5 on our call paths.** Host calls (`callPortkeyChat`) send only `model`/`max_tokens`/`messages` — no `temperature`, `thinking`, or `tool_choice` — so none of Opus 5.5's request-shape removals apply. Thinking is always on and counts against `max_tokens`, as it already did on Opus 5.
+
+**The missing "description" (D4).** The paragraph under an application's win-confidence bar is `win_confidence_rationale`. The one open application had a score and no rationale: the agent created it with a `win_confidence` in its own patch, and the scorer — the only writer of the rationale — runs solely after a non-cheap-out pipeline-scribe persist. A new application therefore shows a bare number until unrelated mail arrives. Fix: `handleUpdateApplication`'s INSERT branch fires `scoreWinConfidence` (fire-and-forget, after `writeResponse`, same shape as the scribe hook). The existing row is corrected by running the scorer once on prod.
+
+**DoD.** `MODEL_OPTIONS` contains `claude-opus-5-5` and no other Opus, with a four-rate pricing row; the one-Opus guard passes; migration 147 rewrites retired-Opus preference values and leaves others untouched (tested); creating an application triggers a score pass (tested); after deploy no prod `preferences` row names a retired Opus and the open application shows a rationale on `/pipeline`. Host + frontend suites green. **Deploy:** ships as **v1.1.7**. **Spec deltas:** this §24.195 (supersedes §24.192 D5's keep-prior-generation rule for Opus).
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.

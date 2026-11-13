@@ -7,7 +7,7 @@ import { isRecordCallToolName, sdkResultToTurnTelemetry } from './claude.js';
 // caller). isRecordCallToolName is the portal-worthy tool-name matcher.
 
 const modelUsage = {
-  'claude-opus-4-8': {
+  'claude-opus-5-5': {
     inputTokens: 12000,
     outputTokens: 800,
     cacheReadInputTokens: 9000,
@@ -48,7 +48,7 @@ describe('sdkResultToTurnTelemetry', () => {
     const t = sdkResultToTurnTelemetry(result());
     expect(t).not.toBeNull();
     // Primary model = the highest-cost one.
-    expect(t!.model_used).toBe('claude-opus-4-8');
+    expect(t!.model_used).toBe('claude-opus-5-5');
     // tokens = sum of input + output across models.
     expect(t!.tokens).toBe(12000 + 800 + 4000 + 200);
     // cost_cents = round(0.041 * 100) = 4.
@@ -64,7 +64,7 @@ describe('sdkResultToTurnTelemetry', () => {
 
   it('sets cache_hit=0 when no model read from cache', () => {
     const t = sdkResultToTurnTelemetry(
-      result({ modelUsage: { 'claude-opus-4-8': { inputTokens: 100, outputTokens: 50, costUSD: 0.01 } } }),
+      result({ modelUsage: { 'claude-opus-5-5': { inputTokens: 100, outputTokens: 50, costUSD: 0.01 } } }),
     );
     expect(t!.cache_hit).toBe(0);
   });

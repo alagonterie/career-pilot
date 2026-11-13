@@ -360,6 +360,24 @@ describe('handleUpdateApplication', () => {
     expect(row.obfuscated_label).toBe('misc-a');
   });
 
+  // §24.195: the win-confidence scorer is the only writer of the rationale and
+  // used to run only after a pipeline-scribe persist, so a new application
+  // rendered without one. With no gateway configured the scorer's deterministic
+  // half (closed ⇒ 0 + a fixed rationale) is the observable proof it ran.
+  it('INSERT triggers a win-confidence score pass', async () => {
+    const c = actionContent('career_pilot.update_application', {
+      id: 'app-scored',
+      patch: { company_name: 'Acme', role_title: 'Backend', status: 'REJECTED' },
+    });
+    await handleUpdateApplication(c, FAKE_SESSION, inDb);
+
+    const row = getDb()
+      .prepare('SELECT win_confidence, win_confidence_rationale FROM applications WHERE id = ?')
+      .get('app-scored') as { win_confidence: number | null; win_confidence_rationale: string | null };
+    expect(row.win_confidence).toBe(0);
+    expect(row.win_confidence_rationale).toBe('Application closed — no longer active.');
+  });
+
   it('rejects INSERT when required fields are missing', async () => {
     const c = actionContent('career_pilot.update_application', {
       id: 'app-missing',
@@ -1104,7 +1122,7 @@ describe('handleRecordTurnTelemetry', () => {
   it('writes a category=turn row with the five telemetry columns + proactive from the wake', async () => {
     seedWake('task'); // proactive trigger
     const c = actionContent('career_pilot.record_turn_telemetry', {
-      model_used: 'claude-opus-4-8',
+      model_used: 'claude-opus-5-5',
       tokens: 17000,
       cost_cents: 4,
       cache_hit: 1,
@@ -1115,7 +1133,7 @@ describe('handleRecordTurnTelemetry', () => {
         duration_api_ms: 1100,
         total_cost_usd: 0.041,
         // 900 cache_read / (100 input + 900 read + 200 creation) = 75%
-        model_usage: { 'claude-opus-4-8': { input: 100, output: 50, cache_read: 900, cache_creation: 200 } },
+        model_usage: { 'claude-opus-5-5': { input: 100, output: 50, cache_read: 900, cache_creation: 200 } },
       },
     });
     await handleRecordTurnTelemetry(c, OWNER_SESSION, inDb);
@@ -1142,7 +1160,7 @@ describe('handleRecordTurnTelemetry', () => {
     expect(row.category).toBe('turn');
     expect(row.agent_name).toBeNull(); // a turn is not one subagent
     expect(row.proactive).toBe(1);
-    expect(row.model_used).toBe('claude-opus-4-8');
+    expect(row.model_used).toBe('claude-opus-5-5');
     expect(row.tokens).toBe(17000);
     expect(row.cost_cents).toBe(4);
     expect(row.cache_hit).toBe(1);
@@ -1154,7 +1172,7 @@ describe('handleRecordTurnTelemetry', () => {
 
   it('leaves cache_read_pct NULL when model_usage is absent or prompt-side empty (§24.55: unknown ≠ 0%)', async () => {
     const c = actionContent('career_pilot.record_turn_telemetry', {
-      model_used: 'claude-opus-4-8',
+      model_used: 'claude-opus-5-5',
       tokens: 10,
       cost_cents: 1,
       cache_hit: 0,
@@ -1178,7 +1196,7 @@ describe('handleRecordTurnTelemetry', () => {
       )
       .run();
     const c = actionContent('career_pilot.record_turn_telemetry', {
-      model_used: 'claude-opus-4-8',
+      model_used: 'claude-opus-5-5',
       tokens: 100,
       cost_cents: 1,
       cache_hit: 0,
@@ -1242,7 +1260,7 @@ describe('handleRecordTurnTelemetry', () => {
 
   it('dual-writes a request_telemetry row classed chat for an owner chat turn (cost cents → microUSD)', async () => {
     const c = actionContent('career_pilot.record_turn_telemetry', {
-      model_used: 'claude-opus-4-8',
+      model_used: 'claude-opus-5-5',
       tokens: 17000,
       cost_cents: 4,
       cache_hit: 1,
@@ -1250,7 +1268,7 @@ describe('handleRecordTurnTelemetry', () => {
       record_calls: 2,
       details: {
         num_turns: 3,
-        model_usage: { 'claude-opus-4-8': { input: 100, output: 50, cache_read: 900, cache_creation: 200 } },
+        model_usage: { 'claude-opus-5-5': { input: 100, output: 50, cache_read: 900, cache_creation: 200 } },
       },
     });
     await handleRecordTurnTelemetry(c, OWNER_SESSION, inDb);
@@ -1263,7 +1281,7 @@ describe('handleRecordTurnTelemetry', () => {
     expect(r.surface).toBe('agent-turn');
     expect(r.traffic_class).toBe('chat');
     expect(r.session_id).toBe(OWNER_SESSION.id);
-    expect(r.model).toBe('claude-opus-4-8');
+    expect(r.model).toBe('claude-opus-5-5');
     expect(r.input_tokens).toBe(100); // summed from model_usage
     expect(r.output_tokens).toBe(50);
     expect(r.cache_read_tokens).toBe(900);
@@ -1275,7 +1293,7 @@ describe('handleRecordTurnTelemetry', () => {
   it('classes the owner ops session as ops', async () => {
     const opsSession: Session = { ...OWNER_SESSION, id: 'sess-ops', thread_id: 'internal:career-pilot-ops' };
     const c = actionContent('career_pilot.record_turn_telemetry', {
-      model_used: 'claude-opus-4-8',
+      model_used: 'claude-opus-5-5',
       tokens: 100,
       cost_cents: 1,
       cache_hit: 0,
@@ -1322,7 +1340,7 @@ describe('handleRecordTurnTelemetry', () => {
       )
       .run();
     const c = actionContent('career_pilot.record_turn_telemetry', {
-      model_used: 'claude-opus-4-8',
+      model_used: 'claude-opus-5-5',
       tokens: 100,
       cost_cents: 1,
       cache_hit: 0,

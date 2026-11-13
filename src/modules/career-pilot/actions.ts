@@ -42,6 +42,7 @@ import { reactToStatusTransitions } from './interview-kit-trigger.js';
 import { classifyJobIndustry } from './job-classify.js';
 import { isOpsSession } from './ops-session.js';
 import { validateProactivePref } from './quiet-hours.js';
+import { scoreWinConfidence } from './win-confidence.js';
 
 // ── Response writer (shared by all handlers) ──
 
@@ -1241,6 +1242,13 @@ export async function handleUpdateApplication(
       if (patch.status) {
         reactToStatusTransitions(db, inDb, [{ application_id: id, from: null, to: String(patch.status) }]);
       }
+      // §24.195: the scorer is the only writer of win_confidence_rationale and
+      // otherwise runs only after a pipeline-scribe persist, so a new
+      // application showed a bare score (or none) until unrelated mail arrived.
+      // Fire-and-forget, after the response — never blocks or fails the create.
+      void scoreWinConfidence(db).catch((scoreErr) => {
+        log.error('scoreWinConfidence after application create failed', { scoreErr });
+      });
       return;
     }
 

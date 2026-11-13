@@ -265,7 +265,7 @@ function applyOllamaTestOverrides(config: ContainerConfig): void {
  *   for any stray `model: opus` alias — subagents now declare `model: inherit`
  *   (§24.163) and `applySubagentModels` is SKIPPED under the test modes, so
  *   every subagent inherits this `config.model`. Override via
- *   `CLAUDE_TEST_OPUS_MODEL=claude-opus-4-8` if you need real Opus.)
+ *   `CLAUDE_TEST_OPUS_MODEL=claude-opus-5-5` if you need real Opus.)
  * - `ANTHROPIC_DEFAULT_HAIKU_MODEL` → `claude-haiku-4-5` (WebFetch/
  *   WebSearch use Haiku internally for content summarization)
  *

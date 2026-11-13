@@ -63,7 +63,7 @@ const KNOBS: DevKnob[] = [
     type: 'enum',
     group: 'models',
     value: 'claude-sonnet-4-6',
-    options: ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-8'],
+    options: ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-5-5'],
     label: 'Owner · orchestrator model',
   }),
 ]
@@ -104,9 +104,9 @@ describe('KnobControls', () => {
       'aria-checked',
       'true',
     )
-    fireEvent.click(within(row).getByTestId('knob-option-owner_orchestrator_model-claude-opus-4-8'))
-    await waitFor(() => expect(onWrite).toHaveBeenCalledWith('owner_orchestrator_model', 'claude-opus-4-8'))
-    expect(within(row).getByTestId('knob-option-owner_orchestrator_model-claude-opus-4-8')).toHaveAttribute(
+    fireEvent.click(within(row).getByTestId('knob-option-owner_orchestrator_model-claude-opus-5-5'))
+    await waitFor(() => expect(onWrite).toHaveBeenCalledWith('owner_orchestrator_model', 'claude-opus-5-5'))
+    expect(within(row).getByTestId('knob-option-owner_orchestrator_model-claude-opus-5-5')).toHaveAttribute(
       'aria-checked',
       'true',
     )

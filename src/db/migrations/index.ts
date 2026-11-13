@@ -53,6 +53,7 @@ import { migration143 } from './143-master-pdf-named-source.js';
 import { migration144 } from './144-candidate-searching-since.js';
 import { migration145 } from './145-job-leads-apply-link-kind.js';
 import { migration146 } from './146-tailored-resumes.js';
+import { migration147 } from './147-retire-old-opus-models.js';
 
 export interface Migration {
   version: number;
@@ -113,6 +114,7 @@ const migrations: Migration[] = [
   migration144,
   migration145,
   migration146,
+  migration147,
 ];
 
 export function runMigrations(db: Database.Database): void {

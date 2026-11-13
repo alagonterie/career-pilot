@@ -13,6 +13,23 @@ fork version recorded in `package.json` — the two are never conflated.
 
 ## [Unreleased]
 
+## [1.1.7] - 2026-11-13
+
+### Changed
+
+- **Claude Opus 5.5 is now the only Opus that can be selected.** The two earlier
+  Opus versions are no longer offered anywhere a model can be chosen, and any
+  setting that was pointing at one of them is moved to Opus 5.5 automatically
+  when this release is installed, so nothing is left running a model that can no
+  longer be picked. Its recorded price reflects the lower Opus 5.5 rate.
+
+### Fixed
+
+- **A newly added application showed a win-confidence score with no explanation
+  beside it.** The explanation was only written as a side effect of processing
+  incoming mail, so an application sat without one until some unrelated message
+  happened to arrive. It is now written as soon as the application is added.
+
 ## [1.1.6] - 2026-08-07
 
 ### Fixed

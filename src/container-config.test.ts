@@ -103,11 +103,11 @@ describe('applyOrchestratorModel (§24.163 — pin the orchestrator from the gro
   });
 
   it('honors an owner_orchestrator_model override (crank to Opus) without touching the Haiku internal', () => {
-    writePreference(getDb(), 'owner_orchestrator_model', 'claude-opus-4-8');
+    writePreference(getDb(), 'owner_orchestrator_model', 'claude-opus-5-5');
     const cfg = baseConfig();
     applyOrchestratorModel(cfg, group('career-pilot'), getDb());
-    expect(cfg.model).toBe('claude-opus-4-8');
-    expect(cfg.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-opus-4-8');
+    expect(cfg.model).toBe('claude-opus-5-5');
+    expect(cfg.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-opus-5-5');
     expect(cfg.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('claude-haiku-4-5');
   });
 

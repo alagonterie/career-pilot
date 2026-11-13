@@ -105,6 +105,10 @@ describe('model options are priced (§24.191)', () => {
     }
   });
 
+  it('offers exactly one Opus — Opus 5.5 (§24.195); retiring one needs a preferences migration', () => {
+    expect(MODEL_OPTIONS.filter((m) => m.startsWith('claude-opus-'))).toEqual(['claude-opus-5-5']);
+  });
+
   it('every model DEFAULT is a selectable option (a default the dropdown cannot show is unreachable)', () => {
     const raw = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'config', 'defaults.json'), 'utf8')) as {
       preferences: Record<string, unknown>;

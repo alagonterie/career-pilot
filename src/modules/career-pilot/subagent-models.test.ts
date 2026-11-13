@@ -38,7 +38,7 @@ describe('rewriteModelInFrontmatter', () => {
   });
 
   it('writes inherit through unchanged', () => {
-    expect(rewriteModelInFrontmatter(fm('claude-opus-4-8'), 'inherit')).toContain('model: inherit');
+    expect(rewriteModelInFrontmatter(fm('claude-opus-5-5'), 'inherit')).toContain('model: inherit');
   });
 
   it('inserts a model: line when the frontmatter has none', () => {

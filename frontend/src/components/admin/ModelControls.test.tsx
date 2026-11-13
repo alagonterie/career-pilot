@@ -7,7 +7,7 @@ import { ModelControls } from './ModelControls'
 
 const ok = async () => ({ ok: true as const, status: 200 })
 
-const MODELS = ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-8']
+const MODELS = ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-5-5']
 
 function modelKnob(key: string, value: string, options = MODELS): DevKnob {
   return {
@@ -64,7 +64,7 @@ describe('ModelControls', () => {
     const onWrite = vi.fn(ok)
     render(<ModelControls knobs={KNOBS} onWrite={onWrite} onReset={ok} />)
     const row = screen.getByTestId('knob-owner_orchestrator_model')
-    fireEvent.click(within(row).getByTestId('knob-option-owner_orchestrator_model-claude-opus-4-8'))
-    await waitFor(() => expect(onWrite).toHaveBeenCalledWith('owner_orchestrator_model', 'claude-opus-4-8'))
+    fireEvent.click(within(row).getByTestId('knob-option-owner_orchestrator_model-claude-opus-5-5'))
+    await waitFor(() => expect(onWrite).toHaveBeenCalledWith('owner_orchestrator_model', 'claude-opus-5-5'))
   })
 })
