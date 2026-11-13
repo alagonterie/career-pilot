@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { ClaudeProvider } from './claude.js';
+import { ClaudeProvider, transcriptStartMs } from './claude.js';
 
 // maybeRotateContinuation guards the cold-resume failure mode: a long-lived
 // session whose on-disk transcript has grown so large (or old) that the SDK
@@ -45,7 +45,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  const restore = (k: string, v: string | undefined) => (v === undefined ? delete process.env[k] : (process.env[k] = v));
+  const restore = (k: string, v: string | undefined) =>
+    v === undefined ? delete process.env[k] : (process.env[k] = v);
   restore('HOME', prevHome);
   restore('NANOCLAW_CONVERSATIONS_DIR', prevConv);
   restore('CLAUDE_TRANSCRIPT_ROTATE_BYTES', prevBytes);
@@ -85,5 +86,37 @@ describe('ClaudeProvider.maybeRotateContinuation', () => {
   it('returns null for an unknown session id', () => {
     const provider = new ClaudeProvider();
     expect(provider.maybeRotateContinuation('does-not-exist', CWD)).toBeNull();
+  });
+});
+
+// §24.197: Claude Code 2.1.321 opens a transcript with a session-owner record
+// that has NO timestamp. Dating a transcript by its first line then yields
+// nothing, and age-based rotation silently stops for every new session.
+describe('transcriptStartMs', () => {
+  function write(lines: unknown[]): string {
+    const p = path.join(tmp, 'dated.jsonl');
+    fs.writeFileSync(
+      p,
+      lines.map((l) => (typeof l === 'string' ? l : JSON.stringify(l))).join(String.fromCharCode(10)) +
+        String.fromCharCode(10),
+    );
+    return p;
+  }
+
+  it('dates a transcript by its first entry that carries a timestamp, not its first line', () => {
+    const p = write([
+      { type: 'session-owner', sessionId: 'abc' },
+      { type: 'user', timestamp: '2026-01-02T03:04:05.000Z', message: { role: 'user', content: 'hi' } },
+      { type: 'assistant', timestamp: '2026-06-01T00:00:00.000Z' },
+    ]);
+    expect(transcriptStartMs(p)).toBe(Date.parse('2026-01-02T03:04:05.000Z'));
+  });
+
+  it('skips a non-JSON line and returns null when nothing is dated', () => {
+    expect(transcriptStartMs(write(['not json', { type: 'user', timestamp: '2026-03-03T00:00:00.000Z' }]))).toBe(
+      Date.parse('2026-03-03T00:00:00.000Z'),
+    );
+    expect(transcriptStartMs(write([{ type: 'session-owner' }, { type: 'summary' }]))).toBeNull();
+    expect(transcriptStartMs(path.join(tmp, 'missing.jsonl'))).toBeNull();
   });
 });

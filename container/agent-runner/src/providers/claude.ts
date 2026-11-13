@@ -380,7 +380,7 @@ const TOOL_ALLOWLIST = [
   'WebSearch',
   'WebFetch',
   'Task',
-  'TaskOutput',
+  // TaskOutput was removed from Claude Code in 2.1.277 (§24.197).
   'TaskStop',
   'TodoWrite',
   'ToolSearch',
@@ -644,17 +644,30 @@ function findTranscriptPath(sessionId: string): string | null {
   return null;
 }
 
-/** Epoch-ms of the first transcript entry, or null if unreadable. */
-function transcriptStartMs(transcriptPath: string): number | null {
+/**
+ * Epoch-ms of the first transcript entry THAT CARRIES A TIMESTAMP, or null if
+ * none is readable. Not simply the first line: Claude Code 2.1.321 opens a new
+ * transcript with a session-owner record that has no timestamp, and reading only
+ * line one silently disabled age-based rotation for every new session, leaving
+ * the size cap alone (§24.197; mirrors upstream NanoClaw). Exported for tests.
+ */
+export function transcriptStartMs(transcriptPath: string): number | null {
   try {
     const fd = fs.openSync(transcriptPath, 'r');
     try {
-      const buf = Buffer.alloc(4096);
+      const buf = Buffer.alloc(64 * 1024);
       const n = fs.readSync(fd, buf, 0, buf.length, 0);
-      const firstLine = buf.toString('utf-8', 0, n).split('\n', 1)[0];
-      const ts = JSON.parse(firstLine)?.timestamp;
-      const ms = ts ? Date.parse(ts) : NaN;
-      return Number.isNaN(ms) ? null : ms;
+      for (const line of buf.toString('utf-8', 0, n).split('\n')) {
+        try {
+          const ts = JSON.parse(line)?.timestamp;
+          if (typeof ts !== 'string') continue;
+          const ms = Date.parse(ts);
+          if (!Number.isNaN(ms)) return ms;
+        } catch {
+          // A line cut off by the read window, or one that is not JSON, dates nothing.
+        }
+      }
+      return null;
     } finally {
       fs.closeSync(fd);
     }
@@ -797,12 +810,18 @@ export class ClaudeProvider implements AgentProvider {
         resume: input.continuation,
         // §24.128 Path B: omit pathToClaudeCodeExecutable so the SDK runs its OWN
         // bundled native binary (@anthropic-ai/claude-agent-sdk-<platform>) — at
-        // 0.3.x that binary IS the version-matched Claude Code CLI (sdk 0.3.181 ⇒
-        // claude-code 2.1.181), so we no longer install/pin claude-code in the
+        // 0.3.x that binary IS the version-matched Claude Code CLI (sdk 0.3.321 ⇒
+        // claude-code 2.1.321), so we no longer install/pin claude-code in the
         // image or hand-maintain SDK↔CLI parity. Validated: the linux-x64 binary
-        // executes on node:22-slim (`claude --version` → 2.1.181).
+        // executes on node:22-slim (`claude --version` → 2.1.181 at §24.128; re-checked on the box at each bump).
+        // §24.197: `snapshot: false` keeps the pre-upgrade behaviour. Since Claude
+        // Code 2.1.267 the default is to RECORD the system prompt on a session's
+        // first request and resend that record on every resume, so a resumed
+        // agent would keep a stale append (name, destinations, anything rendered
+        // at container start) until compaction. The append is rebuilt on every
+        // spawn, so it must render fresh. Mirrors upstream NanoClaw.
         systemPrompt: instructions
-          ? { type: 'preset' as const, preset: 'claude_code' as const, append: instructions }
+          ? { type: 'preset' as const, preset: 'claude_code' as const, append: instructions, snapshot: false }
           : undefined,
         allowedTools: [...TOOL_ALLOWLIST, ...Object.keys(this.mcpServers).map(mcpAllowPattern)],
         disallowedTools: [...SDK_DISALLOWED_TOOLS, ...this.extraDisallowedTools],
@@ -817,6 +836,11 @@ export class ClaudeProvider implements AgentProvider {
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
         settingSources: ['project', 'user', 'local'],
+        // §24.197: since Claude Code 2.1.275 a session syncs the skills and
+        // plugins enabled on the signed-in claude.ai account. An agent must get
+        // only what the host mounts. Flag-level settings outrank the group's own
+        // settings files, so this holds for every group. Mirrors upstream NanoClaw.
+        settings: { syncClaudeAiSkills: false, syncClaudeAiPlugins: false },
         mcpServers: this.mcpServers,
         hooks: {
           PreToolUse: [{ hooks: [preToolUseHook] }],
