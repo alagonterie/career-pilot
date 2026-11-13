@@ -363,6 +363,11 @@ const SDK_DISALLOWED_TOOLS = [
   'TeamCreate',
   'TeamDelete',
   'SendMessage',
+  // §24.197 (new in Claude Code 2.1.3xx, mirrors upstream NanoClaw): desktop
+  // design-tool sync and a code-review reporting affordance — neither has a
+  // headless surface, and together they add ~11KB of schema to every turn.
+  'DesignSync',
+  'ReportFindings',
 ];
 
 // Tool allowlist for NanoClaw agent containers. MCP-tool entries are derived
@@ -719,6 +724,16 @@ export function buildProviderSubprocessEnv(
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
     ...(optionsEnv ?? {}),
     CLAUDE_CODE_AUTO_COMPACT_WINDOW,
+    // §24.197: subagent dispatch must stay SYNCHRONOUS. From Claude Code 2.1.3xx
+    // the Agent tool runs "in the background by default": the orchestrator's turn
+    // ends while the subagent is still working, and its result arrives later as a
+    // task notification. Everything host-side assumes the opposite — the simulator
+    // finalizes a run on the orchestrator's first result (observed on dev: a run
+    // "completed" in 9.7s with no résumé, its research subagent killed mid-search),
+    // and the idle reaper treats a finished turn as a finished job. Set AFTER the
+    // spread on purpose: this is an invariant of the host's turn model, not a
+    // tunable a box .env should be able to switch off.
+    CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1',
   };
 }
 

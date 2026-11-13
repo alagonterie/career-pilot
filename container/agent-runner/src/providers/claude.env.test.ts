@@ -24,6 +24,15 @@ describe('buildProviderSubprocessEnv', () => {
     expect(buildProviderSubprocessEnv({ [key]: '0' })[key]).toBe('0');
   });
 
+  // §24.197: synchronous subagent dispatch is an invariant of the host's turn
+  // model (the simulator finalizes on the orchestrator's first result), so the
+  // background-task kill switch is NOT override-able from the box env.
+  it('always disables background tasks, even against an override', () => {
+    const key = 'CLAUDE_CODE_DISABLE_BACKGROUND_TASKS';
+    expect(buildProviderSubprocessEnv()[key]).toBe('1');
+    expect(buildProviderSubprocessEnv({ [key]: '0' })[key]).toBe('1');
+  });
+
   it('always carries the auto-compact window (the constant wins over the spread)', () => {
     expect(buildProviderSubprocessEnv().CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBeDefined();
     // a stray value in the passed env does not clobber the host-tuned window
