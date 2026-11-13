@@ -173,6 +173,66 @@ describe('promoteLeadOnApplied', () => {
   });
 });
 
+// §24.195 D5: an application with no discovered lead was unreachable from the
+// Leads tab (résumé tailoring is per-lead). The live reactor now synthesizes one.
+describe('promoteLeadOnApplied — createIfMissing', () => {
+  function manualLeads(): Array<Record<string, unknown>> {
+    return getDb()
+      .prepare(
+        `SELECT source, source_job_id, source_url, title, company, status, application_id, closed_at,
+                killer_match_pushed_at IS NOT NULL AS pushed
+           FROM job_leads WHERE source = 'manual'`,
+      )
+      .all() as Array<Record<string, unknown>>;
+  }
+
+  it('synthesizes a linked, applied `manual` lead when nothing in the pool matches', () => {
+    seedApp('app-1', {
+      job_url: 'https://corp.example.com',
+      company_name: 'Zzz Corp',
+      role_title: 'Platform Engineer',
+    });
+    seedLead({ id: 'lead-other', source_url: 'https://other', company: 'Acme', title: 'Backend Engineer' });
+
+    const res = promoteLeadOnApplied(getDb(), { application_id: 'app-1', to: 'APPLIED' }, { createIfMissing: true });
+    expect(res?.via).toBe('created');
+    expect(manualLeads()).toEqual([
+      {
+        source: 'manual',
+        source_job_id: 'app-1',
+        source_url: 'https://corp.example.com',
+        title: 'Platform Engineer',
+        company: 'Zzz Corp',
+        status: 'applied',
+        application_id: 'app-1',
+        closed_at: null,
+        pushed: 1, // never announced as a killer match
+      },
+    ]);
+    expect(leadOf('lead-other')).toEqual({ status: 'new', application_id: null });
+  });
+
+  it('still prefers a real match, creates once, and skips a rejection', () => {
+    seedApp('app-match', { job_url: 'https://boards.example.com/eng-42' });
+    seedLead({ id: 'lead-1', source_url: 'https://boards.example.com/eng-42' });
+    seedApp('app-solo', { job_url: null, company_name: 'Solo Co', role_title: 'Engineer' });
+    seedApp('app-dead', { job_url: null, company_name: 'Dead Co', role_title: 'Engineer', status: 'REJECTED' });
+
+    const opts = { createIfMissing: true };
+    expect(promoteLeadOnApplied(getDb(), { application_id: 'app-match', to: 'APPLIED' }, opts)?.via).toBe('url');
+    expect(promoteLeadOnApplied(getDb(), { application_id: 'app-solo', to: 'APPLIED' }, opts)?.via).toBe('created');
+    expect(promoteLeadOnApplied(getDb(), { application_id: 'app-solo', to: 'SCREENING' }, opts)).toBeNull();
+    expect(promoteLeadOnApplied(getDb(), { application_id: 'app-dead', to: 'REJECTED' }, opts)).toBeNull();
+    expect(manualLeads().map((l) => l.application_id)).toEqual(['app-solo']);
+  });
+
+  it('is what the live reactor does (the wiring)', () => {
+    seedApp('app-1', { job_url: null, company_name: 'Solo Co', role_title: 'Engineer' });
+    reactToStatusTransitions(getDb(), getDb(), [{ application_id: 'app-1', from: null, to: 'APPLIED' }]);
+    expect(manualLeads()).toHaveLength(1);
+  });
+});
+
 describe('backfillLeadPromotions', () => {
   it('links leads for applications already in a submitted stage; skips BOOKMARKED + already-linked', () => {
     // URL match (APPLIED)

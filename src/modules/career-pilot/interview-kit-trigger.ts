@@ -102,7 +102,8 @@ export function reactToStatusTransitions(
     try {
       // §24.175: a transition into a submitted stage promotes the originating
       // lead (link + flip to `applied`). No-op for non-submitted transitions.
-      promoteLeadOnApplied(db, c);
+      // §24.195: an application with no discovered lead gets a synthesized one.
+      promoteLeadOnApplied(db, c, { createIfMissing: true });
       if (isTerminalStatus(c.to)) {
         void archiveKitsForApplication(db, c.application_id).catch((err) =>
           log.error('interview-kit archive on terminal transition failed', { applicationId: c.application_id, err }),

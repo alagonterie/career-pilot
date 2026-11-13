@@ -19,7 +19,9 @@ import { TailorResume } from './TailorResume'
  * sweeps tend it). A read view (pool rollup + the leads + each lead's rules_score
  * REASONS breakdown — the *why* behind a score) plus a small, safe triage surface:
  * change status, archive (soft-close), and re-score against the current profile.
- * No content edits (source-of-record from the board) or manual creation.
+ * No content edits (source-of-record from the board) or manual creation — a
+ * `manual`-source lead is synthesized host-side for an application that never had
+ * a discovered one (§24.195), so the per-lead tools can still reach it.
  *
  * The table rides the shared DataTable (§24.174): the row cells are columns, the
  * per-lead score-reasons + triage controls are its `renderDetail` disclosure, and
@@ -251,14 +253,16 @@ function LeadDetail({
         <p className="max-w-2xl text-[11px] leading-relaxed text-muted-foreground">{lead.snippet}…</p>
       ) : null}
       <div className="flex flex-wrap items-center gap-3">
-        <a
-          href={lead.source_url}
-          target="_blank"
-          rel="noreferrer"
-          className="font-mono text-[11px] text-accent-cool hover:underline"
-        >
-          source ↗
-        </a>
+        {lead.source_url ? (
+          <a
+            href={lead.source_url}
+            target="_blank"
+            rel="noreferrer"
+            className="font-mono text-[11px] text-accent-cool hover:underline"
+          >
+            source ↗
+          </a>
+        ) : null}
         {lead.apply_url ? (
           <a
             href={lead.apply_url}
@@ -514,7 +518,7 @@ export function LeadsPanel({
           label="Source"
           value={source}
           onChange={setSource}
-          options={['all', 'greenhouse', 'lever', 'google_jobs']}
+          options={['all', 'greenhouse', 'lever', 'google_jobs', 'manual']}
         />
         <Select
           label="Sort"

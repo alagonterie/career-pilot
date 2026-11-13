@@ -29,6 +29,11 @@ fork version recorded in `package.json` — the two are never conflated.
   beside it.** The explanation was only written as a side effect of processing
   incoming mail, so an application sat without one until some unrelated message
   happened to arrive. It is now written as soon as the application is added.
+- **An application added directly, rather than from a discovered job lead, could
+  not have a résumé tailored for it.** Tailoring works from a lead, and such an
+  application had none, so it appeared in the pipeline but not among the leads. A
+  lead is now created for it automatically, linked to the application and marked
+  as applied, and the leads list can be filtered to show these.
 
 ## [1.1.6] - 2026-08-07
 

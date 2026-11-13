@@ -18,6 +18,7 @@ import type Database from 'better-sqlite3';
 
 import { log } from '../../log.js';
 
+import { computeFingerprint } from './lead-fingerprint.js';
 import type { StatusTransition } from './interview-kit-trigger.js';
 
 /** Application statuses that mean the candidate actually applied — everything past
@@ -27,13 +28,25 @@ const SUBMITTED_STATUSES = new Set(['APPLIED', 'SCREENING', 'TECH_SCREEN', 'FINA
 
 export interface LeadPromotion {
   leadId: string;
-  via: 'url' | 'company_title';
+  via: 'url' | 'company_title' | 'created';
+}
+
+/** `job_leads.source` for a lead synthesized from an application that never had
+ * a discovered one (§24.195 D5). Not a scrape source — nothing re-encounters it. */
+export const MANUAL_LEAD_SOURCE = 'manual';
+
+export interface PromoteOptions {
+  /** When nothing in the pool matches, synthesize a `manual` lead from the
+   * application so it is reachable from the Leads tab (résumé tailoring is
+   * per-lead). Only the live reactor sets this; the backfill does not. */
+  createIfMissing?: boolean;
 }
 
 interface AppRow {
   company_name: string | null;
   role_title: string | null;
   job_url: string | null;
+  jd_text: string | null;
 }
 interface LeadRow {
   id: string;
@@ -96,9 +109,15 @@ function matchLead(app: AppRow, candidates: LeadRow[]): LeadPromotion | null {
 /**
  * Link + flip the lead that an application came from when that application enters a
  * submitted stage. No-op for non-submitted transitions, when the app already
- * promoted a lead, or when nothing matches. Returns the promotion or null.
+ * promoted a lead, or when nothing matches — unless `createIfMissing`, in which
+ * case an unmatched, still-live application gets a synthesized `manual` lead.
+ * Returns the promotion or null.
  */
-export function promoteLeadOnApplied(db: Database.Database, change: StatusTransition): LeadPromotion | null {
+export function promoteLeadOnApplied(
+  db: Database.Database,
+  change: StatusTransition,
+  opts: PromoteOptions = {},
+): LeadPromotion | null {
   try {
     if (!SUBMITTED_STATUSES.has(String(change.to).toUpperCase())) return null;
 
@@ -107,7 +126,7 @@ export function promoteLeadOnApplied(db: Database.Database, change: StatusTransi
     if (already) return null;
 
     const app = db
-      .prepare('SELECT company_name, role_title, job_url FROM applications WHERE id = ?')
+      .prepare('SELECT company_name, role_title, job_url, jd_text FROM applications WHERE id = ?')
       .get(change.application_id) as AppRow | undefined;
     if (!app) return null;
 
@@ -118,10 +137,12 @@ export function promoteLeadOnApplied(db: Database.Database, change: StatusTransi
           WHERE closed_at IS NULL AND application_id IS NULL AND status != 'applied'`,
       )
       .all() as LeadRow[];
-    if (candidates.length === 0) return null;
-
     const match = matchLead(app, candidates);
-    if (!match) return null;
+    if (!match) {
+      // A rejection is not worth a lead: there is nothing left to tailor for.
+      if (!opts.createIfMissing || String(change.to).toUpperCase() === 'REJECTED') return null;
+      return createManualLead(db, change.application_id, app);
+    }
 
     const now = new Date().toISOString();
     db.prepare(
@@ -142,6 +163,57 @@ export function promoteLeadOnApplied(db: Database.Database, change: StatusTransi
     });
     return null;
   }
+}
+
+/**
+ * §24.195 D5: an application the candidate added directly (a referral, a
+ * speculative approach) has no discovered lead, and the per-lead tools on the
+ * Leads tab — résumé tailoring above all — could not reach it. Synthesize one
+ * from the application's own fields, already linked + `applied`. It is exempt
+ * from the stale sweep (linked leads are) and marked as already pushed so it is
+ * never announced as a "killer match" for a role the candidate applied to.
+ */
+function createManualLead(db: Database.Database, applicationId: string, app: AppRow): LeadPromotion | null {
+  const title = app.role_title?.trim();
+  const company = app.company_name?.trim();
+  if (!title || !company) return null;
+  const now = new Date().toISOString();
+  const id = `lead-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const url = app.job_url?.trim() ?? '';
+  const fingerprint = computeFingerprint({
+    source: MANUAL_LEAD_SOURCE,
+    source_board_token: null,
+    source_job_id: applicationId,
+    source_url: url,
+    title,
+    company,
+    location_raw: null,
+    description_text: app.jd_text,
+  } as unknown as Parameters<typeof computeFingerprint>[0]);
+  db.prepare(
+    `INSERT INTO job_leads
+       (id, source, source_job_id, source_url, apply_url, content_fingerprint, title, company, description_text,
+        first_seen_at, last_seen_at, rules_score, rules_score_reasons,
+        status, status_changed_at, application_id, killer_match_pushed_at)
+     VALUES
+       (@id, @source, @appId, @url, @applyUrl, @fingerprint, @title, @company, @jd,
+        @now, @now, 0, '{}',
+        'applied', @now, @appId, @now)
+     ON CONFLICT (source, source_job_id) DO NOTHING`,
+  ).run({
+    id,
+    source: MANUAL_LEAD_SOURCE,
+    appId: applicationId,
+    url,
+    applyUrl: url || null,
+    fingerprint,
+    title,
+    company,
+    jd: app.jd_text,
+    now,
+  });
+  log.info('job_lead synthesized for an application with no discovered lead', { leadId: id, applicationId });
+  return { leadId: id, via: 'created' };
 }
 
 export interface BackfillResult {
