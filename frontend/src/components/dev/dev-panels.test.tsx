@@ -62,8 +62,8 @@ const KNOBS: DevKnob[] = [
     key: 'owner_orchestrator_model',
     type: 'enum',
     group: 'models',
-    value: 'claude-sonnet-4-6',
-    options: ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-5-5'],
+    value: 'claude-sonnet-5-5',
+    options: ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5'],
     label: 'Owner · orchestrator model',
   }),
 ]
@@ -100,7 +100,7 @@ describe('KnobControls', () => {
     const onWrite = vi.fn(ok)
     renderControls(KNOBS, { onWrite })
     const row = screen.getByTestId('knob-owner_orchestrator_model')
-    expect(within(row).getByTestId('knob-option-owner_orchestrator_model-claude-sonnet-4-6')).toHaveAttribute(
+    expect(within(row).getByTestId('knob-option-owner_orchestrator_model-claude-sonnet-5-5')).toHaveAttribute(
       'aria-checked',
       'true',
     )

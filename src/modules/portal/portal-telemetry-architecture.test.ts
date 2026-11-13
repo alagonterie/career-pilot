@@ -71,7 +71,7 @@ function seedTurn(seq: number, ts: string, costCents: number, model?: string, de
 function turnDetails(durationMs: number, cacheRead: number, input: number): string {
   return JSON.stringify({
     duration_api_ms: durationMs,
-    model_usage: { 'claude-haiku-4-5': { input, output: 100, cache_read: cacheRead, cache_creation: 0 } },
+    model_usage: { 'claude-haiku-5-5': { input, output: 100, cache_read: cacheRead, cache_creation: 0 } },
   });
 }
 
@@ -131,8 +131,8 @@ describe('GET /api/telemetry', () => {
   it('derives cache-hit rate, turn p50, and top model from the turn rows (§24.47)', async () => {
     // Two turns: 90% cache (900 read / 1000 prompt) and 50% (100/200) → aggregate
     // 1000/1200 ≈ 0.833; durations 1000 & 3000 → p50 = 1000 (nearest-rank).
-    seedTurn(20, nowIso(), 6, 'claude-haiku-4-5', turnDetails(1000, 900, 100));
-    seedTurn(21, nowIso(), 4, 'claude-haiku-4-5', turnDetails(3000, 100, 100));
+    seedTurn(20, nowIso(), 6, 'claude-haiku-5-5', turnDetails(1000, 900, 100));
+    seedTurn(21, nowIso(), 4, 'claude-haiku-5-5', turnDetails(3000, 100, 100));
 
     const body = (await (await fetch(`${base}/api/telemetry`)).json()) as {
       local: { cache_hit_rate: number; turn_p50_ms: number; turn_p95_ms: number; top_model: string; turns_24h: number };
@@ -140,7 +140,7 @@ describe('GET /api/telemetry', () => {
     expect(body.local.cache_hit_rate).toBeCloseTo(1000 / 1200, 5);
     expect(body.local.turn_p50_ms).toBe(1000);
     expect(body.local.turn_p95_ms).toBe(3000);
-    expect(body.local.top_model).toBe('claude-haiku-4-5');
+    expect(body.local.top_model).toBe('claude-haiku-5-5');
     expect(body.local.turns_24h).toBe(2);
   });
 

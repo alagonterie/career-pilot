@@ -57,7 +57,7 @@ const LOCAL = {
   cache_hit_rate: 0.66,
   turn_p50_ms: 15000,
   turn_p95_ms: 31000,
-  top_model: 'claude-haiku-4-5',
+  top_model: 'claude-haiku-5-5',
 }
 
 function app(p: Partial<PipelineApplication> & { application_ref: string; stage: string }): PipelineApplication {
@@ -146,7 +146,7 @@ describe('TelemetryPanel', () => {
     render(<TelemetryPanel view={view} />)
     expect(screen.getByText('15s')).toBeInTheDocument() // p50, whole seconds (fits the cell)
     expect(screen.getByText('31s')).toBeInTheDocument() // p95
-    expect(screen.getByText(/claude-haiku-4-5/)).toBeInTheDocument()
+    expect(screen.getByText(/claude-haiku-5-5/)).toBeInTheDocument()
     expect(screen.getByText('3 total')).toBeInTheDocument() // local activity line still renders
     expect(screen.queryByText('66%')).not.toBeInTheDocument() // cache rate lives in LLM spend, not here
   })

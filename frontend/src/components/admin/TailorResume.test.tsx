@@ -21,7 +21,7 @@ function run(over: Partial<TailoredRun> = {}): TailoredRun {
     jd_used: null,
     notes: null,
     bio_outcome: 'tailored',
-    model: 'claude-sonnet-4-6',
+    model: 'claude-sonnet-5-5',
     cost_cents: 6,
     error: null,
     source_slug: 'apply_globex',

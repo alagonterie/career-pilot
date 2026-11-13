@@ -47,16 +47,14 @@ export class RankLeadsError extends Error {
 
 const SNIPPET_CHARS = 280;
 const SYSTEM_PROMPT =
-  "You score job postings against a candidate brief and return JSON only. " +
-  "Be calibrated: 90+ for excellent matches, 70-89 strong, 40-69 moderate, " +
+  'You score job postings against a candidate brief and return JSON only. ' +
+  'Be calibrated: 90+ for excellent matches, 70-89 strong, 40-69 moderate, ' +
   "20-39 weak, <20 poor fit. Don't anchor on any single dimension — balance " +
-  "role-type fit, technical skills, comp signal, and location.";
+  'role-type fit, technical skills, comp signal, and location.';
 
 export function buildRankingPrompt(leads: JobLeadForRanking[], brief: string): string {
   const lines: string[] = [];
-  lines.push(
-    "Score each posting below 0-100 against the candidate's brief. Higher = better fit.",
-  );
+  lines.push("Score each posting below 0-100 against the candidate's brief. Higher = better fit.");
   lines.push('');
   lines.push('# Candidate brief');
   lines.push('');
@@ -183,7 +181,7 @@ async function callHaiku(systemPrompt: string, userPrompt: string): Promise<stri
   // §24.163 lead_ranking_model: the host injects LEAD_RANKING_MODEL into the
   // container env from getConfig at materialize; HAIKU_MODEL stays as a legacy
   // fallback, then the hardcoded default.
-  const model = process.env.LEAD_RANKING_MODEL || process.env.HAIKU_MODEL || 'claude-haiku-4-5-20251001';
+  const model = process.env.LEAD_RANKING_MODEL || process.env.HAIKU_MODEL || 'claude-haiku-5-5';
 
   const t0 = Date.now();
   let res: Response;
@@ -200,7 +198,8 @@ async function callHaiku(systemPrompt: string, userPrompt: string): Promise<stri
       },
       body: JSON.stringify({
         model,
-        max_tokens: 2048,
+        // Room for the ranked JSON plus default-on thinking on 5.5 models (§24.197).
+        max_tokens: 8192,
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
       }),
@@ -255,10 +254,7 @@ async function callHaiku(systemPrompt: string, userPrompt: string): Promise<stri
   return block.text;
 }
 
-export async function rankLeads(
-  leads: JobLeadForRanking[],
-  brief: string,
-): Promise<RankedLead[]> {
+export async function rankLeads(leads: JobLeadForRanking[], brief: string): Promise<RankedLead[]> {
   if (leads.length === 0) {
     throw new RankLeadsError('BAD_ARGS', 'leads is empty');
   }

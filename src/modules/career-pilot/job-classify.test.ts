@@ -5,7 +5,7 @@ vi.mock('../../llm-fetch.js', () => ({
   callPortkeyChat: vi.fn(),
 }));
 vi.mock('../../db/connection.js', () => ({ getDb: vi.fn(() => ({})) }));
-vi.mock('../../get-config.js', () => ({ getConfig: vi.fn(() => 'claude-haiku-4-5') }));
+vi.mock('../../get-config.js', () => ({ getConfig: vi.fn(() => 'claude-haiku-5-5') }));
 
 import { callPortkeyChat, portkeyConfigured } from '../../llm-fetch.js';
 

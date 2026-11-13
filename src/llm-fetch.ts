@@ -24,7 +24,7 @@ import { getConfig } from './get-config.js';
 import { buildPortkeyMetadata } from './portkey.js';
 import { priceTokensMicrousd, recordRequestTelemetry } from './request-telemetry.js';
 
-export const DEFAULT_LLM_MODEL = 'claude-haiku-4-5';
+export const DEFAULT_LLM_MODEL = 'claude-haiku-5-5';
 /** Last-resort timeout when the central DB isn't up (defaults.json is canonical). */
 const FALLBACK_TIMEOUT_MS = 20_000;
 
@@ -38,7 +38,7 @@ export interface PortkeyChatArgs {
   surface: string;
   messages: Array<{ role: 'system' | 'user'; content: string }>;
   maxTokens: number;
-  /** Bare model name (no provider slug). Default: claude-haiku-4-5. */
+  /** Bare model name (no provider slug). Default: claude-haiku-5-5. */
   model?: string;
   /** Default: getConfig('llm_fetch_timeout_ms'). */
   timeoutMs?: number;

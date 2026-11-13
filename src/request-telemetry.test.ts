@@ -60,7 +60,7 @@ describe('recordRequestTelemetry', () => {
       ok: true,
       latencyMs: 412,
       statusCode: 200,
-      model: 'claude-haiku-4-5',
+      model: 'claude-haiku-5-5',
       inputTokens: 200,
       outputTokens: 150,
       cacheReadTokens: 0,
@@ -145,20 +145,20 @@ describe('recordRequestTelemetry', () => {
 });
 
 describe('priceTokensMicrousd', () => {
-  it('prices a typical Haiku prose call at ~950 µUSD', () => {
-    // 200 in × $1/MTok + 150 out × $5/MTok = $0.00095 = 950 µUSD
-    const cost = priceTokensMicrousd(getDb(), 'claude-haiku-4-5', { inputTokens: 200, outputTokens: 150 });
-    expect(cost).toBe(950);
+  it('prices a typical Haiku prose call at ~95 µUSD', () => {
+    // 200 in × $0.10/MTok + 150 out × $0.50/MTok = $0.000095 = 95 µUSD
+    const cost = priceTokensMicrousd(getDb(), 'claude-haiku-5-5', { inputTokens: 200, outputTokens: 150 });
+    expect(cost).toBe(95);
   });
 
   it('includes cache lanes', () => {
-    const cost = priceTokensMicrousd(getDb(), 'claude-haiku-4-5', {
+    const cost = priceTokensMicrousd(getDb(), 'claude-haiku-5-5', {
       inputTokens: 0,
       outputTokens: 0,
-      cacheReadTokens: 1_000_000, // $0.10
-      cacheCreationTokens: 1_000_000, // $1.25
+      cacheReadTokens: 1_000_000, // $0.01
+      cacheCreationTokens: 1_000_000, // $0.125
     });
-    expect(cost).toBe(1_350_000);
+    expect(cost).toBe(135_000);
   });
 
   it('returns null for a model not in the pricing map', () => {

@@ -21,7 +21,7 @@ import type { InjectEmailIntent } from './types.js';
 
 export { portkeyConfigured };
 
-const HAIKU_MODEL = 'claude-haiku-4-5';
+const HAIKU_MODEL = 'claude-haiku-5-5';
 
 /**
  * §24.163 recruiter_sim_prose_model — the model for the dev-only sim's prose

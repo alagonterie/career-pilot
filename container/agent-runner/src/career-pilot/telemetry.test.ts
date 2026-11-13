@@ -78,7 +78,7 @@ describe('reportRequestTelemetry', () => {
       ok: true,
       latencyMs: 800,
       statusCode: 200,
-      model: 'claude-haiku-4-5',
+      model: 'claude-haiku-5-5',
       usage: { inputTokens: 1200, outputTokens: 300, cacheReadTokens: 100, cacheCreationTokens: null },
     });
     const p = telemetryRows()[0].payload;
@@ -86,7 +86,7 @@ describe('reportRequestTelemetry', () => {
     expect(p.output_tokens).toBe(300);
     expect(p.cache_read_tokens).toBe(100);
     expect(p.cache_creation_tokens).toBe(null);
-    expect(p.model).toBe('claude-haiku-4-5');
+    expect(p.model).toBe('claude-haiku-5-5');
   });
 
   it('never throws when the outbound write fails', async () => {

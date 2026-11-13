@@ -105,8 +105,15 @@ describe('model options are priced (§24.191)', () => {
     }
   });
 
-  it('offers exactly one Opus — Opus 5.5 (§24.195); retiring one needs a preferences migration', () => {
+  it('offers exactly one model per tier (§24.195, §24.197); retiring one needs a preferences migration', () => {
     expect(MODEL_OPTIONS.filter((m) => m.startsWith('claude-opus-'))).toEqual(['claude-opus-5-5']);
+    expect(MODEL_OPTIONS.filter((m) => m.startsWith('claude-sonnet-'))).toEqual(['claude-sonnet-5-5']);
+    expect(MODEL_OPTIONS.filter((m) => m.startsWith('claude-haiku-'))).toEqual(['claude-haiku-5-5']);
+    expect(MODEL_OPTIONS).toHaveLength(3);
+  });
+
+  it('the pricing table carries no row for a model that can no longer be selected', () => {
+    expect(Object.keys(pricingMap()).sort()).toEqual([...MODEL_OPTIONS].sort());
   });
 
   it('every model DEFAULT is a selectable option (a default the dropdown cannot show is unreachable)', () => {
@@ -165,7 +172,7 @@ describe('validateKnobWrite — text knobs (§24.138)', () => {
   });
 
   it('validates the model + aggressiveness enums', () => {
-    expect(validateKnobWrite('sanitization_pass3_model', 'claude-haiku-4-5').ok).toBe(true);
+    expect(validateKnobWrite('sanitization_pass3_model', 'claude-haiku-5-5').ok).toBe(true);
     expect(validateKnobWrite('sanitization_pass3_model', 'gpt-5').ok).toBe(false);
     expect(validateKnobWrite('sanitization_llm_review_aggressiveness', 'high').ok).toBe(true);
     expect(validateKnobWrite('sanitization_llm_review_aggressiveness', 'extreme').ok).toBe(false);

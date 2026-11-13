@@ -330,11 +330,11 @@ describe('applyOpsSpawnEnv — no model floor (§24.78: the §24.68 Δ B1 haiku 
   // Simulates the post-materializeContainerJson state when the owner orchestrator
   // is pinned to Haiku (§24.163 applyOrchestratorModel + its alias backstops).
   const haikuConfig = {
-    model: 'claude-haiku-4-5',
+    model: 'claude-haiku-5-5',
     env: {
-      ANTHROPIC_DEFAULT_OPUS_MODEL: 'claude-haiku-4-5',
-      ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-haiku-4-5',
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'claude-haiku-4-5',
+      ANTHROPIC_DEFAULT_OPUS_MODEL: 'claude-haiku-5-5',
+      ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-haiku-5-5',
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'claude-haiku-5-5',
     },
   } as unknown as ContainerConfig;
 
@@ -352,11 +352,11 @@ describe('applyOpsSpawnEnv — no model floor (§24.78: the §24.68 Δ B1 haiku 
     const out = applyOpsSpawnEnv(haikuConfig, fakeSession({ thread_id: OPS_THREAD_ID }), ownerGroup);
     // Model + every alias pass through unchanged — the ops cascade now runs at the
     // configured owner orchestrator model like any other session (no clamp to Sonnet).
-    expect(out.model).toBe('claude-haiku-4-5');
+    expect(out.model).toBe('claude-haiku-5-5');
     expect(out.env).toMatchObject({
-      ANTHROPIC_DEFAULT_OPUS_MODEL: 'claude-haiku-4-5',
-      ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-haiku-4-5',
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'claude-haiku-4-5',
+      ANTHROPIC_DEFAULT_OPUS_MODEL: 'claude-haiku-5-5',
+      ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-haiku-5-5',
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'claude-haiku-5-5',
     });
     // The transcript-rotation env is still merged in for the ops session.
     expect(out.env?.NANOCLAW_CONVERSATIONS_DIR).toBe('/workspace/agent/conversations/ops');

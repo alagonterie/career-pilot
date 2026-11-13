@@ -105,8 +105,8 @@ describe('callPortkeyChat', () => {
     });
     expect(result.text).toBe('hello world');
     expect(result.usage.inputTokens).toBe(200);
-    // 200 in × $1/MTok + 150 out × $5/MTok on Haiku = 950 µUSD
-    expect(result.costMicrousd).toBe(950);
+    // 200 in × $0.10/MTok + 150 out × $0.50/MTok on Haiku 5.5 = 95 µUSD
+    expect(result.costMicrousd).toBe(95);
 
     const r = rows();
     expect(r).toHaveLength(1);
@@ -114,9 +114,9 @@ describe('callPortkeyChat', () => {
     expect(r[0].provider).toBe('portkey');
     expect(r[0].surface).toBe('recruiter-sim-prose');
     expect(r[0].traffic_class).toBe('host');
-    expect(r[0].model).toBe('claude-haiku-4-5');
+    expect(r[0].model).toBe('claude-haiku-5-5');
     expect(r[0].input_tokens).toBe(200);
-    expect(r[0].cost_microusd).toBe(950);
+    expect(r[0].cost_microusd).toBe(95);
     expect(JSON.parse(r[0].details_json as string).raw_usage.prompt_tokens).toBe(200);
   });
 
@@ -186,13 +186,13 @@ describe('callPortkeyChat', () => {
       surface: 'sanitizer-pass3',
       messages: [{ role: 'user', content: 'hi' }],
       maxTokens: 100,
-      model: 'claude-haiku-4-5',
+      model: 'claude-haiku-5-5',
     });
     delete process.env.PORTKEY_AI_PROVIDER;
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toContain('/chat/completions');
     const body = JSON.parse(init.body as string) as { model: string };
-    expect(body.model).toBe('@anthropic-prod/claude-haiku-4-5');
+    expect(body.model).toBe('@anthropic-prod/claude-haiku-5-5');
     const headers = init.headers as Record<string, string>;
     expect(JSON.parse(headers['x-portkey-metadata']).surface).toBe('sanitizer-pass3');
   });

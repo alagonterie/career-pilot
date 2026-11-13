@@ -29,8 +29,8 @@ describe('rewriteModelInFrontmatter', () => {
     `---\nname: research-company\ntools: [WebSearch]\nmodel: ${model}\nmaxTurns: 12\n---\n\n# research-company\nbody\n`;
 
   it('replaces an existing model: line, leaving the rest of the frontmatter + body intact', () => {
-    const out = rewriteModelInFrontmatter(fm('inherit'), 'claude-haiku-4-5');
-    expect(out).toContain('model: claude-haiku-4-5');
+    const out = rewriteModelInFrontmatter(fm('inherit'), 'claude-haiku-5-5');
+    expect(out).toContain('model: claude-haiku-5-5');
     expect(out).not.toContain('model: inherit');
     expect(out).toContain('name: research-company');
     expect(out).toContain('maxTurns: 12');
@@ -43,27 +43,27 @@ describe('rewriteModelInFrontmatter', () => {
 
   it('inserts a model: line when the frontmatter has none', () => {
     const noModel = `---\nname: x\ntools: []\n---\n\nbody\n`;
-    const out = rewriteModelInFrontmatter(noModel, 'claude-sonnet-4-6');
-    expect(out).toMatch(/^---\nmodel: claude-sonnet-4-6\nname: x/);
+    const out = rewriteModelInFrontmatter(noModel, 'claude-sonnet-5-5');
+    expect(out).toMatch(/^---\nmodel: claude-sonnet-5-5\nname: x/);
     expect(out).toContain('\nbody\n');
   });
 
   it('returns the body unchanged when there is no frontmatter block', () => {
     const plain = '# just a heading\nno frontmatter here\n';
-    expect(rewriteModelInFrontmatter(plain, 'claude-haiku-4-5')).toBe(plain);
+    expect(rewriteModelInFrontmatter(plain, 'claude-haiku-5-5')).toBe(plain);
   });
 
   it('is not perturbed by a `$` in another frontmatter field', () => {
     const withDollar = `---\nname: x\ndescription: costs $5 per run\nmodel: inherit\n---\nbody\n`;
-    const out = rewriteModelInFrontmatter(withDollar, 'claude-haiku-4-5');
+    const out = rewriteModelInFrontmatter(withDollar, 'claude-haiku-5-5');
     expect(out).toContain('description: costs $5 per run');
-    expect(out).toContain('model: claude-haiku-4-5');
+    expect(out).toContain('model: claude-haiku-5-5');
   });
 
   it('only touches the FIRST model: line (the frontmatter), not a body mention', () => {
     const bodyMention = `---\nname: x\nmodel: inherit\n---\n\nThe model: opus mention in prose stays.\n`;
-    const out = rewriteModelInFrontmatter(bodyMention, 'claude-haiku-4-5');
-    expect(out).toContain('model: claude-haiku-4-5');
+    const out = rewriteModelInFrontmatter(bodyMention, 'claude-haiku-5-5');
+    expect(out).toContain('model: claude-haiku-5-5');
     expect(out).toContain('The model: opus mention in prose stays.');
   });
 });

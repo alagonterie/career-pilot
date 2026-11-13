@@ -21,7 +21,7 @@ import { log } from '../../log.js';
 
 // Reuse the win-confidence host-Haiku model knob (same tier + host-pipeline
 // surface); HAIKU_MODEL is the hardcoded fallback when the knob is unset.
-const HAIKU_MODEL = 'claude-haiku-4-5';
+const HAIKU_MODEL = 'claude-haiku-5-5';
 
 /**
  * A short, slugified industry/domain for the obfuscated company handle (e.g.

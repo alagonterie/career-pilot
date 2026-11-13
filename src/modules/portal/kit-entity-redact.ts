@@ -37,7 +37,7 @@ import { log } from '../../log.js';
 /** Conservative flat per-call estimate (~300-tok prompt + ~60-tok JSON out on Haiku). */
 export const ENTITY_DETECT_EST_COST_USD = 0.002;
 
-const DEFAULT_MODEL = 'claude-haiku-4-5';
+const DEFAULT_MODEL = 'claude-haiku-5-5';
 const DEFAULT_TIMEOUT_MS = 20_000;
 const DEFAULT_BUDGET_USD_PER_DAY = 1.0;
 /** Ignore returned tokens shorter/longer than this — guards against the model

@@ -1311,13 +1311,13 @@ describe('handleRecordTurnTelemetry', () => {
 
   it('sandbox branch (§24.68 D-C): private telemetry row only, NEVER a public_audit_trail row', async () => {
     const c = actionContent('career_pilot.record_turn_telemetry', {
-      model_used: 'claude-haiku-4-5',
+      model_used: 'claude-haiku-5-5',
       tokens: 5000,
       cost_cents: 2,
       cache_hit: 0,
       latency_ms: 900,
       record_calls: 0,
-      details: { num_turns: 2, model_usage: { 'claude-haiku-4-5': { input: 4000, output: 1000 } } },
+      details: { num_turns: 2, model_usage: { 'claude-haiku-5-5': { input: 4000, output: 1000 } } },
     });
     await handleRecordTurnTelemetry(c, SANDBOX_SESSION, inDb);
     expect(readResponse(c.requestId).frame.ok).toBe(true);
@@ -1368,7 +1368,7 @@ describe('handleRecordTurnTelemetry', () => {
 
   it('§24.134c: the turn row NO LONGER emits the dispatch lifecycle rows (they moved to record_dispatch)', async () => {
     const c = actionContent('career_pilot.record_turn_telemetry', {
-      model_used: 'claude-haiku-4-5',
+      model_used: 'claude-haiku-5-5',
       tokens: 100,
       cost_cents: 1,
       cache_hit: 0,
@@ -1493,7 +1493,7 @@ describe('handleRecordRequestTelemetry', () => {
       ok: true,
       latency_ms: 800,
       status_code: 200,
-      model: 'claude-haiku-4-5',
+      model: 'claude-haiku-5-5',
       input_tokens: 1500,
       output_tokens: 100,
     });
@@ -1506,8 +1506,8 @@ describe('handleRecordRequestTelemetry', () => {
     expect(r.traffic_class).toBe('chat'); // derived host-side, not from payload
     expect(r.session_id).toBe(OWNER_SESSION.id);
     expect(r.input_tokens).toBe(1500);
-    // 1500 × $1/MTok + 100 × $5/MTok on Haiku = 2000 µUSD — priced HERE, never by the container.
-    expect(r.cost_microusd).toBe(2000);
+    // 1500 × $0.10/MTok + 100 × $0.50/MTok on Haiku 5.5 = 200 µUSD — priced HERE, never by the container.
+    expect(r.cost_microusd).toBe(200);
   });
 
   it('lands a sandbox failure report classed sandbox (plain registration is safe by construction)', async () => {

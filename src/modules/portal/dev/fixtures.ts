@@ -901,7 +901,7 @@ export function seedRequestTelemetry(db: Database.Database): void {
       provider: 'portkey',
       surface: 'recruiter-sim-prose',
       cls: 'host',
-      model: 'claude-haiku-4-5',
+      model: 'claude-haiku-5-5',
       cost: 600 + ((h * 37) % 500),
       latency: 300,
     });
@@ -912,7 +912,7 @@ export function seedRequestTelemetry(db: Database.Database): void {
       provider: 'portkey',
       surface: 'agent-turn',
       cls: 'ops',
-      model: 'claude-haiku-4-5',
+      model: 'claude-haiku-5-5',
       cost: 40_000 + h * 1_000,
       latency: 9_000,
     });
@@ -923,7 +923,7 @@ export function seedRequestTelemetry(db: Database.Database): void {
       provider: 'portkey',
       surface: 'agent-turn',
       cls: 'chat',
-      model: 'claude-haiku-4-5',
+      model: 'claude-haiku-5-5',
       cost: 70_000,
       latency: 12_000,
     });
@@ -934,7 +934,7 @@ export function seedRequestTelemetry(db: Database.Database): void {
       provider: 'portkey',
       surface: 'agent-turn',
       cls: 'sandbox',
-      model: 'claude-haiku-4-5',
+      model: 'claude-haiku-5-5',
       cost: 25_000,
       latency: 8_000,
     });

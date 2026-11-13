@@ -168,7 +168,7 @@ export function materializeContainerJson(agentGroupId: string): ContainerConfig 
     if (group.folder === 'career-pilot') {
       config.env = {
         ...(config.env ?? {}),
-        LEAD_RANKING_MODEL: getConfig<string>(getDb(), 'lead_ranking_model', 'claude-haiku-4-5'),
+        LEAD_RANKING_MODEL: getConfig<string>(getDb(), 'lead_ranking_model', 'claude-haiku-5-5'),
       };
     }
   }
@@ -206,7 +206,7 @@ export function materializeContainerJson(agentGroupId: string): ContainerConfig 
  * - `ANTHROPIC_DEFAULT_{HAIKU,OPUS,SONNET}_MODEL` redirect Claude Code's
  *   internal model aliases to the same local Ollama model. Without these,
  *   `WebSearch`/`WebFetch` (which use Haiku internally to summarize
- *   fetched content) fail with "model claude-haiku-4-5-20251001 not
+ *   fetched content) fail with "model claude-haiku-5-5 not
  *   accessible" because Ollama doesn't host that name. Subagents declared
  *   `model: inherit` (§24.163) resolve to `config.model` (the Ollama model
  *   here), so they don't hit Anthropic — and `applySubagentModels` is SKIPPED
@@ -260,13 +260,13 @@ function applyOllamaTestOverrides(config: ContainerConfig): void {
  * or `ANTHROPIC_API_KEY` — calls go through OneCLI's gateway, which
  * injects the real Anthropic credential at request time. We just retarget
  * Claude Code's model aliases:
- * - `ANTHROPIC_DEFAULT_SONNET_MODEL` → `claude-sonnet-4-6`
- * - `ANTHROPIC_DEFAULT_OPUS_MODEL` → `claude-sonnet-4-6` (default; a backstop
+ * - `ANTHROPIC_DEFAULT_SONNET_MODEL` → `claude-sonnet-5-5`
+ * - `ANTHROPIC_DEFAULT_OPUS_MODEL` → `claude-sonnet-5-5` (default; a backstop
  *   for any stray `model: opus` alias — subagents now declare `model: inherit`
  *   (§24.163) and `applySubagentModels` is SKIPPED under the test modes, so
  *   every subagent inherits this `config.model`. Override via
  *   `CLAUDE_TEST_OPUS_MODEL=claude-opus-5-5` if you need real Opus.)
- * - `ANTHROPIC_DEFAULT_HAIKU_MODEL` → `claude-haiku-4-5` (WebFetch/
+ * - `ANTHROPIC_DEFAULT_HAIKU_MODEL` → `claude-haiku-5-5` (WebFetch/
  *   WebSearch use Haiku internally for content summarization)
  *
  * No `blockedHosts` entry — we WANT calls to reach Anthropic.
@@ -277,9 +277,9 @@ function applyOllamaTestOverrides(config: ContainerConfig): void {
  * override doesn't have this prerequisite because Ollama doesn't auth.
  */
 function applyClaudeTestOverrides(config: ContainerConfig): void {
-  const sonnetModel = process.env.CLAUDE_TEST_SONNET_MODEL || 'claude-sonnet-4-6';
+  const sonnetModel = process.env.CLAUDE_TEST_SONNET_MODEL || 'claude-sonnet-5-5';
   const opusModel = process.env.CLAUDE_TEST_OPUS_MODEL || sonnetModel;
-  const haikuModel = process.env.CLAUDE_TEST_HAIKU_MODEL || 'claude-haiku-4-5';
+  const haikuModel = process.env.CLAUDE_TEST_HAIKU_MODEL || 'claude-haiku-5-5';
   config.env = {
     ...(config.env ?? {}),
     ANTHROPIC_DEFAULT_HAIKU_MODEL: haikuModel,
@@ -290,7 +290,7 @@ function applyClaudeTestOverrides(config: ContainerConfig): void {
 }
 
 /** Claude Code's internal WebFetch/WebSearch summarization always runs on cheap Haiku. */
-const INTERNAL_SUMMARIZE_MODEL = 'claude-haiku-4-5';
+const INTERNAL_SUMMARIZE_MODEL = 'claude-haiku-5-5';
 
 /**
  * §24.163 model-control plane — pin the orchestrator model in place from the
@@ -303,7 +303,7 @@ const INTERNAL_SUMMARIZE_MODEL = 'claude-haiku-4-5';
  * frontmatter at compose time by `applySubagentModels`
  * (src/modules/career-pilot/subagent-models.ts, run in
  * container-runner.buildMounts). So the only env aliases this sets are:
- *   - HAIKU → claude-haiku-4-5, keeping Claude Code's internal WebFetch/WebSearch
+ *   - HAIKU → claude-haiku-5-5, keeping Claude Code's internal WebFetch/WebSearch
  *     summarization cheap; and
  *   - SONNET/OPUS → the orchestrator model, a BACKSTOP so any unmigrated
  *     `model: <alias-word>` frontmatter resolves to the orchestrator tier and can
@@ -320,7 +320,7 @@ export function applyOrchestratorModel(config: ContainerConfig, group: AgentGrou
         ? 'sandbox_orchestrator_model'
         : null;
   if (!knob) return;
-  const model = getConfig<string>(db, knob, 'claude-sonnet-4-6');
+  const model = getConfig<string>(db, knob, 'claude-sonnet-5-5');
   config.model = model;
   config.env = {
     ...(config.env ?? {}),

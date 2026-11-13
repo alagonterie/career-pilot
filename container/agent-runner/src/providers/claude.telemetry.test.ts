@@ -14,7 +14,7 @@ const modelUsage = {
     cacheCreationInputTokens: 0,
     costUSD: 0.039,
   },
-  'claude-haiku-4-5': {
+  'claude-haiku-5-5': {
     inputTokens: 4000,
     outputTokens: 200,
     cacheReadInputTokens: 0,
@@ -59,7 +59,7 @@ describe('sdkResultToTurnTelemetry', () => {
     expect(t!.details.num_turns).toBe(3);
     expect(t!.details.duration_api_ms).toBe(1100);
     expect(t!.details.total_cost_usd).toBe(0.041);
-    expect(t!.details.model_usage['claude-haiku-4-5'].cost_usd).toBe(0.002);
+    expect(t!.details.model_usage['claude-haiku-5-5'].cost_usd).toBe(0.002);
   });
 
   it('sets cache_hit=0 when no model read from cache', () => {

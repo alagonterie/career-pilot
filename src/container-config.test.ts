@@ -96,10 +96,10 @@ describe('applyOrchestratorModel (§24.163 — pin the orchestrator from the gro
   it('owner group: pins config.model to owner_orchestrator_model (default Sonnet) + the aliases', () => {
     const cfg = baseConfig();
     applyOrchestratorModel(cfg, group('career-pilot'), getDb());
-    expect(cfg.model).toBe('claude-sonnet-4-6');
-    expect(cfg.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('claude-haiku-4-5'); // internal summarize stays cheap
-    expect(cfg.env?.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('claude-sonnet-4-6'); // backstop → orchestrator
-    expect(cfg.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-sonnet-4-6'); // backstop → orchestrator (no surprise Opus)
+    expect(cfg.model).toBe('claude-sonnet-5-5');
+    expect(cfg.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('claude-haiku-5-5'); // internal summarize stays cheap
+    expect(cfg.env?.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('claude-sonnet-5-5'); // backstop → orchestrator
+    expect(cfg.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-sonnet-5-5'); // backstop → orchestrator (no surprise Opus)
   });
 
   it('honors an owner_orchestrator_model override (crank to Opus) without touching the Haiku internal', () => {
@@ -108,14 +108,14 @@ describe('applyOrchestratorModel (§24.163 — pin the orchestrator from the gro
     applyOrchestratorModel(cfg, group('career-pilot'), getDb());
     expect(cfg.model).toBe('claude-opus-5-5');
     expect(cfg.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-opus-5-5');
-    expect(cfg.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('claude-haiku-4-5');
+    expect(cfg.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('claude-haiku-5-5');
   });
 
   it('sandbox group: pins config.model to sandbox_orchestrator_model (default Sonnet)', () => {
     const cfg = baseConfig();
     applyOrchestratorModel(cfg, group('career-pilot-sandbox'), getDb());
-    expect(cfg.model).toBe('claude-sonnet-4-6');
-    expect(cfg.env?.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('claude-sonnet-4-6');
+    expect(cfg.model).toBe('claude-sonnet-5-5');
+    expect(cfg.env?.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('claude-sonnet-5-5');
   });
 
   it('non-career-pilot group: no-op (leaves the DB-configured model untouched)', () => {
@@ -130,6 +130,6 @@ describe('applyOrchestratorModel (§24.163 — pin the orchestrator from the gro
     cfg.env = { FOO: 'bar' };
     applyOrchestratorModel(cfg, group('career-pilot'), getDb());
     expect(cfg.env?.FOO).toBe('bar');
-    expect(cfg.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('claude-haiku-4-5');
+    expect(cfg.env?.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('claude-haiku-5-5');
   });
 });

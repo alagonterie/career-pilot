@@ -13,6 +13,28 @@ fork version recorded in `package.json` — the two are never conflated.
 
 ## [Unreleased]
 
+## [1.1.9] - 2026-11-13
+
+### Changed
+
+- **Every model in the system is now from the 5.5 generation, one per tier**:
+  Haiku 5.5, Sonnet 5.5 and Opus 5.5. The earlier Haiku and Sonnet versions are
+  no longer offered, every default has moved to its 5.5 successor, and any saved
+  setting pointing at a retired version is moved automatically when this release
+  is installed.
+- **The agent runtime was upgraded so it recognises the new models.** The
+  previous runtime ran them correctly but had no price for them and assumed a far
+  higher one, which inflated every recorded cost and would have made the public
+  demo stop its runs early against its own spending limit. Measured before
+  release, a full demo run on the new models finishes in about half the time and
+  at well under two thirds of the cost.
+
+### Fixed
+
+- **Old conversation history could stop being rotated out by age** after the
+  runtime upgrade, leaving only the size limit to bound it. The age check now
+  reads the first dated entry rather than assuming the first line carries a date.
+
 ## [1.1.8] - 2026-11-13
 
 ### Added

@@ -108,37 +108,23 @@ const ORPHAN_POLL_NOTE =
  * asserts the two lists agree, so adding a model to the dropdown without pricing
  * it now fails CI instead of blanking a cost field in production.
  *
- * The prior Sonnet generation is kept alongside the current one. Removing an
- * option strands any `preferences` row already pointing at it (the knob writer
- * validates against this list; the readers don't), so a removal must ship with a
- * migration that rewrites those rows.
+ * There is exactly ONE model per tier (owner decision: §24.195 for Opus, §24.197
+ * for Haiku and Sonnet) — the 5.5 generation. Removing an option strands any
+ * `preferences` row already pointing at it (the knob writer validates against
+ * this list; the readers don't), so each removal shipped with a migration that
+ * rewrote those rows (147, 148), and `knob-registry.test.ts` fails if a second
+ * model of any tier is added without one.
  *
- * There is exactly ONE Opus (§24.195, owner decision): Opus 5.5. The retired
- * Opus IDs were removed together with migration 147, which moved every stored
- * choice onto it, and `knob-registry.test.ts` fails if a second Opus is added.
+ * A model new to this list must also be known to the bundled Claude Code binary
+ * (§24.197): one it has no price for is billed correctly but ESTIMATED at a far
+ * higher fallback rate, and that estimate is what agent-turn telemetry records
+ * and what the simulator's per-run cap is enforced against.
  *
- * Haiku 5.5 and Sonnet 5.5 are offered ALONGSIDE their predecessors for now
- * (§24.196 D3): the host-side call shape is verified on both, but nothing is
- * defaulted to them until an agent-runtime turn has run on each, because the
- * bundled Claude Code binary predates them. Haiku 5.5 has two rate cards split
- * at a 100K-token prompt; the row records the lower one, which is what every
- * host call uses — a longer prompt would be under-reported fivefold.
- *
- * Sonnet 5 is priced at its STANDARD rate ($3/$15), not its introductory rate
- * ($2/$10, in effect through 2026-08-31). The intro rate would be exact for a few
- * weeks and then silently 50% low forever, with nothing to remind anyone; the
- * standard rate merely over-states a little until it becomes exactly right and
- * stays that way. Prefer the error that self-corrects over the one that needs a
- * diary entry.
+ * Haiku 5.5 has two rate cards split at a 100K-token prompt; its row records the
+ * lower one, which is what every host call uses — a longer prompt would be
+ * under-reported fivefold by the table (agent turns use the SDK's own figure).
  */
-export const MODEL_OPTIONS = [
-  'claude-haiku-4-5',
-  'claude-haiku-5-5',
-  'claude-sonnet-4-6',
-  'claude-sonnet-5',
-  'claude-sonnet-5-5',
-  'claude-opus-5-5',
-];
+export const MODEL_OPTIONS = ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5'];
 /** Subagent model knobs additionally accept `inherit` (use the group's orchestrator model). */
 const MODEL_OPTIONS_INHERIT = [...MODEL_OPTIONS, 'inherit'];
 

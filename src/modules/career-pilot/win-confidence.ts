@@ -31,7 +31,7 @@ import { readCandidateProfile } from './render-persona.js';
 // The win-confidence scorer's model (§24.140) — a heuristic 0–100 score, Haiku
 // is plenty. Knob-ified like the sanitizer/kit-redact model belts so it's tunable
 // on /admin + /dev without a redeploy; HAIKU_MODEL is the hardcoded fallback.
-const HAIKU_MODEL = 'claude-haiku-4-5';
+const HAIKU_MODEL = 'claude-haiku-5-5';
 
 export interface WinConfidenceResult {
   /** Active applications the LLM scored. */
