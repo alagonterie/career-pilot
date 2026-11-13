@@ -179,7 +179,8 @@ export async function applyPass3(
             `\n<line>\n${text}\n</line>`,
         },
       ],
-      maxTokens: 300,
+      // Sized for the answer plus default-on thinking on 5.5-generation models (§24.196).
+      maxTokens: 1500,
       model,
       timeoutMs,
       traceId,

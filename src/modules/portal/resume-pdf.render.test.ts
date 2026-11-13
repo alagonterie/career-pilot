@@ -13,7 +13,7 @@ import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { describe, expect, it } from 'vitest';
 
 import type { Identity, WorkProfile } from './profile.js';
-import { masterFooter, renderResumePdf, tailoredFooter } from './resume-pdf.js';
+import { estimateFooterLines, masterFooter, renderResumePdf, tailoredFooter } from './resume-pdf.js';
 
 /** Wrap plain bullet strings into the §24.161 `BulletItem[]` fixture shape. */
 const b = (...texts: string[]) => texts.map((text) => ({ text }));
@@ -444,4 +444,115 @@ describe('a page never breaks early leaving a large blank (§24.194)', () => {
       expect(Math.min(...ys), `page ${p} breaks early leaving a blank gap`).toBeLessThan(MAX_BOTTOM_GAP_PT);
     }
   });
+});
+
+/**
+ * §24.196 — body text must never run into the fixed footer.
+ *
+ * Reported on a résumé generated for a live application: the "FEATURED PROJECT"
+ * heading and the project's name line were printed on top of the grey provenance
+ * note at the foot of page 1. The footer is absolutely positioned and the page's
+ * bottom padding only ever reserved room for ONE footer line; with a site URL
+ * configured the tailored footer carries an extra clause and wraps to TWO, so its
+ * top line sat inside the band body text may occupy. It needs content to end in
+ * the last few points of a page to show, and every other layout test here renders
+ * with no site URL (a one-line footer) — which is why nothing caught it.
+ *
+ * The sweep walks the page break across the footer band one short bullet at a
+ * time. With the fix reverted the compact layouts collide (the closest leaves
+ * under 4pt between baselines); a one-line footer never leaves less than 10.
+ */
+describe('body text clears a wrapped footer (§24.196)', () => {
+  const SITE = 'https://portal.test';
+  const FOOTER = tailoredFooter('Northwind Trading Company', 'AI / Backend Engineer', '2026-11-13', SITE);
+  // Baseline-to-baseline. A one-line footer has always left >= 10pt; a wrapped
+  // one must leave no less.
+  const MIN_CLEARANCE_PT = 10;
+
+  it('estimates footer lines conservatively: one for the master, two for a tailored footer with a site', () => {
+    expect(estimateFooterLines(masterFooter('https://hire.example.com'))).toBe(1);
+    expect(estimateFooterLines(FOOTER)).toBe(2);
+    // Deliberately low-balled per line: never fewer lines than really render.
+    expect(estimateFooterLines('x'.repeat(131))).toBe(2);
+    expect(estimateFooterLines('')).toBe(1);
+  });
+
+  function profile(nBullets: number, shortBullets: number): WorkProfile {
+    return {
+      name: 'Jordan Rivera',
+      title: 'Senior Software Engineer · Team Lead',
+      bio: ['Senior engineer and team lead with seven years building reliable, high-performance backend systems.'],
+      lookingFor: ['Senior / Staff / Lead — backend'],
+      links: {},
+      experience: [
+        {
+          role: 'Senior Software Engineer & Team Lead',
+          company: 'Vertex Systems',
+          period: 'Sept 2019 — Present',
+          bullets: b(
+            ...Array.from(
+              { length: nBullets },
+              () =>
+                'Architected the successor backend: CQRS with hybrid event sourcing over the live legacy database, single-round-trip transactional commits, and source generators enforcing the architecture at compile time.',
+            ),
+            // One-line bullets: each moves the page break by a single line.
+            ...Array.from({ length: shortBullets }, (_, i) => `Short bullet ${i}`),
+          ),
+        },
+      ],
+      projects: [
+        { name: 'career-pilot', description: 'An autonomous multi-agent AI system.', href: 'https://example.com' },
+      ],
+      skills: ['TypeScript'],
+      education: ['BS, Computer Science, Example University'],
+    };
+  }
+
+  /** Per page: [lowest body baseline, highest footer baseline]. */
+  function bands(items: PdfInspection['items'], pageCount: number): Array<{ body: number; footer: number }> {
+    const isFooter = (it: PdfInspection['items'][number]): boolean =>
+      it.y < 60 && it.str.trim().length > 0 && FOOTER.includes(it.str.trim());
+    const out: Array<{ body: number; footer: number }> = [];
+    for (let p = 1; p <= pageCount; p++) {
+      const onPage = items.filter((i) => i.page === p && i.str.trim().length > 0);
+      const footerYs = onPage.filter(isFooter).map((i) => i.y);
+      const bodyYs = onPage.filter((i) => !isFooter(i)).map((i) => i.y);
+      if (footerYs.length > 0 && bodyYs.length > 0)
+        out.push({ body: Math.min(...bodyYs), footer: Math.max(...footerYs) });
+    }
+    return out;
+  }
+
+  it('the fixture footer really wraps to two lines (else this guards nothing)', async () => {
+    const { items } = await inspectPdf(
+      await renderResumePdf(profile(3, 0), FULL_IDENTITY, FOOTER, SITE, { compact: true }),
+    );
+    const ys = new Set(
+      items.filter((i) => i.page === 1 && i.y < 60 && FOOTER.includes(i.str.trim())).map((i) => Math.round(i.y)),
+    );
+    expect(ys.size).toBe(2);
+  });
+
+  it.each([true, false])(
+    'no layout in the sweep lets body text into the footer band (compact=%s)',
+    async (compact) => {
+      const collisions: string[] = [];
+      for (const nBullets of [14, 15, 16]) {
+        for (let shift = 0; shift <= 8; shift++) {
+          const { items, pageCount } = await inspectPdf(
+            await renderResumePdf(profile(nBullets, shift), FULL_IDENTITY, FOOTER, SITE, { compact }),
+          );
+          for (const [i, band] of bands(items, pageCount).entries()) {
+            if (band.body - band.footer < MIN_CLEARANCE_PT) {
+              collisions.push(
+                `bullets=${nBullets} shift=${shift} page=${i + 1} body=${band.body.toFixed(1)} footer=${band.footer.toFixed(1)}`,
+              );
+            }
+          }
+        }
+      }
+      expect(collisions).toEqual([]);
+    },
+    120_000,
+  );
 });

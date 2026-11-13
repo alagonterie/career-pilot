@@ -302,7 +302,8 @@ export async function redactKitEntities(
             `\n<kit_text>\n${text}\n</kit_text>`,
         },
       ],
-      maxTokens: 300,
+      // Sized for the answer plus default-on thinking on 5.5-generation models (§24.196).
+      maxTokens: 1500,
       model,
       timeoutMs,
       traceId,

@@ -76,7 +76,8 @@ export async function enrichBody(
     const result = await callPortkeyChat({
       surface: 'recruiter-sim-prose',
       messages: [{ role: 'user', content: prompt }],
-      maxTokens: 320,
+      // Sized for the answer plus default-on thinking on 5.5-generation models (§24.196).
+      maxTokens: 1024,
       model: proseModel(),
       traceId,
     });

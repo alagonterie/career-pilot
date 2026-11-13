@@ -13,6 +13,30 @@ fork version recorded in `package.json` — the two are never conflated.
 
 ## [Unreleased]
 
+## [1.1.8] - 2026-11-13
+
+### Added
+
+- **Claude Haiku 5.5 and Sonnet 5.5 can be selected** wherever a model can be
+  chosen, with their prices recorded. Nothing is switched to them automatically
+  yet: the previous versions remain the defaults until each part of the system
+  has been run on the new ones.
+
+### Changed
+
+- **A downloaded résumé is named for the person receiving it**: the candidate's
+  full name first, then the company and the role it was written for, instead of
+  a generic name that looks like every other file in a hiring folder.
+
+### Fixed
+
+- **A tailored résumé could print the last lines of a page on top of the small
+  note at the foot of it.** Space was only kept clear for a one-line note, and on
+  a tailored résumé that note runs to two lines, so whenever the content happened
+  to end right at the bottom of a page the two overlapped. The page now keeps
+  clear as much room as the note actually needs. Re-downloading an affected
+  résumé corrects it.
+
 ## [1.1.7] - 2026-11-13
 
 ### Changed

@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Identity, WorkProfile } from './profile.js';
-import { masterFooter, renderResumePdf, splitBold, tailoredFooter } from './resume-pdf.js';
+import { masterFooter, renderResumePdf, resumeFilename, splitBold, tailoredFooter } from './resume-pdf.js';
 
 const PROFILE: WorkProfile = {
   name: 'Ada Lovelace',
@@ -147,5 +147,29 @@ describe('renderResumePdf — §24.158 fields', () => {
     const buf = await renderResumePdf(p, IDENTITY, masterFooter(''));
     expect(isPdf(buf)).toBe(true);
     expect(buf.length).toBeGreaterThan(1000);
+  });
+});
+
+describe('resumeFilename (§24.196)', () => {
+  it('leads with the candidate, then the company and role it was written for', () => {
+    expect(resumeFilename({ name: 'Jane Doe', company: 'Acme Robotics', role: 'AI / Backend Engineer' })).toBe(
+      'Jane-Doe_Resume_Acme-Robotics_AI-Backend-Engineer.pdf',
+    );
+  });
+
+  it('omits what is missing rather than inventing a placeholder', () => {
+    expect(resumeFilename({ name: 'Jane Doe' })).toBe('Jane-Doe_Resume.pdf');
+    expect(resumeFilename({ name: 'Jane Doe', company: 'Acme', role: null })).toBe('Jane-Doe_Resume_Acme.pdf');
+    expect(resumeFilename({ name: '', company: '  ', role: undefined })).toBe('Resume.pdf');
+  });
+
+  it('is header-safe: folds accents, drops punctuation and quotes, and caps each part', () => {
+    expect(resumeFilename({ name: 'Renée O’Neil', company: 'Café "Zoë" & Co.', role: 'Sr. Engineer (Platform)' })).toBe(
+      'Renee-O-Neil_Resume_Cafe-Zoe-Co_Sr-Engineer-Platform.pdf',
+    );
+    const long = resumeFilename({ name: 'Jane Doe', company: 'A'.repeat(200), role: 'B '.repeat(200) });
+    expect(long).toMatch(/^[A-Za-z0-9_-]+\.pdf$/);
+    expect(long.length).toBeLessThanOrEqual(8 + 1 + 6 + 1 + 40 + 1 + 48 + 4);
+    expect(long).not.toMatch(/-_|-\.pdf/); // a cap never leaves a dangling hyphen
   });
 });

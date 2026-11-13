@@ -44,7 +44,8 @@ async function callHaikuJson(prompt: string, traceId?: string): Promise<string> 
   const result = await callPortkeyChat({
     surface: 'win-confidence',
     messages: [{ role: 'user', content: prompt }],
-    maxTokens: 1000,
+    // Sized for the answer plus default-on thinking on 5.5-generation models (§24.196).
+    maxTokens: 2500,
     model: getConfig<string>(getDb(), 'win_confidence_model') || HAIKU_MODEL,
     traceId,
   });

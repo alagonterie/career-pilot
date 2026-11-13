@@ -47,7 +47,9 @@ export async function classifyJobIndustry(jdText: string, roleTitle?: unknown): 
     const res = await callPortkeyChat({
       surface: 'job-classify',
       messages: [{ role: 'user', content: prompt }],
-      maxTokens: 16,
+      // Room for the one-word answer AND any thinking: 5.5-generation models think
+      // by default, and thinking counts against this cap (§24.196).
+      maxTokens: 512,
       model: getConfig<string>(getDb(), 'win_confidence_model') || HAIKU_MODEL,
       traceId: `job-classify-${Date.now()}`,
     });

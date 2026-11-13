@@ -81,7 +81,7 @@ import {
 import { computeRunningTopology, emptyObservability, getObservability, sandboxSpend24hUsd } from './observability.js';
 import { getTelemetry } from './portkey-analytics.js';
 import { getPublicProfile, type WorkProfile } from './profile.js';
-import { masterFooter, renderResumePdf, tailoredFooter } from './resume-pdf.js';
+import { masterFooter, renderResumePdf, resumeFilename, tailoredFooter } from './resume-pdf.js';
 import { getTailoredResume, getTailoredResumesForLead, startTailorRun } from './tailor-lead-resume.js';
 import { buildSanitizeDemo } from './sanitize-demo.js';
 import { getRecentSimulatorRuns, getSimulatorResult, startSimulatorRun, type SimulatorInput } from './simulator.js';
@@ -335,10 +335,9 @@ async function handleResumePdf(res: http.ServerResponse, cors: Record<string, st
     if (link) footerLinkUrl = url.replace(/\/$/, '') + link.path;
   }
   const buf = await renderResumePdf(profile, identity, masterFooter(url), url, { footerLinkUrl });
-  const base = profile.name.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'resume';
   res.writeHead(200, {
     'Content-Type': 'application/pdf',
-    'Content-Disposition': `attachment; filename="${base}.pdf"`,
+    'Content-Disposition': `attachment; filename="${resumeFilename({ name: profile.name })}"`,
     'Content-Length': String(buf.length),
     // The URL ends in `.pdf` → Cloudflare edge-caches it by default; no-store
     // stops a stale résumé being served after the profile/renderer changes.
@@ -641,13 +640,11 @@ async function handleAdminTailoredPdf(
     url,
     { compact: true, footerLinkUrl },
   );
-  const base = `resume-${(lead?.company ?? 'role').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}`.slice(
-    0,
-    60,
-  );
+  // §24.196: this file goes to a real employer — name it for the person reading it.
+  const filename = resumeFilename({ name: tailored.name, company: lead?.company, role: lead?.title });
   res.writeHead(200, {
     'Content-Type': 'application/pdf',
-    'Content-Disposition': `attachment; filename="${base || 'resume'}.pdf"`,
+    'Content-Disposition': `attachment; filename="${filename}"`,
     'Content-Length': String(buf.length),
     'Cache-Control': 'no-store',
     ...cors,
@@ -996,15 +993,13 @@ async function handleSimulatorResumePdf(
     // extra target-role line) — compact density keeps it to one page.
     { compact: true },
   );
-  const base =
-    `${tailored.name}-${row.visitor_company ?? 'tailored'}`.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '') ||
-    'resume';
+  const filename = resumeFilename({ name: tailored.name, company: row.visitor_company, role: row.visitor_role });
   res.writeHead(200, {
     'Content-Type': 'application/pdf',
     // `inline` (not `attachment`) so the gift can render in an in-browser <iframe>
     // preview before download; the download buttons set the `download` attribute,
     // which forces a save same-origin regardless of this disposition.
-    'Content-Disposition': `inline; filename="${base}.pdf"`,
+    'Content-Disposition': `inline; filename="${filename}"`,
     'Content-Length': String(buf.length),
     // The URL ends in `.pdf` → Cloudflare edge-caches it by default; no-store
     // stops a stale résumé being served after the profile/renderer changes.

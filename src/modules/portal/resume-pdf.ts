@@ -33,6 +33,7 @@ Font.register({
 Font.registerHyphenationCallback((word) => [word]);
 
 const LINK = '#0b66c3'; // a subtle, print-safe link blue
+const FOOTER_FONT_SIZE = 7;
 
 /** The PDF stylesheet. `compact` tightens vertical spacing + fonts a touch so a
  *  TAILORED résumé that runs marginally longer than the master (a role summary +
@@ -94,7 +95,7 @@ function makeStyles(compact: boolean) {
       bottom: f(16, 12),
       left: 42,
       right: 42,
-      fontSize: 7,
+      fontSize: FOOTER_FONT_SIZE,
       color: '#9a9a9a',
       textAlign: 'center',
     },
@@ -107,6 +108,38 @@ const COMPACT = makeStyles(true);
 type Styles = ReturnType<typeof makeStyles>;
 /** One stylesheet entry — derived locally so no @react-pdf internal type is imported. */
 type PdfStyle = Styles[keyof Styles];
+
+/**
+ * §24.196 — the footer is absolutely positioned, so the page's bottom padding is
+ * the ONLY thing keeping body text out of it, and `page.paddingBottom` reserves
+ * room for exactly one footer line. The tailored footer wraps to two once a site
+ * URL adds its clause, and its top line then sat inside the band body text may
+ * use: a section that happened to end in the last few points of a page printed
+ * straight over it (observed on a real submitted résumé).
+ *
+ * react-pdf offers no way to measure a fixed element before laying out the flow
+ * around it, so the line count is ESTIMATED from the footer's length, and
+ * deliberately low-balled per line: over-counting costs one spare line of margin,
+ * under-counting reintroduces the overlap. The footer is 7pt Inter across the
+ * 528pt text column, which holds ~160 characters of ordinary prose.
+ */
+const FOOTER_CHARS_PER_LINE = 130;
+
+/** Lines the footer is assumed to occupy (>= 1). Exported for tests. */
+export function estimateFooterLines(footer: string): number {
+  return Math.max(1, Math.ceil(footer.trim().length / FOOTER_CHARS_PER_LINE));
+}
+
+/** The page style with its bottom padding grown by one footer line-height for
+ *  every footer line past the first — a one-line footer leaves it untouched, so
+ *  the master résumé's owner-verified layout does not move. */
+function pageStyle(s: Styles, footer: string): PdfStyle | PdfStyle[] {
+  const extraLines = estimateFooterLines(footer) - 1;
+  if (extraLines === 0) return s.page;
+  const page = s.page as { paddingBottom: number; lineHeight: number };
+  const paddingBottom = page.paddingBottom + extraLines * FOOTER_FONT_SIZE * page.lineHeight;
+  return [s.page, { paddingBottom } as PdfStyle];
+}
 
 /** Strip protocol, a leading `www.`, and a trailing slash for a compact, readable
  *  link label (§24.159 drops the `www.` — the real href keeps it). */
@@ -406,7 +439,7 @@ function buildResumeDocument(
     { title: `${profile.name} — Résumé`, author: profile.name },
     h(
       Page,
-      { size: 'LETTER', style: s.page },
+      { size: 'LETTER', style: pageStyle(s, footer) },
       header(s, profile, identity, portalHost, footerLinkUrl),
       ...sections,
       footerElement(s, footer, publicUrl, footerLinkUrl ?? publicUrl),
@@ -478,4 +511,36 @@ export function tailoredFooter(
   const when = footerDate(isoDate);
   const gen = when ? ` Generated ${when};` : '';
   return `Auto-tailored for the ${r} role at ${c} by the tailor-resume agent${where}.${gen} All content reflects real experience.`;
+}
+
+/** One file-name segment: ASCII letters/digits joined by hyphens, accents folded
+ *  ("Renée O'Neil" → "Renee-O-Neil"), capped so one long field can't crowd out
+ *  the rest. Empty when nothing usable survives. */
+function filenameSegment(raw: string | null | undefined, max: number): string {
+  if (!raw) return '';
+  const folded = raw
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^A-Za-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return folded.slice(0, max).replace(/-+$/, '');
+}
+
+/**
+ * §24.196 — the download name a recruiter sees in their folder and their ATS:
+ * `First-Last_Resume_Company_Role.pdf`. Whose it is comes FIRST (a hiring team
+ * sorts dozens of files called "resume.pdf"), then what it is, then the company
+ * and role it was written for. Underscores separate the parts and hyphens join
+ * the words inside one, so the parts stay legible however long each runs. Header-
+ * safe by construction (ASCII letters, digits, `-`, `_`), so it needs no quoting
+ * tricks in `Content-Disposition`. Missing parts are omitted, never invented.
+ */
+export function resumeFilename(parts: { name?: string | null; company?: string | null; role?: string | null }): string {
+  const segments = [
+    filenameSegment(parts.name, 48),
+    'Resume',
+    filenameSegment(parts.company, 40),
+    filenameSegment(parts.role, 48),
+  ].filter((s) => s.length > 0);
+  return `${segments.join('_')}.pdf`;
 }

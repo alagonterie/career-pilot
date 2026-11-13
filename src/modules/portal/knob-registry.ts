@@ -117,6 +117,13 @@ const ORPHAN_POLL_NOTE =
  * Opus IDs were removed together with migration 147, which moved every stored
  * choice onto it, and `knob-registry.test.ts` fails if a second Opus is added.
  *
+ * Haiku 5.5 and Sonnet 5.5 are offered ALONGSIDE their predecessors for now
+ * (§24.196 D3): the host-side call shape is verified on both, but nothing is
+ * defaulted to them until an agent-runtime turn has run on each, because the
+ * bundled Claude Code binary predates them. Haiku 5.5 has two rate cards split
+ * at a 100K-token prompt; the row records the lower one, which is what every
+ * host call uses — a longer prompt would be under-reported fivefold.
+ *
  * Sonnet 5 is priced at its STANDARD rate ($3/$15), not its introductory rate
  * ($2/$10, in effect through 2026-08-31). The intro rate would be exact for a few
  * weeks and then silently 50% low forever, with nothing to remind anyone; the
@@ -124,7 +131,14 @@ const ORPHAN_POLL_NOTE =
  * stays that way. Prefer the error that self-corrects over the one that needs a
  * diary entry.
  */
-export const MODEL_OPTIONS = ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-sonnet-5', 'claude-opus-5-5'];
+export const MODEL_OPTIONS = [
+  'claude-haiku-4-5',
+  'claude-haiku-5-5',
+  'claude-sonnet-4-6',
+  'claude-sonnet-5',
+  'claude-sonnet-5-5',
+  'claude-opus-5-5',
+];
 /** Subagent model knobs additionally accept `inherit` (use the group's orchestrator model). */
 const MODEL_OPTIONS_INHERIT = [...MODEL_OPTIONS, 'inherit'];
 
