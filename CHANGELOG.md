@@ -13,6 +13,38 @@ fork version recorded in `package.json` — the two are never conflated.
 
 ## [Unreleased]
 
+### Added
+
+- **Reposted listings are refused before they are stored.** A job that only
+  reached the system through a repost site — where the application sits behind
+  someone else's sign-up and the company name cannot be trusted — used to be
+  flagged and kept. It is now turned away at the door, so the lead pool no
+  longer fills with rows that have to be deleted by hand.
+- **Deleting a lead is final.** A deleted or "not interested" posting is
+  remembered, so the next search cannot bring it back. Saying *why* it was not
+  interesting sets how far that reaches: the wrong role or company also blocks
+  near-identical reposts, the wrong location or level blocks only that posting.
+- **"I applied" is a button.** From a lead, one step records the application,
+  links it to that exact lead, and notes which tailored résumé went out — with a
+  short undo. The agent sees it without being told.
+- **Faster triage on the Leads page:** a filter and badge for how direct each
+  apply link is, the date the job was posted, a marker for what is new since the
+  last visit, row checkboxes for acting on a chosen few, keyboard shortcuts, and
+  a list of excluded job titles that can be edited.
+- **A one-time cleanup tool** removes the reposts already in the pool. It shows
+  what it would remove before removing anything, and leaves alone any lead with
+  an application, a tailored résumé, a linked email, or a status set by hand.
+
+### Fixed
+
+- **A private note could have become public later.** A note written when
+  recording an application stays private even if that application's public
+  redaction is ever re-run.
+- **A job title naming the employer is redacted on the public pipeline.** The
+  owner's own view still shows the real title.
+- **Deleting a lead that an email was linked to no longer fails.** Such leads
+  are skipped and reported instead.
+
 ## [1.1.10] - 2026-11-16
 
 ### Added
