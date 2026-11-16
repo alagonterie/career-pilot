@@ -13,7 +13,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 
 import { initTestSessionDb, closeSessionDb, getInboundDb } from './db/connection.js';
 import { getPendingMessages } from './db/messages-in.js';
-import { formatMessages, stripInternalTags } from './formatter.js';
+import { categorizeMessage, formatMessages, isClearCommand, isRunnerCommand, stripInternalTags } from './formatter.js';
 import { TIMEZONE } from './timezone.js';
 
 beforeEach(() => {
@@ -192,5 +192,33 @@ describe('stripInternalTags', () => {
     expect(stripInternalTags('<internal>thinking</internal>The answer is 42')).toBe(
       'The answer is 42',
     );
+  });
+});
+
+describe('session-reset commands (/clear and its aliases)', () => {
+  function chatRow(text: string, kind = 'chat') {
+    insertMessage(`m-${Math.random().toString(36).slice(2, 8)}`, kind, { text });
+    const rows = getPendingMessages();
+    return rows[rows.length - 1];
+  }
+
+  it('treats /clear, /new and /reset as a reset, case-insensitively and with trailing text', () => {
+    for (const text of ['/clear', '/new', '/reset', '/NEW', '  /reset  ', '/new start over please']) {
+      expect(isClearCommand(chatRow(text))).toBe(true);
+    }
+  });
+
+  it('matches the command token, not a prefix', () => {
+    for (const text of ['/clearly not a command', '/newsletter', '/resetting', 'please /new', 'new']) {
+      expect(isClearCommand(chatRow(text))).toBe(false);
+    }
+  });
+
+  it('categorizes the aliases as admin commands that need the outer command path', () => {
+    for (const text of ['/new', '/reset']) {
+      const row = chatRow(text, 'chat-sdk');
+      expect(categorizeMessage(row).category).toBe('admin');
+      expect(isRunnerCommand(row)).toBe(true);
+    }
   });
 });

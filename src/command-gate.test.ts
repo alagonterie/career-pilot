@@ -68,6 +68,15 @@ describe('gateCommand', () => {
     expect(gateCommand('/clear', 'rando', 'ag-1')).toEqual({ action: 'deny', command: '/clear' });
   });
 
+  it('gates the /clear aliases /new and /reset exactly like /clear', () => {
+    for (const alias of ['/new', '/reset']) {
+      expect(gateCommand(alias, 'owner-1', 'ag-1')).toEqual({ action: 'pass' });
+      expect(gateCommand(`{"text":"${alias}"}`, 'owner-1', 'ag-1')).toEqual({ action: 'pass' });
+      expect(gateCommand(alias, 'rando', 'ag-1')).toEqual({ action: 'deny', command: alias });
+      expect(gateCommand(alias, null, 'ag-1')).toEqual({ action: 'deny', command: alias });
+    }
+  });
+
   it('is case-insensitive on the command token', () => {
     expect(gateCommand('/PAUSE', 'owner-1', 'ag-1')).toEqual({ action: 'control', command: '/pause' });
   });
