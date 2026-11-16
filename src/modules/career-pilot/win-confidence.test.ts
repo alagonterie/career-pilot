@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { closeDb, getDb, initTestDb } from '../../db/connection.js';
 import { runMigrations } from '../../db/migrations/index.js';
 
-import { scoreWinConfidence } from './win-confidence.js';
+import { CLOSED_RATIONALE, isClosedStatus, scoreWinConfidence, zeroClosedApplications } from './win-confidence.js';
 
 beforeEach(() => {
   closeDb();
@@ -70,6 +70,37 @@ describe('scoreWinConfidence', () => {
       .prepare('SELECT win_confidence FROM public_pipeline_view WHERE application_id = ?')
       .get('a-reject') as { win_confidence: number };
     expect(view.win_confidence).toBe(0);
+  });
+
+  it('corrects a closed app whose score is already 0 but whose rationale is stale (§24.199)', () => {
+    seedApp('a-stale', 'WITHDRAWN');
+    seedApp('a-settled', 'REJECTED');
+    seedApp('a-open', 'APPLIED');
+    const db = getDb();
+    db.prepare('UPDATE applications SET win_confidence = 0, win_confidence_rationale = ? WHERE id = ?').run(
+      'Aligns well with the stack; early days.',
+      'a-stale',
+    );
+    db.prepare('UPDATE applications SET win_confidence = 0, win_confidence_rationale = ? WHERE id = ?').run(
+      CLOSED_RATIONALE,
+      'a-settled',
+    );
+    db.prepare('UPDATE applications SET win_confidence = 40, win_confidence_rationale = ? WHERE id = ?').run(
+      'Open and moving.',
+      'a-open',
+    );
+
+    expect(zeroClosedApplications(db)).toBe(1); // only the stale one needed correcting
+    expect(rationaleOf('a-stale')).toBe(CLOSED_RATIONALE);
+    expect(winOf('a-open')).toBe(40); // open applications are never touched
+    expect(rationaleOf('a-open')).toBe('Open and moving.');
+    expect(zeroClosedApplications(db)).toBe(0); // idempotent
+  });
+
+  it('isClosedStatus is case-insensitive and null-safe', () => {
+    expect(isClosedStatus('WITHDRAWN')).toBe(true);
+    expect(isClosedStatus('rejected')).toBe(true);
+    for (const open of ['APPLIED', 'OFFER', '', null, undefined, 3]) expect(isClosedStatus(open)).toBe(false);
   });
 
   it('sends the §24.46 observability headers (metadata + trace id) on the scoring call', async () => {

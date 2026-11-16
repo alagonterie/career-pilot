@@ -241,7 +241,7 @@ The single transactional write at the end of the run. Shape:
       "rationale": "ATS confirmation received; application status currently 'discovered', no email_events linkage prior."
     }
   ],
-  "gmail_history_id": "history-12345" | null,
+  "gmail_history_id": "29613" | null,
   "calendar_sync_tokens": { "primary": "sync-abc" },
   "cheap_out": false,
   "cost_usd": 0.18

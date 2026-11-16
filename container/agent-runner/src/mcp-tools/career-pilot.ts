@@ -161,16 +161,36 @@ export const updateApplication: McpToolDefinition = {
     if (!id || !patch || typeof patch !== 'object') {
       return err('id and patch are required');
     }
-    const res = await sendAction<{ id: string; created: boolean; obfuscated_label: string | null }>(
-      'career_pilot.update_application',
-      { id, patch },
-    );
+    const res = await sendAction<{
+      id: string;
+      created: boolean;
+      obfuscated_label: string | null;
+      ignored_fields?: string[];
+    }>('career_pilot.update_application', { id, patch });
     if (!res.ok) return actionErr('update_application', res.error);
-    const verb = res.data.created ? 'created' : 'updated';
-    const labelSuffix = res.data.obfuscated_label ? ` (label: ${res.data.obfuscated_label})` : '';
-    return ok(`Application ${verb}: ${id}${labelSuffix}`, res.data);
+    return ok(describeApplicationWrite(id, res.data), res.data);
   },
 };
+
+/**
+ * The result line for an application write. Names any patch fields the host
+ * did NOT write, so a caller is never told "updated" about a value that did
+ * not land (win_confidence_rationale is derived by the scorer; obfuscated_label
+ * is assigned by the host).
+ */
+export function describeApplicationWrite(
+  id: string,
+  data: { created: boolean; obfuscated_label: string | null; ignored_fields?: string[] },
+): string {
+  const verb = data.created ? 'created' : 'updated';
+  const labelSuffix = data.obfuscated_label ? ` (label: ${data.obfuscated_label})` : '';
+  const ignored = Array.isArray(data.ignored_fields) ? data.ignored_fields : [];
+  const ignoredSuffix =
+    ignored.length > 0
+      ? `. NOT written — these fields are not settable here and were ignored: ${ignored.join(', ')}`
+      : '';
+  return `Application ${verb}: ${id}${labelSuffix}${ignoredSuffix}`;
+}
 
 // ── record_pipeline_event ────────────────────────────────────────────────────
 

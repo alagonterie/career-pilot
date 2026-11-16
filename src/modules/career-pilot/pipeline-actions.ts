@@ -37,7 +37,7 @@ import { getConfig } from '../../get-config.js';
 import { applyPipelineFromEmailEvents } from './pipeline-apply.js';
 import { getActiveKitUrlsByApplication } from './interview-kit-store.js';
 import { reactToStatusTransitions } from './interview-kit-trigger.js';
-import { scoreWinConfidence } from './win-confidence.js';
+import { isClosedStatus, scoreWinConfidence } from './win-confidence.js';
 import { insertMessage } from '../../db/session-db.js';
 import { log } from '../../log.js';
 import type { Session } from '../../types.js';
@@ -186,18 +186,24 @@ export async function handleLoadGmailFixture(
 }
 
 /**
- * A usable Gmail historyId, or null. Guards the null→"null" stringification
- * that broke the morning curator on the box (2026-06-13): a null historyId that
- * got serialized to the *string* `"null"` is truthy, so it passed the old
- * `if (history_id)` checks and was sent to Gmail as `startHistoryId=null` → 400
- * Bad Request, leaving the delta-sync permanently broken. Reject the literal
- * "null"/"undefined"/"" on both the write (don't store it) and the read
- * (neutralize any already-stored bad value → the next run full-syncs and heals).
- * Real Gmail historyIds are numeric strings; the test fixtures use `h-…`, so we
- * exclude the bad sentinels rather than requiring `^\d+$`.
+ * A usable Gmail historyId, or null. Gmail's historyId is a uint64, so a
+ * usable one is a decimal string — anything else sent as `startHistoryId` is a
+ * 400 that (before the container learned to fall back) left the delta-sync
+ * permanently broken. Two box incidents, same shape: a null serialized to the
+ * string `"null"` (2026-06-13), and digits persisted wrapped in literal quote
+ * characters — `"29613"` — (2026-11-13, §24.199).
+ *
+ * Normalizes instead of merely rejecting: surrounding whitespace and quote
+ * characters are stripped, so a wrapped id is recovered rather than discarded
+ * (the delta resumes where it left off). Applied on both the write (never store
+ * a bad value) and the read (an already-stored bad value heals on the next run).
  */
 export function usableHistoryId(v: unknown): string | null {
-  return typeof v === 'string' && v !== '' && v !== 'null' && v !== 'undefined' ? v : null;
+  if (typeof v !== 'string' && typeof v !== 'number') return null;
+  const unwrapped = String(v)
+    .trim()
+    .replace(/^["'`\s]+|["'`\s]+$/g, '');
+  return /^\d+$/.test(unwrapped) ? unwrapped : null;
 }
 
 // ── 2c. handleGetGmailSyncState ────────────────────────────────────────────
@@ -438,6 +444,14 @@ export async function handlePersistPipelineState(
       };
     });
 
+    // Normalized once: the same value goes to the run log and the sync pointer.
+    const histId = usableHistoryId(p.gmail_history_id);
+    if (p.gmail_history_id != null && histId === null) {
+      log.warn('persist_pipeline_state: unusable gmail_history_id ignored (sync pointer left as is)', {
+        received: String(p.gmail_history_id).slice(0, 40),
+      });
+    }
+
     db.transaction(() => {
       const upsertEvent = db.prepare(`
         INSERT INTO email_events (
@@ -487,7 +501,7 @@ export async function handlePersistPipelineState(
       ).run({
         id: runId,
         run_at: nowIso,
-        gmail_history_id: p.gmail_history_id ?? null,
+        gmail_history_id: histId,
         calendar_sync_tokens: JSON.stringify(p.calendar_sync_tokens ?? {}),
         narratives_json: JSON.stringify(p.narratives),
         attention_json: JSON.stringify(p.attention),
@@ -496,7 +510,6 @@ export async function handlePersistPipelineState(
         cost_usd: p.cost_usd ?? null,
       });
 
-      const histId = usableHistoryId(p.gmail_history_id);
       if (histId) {
         db.prepare(
           `
@@ -582,6 +595,23 @@ interface PipelineScribeOutputRow {
   cost_usd: number | null;
 }
 
+/** Live `applications.status` for every application id named by the given items. */
+function liveApplicationStatuses(
+  db: Database.Database,
+  items: Array<Record<string, unknown>>,
+): Map<string, string | null> {
+  const ids = [
+    ...new Set(items.map((x) => x?.application_id).filter((v): v is string => typeof v === 'string' && v !== '')),
+  ];
+  const out = new Map<string, string | null>();
+  if (ids.length === 0) return out;
+  const rows = db
+    .prepare(`SELECT id, status FROM applications WHERE id IN (${ids.map(() => '?').join(', ')})`)
+    .all(...ids) as Array<{ id: string; status: string | null }>;
+  for (const r of rows) out.set(r.id, r.status);
+  return out;
+}
+
 export async function handleReadPipelineState(
   content: Record<string, unknown>,
   session: Session,
@@ -609,7 +639,23 @@ export async function handleReadPipelineState(
     }
 
     const narratives = JSON.parse(row.narratives_json) as Array<Record<string, unknown>>;
-    const attention = JSON.parse(row.attention_json) as Array<Record<string, unknown>>;
+    const storedAttention = JSON.parse(row.attention_json) as Array<Record<string, unknown>>;
+
+    // §24.199: the stored run is a snapshot; applications move after it (the
+    // owner closes one minutes later, or the sweep stops running for days).
+    // Reconcile against the live rows on the way out — never rewrite the run:
+    //   - attention for an application that is now closed is dropped (nothing
+    //     left to act on — this is what briefed a withdrawn app as "silent");
+    //   - narratives carry the live status so a stale `current_state` is visible.
+    const liveStatus = liveApplicationStatuses(db, [...narratives, ...storedAttention]);
+    for (const n of narratives) {
+      const appId = n?.application_id;
+      if (typeof appId === 'string' && liveStatus.has(appId)) n.application_status = liveStatus.get(appId);
+    }
+    const attention = storedAttention.filter((a) => {
+      const appId = a?.application_id;
+      return !(typeof appId === 'string' && isClosedStatus(liveStatus.get(appId)));
+    });
 
     // §24.53: hang the active interview-kit link on each item by application_id so
     // the orchestrator surfaces it wherever it already surfaces the application
