@@ -25,9 +25,25 @@ import { mintNamedLink, retireNamedLink } from '../../attribution.js';
 import { getDb, hasTable } from '../../db/connection.js';
 import { getConfig } from '../../get-config.js';
 import { log } from '../../log.js';
-import { PROFILE_FIELDS, normalizeProfileValue } from '../career-pilot/actions.js';
+import {
+  PROFILE_FIELDS,
+  applyAppliedFromLead,
+  applyUndoApplied,
+  normalizeProfileValue,
+  type AppliedFromLeadDeps,
+} from '../career-pilot/actions.js';
 import { type HealthFinding, runHealthChecks } from '../career-pilot/health.js';
 import { VALID_STATUSES } from '../career-pilot/job-lead-actions.js';
+import {
+  appendTitleToBlocklist,
+  clearNotInterestedTombstones,
+  isRejectedLinkKind,
+  readTitleBlocklist,
+  removeTitleFromBlocklist,
+  resolveApplyLinkKind,
+  writeTombstone,
+  type TombstoneInput,
+} from '../career-pilot/lead-guard.js';
 import {
   computeRulesScore,
   profileFromRow,
@@ -354,7 +370,8 @@ export function buildAdminPipeline(db: Database.Database): AdminPipeline {
   if (!hasTable(db, 'public_pipeline_view')) return { applications: [], stageCounts: {} };
   const applications = db
     .prepare(
-      `SELECT v.application_id, a.company_name, a.obfuscated_label, v.role_title, v.status, v.stage,
+      `SELECT v.application_id, a.company_name, a.obfuscated_label,
+              COALESCE(a.role_title, v.role_title) AS role_title, v.status, v.stage,
               v.applied_at, v.last_activity_at, v.win_confidence
          FROM public_pipeline_view v
          LEFT JOIN applications a ON a.id = v.application_id
@@ -631,6 +648,8 @@ export interface AdminLeadsView {
   leads: AdminLead[];
   /** Recently-closed leads, closed_at DESC, capped — the client toggles these in. */
   closed: AdminLead[];
+  /** The owner's title blocklist (§24.201 D4) — listed so each entry can be removed. */
+  titleBlocklist: string[];
 }
 
 // The owner can set every lifecycle status EXCEPT 'applied' — that one implies a
@@ -683,6 +702,7 @@ export function buildAdminLeads(db: Database.Database): AdminLeadsView {
     },
     leads: [],
     closed: [],
+    titleBlocklist: [],
   };
   if (!hasTable(db, 'job_leads')) return empty;
 
@@ -734,6 +754,7 @@ export function buildAdminLeads(db: Database.Database): AdminLeadsView {
     rollup: { activeTotal, closedTotal, byStatus, bySource, llmScored, pushed24h, added24h, added7d, newestAgeHours },
     leads,
     closed,
+    titleBlocklist: readTitleBlocklist(db),
   };
 }
 
@@ -795,6 +816,42 @@ function parseBulkIds(raw: unknown): { ids: string[] } | { error: { status: numb
   return { ids };
 }
 
+/** §24.201 D4 — the "not interested" reasons, and the ones whose tombstone is id-only. */
+const NOT_INTERESTED_REASONS = new Set(['role', 'level', 'location', 'company', 'other']);
+const ID_ONLY_NOT_INTERESTED_REASONS = new Set(['level', 'location']);
+
+/** The job_leads columns a tombstone (and the delete/skip decision) needs. */
+interface LeadForTombstone {
+  id: string;
+  source: string;
+  source_job_id: string;
+  apply_link_kind: string | null;
+  content_fingerprint: string | null;
+  company: string | null;
+  title: string | null;
+  application_id: string | null;
+}
+
+/**
+ * The tombstone an owner hard delete writes (§24.200 D2): a lead whose link kind
+ * the insert guard rejects was deleted for its LINK → id-only, reason
+ * 'link:<kind>' (the same job re-found with a direct link is accepted); any other
+ * lead was deleted by owner intent → fingerprint reach, reason 'deleted'.
+ */
+function deletionTombstone(db: Database.Database, lead: LeadForTombstone): TombstoneInput {
+  const base = {
+    source: lead.source,
+    source_job_id: lead.source_job_id,
+    content_fingerprint: lead.content_fingerprint,
+    company: lead.company,
+    title: lead.title,
+  };
+  if (isRejectedLinkKind(db, lead)) {
+    return { ...base, reason: `link:${resolveApplyLinkKind(lead)}`, match: 'id' };
+  }
+  return { ...base, reason: 'deleted', match: 'fingerprint' };
+}
+
 /**
  * The Leads tab write. One JSON action:
  *   { action: 'set_status', id, status, reason? } — owner triage (allow-listed
@@ -805,7 +862,16 @@ function parseBulkIds(raw: unknown): { ids: string[] } | { error: { status: numb
  *   { action: 'bulk_set_status', ids, status, reason? } — §24.187: set_status
  *     across an explicit id list (the rows the owner's filter is showing).
  *   { action: 'bulk_delete', ids, confirm } — §24.187: the hard purge. Requires
- *     confirm:true and skips promoted (application_id) leads.
+ *     confirm:true; skips (and reports by reason) promoted (application_id) and
+ *     email-linked leads; writes a tombstone per deleted lead (§24.200 D2/D3).
+ *   { action: 'not_interested', id, reason, exclude_title? } — §24.201 D4:
+ *     archive + a tombstone whose reach follows the reason; optionally append
+ *     the title to the owner's title blocklist. 409 on a promoted lead.
+ *   { action: 'title_blocklist_remove', title } — take one title back off the
+ *     owner's blocklist (the undo of "exclude this title").
+ * A set_status / bulk_set_status to any non-archived status also clears the
+ * lead's own "not interested" tombstones — the owner changed their mind about
+ * this posting, so a re-sighting must not keep being refused.
  */
 export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { status: number; body: unknown } {
   if (typeof raw !== 'object' || raw === null) {
@@ -819,6 +885,8 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
     status?: unknown;
     reason?: unknown;
     confirm?: unknown;
+    exclude_title?: unknown;
+    title?: unknown;
   };
   const action = body.action;
 
@@ -830,8 +898,16 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
     if (!OWNER_SETTABLE_LEAD_STATUSES.has(status)) {
       return { status: 400, body: { error: `status must be one of: ${[...OWNER_SETTABLE_LEAD_STATUSES].join(', ')}` } };
     }
-    const existing = db.prepare('SELECT status FROM job_leads WHERE id = ?').get(id) as { status: string } | undefined;
+    const existing = db.prepare('SELECT status, application_id FROM job_leads WHERE id = ?').get(id) as
+      | { status: string; application_id: string | null }
+      | undefined;
     if (!existing) return { status: 404, body: { error: `no job_lead with id "${id}"` } };
+    // §24.201 D8: a promoted lead is the provenance of a real application; moving
+    // it here would leave an applied-but-inconsistent lead. The Pipeline is the
+    // agent's to maintain (and "I applied" has its own undo).
+    if (existing.application_id) {
+      return { status: 409, body: { error: 'promoted', application_id: existing.application_id } };
+    }
     const now = new Date().toISOString();
     if (status === 'archived') {
       db.prepare(
@@ -844,7 +920,8 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
         now,
       });
     }
-    log.info('admin: job_lead status set', { id, from: existing.status, to: status });
+    const tombstonesCleared = status === 'archived' ? 0 : clearNotInterestedTombstones(db, id);
+    log.info('admin: job_lead status set', { id, from: existing.status, to: status, tombstonesCleared });
     return { status: 200, body: { ok: true, id, from: existing.status, to: status } };
   }
 
@@ -879,17 +956,31 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
             `UPDATE job_leads SET status = 'archived', status_changed_at = @now, closed_at = @now, closed_reason = @reason WHERE id = @id`,
           )
         : db.prepare(`UPDATE job_leads SET status = @status, status_changed_at = @now WHERE id = @id`);
+    // §24.201 D8: promoted leads are skipped (and reported), exactly as
+    // set_status refuses them — never a failed batch.
+    const linkOf = db.prepare(`SELECT application_id FROM job_leads WHERE id = ?`);
     let updated = 0;
+    const skippedByReason: { promoted?: number } = {};
     db.transaction(() => {
       for (const id of parsed.ids) {
+        const row = linkOf.get(id) as { application_id: string | null } | undefined;
+        if (row?.application_id) {
+          skippedByReason.promoted = (skippedByReason.promoted ?? 0) + 1;
+          continue;
+        }
         const res =
           status === 'archived' ? stmt.run({ id, now, reason: reason ?? 'manual' }) : stmt.run({ id, now, status });
         updated += res.changes;
+        if (res.changes > 0 && status !== 'archived') clearNotInterestedTombstones(db, id);
       }
     })();
-    const missing = parsed.ids.length - updated;
-    log.info('admin: job_leads bulk status set', { to: status, updated, missing });
-    return { status: 200, body: { ok: true, updated, missing, status } };
+    const skipped = skippedByReason.promoted ?? 0;
+    const missing = parsed.ids.length - updated - skipped;
+    log.info('admin: job_leads bulk status set', { to: status, updated, missing, skipped });
+    return {
+      status: 200,
+      body: { ok: true, updated, missing, status, skipped, skipped_by_reason: skippedByReason },
+    };
   }
 
   // §24.187: the hard purge — the one destructive action on this surface, so it
@@ -902,21 +993,126 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
     if (body.confirm !== true) {
       return { status: 400, body: { error: 'bulk_delete requires { confirm: true }' } };
     }
-    const promoted = db.prepare(`SELECT id FROM job_leads WHERE id = ? AND application_id IS NOT NULL`);
+    const lookup = db.prepare(
+      `SELECT id, source, source_job_id, apply_link_kind, content_fingerprint, company, title, application_id
+         FROM job_leads WHERE id = ?`,
+    );
+    // §24.200 D3: email_events.linked_job_lead_id references job_leads with no
+    // delete action, so deleting a linked lead would throw and fail the whole
+    // batch. Skip it and say so instead.
+    const emailLinked = hasTable(db, 'email_events')
+      ? db.prepare(`SELECT 1 FROM email_events WHERE linked_job_lead_id = ? LIMIT 1`)
+      : null;
     const del = db.prepare(`DELETE FROM job_leads WHERE id = ? AND application_id IS NULL`);
+    const canTombstone = hasTable(db, 'job_lead_tombstones');
     let deleted = 0;
-    let skipped = 0;
+    const skippedByReason: { promoted?: number; email_linked?: number } = {};
+    const bump = (k: 'promoted' | 'email_linked'): void => {
+      skippedByReason[k] = (skippedByReason[k] ?? 0) + 1;
+    };
     db.transaction(() => {
       for (const id of parsed.ids) {
-        if (promoted.get(id)) {
-          skipped += 1;
+        const lead = lookup.get(id) as LeadForTombstone | undefined;
+        if (!lead) continue;
+        if (lead.application_id) {
+          bump('promoted');
           continue;
         }
+        if (emailLinked?.get(id)) {
+          bump('email_linked');
+          continue;
+        }
+        // §24.200 D2: the delete remembers why. A rejected-kind lead was deleted
+        // for its link (id-only — the same job re-found with a direct link must
+        // come back); a direct lead was deleted by owner intent (fingerprint).
+        if (canTombstone) writeTombstone(db, deletionTombstone(db, lead));
         deleted += del.run(id).changes;
       }
     })();
-    log.info('admin: job_leads bulk deleted', { requested: parsed.ids.length, deleted, skipped });
-    return { status: 200, body: { ok: true, deleted, skipped } };
+    const skipped = (skippedByReason.promoted ?? 0) + (skippedByReason.email_linked ?? 0);
+    log.info('admin: job_leads bulk deleted', {
+      requested: parsed.ids.length,
+      deleted,
+      skipped,
+      skipped_by_reason: skippedByReason,
+    });
+    return { status: 200, body: { ok: true, deleted, skipped, skipped_by_reason: skippedByReason } };
+  }
+
+  // §24.201 D4: "not interested" — archive the lead and teach the guard. The
+  // tombstone's reach follows the reason (§24.200 D2): role/company/other refuse
+  // near-identical postings from the same company too; location/level are
+  // id-only, because boards post one boilerplate description per location and
+  // per level, and a near-match would silently refuse a sibling the owner wants.
+  if (action === 'not_interested') {
+    const id = typeof body.id === 'string' ? body.id : '';
+    const reason = typeof body.reason === 'string' ? body.reason : '';
+    if (!id) return { status: 400, body: { error: 'id (string) is required' } };
+    if (!NOT_INTERESTED_REASONS.has(reason)) {
+      return { status: 400, body: { error: `reason must be one of: ${[...NOT_INTERESTED_REASONS].join(', ')}` } };
+    }
+    if (!hasTable(db, 'job_lead_tombstones')) {
+      return { status: 404, body: { error: 'job_lead_tombstones not migrated' } };
+    }
+    const lead = db
+      .prepare(
+        `SELECT id, source, source_job_id, apply_link_kind, content_fingerprint, company, title, application_id
+           FROM job_leads WHERE id = ?`,
+      )
+      .get(id) as LeadForTombstone | undefined;
+    if (!lead) return { status: 404, body: { error: `no job_lead with id "${id}"` } };
+    // A promoted lead is the provenance of a real application: archiving it
+    // breaks the lead↔application consistency "I applied" relies on, and its
+    // tombstone would refuse the very posting the owner applied to. The page
+    // hides the control; the server enforces it.
+    if (lead.application_id) {
+      return { status: 409, body: { error: 'promoted', application_id: lead.application_id } };
+    }
+
+    const match: 'id' | 'fingerprint' = ID_ONLY_NOT_INTERESTED_REASONS.has(reason) ? 'id' : 'fingerprint';
+    const now = new Date().toISOString();
+    let titleBlocklisted = false;
+    db.transaction(() => {
+      db.prepare(
+        `UPDATE job_leads SET status = 'archived', status_changed_at = @now, closed_at = @now, closed_reason = @reason WHERE id = @id`,
+      ).run({ id, now, reason: `not_interested:${reason}` });
+      writeTombstone(db, {
+        source: lead.source,
+        source_job_id: lead.source_job_id,
+        content_fingerprint: lead.content_fingerprint,
+        company: lead.company,
+        title: lead.title,
+        reason: `not_interested:${reason}`,
+        match,
+      });
+      if (body.exclude_title === true && lead.title) titleBlocklisted = appendTitleToBlocklist(db, lead.title);
+    })();
+    log.info('admin: job_lead not interested', {
+      id,
+      reason,
+      tombstone_match: match,
+      title_blocklisted: titleBlocklisted,
+    });
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        id,
+        tombstone_match: match,
+        title_blocklisted: titleBlocklisted,
+        title_blocklist: readTitleBlocklist(db),
+      },
+    };
+  }
+
+  // The way back from "exclude this title": remove one entry from the owner's
+  // title blocklist (matched by the guard's own whole-title key).
+  if (action === 'title_blocklist_remove') {
+    const title = typeof body.title === 'string' ? body.title : '';
+    if (!title.trim()) return { status: 400, body: { error: 'title (non-empty string) is required' } };
+    const removed = removeTitleFromBlocklist(db, title);
+    log.info('admin: title blocklist entry removed', { removed });
+    return { status: 200, body: { ok: true, removed, title_blocklist: readTitleBlocklist(db) } };
   }
 
   if (action === 'rescore_all') {
@@ -935,4 +1131,31 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
   }
 
   return { status: 400, body: { error: `unknown action: ${String(action)}` } };
+}
+
+/**
+ * The Leads tab write, async entry point (what the API route calls). Adds the two
+ * §24.201 D8 actions on top of the synchronous `applyAdminLeadsWrite`:
+ *   { action: 'applied_from_lead', lead_id, applied_at?, note?, tailored_resume_id?,
+ *     confirm_duplicate? } — create the application from the clicked lead and link
+ *     it, in one step (async: the industry classification runs before the
+ *     transaction).
+ *   { action: 'undo_applied', application_id } — reverse it within the undo window.
+ * Every other action delegates unchanged. `deps` injects the LLM calls (tests).
+ */
+export async function applyAdminLeadsWriteAsync(
+  db: Database.Database,
+  raw: unknown,
+  deps: AppliedFromLeadDeps = {},
+): Promise<{ status: number; body: unknown }> {
+  if (typeof raw === 'object' && raw !== null) {
+    const body = raw as Record<string, unknown>;
+    if (body.action === 'applied_from_lead' || body.action === 'undo_applied') {
+      if (!hasTable(db, 'job_leads')) return { status: 404, body: { error: 'job_leads not migrated' } };
+      return body.action === 'applied_from_lead'
+        ? applyAppliedFromLead(db, body, deps)
+        : applyUndoApplied(db, body, { now: deps.now });
+    }
+  }
+  return applyAdminLeadsWrite(db, raw);
 }

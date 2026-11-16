@@ -71,8 +71,9 @@ function isAtsHost(host: string): boolean {
   return ATS_HOST_SUFFIXES.some((s) => host === s || host.endsWith(`.${s}`));
 }
 
-/** Company name → a comparable token ("Socket.dev" → "socket"). */
-function companyToken(company: string): string {
+/** Company name → a comparable token ("Socket.dev" → "socket"). Exported for the
+ * lead guard's same-company tombstone scoping (§24.200 D2). */
+export function companyToken(company: string): string {
   return company
     .toLowerCase()
     .replace(/\b(inc|llc|ltd|corp|corporation|co|gmbh|sa|bv|plc)\b/g, '')
@@ -147,4 +148,31 @@ export function pickApplyLink(
   // Say so, rather than leaving it indistinguishable from a direct link.
   if (bestKind === 'unknown') return { url: best, kind: 'aggregator' };
   return { url: best, kind: bestKind };
+}
+
+/**
+ * Re-derive a STORED google_jobs lead's apply link + kind from its persisted
+ * `raw_payload` (`apply_options` + Google's `source_link`/`share_link`), with no
+ * re-scrape. Shared by `scripts/backfill-apply-links.ts` (§24.190) and
+ * `scripts/purge-aggregator-leads.ts` (§24.200 D3) so both classify identically.
+ * An unreadable payload degrades to ranking the stored `source_url` alone —
+ * never worse than what the row already has for the URL (`apply_url` kept).
+ */
+export function rederiveStoredApplyLink(row: {
+  company: string;
+  source_url: string;
+  apply_url: string | null;
+  raw_payload: string | null;
+}): { url: string | null; kind: ApplyLinkKind } {
+  let applyOptions: ApplyOption[] = [];
+  let fallback: string | null = null;
+  try {
+    const raw = row.raw_payload ? (JSON.parse(row.raw_payload) as Record<string, unknown>) : {};
+    if (Array.isArray(raw.apply_options)) applyOptions = raw.apply_options as ApplyOption[];
+    fallback = (raw.source_link as string | null) ?? (raw.share_link as string | null) ?? null;
+  } catch {
+    // A lead with an unreadable payload keeps whatever URL it has.
+  }
+  const picked = pickApplyLink(applyOptions, row.company, fallback ?? row.source_url);
+  return { url: picked.url ?? row.apply_url, kind: picked.kind };
 }

@@ -35,6 +35,7 @@ import type { JobLeadPayload, PostingSummary, Source, SourcePriority } from './s
 import type { Session } from '../../types.js';
 
 import { computeFingerprint } from './lead-fingerprint.js';
+import { checkLeadGuard, resolveApplyLinkKind, type LeadRefusalReason } from './lead-guard.js';
 import { runKitCleanupSweep } from './interview-kit-actions.js';
 import { computeRulesScore, profileFromRow } from './lead-rules-score.js';
 import { isWithinQuietHours, readProactiveGateConfig, startOfLocalDayUtcIso } from './quiet-hours.js';
@@ -85,6 +86,9 @@ function toSummary(p: JobLeadPayload): PostingSummary {
     company: p.company,
     location_raw: p.location_raw ?? null,
     workplace_type: p.workplace_type ?? null,
+    // §24.200 D1: the subagent sees how direct the link is (resolved exactly as
+    // the writer stores it).
+    apply_link_kind: resolveApplyLinkKind(p),
     snippet,
   };
 }
@@ -139,121 +143,25 @@ export async function handleRecordJobLead(
   }
 
   try {
-    const db = getDb();
-
-    // Load candidate profile for rules-score.
-    const profileRow = db.prepare('SELECT * FROM candidate_profile WHERE id = 1').get() as Record<
-      string,
-      unknown
-    > | null;
-    const profile = profileFromRow(profileRow);
-
-    // Compute fingerprint + rules_score from the cached payload.
-    const fingerprint = computeFingerprint(fullPayload);
-    const { score, reasons } = computeRulesScore(fullPayload, profile);
-
-    const now = new Date().toISOString();
-    const newId = generateLeadId();
-
-    // UPSERT on (source, source_job_id). On conflict, advance last_seen_at + refresh
-    // mutable content fields, but do NOT overwrite id, first_seen_at, status, or
-    // application_id — those are downstream-owned.
-    const stmt = db.prepare(`
-      INSERT INTO job_leads (
-        id, source, source_board_token, source_job_id, source_url, apply_url, apply_link_kind,
-        content_fingerprint, title, company, company_domain, location_raw,
-        is_remote, workplace_type, remote_region, employment_type,
-        comp_min_usd, comp_max_usd, comp_currency, comp_period, has_equity,
-        description_html, description_text,
-        source_posted_at, first_seen_at, last_seen_at,
-        rules_score, rules_score_reasons,
-        status, status_changed_at, raw_payload
-      ) VALUES (
-        @id, @source, @source_board_token, @source_job_id, @source_url, @apply_url, @apply_link_kind,
-        @content_fingerprint, @title, @company, @company_domain, @location_raw,
-        @is_remote, @workplace_type, @remote_region, @employment_type,
-        @comp_min_usd, @comp_max_usd, @comp_currency, @comp_period, @has_equity,
-        @description_html, @description_text,
-        @source_posted_at, @now, @now,
-        @rules_score, @rules_score_reasons,
-        'new', @now, @raw_payload
-      )
-      ON CONFLICT (source, source_job_id) DO UPDATE SET
-        last_seen_at        = excluded.last_seen_at,
-        title               = excluded.title,
-        apply_url           = excluded.apply_url,
-        apply_link_kind     = excluded.apply_link_kind,
-        source_url          = excluded.source_url,
-        location_raw        = excluded.location_raw,
-        is_remote           = excluded.is_remote,
-        workplace_type      = excluded.workplace_type,
-        remote_region       = excluded.remote_region,
-        comp_min_usd        = excluded.comp_min_usd,
-        comp_max_usd        = excluded.comp_max_usd,
-        description_html    = excluded.description_html,
-        description_text    = excluded.description_text,
-        content_fingerprint = excluded.content_fingerprint,
-        rules_score         = excluded.rules_score,
-        rules_score_reasons = excluded.rules_score_reasons,
-        raw_payload         = excluded.raw_payload
-    `);
-
-    const fp = fullPayload;
-    const result = stmt.run({
-      id: newId,
-      source: fp.source,
-      source_board_token: fp.source_board_token ?? null,
-      source_job_id: fp.source_job_id,
-      source_url: fp.source_url,
-      apply_url: fp.apply_url ?? null,
-      // §24.190. greenhouse/lever adapters hit the employer's own ATS board by
-      // construction, so they're 'ats' without needing to say so; only the
-      // aggregator-fed google_jobs path has to classify per-lead.
-      apply_link_kind: fp.apply_link_kind ?? (fp.source === 'google_jobs' ? 'unknown' : 'ats'),
-      content_fingerprint: fingerprint,
-      title: fp.title,
-      company: fp.company,
-      company_domain: fp.company_domain ?? null,
-      location_raw: fp.location_raw ?? null,
-      is_remote: fp.is_remote == null ? null : fp.is_remote ? 1 : 0,
-      workplace_type: fp.workplace_type ?? null,
-      remote_region: fp.remote_region ?? null,
-      employment_type: fp.employment_type ?? null,
-      comp_min_usd: fp.comp_min_usd ?? null,
-      comp_max_usd: fp.comp_max_usd ?? null,
-      comp_currency: fp.comp_currency ?? 'USD',
-      comp_period: fp.comp_period ?? null,
-      has_equity: fp.has_equity == null ? null : fp.has_equity ? 1 : 0,
-      description_html: fp.description_html ?? null,
-      description_text: fp.description_text ?? null,
-      source_posted_at: fp.source_posted_at ?? null,
-      now,
-      rules_score: score,
-      rules_score_reasons: JSON.stringify(reasons),
-      raw_payload: fp.raw_payload ? JSON.stringify(fp.raw_payload) : null,
-    });
-
-    // Look up the actual id (may be the existing one if upsert hit conflict).
-    const row = db
-      .prepare('SELECT id FROM job_leads WHERE source = ? AND source_job_id = ?')
-      .get(fp.source, fp.source_job_id) as { id: string } | undefined;
-    const finalId = row?.id ?? newId;
-    const insertedOrUpdated = result.changes === 1 && finalId === newId ? 'inserted' : 'updated';
-
-    log.info('job_lead recorded', {
-      id: finalId,
-      source: fp.source,
-      source_job_id: fp.source_job_id,
-      rules_score: score,
-      action: insertedOrUpdated,
-    });
+    const result = upsertJobLead(getDb(), fullPayload);
+    if (!result.recorded) {
+      // A non-error refusal: a tombstone or blocklist entry written inside the
+      // cache TTL (the stash already drops link-kind refusals). The subagent
+      // must not retry, so this is ok:true with recorded:false.
+      writeResponse(inDb, requestId, {
+        ok: true,
+        data: { recorded: false, reason: result.reason, detail: result.detail },
+      });
+      return;
+    }
     writeResponse(inDb, requestId, {
       ok: true,
       data: {
-        id: finalId,
-        inserted_or_updated: insertedOrUpdated,
-        rules_score: score,
-        content_fingerprint: fingerprint,
+        recorded: true,
+        id: result.id,
+        inserted_or_updated: result.inserted_or_updated,
+        rules_score: result.rules_score,
+        content_fingerprint: result.content_fingerprint,
       },
     });
   } catch (err) {
@@ -263,6 +171,166 @@ export async function handleRecordJobLead(
       error: { code: 'DB_ERROR', message: err instanceof Error ? err.message : String(err) },
     });
   }
+}
+
+export type UpsertJobLeadResult =
+  | {
+      recorded: true;
+      id: string;
+      inserted_or_updated: 'inserted' | 'updated';
+      rules_score: number;
+      content_fingerprint: string;
+    }
+  | { recorded: false; reason: LeadRefusalReason; detail: string };
+
+/**
+ * A guard-refused RE-SIGHTING of a lead still open in the pool (e.g. a stored
+ * direct-link hit the index now ranks behind an aggregator link) is still
+ * evidence the posting is live: advance its last_seen_at so the stale rule does
+ * not close it — but never let the refused content overwrite the row. Returns
+ * true when an open row was refreshed. Shared by the stash (which refuses early,
+ * so a refused re-sighting never reaches record) and the writer.
+ */
+export function refreshLastSeenOfOpenLead(db: Database.Database, source: string, sourceJobId: string): boolean {
+  return (
+    db
+      .prepare(
+        `UPDATE job_leads SET last_seen_at = ?
+          WHERE source = ? AND source_job_id = ? AND closed_at IS NULL`,
+      )
+      .run(new Date().toISOString(), source, sourceJobId).changes > 0
+  );
+}
+
+/**
+ * The one job_leads writer (§24.200 D1). Runs the shared pre-insert guard, then
+ * UPSERTs on (source, source_job_id): on conflict it advances last_seen_at and
+ * refreshes the mutable content fields, but never overwrites id, first_seen_at,
+ * status or application_id — those are downstream-owned. Every path that adds a
+ * lead goes through here so the guard cannot be skipped. Throws only on a DB
+ * error; callers map that to their own error frame.
+ */
+export function upsertJobLead(db: Database.Database, fp: JobLeadPayload): UpsertJobLeadResult {
+  // Fingerprint first: the guard's tombstone compare and the row share it.
+  const fingerprint = computeFingerprint(fp);
+  const guard = checkLeadGuard(db, fp, fingerprint);
+  if (!guard.ok) {
+    const refreshed = refreshLastSeenOfOpenLead(db, fp.source, fp.source_job_id);
+    log.info('job_lead refused by insert guard', {
+      source: fp.source,
+      source_job_id: fp.source_job_id,
+      reason: guard.reason,
+      detail: guard.detail,
+      tombstone_id: guard.tombstone_id,
+      last_seen_refreshed: refreshed,
+    });
+    return { recorded: false, reason: guard.reason, detail: guard.detail };
+  }
+
+  // Load candidate profile for rules-score.
+  const profileRow = db.prepare('SELECT * FROM candidate_profile WHERE id = 1').get() as Record<string, unknown> | null;
+  const profile = profileFromRow(profileRow);
+  const { score, reasons } = computeRulesScore(fp, profile);
+
+  const now = new Date().toISOString();
+  const newId = generateLeadId();
+
+  const stmt = db.prepare(`
+    INSERT INTO job_leads (
+      id, source, source_board_token, source_job_id, source_url, apply_url, apply_link_kind,
+      content_fingerprint, title, company, company_domain, location_raw,
+      is_remote, workplace_type, remote_region, employment_type,
+      comp_min_usd, comp_max_usd, comp_currency, comp_period, has_equity,
+      description_html, description_text,
+      source_posted_at, first_seen_at, last_seen_at,
+      rules_score, rules_score_reasons,
+      status, status_changed_at, raw_payload
+    ) VALUES (
+      @id, @source, @source_board_token, @source_job_id, @source_url, @apply_url, @apply_link_kind,
+      @content_fingerprint, @title, @company, @company_domain, @location_raw,
+      @is_remote, @workplace_type, @remote_region, @employment_type,
+      @comp_min_usd, @comp_max_usd, @comp_currency, @comp_period, @has_equity,
+      @description_html, @description_text,
+      @source_posted_at, @now, @now,
+      @rules_score, @rules_score_reasons,
+      'new', @now, @raw_payload
+    )
+    ON CONFLICT (source, source_job_id) DO UPDATE SET
+      last_seen_at        = excluded.last_seen_at,
+      title               = excluded.title,
+      apply_url           = excluded.apply_url,
+      apply_link_kind     = excluded.apply_link_kind,
+      source_url          = excluded.source_url,
+      location_raw        = excluded.location_raw,
+      is_remote           = excluded.is_remote,
+      workplace_type      = excluded.workplace_type,
+      remote_region       = excluded.remote_region,
+      comp_min_usd        = excluded.comp_min_usd,
+      comp_max_usd        = excluded.comp_max_usd,
+      description_html    = excluded.description_html,
+      description_text    = excluded.description_text,
+      content_fingerprint = excluded.content_fingerprint,
+      rules_score         = excluded.rules_score,
+      rules_score_reasons = excluded.rules_score_reasons,
+      raw_payload         = excluded.raw_payload
+  `);
+
+  const result = stmt.run({
+    id: newId,
+    source: fp.source,
+    source_board_token: fp.source_board_token ?? null,
+    source_job_id: fp.source_job_id,
+    source_url: fp.source_url,
+    apply_url: fp.apply_url ?? null,
+    // §24.190. greenhouse/lever adapters hit the employer's own ATS board by
+    // construction, so they're 'ats' without needing to say so; only the
+    // aggregator-fed google_jobs path has to classify per-lead. The guard
+    // resolves a missing kind with this same function (§24.200 D1).
+    apply_link_kind: resolveApplyLinkKind(fp),
+    content_fingerprint: fingerprint,
+    title: fp.title,
+    company: fp.company,
+    company_domain: fp.company_domain ?? null,
+    location_raw: fp.location_raw ?? null,
+    is_remote: fp.is_remote == null ? null : fp.is_remote ? 1 : 0,
+    workplace_type: fp.workplace_type ?? null,
+    remote_region: fp.remote_region ?? null,
+    employment_type: fp.employment_type ?? null,
+    comp_min_usd: fp.comp_min_usd ?? null,
+    comp_max_usd: fp.comp_max_usd ?? null,
+    comp_currency: fp.comp_currency ?? 'USD',
+    comp_period: fp.comp_period ?? null,
+    has_equity: fp.has_equity == null ? null : fp.has_equity ? 1 : 0,
+    description_html: fp.description_html ?? null,
+    description_text: fp.description_text ?? null,
+    source_posted_at: fp.source_posted_at ?? null,
+    now,
+    rules_score: score,
+    rules_score_reasons: JSON.stringify(reasons),
+    raw_payload: fp.raw_payload ? JSON.stringify(fp.raw_payload) : null,
+  });
+
+  // Look up the actual id (may be the existing one if upsert hit conflict).
+  const row = db
+    .prepare('SELECT id FROM job_leads WHERE source = ? AND source_job_id = ?')
+    .get(fp.source, fp.source_job_id) as { id: string } | undefined;
+  const finalId = row?.id ?? newId;
+  const insertedOrUpdated = result.changes === 1 && finalId === newId ? 'inserted' : 'updated';
+
+  log.info('job_lead recorded', {
+    id: finalId,
+    source: fp.source,
+    source_job_id: fp.source_job_id,
+    rules_score: score,
+    action: insertedOrUpdated,
+  });
+  return {
+    recorded: true,
+    id: finalId,
+    inserted_or_updated: insertedOrUpdated,
+    rules_score: score,
+    content_fingerprint: fingerprint,
+  };
 }
 
 // ── query_job_leads ────────────────────────────────────────────────────────
@@ -1036,7 +1104,12 @@ export async function handleFetchSource(
       return;
     }
 
+    const db = getDb();
     const allSummaries: PostingSummary[] = [];
+    // §24.200 D1: the same early guard the stash applies — a tombstoned or
+    // title-blocklisted posting is counted by reason and NOT cached, so the
+    // subagent never sees it and a record_job_lead for it is NOT_IN_CACHE.
+    const rejected: Partial<Record<LeadRefusalReason, number>> = {};
     const sinceTs = since ? new Date(since).getTime() : null;
     // Distribute the total limit across boards so the result spans
     // multiple companies. Without this, the first board (e.g.,
@@ -1057,6 +1130,12 @@ export async function handleFetchSource(
           const postedTs = new Date(posting.source_posted_at).getTime();
           if (!Number.isNaN(postedTs) && postedTs < sinceTs) continue;
         }
+        const guard = checkLeadGuard(db, posting);
+        if (!guard.ok) {
+          rejected[guard.reason] = (rejected[guard.reason] ?? 0) + 1;
+          refreshLastSeenOfOpenLead(db, posting.source, posting.source_job_id);
+          continue;
+        }
         // Stash the full payload for record_job_lead to look up by
         // (source, source_job_id), then return only a summary to the
         // subagent. Keeps the inline-cap budget healthy regardless of
@@ -1069,10 +1148,18 @@ export async function handleFetchSource(
       }
       if (allSummaries.length >= limit) break;
     }
+    const rejectedTotal = Object.values(rejected).reduce((a, b) => a + (b ?? 0), 0);
+    if (rejectedTotal > 0) log.info('fetch_source: postings refused by insert guard', { rejected });
 
     writeResponse(inDb, requestId, {
       ok: true,
-      data: { summaries: allSummaries, boards_scanned: targets.length, postings_total: allSummaries.length },
+      data: {
+        summaries: allSummaries,
+        boards_scanned: targets.length,
+        postings_total: allSummaries.length,
+        rejected,
+        rejected_total: rejectedTotal,
+      },
     });
   } catch (err) {
     log.error('handleFetchSource failed', { err });
@@ -1123,8 +1210,13 @@ export async function handleStashJobPayloads(
   }
 
   try {
+    const db = getDb();
     const summaries: PostingSummary[] = [];
     let skipped = 0;
+    // §24.200 D1: refused payloads are counted by reason and NOT cached, so a
+    // later record_job_lead for one is NOT_IN_CACHE — the gate needs no prompt
+    // cooperation from the subagent.
+    const rejected: Partial<Record<LeadRefusalReason, number>> = {};
     for (const raw of payloads as JobLeadPayload[]) {
       // Defensive: the container builds these, but a malformed entry must not
       // poison the cache or crash the stash. Require the dedup key + the fields
@@ -1146,13 +1238,21 @@ export async function handleStashJobPayloads(
         skipped += 1;
         continue;
       }
+      const guard = checkLeadGuard(db, raw);
+      if (!guard.ok) {
+        rejected[guard.reason] = (rejected[guard.reason] ?? 0) + 1;
+        refreshLastSeenOfOpenLead(db, source, sourceJobId);
+        continue;
+      }
       payloadCache.set(source, sourceJobId, raw);
       summaries.push(toSummary(raw));
     }
+    const rejectedTotal = Object.values(rejected).reduce((a, b) => a + (b ?? 0), 0);
+    if (rejectedTotal > 0) log.info('stash_job_payloads: payloads refused by insert guard', { rejected });
 
     writeResponse(inDb, requestId, {
       ok: true,
-      data: { summaries, stashed: summaries.length, skipped },
+      data: { summaries, stashed: summaries.length, skipped, rejected, rejected_total: rejectedTotal },
     });
   } catch (err) {
     log.error('handleStashJobPayloads failed', { err });

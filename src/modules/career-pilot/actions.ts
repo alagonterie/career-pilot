@@ -24,13 +24,19 @@ import type Database from 'better-sqlite3';
 
 import { companyFromEmail, mintLink } from '../../attribution.js';
 import { getAgentGroup } from '../../db/agent-groups.js';
-import { getDb } from '../../db/connection.js';
+import { getDb, hasTable } from '../../db/connection.js';
 import { getConfig } from '../../get-config.js';
 import { insertMessage } from '../../db/session-db.js';
 import { log } from '../../log.js';
 import { projectWorkProfile } from '../portal/profile.js';
 import { setSimulatorColdEmail, setSimulatorTailoredProfile } from '../portal/simulator.js';
-import { mirrorPipelineEvent, publicApplicationRef, resanitizeApplicationAuditTrail } from '../portal/public-audit.js';
+import {
+  OWNER_APPLIED_EVENT_KIND,
+  OWNER_EVENT_SOURCE,
+  mirrorPipelineEvent,
+  publicApplicationRef,
+  resanitizeApplicationAuditTrail,
+} from '../portal/public-audit.js';
 import { sanitize, sanitizeForPublic } from '../portal/sanitizer.js';
 import { pass3Active } from '../portal/sanitizer-pass3.js';
 import { isKnownApplicationStatus, upsertPublicPipelineView } from '../portal/public-pipeline-view.js';
@@ -40,6 +46,7 @@ import type { Session } from '../../types.js';
 
 import { reactToStatusTransitions } from './interview-kit-trigger.js';
 import { classifyJobIndustry } from './job-classify.js';
+import { normCompany, normText } from './lead-promotion.js';
 import { isOpsSession } from './ops-session.js';
 import { validateProactivePref } from './quiet-hours.js';
 import { scoreWinConfidence } from './win-confidence.js';
@@ -1202,33 +1209,20 @@ export async function handleUpdateApplication(
         const inferred = await classifyJobIndustry(patch.jd_text, patch.role_title);
         if (inferred) industry = inferred;
       }
-      const obfuscated_label = nextObfuscatedLabel(industry);
-
-      db.prepare(
-        `INSERT INTO applications (
-          id, company_name, company_aliases, obfuscated_label, public_state,
-          role_title, job_url, jd_text, jd_analyzed, status, win_confidence,
-          applied_at, last_activity_at, created_at
-        ) VALUES (
-          @id, @company_name, @company_aliases, @obfuscated_label, @public_state,
-          @role_title, @job_url, @jd_text, @jd_analyzed, @status, @win_confidence,
-          @applied_at, @last_activity_at, @created_at
-        )`,
-      ).run({
+      const { obfuscated_label } = insertApplicationCore(db, {
         id,
-        company_name: patch.company_name ?? null,
-        company_aliases: patch.company_aliases ?? null,
-        obfuscated_label,
-        public_state: patch.public_state ?? 'obfuscated',
-        role_title: patch.role_title ?? null,
-        job_url: patch.job_url ?? null,
-        jd_text: patch.jd_text ?? null,
-        jd_analyzed: patch.jd_analyzed ?? null,
-        status: patch.status ?? null,
-        win_confidence: patch.win_confidence ?? null,
-        applied_at: patch.applied_at ?? null,
-        last_activity_at: now,
-        created_at: now,
+        industry,
+        now,
+        company_name: patch.company_name,
+        company_aliases: patch.company_aliases,
+        public_state: patch.public_state,
+        role_title: patch.role_title,
+        job_url: patch.job_url,
+        jd_text: patch.jd_text,
+        jd_analyzed: patch.jd_analyzed,
+        status: patch.status,
+        win_confidence: patch.win_confidence,
+        applied_at: patch.applied_at,
       });
 
       log.info('Application created', { id, obfuscated_label });
@@ -1367,8 +1361,8 @@ function slugify(s: string): string {
  * are not safe — but UPSERTs are serialized through the host's single-writer
  * connection so we don't worry about it.
  */
-export function nextObfuscatedLabel(industry: string): string {
-  const rows = getDb()
+export function nextObfuscatedLabel(industry: string, db: Database.Database = getDb()): string {
+  const rows = db
     .prepare('SELECT obfuscated_label FROM applications WHERE obfuscated_label LIKE ?')
     .all(`${industry}-%`) as Array<{ obfuscated_label: string }>;
   const used = new Set(rows.map((r) => r.obfuscated_label.split(/-(.+)/)[1]).filter(Boolean));
@@ -1388,6 +1382,534 @@ function encodeSuffix(n: number): string {
     s = String.fromCharCode(97 + (n % 26)) + s;
     if (n < 26) return s;
     n = Math.floor(n / 26) - 1;
+  }
+}
+
+// ── Application insert core (§24.201 D8) ─────────────────────────────────────
+
+/** The fields one new `applications` row is built from. Values are stored as
+ * given (`?? null`) — the agent path passes its raw patch through unchanged. */
+export interface ApplicationInsert {
+  id: string;
+  /** Industry slug the obfuscated label is allocated under ('misc' fallback). */
+  industry: string;
+  /** ISO timestamp for created_at / last_activity_at. */
+  now: string;
+  company_name?: unknown;
+  company_aliases?: unknown;
+  public_state?: unknown;
+  role_title?: unknown;
+  job_url?: unknown;
+  jd_text?: unknown;
+  jd_analyzed?: unknown;
+  status?: unknown;
+  win_confidence?: unknown;
+  applied_at?: unknown;
+  /** Which tailored résumé went out (migration 150). Only the /admin path sets it. */
+  sent_resume_id?: string | null;
+}
+
+/**
+ * The synchronous half of creating an application, shared by the agent's
+ * `update_application` INSERT branch and the `/admin` "I applied" action
+ * (§24.201 D8): allocate the obfuscated label from the one allocator (a host
+ * path that skipped it would ship a label-less row and disable redaction) and
+ * insert the row. No classification (async — the caller does it first), no
+ * response writing, no post-commit hooks. Safe inside a `db.transaction`. Throws
+ * on a DB error like any statement; callers own the catch.
+ */
+export function insertApplicationCore(db: Database.Database, input: ApplicationInsert): { obfuscated_label: string } {
+  const obfuscated_label = nextObfuscatedLabel(input.industry, db);
+  const withResume = input.sent_resume_id != null;
+  db.prepare(
+    `INSERT INTO applications (
+      id, company_name, company_aliases, obfuscated_label, public_state,
+      role_title, job_url, jd_text, jd_analyzed, status, win_confidence,
+      applied_at, last_activity_at, created_at${withResume ? ', sent_resume_id' : ''}
+    ) VALUES (
+      @id, @company_name, @company_aliases, @obfuscated_label, @public_state,
+      @role_title, @job_url, @jd_text, @jd_analyzed, @status, @win_confidence,
+      @applied_at, @last_activity_at, @created_at${withResume ? ', @sent_resume_id' : ''}
+    )`,
+  ).run({
+    id: input.id,
+    company_name: input.company_name ?? null,
+    company_aliases: input.company_aliases ?? null,
+    obfuscated_label,
+    public_state: input.public_state ?? 'obfuscated',
+    role_title: input.role_title ?? null,
+    job_url: input.job_url ?? null,
+    jd_text: input.jd_text ?? null,
+    jd_analyzed: input.jd_analyzed ?? null,
+    status: input.status ?? null,
+    win_confidence: input.win_confidence ?? null,
+    applied_at: input.applied_at ?? null,
+    last_activity_at: input.now,
+    created_at: input.now,
+    ...(withResume ? { sent_resume_id: input.sent_resume_id } : {}),
+  });
+  return { obfuscated_label };
+}
+
+// ── /admin "I applied" + undo (§24.201 D8) ───────────────────────────────────
+//
+// The Leads tab's one-click "I applied": create the application AND link the
+// clicked lead in one step, instead of telling the agent. Owner-only — routed
+// from the /admin leads write, which is gated by adminEnabled() upstream.
+
+/** An /admin write outcome (same shape as admin.ts's sync writers). */
+export interface AdminWriteOutcome {
+  status: number;
+  body: unknown;
+}
+
+/** The LLM calls the action makes, injectable so tests never touch the network. */
+export interface AppliedFromLeadDeps {
+  classify?: (jdText: string, roleTitle?: unknown) => Promise<string | null>;
+  scoreWinConfidence?: (db: Database.Database) => Promise<unknown>;
+  now?: () => Date;
+}
+
+/** The pipeline_events kind/source of the owner's "I applied" record. It carries
+ * the note and the lead's prior state (what undo restores). Owner-sourced and
+ * never mirrored to the public audit trail — `mirrorPipelineEvent` refuses them,
+ * so a later re-sanitize cannot publish the note either. Defined next to that
+ * filter; re-exported here for the callers of this module. */
+export { OWNER_APPLIED_EVENT_KIND, OWNER_EVENT_SOURCE };
+
+/** Cap on the owner's free-text note — the `owner_note_max_chars` knob. */
+function ownerNoteMaxChars(db: Database.Database): number {
+  const n = Math.floor(Number(getConfig<number>(db, 'owner_note_max_chars', 2000)));
+  return Number.isFinite(n) && n > 0 ? n : 2000;
+}
+
+/** Statuses that make an application no longer "open" for the duplicate check —
+ * the same closed set the win-confidence scorer zeroes. */
+const CLOSED_APPLICATION_STATUSES = new Set(['REJECTED', 'WITHDRAWN']);
+
+interface LeadForApply {
+  id: string;
+  company: string | null;
+  title: string | null;
+  apply_url: string | null;
+  source_url: string | null;
+  description_text: string | null;
+  status: string;
+  status_changed_at: string | null;
+  closed_at: string | null;
+  closed_reason: string | null;
+  application_id: string | null;
+}
+
+interface OwnerAppliedPayload {
+  note: string | null;
+  lead_id: string;
+  sent_resume_id: string | null;
+  /** When the action actually ran. The event's `ts` is the (possibly backdated)
+   * applied_at — what the public card's "entered APPLIED" reads — so the undo
+   * window is measured from this instead. Absent on rows written before it. */
+  created_at?: string;
+  prior: {
+    status: string;
+    status_changed_at: string | null;
+    closed_at: string | null;
+    closed_reason: string | null;
+  };
+}
+
+/** A refusal raised inside the transaction (rolls it back) and turned into a response. */
+class ApplyRefusal extends Error {
+  constructor(readonly outcome: AdminWriteOutcome) {
+    super('apply refused');
+  }
+}
+
+function loadLeadForApply(db: Database.Database, leadId: string): LeadForApply | undefined {
+  return db
+    .prepare(
+      `SELECT id, company, title, apply_url, source_url, description_text, status, status_changed_at,
+              closed_at, closed_reason, application_id
+         FROM job_leads WHERE id = ?`,
+    )
+    .get(leadId) as LeadForApply | undefined;
+}
+
+/** An open application with the same normalized company + title (the matcher's
+ * normalization), or undefined. */
+function findOpenDuplicate(
+  db: Database.Database,
+  company: string | null,
+  title: string | null,
+): { id: string; company_name: string; role_title: string; status: string } | undefined {
+  const co = normCompany(company);
+  const ti = normText(title);
+  if (!co || !ti) return undefined;
+  const rows = db.prepare('SELECT id, company_name, role_title, status FROM applications').all() as Array<{
+    id: string;
+    company_name: string;
+    role_title: string;
+    status: string;
+  }>;
+  return rows.find(
+    (r) =>
+      !CLOSED_APPLICATION_STATUSES.has(String(r.status ?? '').toUpperCase()) &&
+      normCompany(r.company_name) === co &&
+      normText(r.role_title) === ti,
+  );
+}
+
+function isReadyResumeOfLead(db: Database.Database, resumeId: string, leadId: string): boolean {
+  if (!hasTable(db, 'tailored_resumes')) return false;
+  return !!db
+    .prepare(`SELECT 1 FROM tailored_resumes WHERE id = ? AND lead_id = ? AND status = 'ready'`)
+    .get(resumeId, leadId);
+}
+
+/** Every timezone's local calendar date is within one day of the UTC date (UTC−12
+ * … UTC+14), so this bound is geometry, not a tunable. */
+const MAX_LOCAL_DAY_OFFSET_FROM_UTC = 1;
+const MS_PER_DAY = 86_400_000;
+
+/**
+ * The owner's LOCAL calendar date ('YYYY-MM-DD', what the page sends) → the
+ * stored `applied_at`, or null when malformed / not a real date / in the future.
+ * Measured in whole calendar days against the server's UTC date:
+ *   - more than one day ahead → refused (no timezone is that far east);
+ *   - the UTC date, or one day either side → `now` — for some timezone that local
+ *     date IS today, so it is the instant the owner clicked;
+ *   - two or more days back → a genuine backdate, stored at noon UTC so no
+ *     timezone renders it as the previous day.
+ */
+function parseAppliedDate(raw: string, now: Date): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+  const d = new Date(`${raw}T00:00:00.000Z`);
+  if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== raw) return null;
+  const utcToday = new Date(`${now.toISOString().slice(0, 10)}T00:00:00.000Z`);
+  const dayOffset = Math.round((d.getTime() - utcToday.getTime()) / MS_PER_DAY);
+  if (dayOffset > MAX_LOCAL_DAY_OFFSET_FROM_UTC) return null;
+  if (dayOffset >= -MAX_LOCAL_DAY_OFFSET_FROM_UTC) return now.toISOString();
+  return `${raw}T12:00:00.000Z`;
+}
+
+/**
+ * `applied_from_lead {lead_id, applied_at?, note?, tailored_resume_id?,
+ * confirm_duplicate?}` — in the fixed order §24.201 D8 states, because a SQLite
+ * transaction cannot span the classification call:
+ *   (1) classify the industry (falls back to 'misc');
+ *   (2) ONE synchronous transaction: re-check the lead and the duplicate,
+ *       allocate the label, insert the application at APPLIED (obfuscated),
+ *       link the CLICKED lead by id, write the owner note event;
+ *   (3) after commit: refresh the public pipeline row, run the status reactor
+ *       (its lead promotion is a no-op — the link is made), score win-confidence.
+ * Never throws: every failure is a structured response.
+ */
+export async function applyAppliedFromLead(
+  db: Database.Database,
+  raw: Record<string, unknown>,
+  deps: AppliedFromLeadDeps = {},
+): Promise<AdminWriteOutcome> {
+  const classify = deps.classify ?? classifyJobIndustry;
+  const score = deps.scoreWinConfidence ?? scoreWinConfidence;
+  const clock = deps.now ?? (() => new Date());
+
+  const leadId = typeof raw.lead_id === 'string' ? raw.lead_id : '';
+  if (!leadId) return { status: 400, body: { error: 'lead_id (string) is required' } };
+  if (raw.note != null && typeof raw.note !== 'string')
+    return { status: 400, body: { error: 'note must be a string' } };
+  const note = typeof raw.note === 'string' && raw.note.trim() ? raw.note.trim() : null;
+  const noteMax = ownerNoteMaxChars(db);
+  if (note && note.length > noteMax) {
+    return { status: 400, body: { error: `note exceeds ${noteMax} characters` } };
+  }
+  if (raw.tailored_resume_id != null && typeof raw.tailored_resume_id !== 'string') {
+    return { status: 400, body: { error: 'tailored_resume_id must be a string' } };
+  }
+  const resumeId = typeof raw.tailored_resume_id === 'string' && raw.tailored_resume_id ? raw.tailored_resume_id : null;
+  const confirmDuplicate = raw.confirm_duplicate === true;
+
+  try {
+    const startedAt = clock();
+    let appliedAt = startedAt.toISOString();
+    if (raw.applied_at != null) {
+      const parsed = typeof raw.applied_at === 'string' ? parseAppliedDate(raw.applied_at, startedAt) : null;
+      if (!parsed) return { status: 400, body: { error: 'applied_at must be a past or present YYYY-MM-DD date' } };
+      appliedAt = parsed;
+    }
+
+    // Cheap pre-checks BEFORE any LLM spend; all re-checked inside the transaction.
+    const lead = loadLeadForApply(db, leadId);
+    if (!lead) return { status: 404, body: { error: `no job_lead with id "${leadId}"` } };
+    if (lead.application_id) return { status: 409, body: { error: 'already_linked' } };
+    if (resumeId && !isReadyResumeOfLead(db, resumeId, leadId)) {
+      return { status: 400, body: { error: 'tailored_resume_id is not a ready résumé of this lead' } };
+    }
+    if (!lead.company?.trim() || !lead.title?.trim()) {
+      return { status: 400, body: { error: 'lead has no company or title to create an application from' } };
+    }
+    const dupBefore = findOpenDuplicate(db, lead.company, lead.title);
+    if (dupBefore && !confirmDuplicate) return { status: 409, body: { error: 'duplicate', duplicate_of: dupBefore } };
+
+    // (1) Classification — outside the transaction (async). Best-effort.
+    let industry = 'misc';
+    if (lead.description_text && lead.description_text.trim()) {
+      try {
+        industry = (await classify(lead.description_text, lead.title)) || 'misc';
+      } catch (err) {
+        log.warn('applied_from_lead: classification failed — label stays misc', { leadId, err });
+      }
+    }
+
+    // (2) One synchronous transaction.
+    const now = clock().toISOString();
+    const applicationId = generateId('app');
+    const eventId = generateId('fe');
+    let obfuscatedLabel = '';
+    let priorStatus = '';
+    db.transaction(() => {
+      const fresh = loadLeadForApply(db, leadId);
+      if (!fresh) throw new ApplyRefusal({ status: 404, body: { error: `no job_lead with id "${leadId}"` } });
+      if (fresh.application_id) throw new ApplyRefusal({ status: 409, body: { error: 'already_linked' } });
+      if (resumeId && !isReadyResumeOfLead(db, resumeId, leadId)) {
+        throw new ApplyRefusal({
+          status: 400,
+          body: { error: 'tailored_resume_id is not a ready résumé of this lead' },
+        });
+      }
+      const dup = findOpenDuplicate(db, fresh.company, fresh.title);
+      if (dup && !confirmDuplicate) {
+        throw new ApplyRefusal({ status: 409, body: { error: 'duplicate', duplicate_of: dup } });
+      }
+      priorStatus = fresh.status;
+
+      obfuscatedLabel = insertApplicationCore(db, {
+        id: applicationId,
+        industry,
+        now,
+        company_name: fresh.company,
+        role_title: fresh.title,
+        public_state: 'obfuscated',
+        job_url: fresh.apply_url || fresh.source_url || null,
+        jd_text: fresh.description_text,
+        status: 'APPLIED',
+        applied_at: appliedAt,
+        sent_resume_id: resumeId,
+      }).obfuscated_label;
+
+      // Link BY ID — the lead the owner clicked, even when archived or when a
+      // higher-scored same-title lead exists (the matcher would pick that one).
+      const linked = db
+        .prepare(
+          `UPDATE job_leads
+              SET application_id = @appId, status = 'applied', status_changed_at = @now,
+                  closed_at = NULL, closed_reason = NULL
+            WHERE id = @id AND application_id IS NULL`,
+        )
+        .run({ id: leadId, appId: applicationId, now });
+      if (linked.changes !== 1) throw new ApplyRefusal({ status: 409, body: { error: 'already_linked' } });
+
+      const payload: OwnerAppliedPayload = {
+        note,
+        lead_id: leadId,
+        sent_resume_id: resumeId,
+        created_at: now,
+        prior: {
+          status: fresh.status,
+          status_changed_at: fresh.status_changed_at,
+          closed_at: fresh.closed_at,
+          closed_reason: fresh.closed_reason,
+        },
+      };
+      db.prepare(
+        `INSERT INTO pipeline_events
+           (id, application_id, kind, from_status, to_status, payload, source, proactive, ts)
+         VALUES (@id, @application_id, @kind, NULL, 'APPLIED', @payload, @source, 0, @ts)`,
+      ).run({
+        id: eventId,
+        application_id: applicationId,
+        kind: OWNER_APPLIED_EVENT_KIND,
+        payload: JSON.stringify(payload),
+        source: OWNER_EVENT_SOURCE,
+        // The application entered APPLIED when the owner applied, not when they
+        // clicked — the public card's stage_entered_at derives from this ts.
+        ts: appliedAt,
+      });
+    })();
+
+    log.info('admin: application created from lead', {
+      applicationId,
+      leadId,
+      obfuscated_label: obfuscatedLabel,
+      duplicate_confirmed: !!(dupBefore && confirmDuplicate),
+    });
+
+    // (3) After commit. Deliberately NO mirrorPipelineEvent: the owner note is
+    // private. Each step is best-effort and never fails the response.
+    upsertPublicPipelineView(db, applicationId);
+    reactToStatusTransitions(db, null, [{ application_id: applicationId, from: null, to: 'APPLIED' }]);
+    void Promise.resolve()
+      .then(() => score(db))
+      .catch((scoreErr) => log.error('scoreWinConfidence after applied_from_lead failed', { scoreErr }));
+
+    const windowS = Math.max(0, Number(getConfig<number>(db, 'applied_undo_window_s', 300)) || 0);
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        application_id: applicationId,
+        obfuscated_label: obfuscatedLabel,
+        lead_id: leadId,
+        prior_status: priorStatus,
+        undo_until: new Date(new Date(now).getTime() + windowS * 1000).toISOString(),
+      },
+    };
+  } catch (err) {
+    if (err instanceof ApplyRefusal) return err.outcome;
+    log.error('applied_from_lead failed', { leadId, err });
+    return { status: 500, body: { error: 'applied_from_lead failed', detail: errMessage(err) } };
+  }
+}
+
+function errMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * What else references an application, by table — anything here means the
+ * pipeline has moved on and undo would destroy someone else's record. Excludes
+ * only the rows "I applied" itself created (its owner event, its public view
+ * row, the clicked lead).
+ */
+function otherApplicationReferences(
+  db: Database.Database,
+  app: { id: string; obfuscated_label: string | null },
+  ownEventId: string,
+  leadId: string,
+): string[] {
+  const refs: string[] = [];
+  const count = (table: string, sql: string, ...params: unknown[]): void => {
+    if (!hasTable(db, table)) return;
+    const n = (db.prepare(sql).get(...params) as { n: number }).n;
+    if (n > 0) refs.push(`${table} (${n})`);
+  };
+  count(
+    'pipeline_events',
+    'SELECT COUNT(*) AS n FROM pipeline_events WHERE application_id = ? AND id != ?',
+    app.id,
+    ownEventId,
+  );
+  count('email_events', 'SELECT COUNT(*) AS n FROM email_events WHERE linked_application_id = ?', app.id);
+  count('interview_kits', 'SELECT COUNT(*) AS n FROM interview_kits WHERE application_id = ?', app.id);
+  count('public_kit_view', 'SELECT COUNT(*) AS n FROM public_kit_view WHERE application_id = ?', app.id);
+  count('learnings', 'SELECT COUNT(*) AS n FROM learnings WHERE application_id = ?', app.id);
+  count('job_leads', 'SELECT COUNT(*) AS n FROM job_leads WHERE application_id = ? AND id != ?', app.id, leadId);
+  count('attribution_link', 'SELECT COUNT(*) AS n FROM attribution_link WHERE application_id = ?', app.id);
+  count(
+    'public_audit_trail',
+    `SELECT COUNT(*) AS n FROM public_audit_trail
+      WHERE source_pipeline_event_id IN (SELECT id FROM pipeline_events WHERE application_id = @id)
+         OR (@label != '' AND application_ref = @label)
+         OR instr(COALESCE(details_json, ''), @id) > 0`,
+    { id: app.id, label: app.obfuscated_label ?? '' },
+  );
+  return refs;
+}
+
+/** When the "I applied" action ran: the payload's `created_at`, falling back to
+ * the event ts for a row written before the field existed (whose ts was the
+ * creation time). */
+function ownerEventCreatedAtMs(event: { ts: string; payload: string }): number {
+  try {
+    const created = (JSON.parse(event.payload) as Partial<OwnerAppliedPayload>).created_at;
+    const ms = typeof created === 'string' ? new Date(created).getTime() : NaN;
+    if (Number.isFinite(ms)) return ms;
+  } catch {
+    // unreadable payload — the caller reports it; fall back to the event ts
+  }
+  return new Date(event.ts).getTime();
+}
+
+/**
+ * `undo_applied {application_id}` — reverse an "I applied" within
+ * `applied_undo_window_s`. One transaction, FK-safe order: the owner event, the
+ * public pipeline row, the lead link (prior status + closure restored, link
+ * NULLed), then the application. Refused once anything else references the
+ * application. A win-confidence write that lands after this is a no-op: the
+ * scorer's UPDATE matches no row and the public-view refresh returns early for a
+ * missing application. Never throws.
+ */
+export function applyUndoApplied(
+  db: Database.Database,
+  raw: Record<string, unknown>,
+  deps: { now?: () => Date } = {},
+): AdminWriteOutcome {
+  const applicationId = typeof raw.application_id === 'string' ? raw.application_id : '';
+  if (!applicationId) return { status: 400, body: { error: 'application_id (string) is required' } };
+  const clock = deps.now ?? (() => new Date());
+  try {
+    const app = db
+      .prepare('SELECT id, obfuscated_label, created_at FROM applications WHERE id = ?')
+      .get(applicationId) as { id: string; obfuscated_label: string | null; created_at: string } | undefined;
+    const event = app
+      ? (db
+          .prepare(
+            `SELECT id, ts, payload FROM pipeline_events
+              WHERE application_id = ? AND kind = ? AND source = ?
+              ORDER BY ts ASC LIMIT 1`,
+          )
+          .get(applicationId, OWNER_APPLIED_EVENT_KIND, OWNER_EVENT_SOURCE) as
+          | { id: string; ts: string; payload: string }
+          | undefined)
+      : undefined;
+    if (!app || !event) {
+      return { status: 404, body: { error: `no "I applied" application with id "${applicationId}"` } };
+    }
+
+    const windowS = Math.max(0, Number(getConfig<number>(db, 'applied_undo_window_s', 300)) || 0);
+    // Measured from when the action ran (payload.created_at), never from the
+    // event ts, which is the possibly-backdated applied_at.
+    if (clock().getTime() > ownerEventCreatedAtMs(event) + windowS * 1000) {
+      return { status: 409, body: { error: 'undo_window_passed' } };
+    }
+
+    let payload: OwnerAppliedPayload;
+    try {
+      payload = JSON.parse(event.payload) as OwnerAppliedPayload;
+    } catch {
+      return { status: 500, body: { error: 'owner event payload is unreadable' } };
+    }
+    const leadId = payload.lead_id;
+    const prior = payload.prior;
+
+    const outcome = db.transaction((): AdminWriteOutcome => {
+      const refs = otherApplicationReferences(db, app, event.id, leadId);
+      if (refs.length > 0) {
+        return { status: 409, body: { error: 'referenced', detail: `referenced by ${refs.join(', ')}` } };
+      }
+      db.prepare('DELETE FROM pipeline_events WHERE id = ?').run(event.id);
+      if (hasTable(db, 'public_pipeline_view')) {
+        db.prepare('DELETE FROM public_pipeline_view WHERE application_id = ?').run(applicationId);
+      }
+      db.prepare(
+        `UPDATE job_leads
+            SET application_id = NULL, status = @status, status_changed_at = @status_changed_at,
+                closed_at = @closed_at, closed_reason = @closed_reason
+          WHERE id = @id AND application_id = @appId`,
+      ).run({
+        id: leadId,
+        appId: applicationId,
+        status: prior.status,
+        status_changed_at: prior.status_changed_at ?? clock().toISOString(),
+        closed_at: prior.closed_at,
+        closed_reason: prior.closed_reason,
+      });
+      db.prepare('DELETE FROM applications WHERE id = ?').run(applicationId);
+      return { status: 200, body: { ok: true, lead_id: leadId, restored_status: prior.status } };
+    })();
+    log.info('admin: undo_applied', { applicationId, leadId, status: outcome.status });
+    return outcome;
+  } catch (err) {
+    log.error('undo_applied failed', { applicationId, err });
+    return { status: 500, body: { error: 'undo_applied failed', detail: errMessage(err) } };
   }
 }
 

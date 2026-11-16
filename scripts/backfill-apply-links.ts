@@ -24,7 +24,7 @@ import path from 'path';
 import { DATA_DIR } from '../src/config.js';
 import { initDb, getDb } from '../src/db/connection.js';
 import { runMigrations } from '../src/db/migrations/index.js';
-import { pickApplyLink, type ApplyLinkKind } from '../src/modules/career-pilot/apply-link.js';
+import { rederiveStoredApplyLink, type ApplyLinkKind } from '../src/modules/career-pilot/apply-link.js';
 
 const APPLY = process.argv.includes('--apply');
 
@@ -74,18 +74,8 @@ let unchanged = 0;
 const byKind: Record<string, number> = {};
 
 for (const r of rows) {
-  let applyOptions: { title?: string; link?: string }[] = [];
-  let fallback: string | null = null;
-  try {
-    const raw = r.raw_payload ? (JSON.parse(r.raw_payload) as Record<string, unknown>) : {};
-    if (Array.isArray(raw.apply_options)) applyOptions = raw.apply_options as { title?: string; link?: string }[];
-    fallback = (raw.source_link as string | null) ?? (raw.share_link as string | null) ?? null;
-  } catch {
-    // A lead with an unreadable payload keeps whatever it has — never worsen a row.
-  }
-
-  const picked = pickApplyLink(applyOptions, r.company, fallback ?? r.source_url);
-  const nextUrl = picked.url ?? r.apply_url;
+  const picked = rederiveStoredApplyLink(r);
+  const nextUrl = picked.url;
   const nextKind: ApplyLinkKind = picked.kind;
   byKind[nextKind] = (byKind[nextKind] ?? 0) + 1;
 

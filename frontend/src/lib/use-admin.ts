@@ -179,6 +179,10 @@ export interface AdminWriteResult {
   error?: string
   /** On a 409 set_live_mode, the required-but-missing profile fields. */
   missing?: string[]
+  /** The parsed JSON body (success or error) — for actions whose response
+   *  carries more than ok/error (§24.200/§24.201: bulk_delete's skip report,
+   *  applied_from_lead's undo handle, a 409 duplicate's existing row). */
+  data?: Record<string, unknown>
 }
 
 async function postAdmin(baseUrl: string, body: Record<string, unknown>, path: string): Promise<AdminWriteResult> {
@@ -188,14 +192,15 @@ async function postAdmin(baseUrl: string, body: Record<string, unknown>, path: s
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
-    let parsed: { error?: string; missing?: string[] } = {}
+    let parsed: { error?: string; missing?: string[] } & Record<string, unknown> = {}
     try {
-      parsed = (await res.json()) as typeof parsed
+      const json: unknown = await res.json()
+      if (json && typeof json === 'object' && !Array.isArray(json)) parsed = json as typeof parsed
     } catch {
       // non-JSON body
     }
-    if (!res.ok) return { ok: false, status: res.status, error: parsed.error, missing: parsed.missing }
-    return { ok: true, status: res.status }
+    if (!res.ok) return { ok: false, status: res.status, error: parsed.error, missing: parsed.missing, data: parsed }
+    return { ok: true, status: res.status, data: parsed }
   } catch (err) {
     return { ok: false, status: 0, error: err instanceof Error ? err.message : 'network error' }
   }
@@ -303,6 +308,9 @@ export interface AdminLeadsView {
   rollup: AdminLeadsRollup
   leads: AdminLead[]
   closed: AdminLead[]
+  /** §24.201 D4 — the owner's excluded titles (whole-title, case-insensitive).
+   *  Optional on the client: a host without the list omits it (= empty). */
+  titleBlocklist?: string[]
 }
 
 /** Poll the owner job-leads world-model (real company names — owner-only). */
@@ -318,11 +326,131 @@ export type AdminLeadsWrite =
   // (WYSIWYG: the server never re-derives the selection).
   | { action: 'bulk_set_status'; ids: string[]; status: string; reason?: string }
   | { action: 'bulk_delete'; ids: string[]; confirm: true }
+  // §24.201 D4 — archive + a tombstone whose reach follows the reason.
+  | { action: 'not_interested'; id: string; reason: NotInterestedReason; exclude_title?: boolean }
+  // The undo of "exclude this title" — the response carries the updated list.
+  | { action: 'title_blocklist_remove'; title: string }
+  // §24.201 D8 — create the application and the lead link atomically.
+  | {
+      action: 'applied_from_lead'
+      lead_id: string
+      applied_at?: string
+      note?: string
+      tailored_resume_id?: string
+      confirm_duplicate?: boolean
+    }
+  | { action: 'undo_applied'; application_id: string }
 
 /** Triage / re-score / batch-clean leads (server allow-lists the status set + the
  * action enum, caps the batch size, and confirm-gates the hard delete). */
 export function postAdminLeads(baseUrl: string, body: AdminLeadsWrite): Promise<AdminWriteResult> {
   return postAdmin(baseUrl, body, '/api/admin/leads')
+}
+
+// ── §24.200 / §24.201: the triage + "I applied" response shapes ──────────────
+
+export const NOT_INTERESTED_REASONS = ['role', 'level', 'location', 'company', 'other'] as const
+export type NotInterestedReason = (typeof NOT_INTERESTED_REASONS)[number]
+
+/** bulk_delete's success body. The skip report is additive — an older host
+ *  omits it, so every field is optional on the client. */
+export interface BulkDeleteResult {
+  ok?: boolean
+  deleted?: number
+  skipped?: number
+  // The host's only skip reasons. A lead with a tailored résumé is NOT skipped —
+  // its tailored_resumes rows are deleted with it (ON DELETE CASCADE, §24.191 D4).
+  skipped_by_reason?: { promoted?: number; email_linked?: number }
+}
+
+/** bulk_set_status's success body. `skipped` / `skipped_by_reason` are additive
+ *  (a host that archives promoted leads too omits them). */
+export interface BulkSetStatusResult {
+  ok?: boolean
+  updated?: number
+  missing?: number
+  skipped?: number
+  skipped_by_reason?: { promoted?: number }
+}
+
+/** The refusal a single-lead write gets (409) when the lead already backs an
+ *  application — that row is the Pipeline's to change now. */
+export function isPromotedRefusal(res: AdminWriteResult): boolean {
+  return !res.ok && res.status === 409 && res.error === 'promoted'
+}
+
+export interface NotInterestedResult {
+  ok: true
+  id: string
+  /** `fingerprint` also refuses a near-identical re-post from the same company. */
+  tombstone_match: 'id' | 'fingerprint'
+  title_blocklisted: boolean
+  /** The owner's title blocklist after this write (absent on an older host). */
+  title_blocklist?: string[]
+}
+
+export interface AppliedFromLeadResult {
+  ok: true
+  application_id: string
+  obfuscated_label: string
+  lead_id: string
+  prior_status: string
+  /** ISO timestamp — Undo is offered until then. */
+  undo_until: string
+}
+
+export interface DuplicateApplication {
+  id: string
+  company_name: string | null
+  role_title: string | null
+  status: string
+}
+
+export type AppliedFromLeadOutcome =
+  | { kind: 'ok'; result: AppliedFromLeadResult }
+  | { kind: 'duplicate'; duplicate_of: DuplicateApplication }
+  | { kind: 'already_linked' }
+  | { kind: 'not_found' }
+  | { kind: 'error'; status: number; error: string }
+
+/** "I applied" (§24.201 D8). Maps the contract's 409/404/400 shapes to a
+ *  discriminated outcome so the caller never parses status codes. */
+export async function postAppliedFromLead(
+  baseUrl: string,
+  body: Omit<Extract<AdminLeadsWrite, { action: 'applied_from_lead' }>, 'action'>,
+): Promise<AppliedFromLeadOutcome> {
+  const res = await postAdminLeads(baseUrl, { action: 'applied_from_lead', ...body })
+  if (res.ok) return { kind: 'ok', result: res.data as unknown as AppliedFromLeadResult }
+  if (res.status === 409 && res.error === 'duplicate' && res.data?.duplicate_of) {
+    return { kind: 'duplicate', duplicate_of: res.data.duplicate_of as DuplicateApplication }
+  }
+  if (res.status === 409 && res.error === 'already_linked') return { kind: 'already_linked' }
+  if (res.status === 404) return { kind: 'not_found' }
+  return { kind: 'error', status: res.status, error: res.error ?? `failed (${res.status})` }
+}
+
+export type UndoAppliedOutcome =
+  | { kind: 'ok'; lead_id: string; restored_status: string }
+  | { kind: 'window_passed' }
+  | { kind: 'referenced'; detail: string | null }
+  | { kind: 'error'; status: number; error: string }
+
+/** Undo an "I applied" inside its window. Refused once the window has passed or
+ *  any other row already references the application. */
+export async function postUndoApplied(baseUrl: string, applicationId: string): Promise<UndoAppliedOutcome> {
+  const res = await postAdminLeads(baseUrl, { action: 'undo_applied', application_id: applicationId })
+  if (res.ok) {
+    return {
+      kind: 'ok',
+      lead_id: String(res.data?.lead_id ?? ''),
+      restored_status: String(res.data?.restored_status ?? ''),
+    }
+  }
+  if (res.status === 409 && res.error === 'undo_window_passed') return { kind: 'window_passed' }
+  if (res.status === 409 && res.error === 'referenced') {
+    return { kind: 'referenced', detail: typeof res.data?.detail === 'string' ? res.data.detail : null }
+  }
+  return { kind: 'error', status: res.status, error: res.error ?? `failed (${res.status})` }
 }
 
 // ── §24.191: per-lead résumé tailoring ────────────────────────────────────────

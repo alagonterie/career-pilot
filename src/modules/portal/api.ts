@@ -55,7 +55,7 @@ import {
   applyAdminAttributionWrite,
   applyAdminControl,
   applyAdminKnobWrite,
-  applyAdminLeadsWrite,
+  applyAdminLeadsWriteAsync,
   applyAdminPersonaWrite,
   applyAdminSandboxRunDelete,
   buildAdminContacts,
@@ -570,7 +570,8 @@ async function handleAdminLeadsWrite(
   } catch {
     return json(res, 400, { error: 'invalid JSON body' }, cors);
   }
-  const out = applyAdminLeadsWrite(getDb(), body);
+  // Async entry: also routes the §24.201 D8 "I applied" / undo actions.
+  const out = await applyAdminLeadsWriteAsync(getDb(), body);
   json(res, out.status, out.body, cors);
 }
 

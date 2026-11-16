@@ -115,6 +115,8 @@ export interface PostingSummary {
   company: string;
   location_raw?: string | null;
   workplace_type?: 'remote' | 'hybrid' | 'onsite' | null;
+  /** How direct the apply link is, resolved as the writer stores it (§24.200 D1). */
+  apply_link_kind?: 'company' | 'ats' | 'aggregator' | 'unknown' | null;
   /** ~120-char excerpt of description_text. Empty string if the source
    *  provided no description. */
   snippet: string;

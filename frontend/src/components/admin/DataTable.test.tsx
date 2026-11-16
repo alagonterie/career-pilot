@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { useState } from 'react'
+import { describe, expect, it, vi } from 'vitest'
 
 import { DataTable, type Column } from './DataTable'
 
@@ -113,6 +114,139 @@ describe('DataTable', () => {
     // the cell's button does
     fireEvent.click(screen.getAllByText('show')[0])
     expect(screen.getByTestId('detail')).toHaveTextContent('detail Row 0')
+  })
+
+  it('without selection props renders no checkbox column (other tables unaffected)', () => {
+    render(<DataTable columns={COLS} rows={rows(2)} rowKey={(r) => r.id} rowTestId="row" />)
+    expect(screen.queryByTestId('datatable-select-page')).not.toBeInTheDocument()
+    expect(screen.queryAllByTestId('datatable-select-row')).toHaveLength(0)
+    expect(within(screen.getAllByTestId('row')[0]).getAllByRole('cell')).toHaveLength(2)
+  })
+
+  it('wiring a selection adds a checkbox column whose clicks never toggle the disclosure', () => {
+    function Harness() {
+      const [sel, setSel] = useState<Set<string>>(new Set())
+      return (
+        <>
+          <span data-testid="sel">{[...sel].sort().join(',')}</span>
+          <DataTable
+            columns={COLS}
+            rows={rows(3)}
+            rowKey={(r) => r.id}
+            rowTestId="row"
+            detailTestId="detail"
+            renderDetail={(r) => <span>detail {r.name}</span>}
+            selection={{ selected: sel, onChange: setSel, rowLabel: (r) => `Select ${r.name}` }}
+          />
+        </>
+      )
+    }
+    render(<Harness />)
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Row 1' }))
+    expect(screen.getByTestId('sel')).toHaveTextContent('r1')
+    expect(screen.queryByTestId('detail')).not.toBeInTheDocument() // no expansion
+    expect(screen.getAllByTestId('row')[1]).toHaveAttribute('aria-selected', 'true')
+    // the detail row spans the extra column
+    fireEvent.click(screen.getAllByTestId('row')[0])
+    expect(screen.getByTestId('detail').querySelector('td')).toHaveAttribute('colspan', '3')
+    // untick
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Row 1' }))
+    expect(screen.getByTestId('sel')).toHaveTextContent('')
+  })
+
+  it('the header checkbox selects / clears the CURRENT PAGE only, and is indeterminate when partial', () => {
+    function Harness() {
+      const [sel, setSel] = useState<Set<string>>(new Set())
+      return (
+        <>
+          <span data-testid="sel">{[...sel].sort().join(',')}</span>
+          <DataTable
+            columns={COLS}
+            rows={rows(5)}
+            rowKey={(r) => r.id}
+            pageSize={2}
+            rowTestId="row"
+            selection={{ selected: sel, onChange: setSel }}
+          />
+        </>
+      )
+    }
+    render(<Harness />)
+    const pageBox = () => screen.getByTestId('datatable-select-page') as HTMLInputElement
+    fireEvent.click(pageBox())
+    expect(screen.getByTestId('sel')).toHaveTextContent('r0,r1')
+    expect(pageBox().checked).toBe(true)
+
+    fireEvent.click(screen.getByTestId('datatable-next'))
+    expect(pageBox().checked).toBe(false) // page 2 untouched
+    fireEvent.click(screen.getAllByTestId('datatable-select-row')[0])
+    expect(pageBox().indeterminate).toBe(true)
+    fireEvent.click(pageBox()) // partial → select the rest of this page
+    expect(screen.getByTestId('sel')).toHaveTextContent('r0,r1,r2,r3')
+    fireEvent.click(pageBox()) // all → clear this page only
+    expect(screen.getByTestId('sel')).toHaveTextContent('r0,r1')
+  })
+
+  it('marks the focused row, pages to it, and reports row clicks + display order', () => {
+    const onFocus = vi.fn()
+    const onOrder = vi.fn()
+    const { rerender } = render(
+      <DataTable
+        columns={COLS}
+        rows={rows(5)}
+        rowKey={(r) => r.id}
+        pageSize={2}
+        rowTestId="row"
+        focusedKey={null}
+        onRowFocus={onFocus}
+        onOrderChange={onOrder}
+      />,
+    )
+    expect(onOrder).toHaveBeenLastCalledWith(['r0', 'r1', 'r2', 'r3', 'r4'])
+    fireEvent.click(screen.getAllByTestId('row')[1])
+    expect(onFocus).toHaveBeenCalledWith('r1', expect.objectContaining({ id: 'r1' }))
+
+    // focusing a row on page 3 jumps there and styles it
+    rerender(
+      <DataTable
+        columns={COLS}
+        rows={rows(5)}
+        rowKey={(r) => r.id}
+        pageSize={2}
+        rowTestId="row"
+        focusedKey="r4"
+        onRowFocus={onFocus}
+        onOrderChange={onOrder}
+      />,
+    )
+    expect(screen.getByTestId('datatable-range')).toHaveTextContent('Showing 5–5 of 5')
+    expect(screen.getByTestId('row')).toHaveAttribute('data-focused', 'true')
+
+    // a header sort changes the reported order (what j/k must walk)
+    onOrder.mockClear()
+    fireEvent.click(screen.getByTestId('datatable-sort-score'))
+    expect(onOrder).toHaveBeenLastCalledWith(['r4', 'r3', 'r2', 'r1', 'r0'])
+  })
+
+  it('a controlled expandedKey drives the disclosure and row clicks report through onExpandedChange', () => {
+    const onExpanded = vi.fn()
+    render(
+      <DataTable
+        columns={COLS}
+        rows={rows(2)}
+        rowKey={(r) => r.id}
+        rowTestId="row"
+        detailTestId="detail"
+        renderDetail={(r) => <span>detail {r.name}</span>}
+        expandedKey="r1"
+        onExpandedChange={onExpanded}
+      />,
+    )
+    expect(screen.getByTestId('detail')).toHaveTextContent('detail Row 1')
+    fireEvent.click(screen.getAllByTestId('row')[0])
+    expect(onExpanded).toHaveBeenCalledWith('r0')
+    // controlled: nothing changes until the parent says so
+    expect(screen.getByTestId('detail')).toHaveTextContent('detail Row 1')
   })
 
   it('resets to page 1 when resetKey changes', () => {

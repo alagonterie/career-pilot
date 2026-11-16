@@ -63,15 +63,16 @@ function normUrl(u: string | null | undefined): string | null {
   return t === '' ? null : t;
 }
 
-/** Lowercase + collapse whitespace. */
-function normText(s: string | null | undefined): string | null {
+/** Lowercase + collapse whitespace. Exported for the "I applied" duplicate check
+ * (§24.201 D8), which must compare company + title exactly as this matcher does. */
+export function normText(s: string | null | undefined): string | null {
   if (!s) return null;
   const t = s.trim().toLowerCase().replace(/\s+/g, ' ');
   return t === '' ? null : t;
 }
 
 /** normText + strip trailing corporate suffix/punctuation ("Acme, Inc." → "acme"). */
-function normCompany(s: string | null | undefined): string | null {
+export function normCompany(s: string | null | undefined): string | null {
   const t = normText(s);
   if (!t) return null;
   const stripped = t

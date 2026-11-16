@@ -61,7 +61,9 @@
  *                           dispatched, fetch_source called against real
  *                           Greenhouse + Lever boards from ats-targets.json,
  *                           ≥1 record_job_lead row landed in job_leads
- *                           with non-null fingerprint + rules_score,
+ *                           with non-null fingerprint + rules_score (or a
+ *                           search_jobs `rejected` count that explains zero
+ *                           keepers — §24.200 insert guard),
  *                           ≥80% of recorded leads have rules_score>0
  *                           (relaxable per §24.5 empirical prediction),
  *                           ≥1 record_progress row, orchestrator's reply
@@ -155,6 +157,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import Database from 'better-sqlite3';
+
+import { RECORD_REFUSAL_MARKER, zeroLeadsExplainedByRejects } from './scrape-zero-leads.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1639,7 +1643,9 @@ async function runScrapeJobs(): Promise<void> {
   // Assertion blocks mapped to spec DoD items 1-11:
   //   1. scrape-jobs subagent dispatched ≥1 time.
   //   2. fetch_source called ≥1 time, returned non-empty postings.
-  //   3. ≥1 record_job_lead call landed → ≥1 row in job_leads.
+  //   3. ≥1 record_job_lead call landed → ≥1 row in job_leads, OR (§24.200)
+  //      zero keepers explained by search_jobs' `rejected` count (the host
+  //      insert guard refuses non-direct-link hits before caching them).
   //   4. All recorded leads have non-null content_fingerprint (16-char
   //      hex) and rules_score (0-100). Host-side compute path works.
   //   5. ≥80% of recorded leads have rules_score>0 (pre-record judgment
@@ -1703,6 +1709,16 @@ async function runScrapeJobs(): Promise<void> {
   const searchJobsCalls: Array<{ subagentPath: string }> = [];
   const fetchSourceCalls: Array<{ subagentPath: string; postings_total?: number }> = [];
   const recordLeadCalls: Array<{ subagentPath: string; source_job_id?: string; source?: string }> = [];
+  // §24.200 D1: the host's insert guard refuses non-direct-link hits (and
+  // tombstoned / blocklisted postings) BEFORE caching them; search_jobs reports
+  // them as `rejected N before caching (...)`. A run whose hits were all
+  // rejected legitimately records zero leads — this tally is what explains it.
+  const searchJobsIds = new Set<string>();
+  let searchRejectedTotal = 0;
+  // record_job_lead calls the host deliberately refused (recorded:false) — the
+  // only record calls a rejected count may excuse.
+  const recordLeadIds = new Set<string>();
+  let recordRefusals = 0;
   for (const sub of scrapeSubJsonls) {
     const lines = fs.readFileSync(sub.path, 'utf8').trim().split('\n');
     for (const line of lines) {
@@ -1712,6 +1728,21 @@ async function runScrapeJobs(): Promise<void> {
       } catch {
         continue;
       }
+      // search_jobs results (tool_result blocks in the following user event).
+      if (e.type === 'user' && Array.isArray(e.message?.content)) {
+        for (const block of e.message.content) {
+          const r = block as { type?: string; tool_use_id?: string };
+          if (r?.type !== 'tool_result' || !r.tool_use_id) continue;
+          if (recordLeadIds.has(r.tool_use_id)) {
+            if (JSON.stringify(block).includes(RECORD_REFUSAL_MARKER)) recordRefusals += 1;
+            continue;
+          }
+          if (!searchJobsIds.has(r.tool_use_id)) continue;
+          const m = /rejected (\d+) before caching/.exec(JSON.stringify(block));
+          if (m) searchRejectedTotal += Number(m[1]);
+        }
+        continue;
+      }
       if (e.type !== 'assistant' || !Array.isArray(e.message?.content)) continue;
       for (const block of e.message.content) {
         if (!block || typeof block !== 'object') continue;
@@ -1719,11 +1750,13 @@ async function runScrapeJobs(): Promise<void> {
         if (b.type !== 'tool_use') continue;
         if (b.name === 'mcp__nanoclaw__search_jobs' || b.name === 'search_jobs') {
           searchJobsCalls.push({ subagentPath: sub.path });
+          if (b.id) searchJobsIds.add(b.id);
         } else if (b.name === 'mcp__nanoclaw__fetch_source' || b.name === 'fetch_source') {
           fetchSourceCalls.push({ subagentPath: sub.path });
         } else if (b.name === 'mcp__nanoclaw__record_job_lead' || b.name === 'record_job_lead') {
           const input = (b.input ?? {}) as { source_job_id?: string; source?: string };
           recordLeadCalls.push({ subagentPath: sub.path, source_job_id: input.source_job_id, source: input.source });
+          if (b.id) recordLeadIds.add(b.id);
         }
       }
     }
@@ -1741,15 +1774,29 @@ async function runScrapeJobs(): Promise<void> {
       `fetch_source ${fetchSourceCalls.length}× (ATS fallback)`,
   );
 
-  // 3. ≥1 record_job_lead call landed → ≥1 row in job_leads.
-  if (recordLeadCalls.length === 0) {
+  // 3. ≥1 record_job_lead call landed → ≥1 row in job_leads — OR (§24.200 D1)
+  // zero keepers explained by a rejected count from the host's insert guard. The
+  // excuse holds only while no record call should have written a row (none made,
+  // or every one a deliberate recorded:false) — never for a broken writer.
+  const zeroExplainedByRejects = zeroLeadsExplainedByRejects({
+    searchRejectedTotal,
+    recordCalls: recordLeadCalls.length,
+    recordRefusals,
+  });
+  if (recordLeadCalls.length === 0 && zeroExplainedByRejects) {
+    ok(
+      `scrape-jobs recorded 0 leads, explained by ${searchRejectedTotal} search hit(s) the host rejected before ` +
+        'caching (non-direct apply link / removed by the owner / blocked title)',
+    );
+  } else if (recordLeadCalls.length === 0) {
     fail(
       `scrape-jobs did not call record_job_lead. ` +
         'Subagent must call record_job_lead for at least one fetched posting. ' +
         'Likely cause: pre-record judgment dropped everything, OR the source (search_jobs, or the fetch_source fallback) returned zero postings.',
     );
+  } else {
+    ok(`scrape-jobs called record_job_lead ${recordLeadCalls.length} time(s)`);
   }
-  ok(`scrape-jobs called record_job_lead ${recordLeadCalls.length} time(s)`);
 
   // Inspect the actual job_leads table state.
   const dbPath = path.join(REPO_ROOT, 'data', 'v2.db');
@@ -1786,13 +1833,18 @@ async function runScrapeJobs(): Promise<void> {
   } finally {
     db.close();
   }
-  if (leadsRows.length === 0) {
+  if (leadsRows.length === 0 && zeroExplainedByRejects) {
+    ok(
+      `0 job_lead rows landed — explained by ${searchRejectedTotal} rejected search hit(s); row checks pass vacuously`,
+    );
+  } else if (leadsRows.length === 0) {
     fail(
       `0 job_leads rows landed despite ${recordLeadCalls.length} record_job_lead tool_use calls. ` +
         'Host action handler may be erroring silently — check host logs for "handleRecordJobLead failed".',
     );
+  } else {
+    ok(`${leadsRows.length} job_lead row${leadsRows.length === 1 ? '' : 's'} landed in this run`);
   }
-  ok(`${leadsRows.length} job_lead row${leadsRows.length === 1 ? '' : 's'} landed in this run`);
 
   // 4. All recorded leads have non-null content_fingerprint (16-char hex)
   // and rules_score.
@@ -1813,7 +1865,8 @@ async function runScrapeJobs(): Promise<void> {
   // 5. ≥80% non-zero rules_score (DoD #5; relaxable to ≥50% per anticipated
   // empirical relaxation in §24.5).
   const nonZeroLeads = leadsRows.filter((r) => (r.rules_score ?? 0) > 0);
-  const nonZeroFraction = nonZeroLeads.length / leadsRows.length;
+  // No rows (explained by rejects, above) → nothing to grade.
+  const nonZeroFraction = leadsRows.length === 0 ? 1 : nonZeroLeads.length / leadsRows.length;
   const NON_ZERO_THRESHOLD = 0.5; // relaxed per §24.5 empirical prediction
   if (nonZeroFraction < NON_ZERO_THRESHOLD) {
     console.error('  --- leads breakdown (first 10) ---');
@@ -1880,7 +1933,7 @@ async function runScrapeJobs(): Promise<void> {
         'Pattern B writer variant: surface the count + top N highlights, not a generic confirmation.',
     );
   }
-  if (!mentionedCompany) {
+  if (!mentionedCompany && leadsRows.length > 0) {
     console.error('  --- orchestrator reply (first 2000 chars) ---');
     console.error(reply.slice(0, 2000));
     console.error('  --- end ---');
@@ -1890,7 +1943,11 @@ async function runScrapeJobs(): Promise<void> {
         'Pattern B writer variant should surface ≥1 specific lead.',
     );
   }
-  ok(`orchestrator reply surfaces count AND specific company "${mentionedCompany}" — Pattern B faithful`);
+  ok(
+    mentionedCompany
+      ? `orchestrator reply surfaces count AND specific company "${mentionedCompany}" — Pattern B faithful`
+      : 'orchestrator reply surfaces a count (no rows this run, explained by rejects — company check skipped)',
+  );
 }
 
 function seedFakeJobLeads(): Array<{ id: string; company: string; title: string }> {

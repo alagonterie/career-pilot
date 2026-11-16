@@ -33,6 +33,10 @@ export const PIPELINE_DATA_TABLES = [
   // explicitly, ahead of its parent, so a dev reset never strands tailored
   // résumés pointing at leads that no longer exist.
   'tailored_resumes',
+  // §24.200 D2 — the memory of removed leads. No FK to job_leads, but a reset
+  // that rebuilt the pool while keeping tombstones would silently refuse the
+  // re-seeded postings, so it is cleared with (and ahead of) the pool.
+  'job_lead_tombstones',
   'job_leads',
   'simulator_runs',
   'email_events',

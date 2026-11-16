@@ -106,7 +106,7 @@ export const searchJobs: McpToolDefinition = {
   tool: {
     name: 'search_jobs',
     description:
-      "PRIMARY job source. Search Google for Jobs (via SerpApi) with a natural-language `query` + optional `location`/`remote`. Returns `{ summaries, total, provider: 'google_jobs' }` — each summary is `{ source, source_job_id, title, company, location_raw?, workplace_type?, snippet }`, the same shape fetch_source returns. Google aggregates LinkedIn/Indeed/company sites and dedupes across them, so results match what a human sees searching by hand. The full payload is stashed host-side (1h TTL) keyed by (source, source_job_id); to keep a posting call `record_job_lead({ source: 'google_jobs', source_job_id })`. If SerpApi is unavailable (rate-limited / not configured / down) the result is `{ unavailable: true, reason }` — when you see that, FALL BACK to fetch_source (the ATS poller). Each call costs SerpApi quota (~1 unit per 10 results); prefer a few targeted queries over deep pagination. Read-only — does NOT write to job_leads.",
+      "PRIMARY job source. Search Google for Jobs (via SerpApi) with a natural-language `query` + optional `location`/`remote`. Returns `{ summaries, total, provider: 'google_jobs', rejected, rejected_total }` — each summary is `{ source, source_job_id, title, company, location_raw?, workplace_type?, apply_link_kind, snippet }`, the same shape fetch_source returns. `rejected` counts hits the host refused before you saw them, by reason (`link_kind`: no direct apply link; `tombstone`: the owner removed that posting; `title_blocklist`: a title the owner excluded) — those are not in `summaries` and cannot be recorded. Google aggregates LinkedIn/Indeed/company sites and dedupes across them, so results match what a human sees searching by hand. The full payload is stashed host-side (1h TTL) keyed by (source, source_job_id); to keep a posting call `record_job_lead({ source: 'google_jobs', source_job_id })`. If SerpApi is unavailable (rate-limited / not configured / down) the result is `{ unavailable: true, reason }` — when you see that, FALL BACK to fetch_source (the ATS poller). Each call costs SerpApi quota (~1 unit per 10 results); prefer a few targeted queries over deep pagination. Read-only — does NOT write to job_leads.",
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -163,19 +163,46 @@ export const searchJobs: McpToolDefinition = {
     }
     // Forward payloads to the host stash action (same payload-cache fetch_source
     // uses); record_job_lead re-hydrates from it. Host stays system-of-record.
-    const res = await sendAction<{ summaries: unknown[]; stashed: number; skipped: number }>(
-      'career_pilot.stash_job_payloads',
-      { payloads },
-    );
+    const res = await sendAction<StashResult>('career_pilot.stash_job_payloads', { payloads });
     if (!res.ok) return actionErr('search_jobs', res.error);
-    const { summaries } = res.data;
-    return ok(`search_jobs: ${summaries.length} postings for "${query}" (google_jobs).`, {
-      summaries,
-      total: summaries.length,
-      provider: 'google_jobs',
-    });
+    return formatSearchJobsResult(query, res.data);
   },
 };
+
+/** The host stash's answer. `rejected` counts payloads the host's insert guard
+ *  refused BEFORE caching them (by reason) — they are not in `summaries` and
+ *  cannot be recorded. Older hosts omit it. */
+export interface StashResult {
+  summaries: unknown[];
+  stashed: number;
+  skipped: number;
+  rejected?: Record<string, number>;
+  rejected_total?: number;
+}
+
+/**
+ * Shape search_jobs' result from the stash answer. Passes the host's rejected
+ * counts through, so a run that keeps nothing can say WHY (every hit was a
+ * repost without a direct apply link, a posting the owner removed, a blocked
+ * title) instead of looking like an empty search. The text carries the count in
+ * a stable form (`rejected N before caching`) the Tier-4 e2e flow reads.
+ */
+export function formatSearchJobsResult(query: string, data: StashResult) {
+  const { summaries } = data;
+  const rejected = data.rejected ?? {};
+  const rejectedTotal = data.rejected_total ?? Object.values(rejected).reduce((a, b) => a + b, 0);
+  const why = Object.entries(rejected)
+    .map(([reason, n]) => `${reason} ${n}`)
+    .join(', ');
+  const rejectedNote = rejectedTotal > 0 ? `; rejected ${rejectedTotal} before caching (${why})` : '';
+  return ok(`search_jobs: ${summaries.length} postings for "${query}" (google_jobs)${rejectedNote}.`, {
+    summaries,
+    total: summaries.length,
+    provider: 'google_jobs',
+    rejected,
+    rejected_total: rejectedTotal,
+  });
+}
 
 // ── record_job_lead ────────────────────────────────────────────────────────
 
@@ -183,7 +210,7 @@ export const recordJobLead: McpToolDefinition = {
   tool: {
     name: 'record_job_lead',
     description:
-      "UPSERT a single job lead into the `job_leads` table. Pass only `(source, source_job_id)` from a summary that `fetch_source` returned this session — the host looks up the full payload from its 1h cache and computes `content_fingerprint` (64-bit SimHash) + `rules_score` (0-100 deterministic score against the candidate profile) before insert. Within-source dedup is automatic via UNIQUE (source, source_job_id) with ON CONFLICT DO UPDATE. Returns `{ id, inserted_or_updated, rules_score, content_fingerprint }`. NEVER invent source_job_ids — if you pass one that wasn't returned by fetch_source in this session, the call fails with NOT_IN_CACHE.",
+      "UPSERT a single job lead into the `job_leads` table. Pass only `(source, source_job_id)` from a summary that `fetch_source` returned this session — the host looks up the full payload from its 1h cache and computes `content_fingerprint` (64-bit SimHash) + `rules_score` (0-100 deterministic score against the candidate profile) before insert. Within-source dedup is automatic via UNIQUE (source, source_job_id) with ON CONFLICT DO UPDATE. Returns `{ recorded: true, id, inserted_or_updated, rules_score, content_fingerprint }`, or `{ recorded: false, reason }` when the host refuses the posting (the owner removed it or blocked its title) — that is final, not an error: drop the lead and do not retry. NEVER invent source_job_ids — if you pass one that wasn't returned by fetch_source in this session, the call fails with NOT_IN_CACHE.",
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -200,17 +227,31 @@ export const recordJobLead: McpToolDefinition = {
     if (!source || !source_job_id) {
       return err('source and source_job_id are required');
     }
-    const res = await sendAction<{ id: string; inserted_or_updated: string; rules_score: number; content_fingerprint: string }>(
-      'career_pilot.record_job_lead',
-      { source, source_job_id },
-    );
+    const res = await sendAction<RecordJobLeadResult>('career_pilot.record_job_lead', { source, source_job_id });
     if (!res.ok) return actionErr('record_job_lead', res.error);
-    return ok(
-      `job_lead ${res.data.inserted_or_updated}: ${source}::${source_job_id} (id ${res.data.id}, score ${res.data.rules_score})`,
-      res.data,
-    );
+    return formatRecordJobLeadResult(source, source_job_id, res.data);
   },
 };
+
+/** The host's record answer: a row, or a deliberate non-error refusal. */
+export type RecordJobLeadResult =
+  | { recorded?: true; id: string; inserted_or_updated: string; rules_score: number; content_fingerprint: string }
+  | { recorded: false; reason: string; detail?: string };
+
+/** A refusal is NOT an error: the host's guard decided (removed earlier by the
+ *  owner, blocked title) — the subagent must drop the lead, not retry it. */
+export function formatRecordJobLeadResult(source: string, source_job_id: string, data: RecordJobLeadResult) {
+  if (data.recorded === false) {
+    return ok(
+      `job_lead not recorded: ${source}::${source_job_id} was refused (${data.reason}${data.detail ? `: ${data.detail}` : ''}). This is final — drop it, do not retry.`,
+      data as unknown as Record<string, unknown>,
+    );
+  }
+  return ok(
+    `job_lead ${data.inserted_or_updated}: ${source}::${source_job_id} (id ${data.id}, score ${data.rules_score})`,
+    data as unknown as Record<string, unknown>,
+  );
+}
 
 // ── query_job_leads ────────────────────────────────────────────────────────
 

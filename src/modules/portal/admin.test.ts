@@ -393,6 +393,9 @@ describe('buildAdminLeads / applyAdminLeadsWrite (§24.173)', () => {
     closed_at?: string | null;
     closed_reason?: string | null;
     application_id?: string | null;
+    apply_link_kind?: string | null;
+    content_fingerprint?: string;
+    company?: string;
   };
   function seedLead(over: LeadOverrides): void {
     const now = '2026-06-20T00:00:00.000Z';
@@ -411,6 +414,9 @@ describe('buildAdminLeads / applyAdminLeadsWrite (§24.173)', () => {
       closed_at: null as string | null,
       closed_reason: null as string | null,
       application_id: null as string | null,
+      apply_link_kind: null as string | null,
+      content_fingerprint: `fp-${over.id}`,
+      company: 'Globex',
       ...over,
     };
     getDb()
@@ -419,12 +425,12 @@ describe('buildAdminLeads / applyAdminLeadsWrite (§24.173)', () => {
            (id, source, source_job_id, source_url, content_fingerprint, title, company,
             first_seen_at, last_seen_at, status, status_changed_at, rules_score, rules_score_reasons,
             description_text, source_posted_at, llm_score, killer_match_pushed_at, closed_at, closed_reason,
-            application_id)
+            application_id, apply_link_kind)
          VALUES
-           (@id, @source, @id, 'https://x/' || @id, 'fp-' || @id, @title, 'Globex',
+           (@id, @source, @id, 'https://x/' || @id, @content_fingerprint, @title, @company,
             @first_seen_at, @last_seen_at, @status, @first_seen_at, @rules_score, @rules_score_reasons,
             @description_text, @source_posted_at, @llm_score, @killer_match_pushed_at, @closed_at, @closed_reason,
-            @application_id)`,
+            @application_id, @apply_link_kind)`,
       )
       .run(d);
   }
@@ -589,5 +595,240 @@ describe('buildAdminLeads / applyAdminLeadsWrite (§24.173)', () => {
     expect(out.body).toMatchObject({ deleted: 1, skipped: 1 });
     // the promoted lead survives the batch rather than failing it
     expect(buildAdminLeads(getDb()).leads.map((l) => l.id)).toEqual(['promoted']);
+    expect(out.body).toMatchObject({ skipped_by_reason: { promoted: 1 } });
+  });
+
+  // ── §24.200 D2/D3 + §24.201 D4: tombstones + "not interested" ──────────────
+
+  function tombstones(): Array<{ source_job_id: string; reason: string; match: string }> {
+    return getDb()
+      .prepare(`SELECT source_job_id, reason, match FROM job_lead_tombstones ORDER BY source_job_id`)
+      .all() as Array<{ source_job_id: string; reason: string; match: string }>;
+  }
+
+  it('bulk_delete writes tombstones: id-only for a rejected-kind lead, fingerprint for a direct one', () => {
+    seedLead({ id: 'agg', source: 'google_jobs', apply_link_kind: 'aggregator' });
+    seedLead({ id: 'legacy', source: 'google_jobs', apply_link_kind: null }); // resolves to 'unknown'
+    seedLead({ id: 'direct', source: 'google_jobs', apply_link_kind: 'company' });
+    seedLead({ id: 'board', source: 'greenhouse' });
+
+    const out = applyAdminLeadsWrite(getDb(), {
+      action: 'bulk_delete',
+      ids: ['agg', 'legacy', 'direct', 'board'],
+      confirm: true,
+    });
+    expect(out.status).toBe(200);
+    expect(out.body).toMatchObject({ deleted: 4, skipped: 0 });
+    expect(tombstones()).toEqual([
+      { source_job_id: 'agg', reason: 'link:aggregator', match: 'id' },
+      { source_job_id: 'board', reason: 'deleted', match: 'fingerprint' },
+      { source_job_id: 'direct', reason: 'deleted', match: 'fingerprint' },
+      { source_job_id: 'legacy', reason: 'link:unknown', match: 'id' },
+    ]);
+  });
+
+  it('bulk_delete skips-and-reports an email-linked lead instead of throwing (FKs on)', () => {
+    expect(getDb().pragma('foreign_keys', { simple: true })).toBe(1);
+    seedLead({ id: 'plain' });
+    seedLead({ id: 'linked' });
+    getDb()
+      .prepare(
+        `INSERT INTO email_events (gmail_msg_id, thread_id, classification, confidence, linked_job_lead_id,
+                                   classified_at, classified_by_run_id)
+         VALUES ('m1', 't1', 'recruiter_outreach', 0.9, 'linked', '2026-06-20T00:00:00Z', 'run-1')`,
+      )
+      .run();
+
+    const out = applyAdminLeadsWrite(getDb(), { action: 'bulk_delete', ids: ['plain', 'linked'], confirm: true });
+    expect(out.status).toBe(200);
+    expect(out.body).toMatchObject({ ok: true, deleted: 1, skipped: 1, skipped_by_reason: { email_linked: 1 } });
+    expect(buildAdminLeads(getDb()).leads.map((l) => l.id)).toEqual(['linked']);
+    // no tombstone for the lead that was not deleted
+    expect(tombstones().map((t) => t.source_job_id)).toEqual(['plain']);
+  });
+
+  it('not_interested archives the lead and writes a tombstone whose reach follows the reason', () => {
+    for (const [id, reason, match] of [
+      ['r1', 'role', 'fingerprint'],
+      ['r2', 'company', 'fingerprint'],
+      ['r3', 'other', 'fingerprint'],
+      ['r4', 'location', 'id'],
+      ['r5', 'level', 'id'],
+    ] as const) {
+      seedLead({ id });
+      const out = applyAdminLeadsWrite(getDb(), { action: 'not_interested', id, reason });
+      expect(out.status).toBe(200);
+      expect(out.body).toEqual({ ok: true, id, tombstone_match: match, title_blocklisted: false, title_blocklist: [] });
+    }
+    const closed = buildAdminLeads(getDb()).closed;
+    expect(closed).toHaveLength(5);
+    expect(closed.find((l) => l.id === 'r4')).toMatchObject({
+      status: 'archived',
+      closed_reason: 'not_interested:location',
+    });
+    expect(tombstones()).toEqual([
+      { source_job_id: 'r1', reason: 'not_interested:role', match: 'fingerprint' },
+      { source_job_id: 'r2', reason: 'not_interested:company', match: 'fingerprint' },
+      { source_job_id: 'r3', reason: 'not_interested:other', match: 'fingerprint' },
+      { source_job_id: 'r4', reason: 'not_interested:location', match: 'id' },
+      { source_job_id: 'r5', reason: 'not_interested:level', match: 'id' },
+    ]);
+  });
+
+  it('not_interested with exclude_title appends the title to the owner blocklist (deduped)', () => {
+    seedLead({ id: 'a', title: 'Sales Engineer' });
+    seedLead({ id: 'b', title: '  sales engineer ' });
+    const out = applyAdminLeadsWrite(getDb(), {
+      action: 'not_interested',
+      id: 'a',
+      reason: 'role',
+      exclude_title: true,
+    });
+    expect(out.body).toMatchObject({ title_blocklisted: true });
+    applyAdminLeadsWrite(getDb(), { action: 'not_interested', id: 'b', reason: 'role', exclude_title: true });
+    expect(getConfig<string[]>(getDb(), 'lead_title_blocklist')).toEqual(['Sales Engineer']);
+  });
+
+  it('not_interested refuses a bad reason, a missing id, and an unknown lead', () => {
+    seedLead({ id: 'a' });
+    expect(applyAdminLeadsWrite(getDb(), { action: 'not_interested', id: 'a', reason: 'meh' }).status).toBe(400);
+    expect(applyAdminLeadsWrite(getDb(), { action: 'not_interested', reason: 'role' }).status).toBe(400);
+    expect(applyAdminLeadsWrite(getDb(), { action: 'not_interested', id: 'ghost', reason: 'role' }).status).toBe(404);
+    expect(tombstones()).toHaveLength(0);
+  });
+
+  it('not_interested 409s a promoted lead and changes nothing', () => {
+    getDb()
+      .prepare(
+        `INSERT INTO applications (id, company_name, obfuscated_label, role_title, status, applied_at, created_at)
+         VALUES ('app-1', 'Globex', 'a fintech company', 'Senior Software Engineer', 'APPLIED',
+                 '2026-06-20T00:00:00.000Z', '2026-06-20T00:00:00.000Z')`,
+      )
+      .run();
+    seedLead({ id: 'promoted', status: 'applied', application_id: 'app-1' });
+    const out = applyAdminLeadsWrite(getDb(), {
+      action: 'not_interested',
+      id: 'promoted',
+      reason: 'role',
+      exclude_title: true,
+    });
+    expect(out).toEqual({ status: 409, body: { error: 'promoted', application_id: 'app-1' } });
+    expect(buildAdminLeads(getDb()).leads[0]).toMatchObject({
+      id: 'promoted',
+      status: 'applied',
+      closed_at: null,
+      application_id: 'app-1',
+    });
+    expect(tombstones()).toHaveLength(0);
+    expect(getConfig<string[]>(getDb(), 'lead_title_blocklist')).toEqual([]);
+  });
+
+  // §24.201 D8: the owner status controls never move a promoted lead.
+  function seedPromoted(): void {
+    getDb()
+      .prepare(
+        `INSERT INTO applications (id, company_name, obfuscated_label, role_title, status, applied_at, created_at)
+         VALUES ('app-1', 'Globex', 'a fintech company', 'Senior Software Engineer', 'APPLIED',
+                 '2026-06-20T00:00:00.000Z', '2026-06-20T00:00:00.000Z')`,
+      )
+      .run();
+    seedLead({ id: 'promoted', status: 'applied', application_id: 'app-1' });
+  }
+  const leadState = (id: string) =>
+    getDb().prepare('SELECT status, status_changed_at, closed_at, application_id FROM job_leads WHERE id = ?').get(id);
+
+  it('set_status 409s a promoted lead and writes nothing', () => {
+    seedPromoted();
+    const before = leadState('promoted');
+    for (const status of ['archived', 'new', 'reviewed', 'queued']) {
+      const out = applyAdminLeadsWrite(getDb(), { action: 'set_status', id: 'promoted', status });
+      expect(out).toEqual({ status: 409, body: { error: 'promoted', application_id: 'app-1' } });
+    }
+    expect(leadState('promoted')).toEqual(before);
+  });
+
+  it('bulk_set_status skips-and-reports a promoted lead, keeping every existing response field', () => {
+    seedPromoted();
+    seedLead({ id: 'plain' });
+    const before = leadState('promoted');
+    const out = applyAdminLeadsWrite(getDb(), {
+      action: 'bulk_set_status',
+      ids: ['plain', 'promoted', 'ghost'],
+      status: 'archived',
+    });
+    expect(out).toEqual({
+      status: 200,
+      body: {
+        ok: true,
+        updated: 1,
+        missing: 1,
+        status: 'archived',
+        skipped: 1,
+        skipped_by_reason: { promoted: 1 },
+      },
+    });
+    expect(leadState('promoted')).toEqual(before);
+    expect(buildAdminLeads(getDb()).closed.map((l) => l.id)).toEqual(['plain']);
+  });
+
+  it('bulk_set_status reports skipped:0 and an empty reason map when nothing is promoted', () => {
+    seedLead({ id: 'a' });
+    const out = applyAdminLeadsWrite(getDb(), { action: 'bulk_set_status', ids: ['a'], status: 'reviewed' });
+    expect(out.body).toMatchObject({ updated: 1, missing: 0, skipped: 0, skipped_by_reason: {} });
+  });
+
+  it('title_blocklist_remove takes a title back off the blocklist; the read lists it', () => {
+    seedLead({ id: 'a', title: 'Sales Engineer' });
+    applyAdminLeadsWrite(getDb(), { action: 'not_interested', id: 'a', reason: 'role', exclude_title: true });
+    expect(buildAdminLeads(getDb()).titleBlocklist).toEqual(['Sales Engineer']);
+
+    const out = applyAdminLeadsWrite(getDb(), { action: 'title_blocklist_remove', title: '  SALES engineer ' });
+    expect(out).toEqual({ status: 200, body: { ok: true, removed: true, title_blocklist: [] } });
+    expect(getConfig<string[]>(getDb(), 'lead_title_blocklist')).toEqual([]);
+    expect(buildAdminLeads(getDb()).titleBlocklist).toEqual([]);
+
+    expect(applyAdminLeadsWrite(getDb(), { action: 'title_blocklist_remove', title: 'Sales Engineer' }).body).toEqual({
+      ok: true,
+      removed: false,
+      title_blocklist: [],
+    });
+    expect(applyAdminLeadsWrite(getDb(), { action: 'title_blocklist_remove' }).status).toBe(400);
+  });
+
+  it('moving a not-interested lead out of archived clears its own not-interested tombstones only', () => {
+    seedLead({ id: 'a' });
+    seedLead({ id: 'b' });
+    seedLead({ id: 'c' });
+    applyAdminLeadsWrite(getDb(), { action: 'not_interested', id: 'a', reason: 'role' });
+    applyAdminLeadsWrite(getDb(), { action: 'not_interested', id: 'b', reason: 'location' });
+    applyAdminLeadsWrite(getDb(), { action: 'not_interested', id: 'c', reason: 'role' });
+    expect(tombstones().map((t) => t.source_job_id)).toEqual(['a', 'b', 'c']);
+
+    // single set_status away from archived
+    expect(applyAdminLeadsWrite(getDb(), { action: 'set_status', id: 'a', status: 'new' }).status).toBe(200);
+    expect(tombstones().map((t) => t.source_job_id)).toEqual(['b', 'c']);
+    // re-archiving through the select does not touch tombstones
+    applyAdminLeadsWrite(getDb(), { action: 'set_status', id: 'b', status: 'archived' });
+    expect(tombstones().map((t) => t.source_job_id)).toEqual(['b', 'c']);
+    // bulk away from archived
+    applyAdminLeadsWrite(getDb(), { action: 'bulk_set_status', ids: ['b'], status: 'reviewed' });
+    expect(tombstones().map((t) => t.source_job_id)).toEqual(['c']);
+  });
+
+  it('the read payload carries the fields the Leads tab triages on', () => {
+    seedLead({ id: 'a', source: 'google_jobs', apply_link_kind: 'ats' });
+    const lead = buildAdminLeads(getDb()).leads[0];
+    for (const k of [
+      'apply_link_kind',
+      'source',
+      'source_posted_at',
+      'first_seen_at',
+      'application_id',
+      'status',
+      'closed_reason',
+    ]) {
+      expect(lead).toHaveProperty(k);
+    }
+    expect(lead.apply_link_kind).toBe('ats');
   });
 });

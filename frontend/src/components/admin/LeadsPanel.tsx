@@ -1,12 +1,23 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { InfoTip } from '~/components/InfoTip'
 import {
+  fetchTailoredRuns,
+  isPromotedRefusal,
+  NOT_INTERESTED_REASONS,
   postAdminLeads,
+  postAppliedFromLead,
+  postUndoApplied,
   type AdminLead,
   type AdminLeadsView,
   type AdminLeadsWrite,
   type AdminWriteResult,
+  type BulkDeleteResult,
+  type BulkSetStatusResult,
+  type DuplicateApplication,
+  type NotInterestedReason,
+  type NotInterestedResult,
+  type TailoredRun,
 } from '~/lib/use-admin'
 import { cn } from '~/lib/utils'
 
@@ -33,13 +44,180 @@ import { TailorResume } from './TailorResume'
  * batch acts on an explicit id list, never a filter spec the server re-derives —
  * WYSIWYG is the safety story for a destructive control, so the count in the
  * button is always the count in the table.
+ *
+ * §24.201 makes triage fast without the agent: a *Link* filter + per-row chip
+ * (D1 — the one fact the owner triages on was buried in the detail), real row
+ * selection (D2 — the batch acts on the ticked rows when any are ticked, else on
+ * every shown row; the count is always the rows that will be acted on), j/k/o/a/
+ * q/x keyboard triage (D3), "not interested" with a reason that teaches the
+ * insert guard (D4), a sortable *Posted* column + a browser-kept "new since last
+ * visit" marker (D5), and "I applied" (D8), which creates the application and
+ * links THIS lead in one server action, with a short Undo window.
  */
 
 // The statuses the owner can set (mirrors the server allow-list — 'applied' is
 // agent-owned: it implies a promotion + an application_id the owner shouldn't fake).
 const SETTABLE_STATUSES = ['new', 'reviewed', 'queued', 'rejected', 'archived'] as const
 
-type SortKey = 'rules_score' | 'llm_score' | 'first_seen_at' | 'last_seen_at'
+/** What a write refused because the lead already backs an application says. */
+const PROMOTED_MESSAGE = 'This lead is already an application — change it on the Pipeline tab.'
+
+type SortKey = 'rules_score' | 'llm_score' | 'first_seen_at' | 'last_seen_at' | 'source_posted_at'
+
+// ── §24.201 D1: link kind, derived ────────────────────────────────────────────
+
+/** The board sources whose apply link is direct by construction. */
+const BOARD_SOURCES = new Set(['greenhouse', 'lever', 'ashby'])
+
+export type LinkKind = 'company' | 'ats' | 'aggregator' | 'unknown' | 'manual'
+const LINK_FILTER_OPTIONS = ['all', 'company', 'ats', 'aggregator', 'unknown', 'manual'] as const
+
+/** `apply_link_kind`, falling back to `source` when it is NULL: a manual lead
+ *  reads *manual*, a board-sourced lead *direct ATS*, anything else *unknown*. */
+export function linkKindOf(lead: Pick<AdminLead, 'apply_link_kind' | 'source'>): LinkKind {
+  if (lead.apply_link_kind) return lead.apply_link_kind
+  if (lead.source === 'manual') return 'manual'
+  if (BOARD_SOURCES.has(lead.source)) return 'ats'
+  return 'unknown'
+}
+
+const LINK_CHIP: Record<LinkKind, { label: string; tone: string; title: string }> = {
+  ats: {
+    label: 'direct ATS',
+    tone: 'border-primary/40 text-primary',
+    title: "Applies on the employer's own applicant-tracking board",
+  },
+  company: {
+    label: 'company',
+    tone: 'border-primary/40 text-primary',
+    title: "Applies on the employer's careers site",
+  },
+  aggregator: {
+    label: 'aggregator',
+    tone: 'border-amber-400/50 text-amber-400',
+    title: 'Only reached us via a reposter — the company name is unverified too',
+  },
+  unknown: { label: 'unknown', tone: 'border-border text-muted-foreground', title: 'No apply link was found' },
+  manual: { label: 'manual', tone: 'border-border text-muted-foreground', title: 'Recorded by hand, not discovered' },
+}
+
+function LinkChip({ lead }: { lead: AdminLead }) {
+  const kind = linkKindOf(lead)
+  const chip = LINK_CHIP[kind]
+  return (
+    <span
+      data-testid="leads-link-chip"
+      data-kind={kind}
+      title={chip.title}
+      className={cn('inline-block whitespace-nowrap rounded border px-1.5 py-px font-mono text-[10px]', chip.tone)}
+    >
+      {chip.label}
+    </span>
+  )
+}
+
+// ── §24.201 D5: "new since last visit", kept in this browser ─────────────────
+
+const LAST_VISIT_KEY = 'career-pilot.admin.leads.last-visit'
+
+/** Every storage access is guarded: private windows, blocked site data and SSR
+ *  all make `localStorage` throw or vanish, and the marker is a convenience. */
+function readLastVisit(): number | null {
+  try {
+    const raw = window.localStorage.getItem(LAST_VISIT_KEY)
+    if (!raw) return null
+    const t = Number(raw)
+    return Number.isFinite(t) ? t : null
+  } catch {
+    return null
+  }
+}
+
+function writeLastVisit(t: number): void {
+  try {
+    window.localStorage.setItem(LAST_VISIT_KEY, String(t))
+  } catch {
+    // storage unavailable — the marker simply never shows
+  }
+}
+
+/** This browser session's baseline: the previous visit's timestamp as it stood
+ *  when the session began ('' = there was none). The admin route mounts the
+ *  panel only while its tab is active, so a "visit" has to be a browser
+ *  session — otherwise every tab switch would count as a new visit and clear
+ *  every marker. */
+const SESSION_BASELINE_KEY = 'career-pilot.admin.leads.session-baseline'
+
+/** In-memory stand-in for `sessionStorage` when it throws: the same page load
+ *  is the same session. */
+let memoryBaseline: { value: number | null } | null = null
+
+function readSessionBaseline(): { value: number | null } | null {
+  try {
+    const raw = window.sessionStorage.getItem(SESSION_BASELINE_KEY)
+    if (raw == null) return null
+    const t = raw === '' ? null : Number(raw)
+    return { value: t != null && Number.isFinite(t) ? t : null }
+  } catch {
+    return memoryBaseline
+  }
+}
+
+function writeSessionBaseline(value: number | null): void {
+  memoryBaseline = { value }
+  try {
+    window.sessionStorage.setItem(SESSION_BASELINE_KEY, value == null ? '' : String(value))
+  } catch {
+    // the in-memory copy carries this page load
+  }
+}
+
+/** The "new since" baseline for this mount. The first mount of a browser
+ *  session reads the stored last visit and advances it to now; every later
+ *  mount in the same session reuses that first reading and writes nothing. */
+export function sessionLastVisit(now: number = Date.now()): number | null {
+  const existing = readSessionBaseline()
+  if (existing) return existing.value
+  const previous = readLastVisit()
+  writeSessionBaseline(previous)
+  writeLastVisit(now)
+  return previous
+}
+
+/** Test hook: forget the in-memory session baseline. */
+export function resetLeadsVisitSessionForTests(): void {
+  memoryBaseline = null
+}
+
+function timeOf(iso: string | null): number | null {
+  if (!iso) return null
+  const t = new Date(iso).getTime()
+  return Number.isNaN(t) ? null : t
+}
+
+/** Today as `YYYY-MM-DD` in the owner's local time (the date they applied). */
+function todayLocal(): string {
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+/** A focused form control eats typed keys, so triage shortcuts stand down —
+ *  except a checkbox/radio, which takes no text (ticking a row then pressing j
+ *  must keep working). */
+function isTypingTarget(el: EventTarget | Element | null): boolean {
+  if (!(el instanceof HTMLElement)) return false
+  if (el.isContentEditable) return true
+  if (el instanceof HTMLInputElement) return el.type !== 'checkbox' && el.type !== 'radio'
+  return el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement
+}
+
+/** A focused checkbox/radio. Navigation (j/k) still works from one, but the
+ *  acting keys (o/a/q/x) stand down: right after ticking a row, the outlined
+ *  row can be a different one than the row just interacted with. */
+function isToggleControl(el: EventTarget | Element | null): boolean {
+  return el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio')
+}
 
 function fmtAgeHours(h: number | null): string {
   if (h == null) return '—'
@@ -173,76 +351,137 @@ function ScoreReasons({ reasons }: { reasons: unknown }) {
 
 // ── the table columns + the expandable detail ─────────────────────────────────
 
-const LEAD_COLUMNS: Column<AdminLead>[] = [
-  {
-    id: 'company',
-    header: 'Company',
-    cellClassName: 'text-foreground',
-    cell: (lead) => (
-      <span className="block max-w-[14rem] truncate" title={lead.company}>
-        {lead.company}
-      </span>
-    ),
-  },
-  {
-    id: 'role',
-    header: 'Role',
-    cellClassName: 'text-muted-foreground',
-    cell: (lead) => (
-      <span className="block max-w-[16rem] truncate" title={lead.title}>
-        {lead.title}
-      </span>
-    ),
-  },
-  { id: 'location', header: 'Location', cellClassName: 'text-muted-foreground', cell: (lead) => locationLabel(lead) },
-  {
-    id: 'comp',
-    header: 'Comp',
-    align: 'right',
-    cellClassName: 'font-mono tabular-nums text-muted-foreground',
-    cell: (lead) => fmtComp(lead),
-  },
-  {
-    id: 'score',
-    header: 'Score',
-    align: 'right',
-    cell: (lead) => (
-      <span className={cn('font-mono font-semibold tabular-nums', scoreTone(lead.rules_score))}>
-        {lead.rules_score ?? '—'}
-        {lead.llm_score != null ? (
-          <span className="ml-1 text-[10px] text-muted-foreground">/{lead.llm_score}</span>
-        ) : null}
-      </span>
-    ),
-  },
-  {
-    id: 'status',
-    header: 'Status',
-    cell: (lead) => (
-      <span className={cn('font-mono text-xs', STATUS_TONE[lead.status] ?? 'text-muted-foreground')}>
-        {lead.status}
-      </span>
-    ),
-  },
-  {
-    id: 'age',
-    header: 'Age',
-    cellClassName: 'font-mono text-xs text-muted-foreground',
-    cell: (lead) => fmtAgeHours(ageHoursOf(lead.first_seen_at)),
-  },
-]
+function leadColumns(isNew: (lead: AdminLead) => boolean): Column<AdminLead>[] {
+  return [
+    {
+      id: 'company',
+      header: 'Company',
+      cellClassName: 'text-foreground',
+      cell: (lead) => (
+        <span className="flex max-w-[14rem] items-center gap-1.5">
+          {isNew(lead) ? (
+            <span
+              data-testid="leads-new-marker"
+              aria-label="new since your last visit"
+              title="New since your last visit"
+              className="shrink-0 text-[8px] text-accent-cool"
+            >
+              ●
+            </span>
+          ) : null}
+          <span className="truncate" title={lead.company}>
+            {lead.company}
+          </span>
+        </span>
+      ),
+    },
+    {
+      id: 'role',
+      header: 'Role',
+      cellClassName: 'text-muted-foreground',
+      cell: (lead) => (
+        <span className="block max-w-[16rem] truncate" title={lead.title}>
+          {lead.title}
+        </span>
+      ),
+    },
+    { id: 'link', header: 'Link', cell: (lead) => <LinkChip lead={lead} /> },
+    { id: 'location', header: 'Location', cellClassName: 'text-muted-foreground', cell: (lead) => locationLabel(lead) },
+    {
+      id: 'comp',
+      header: 'Comp',
+      align: 'right',
+      cellClassName: 'font-mono tabular-nums text-muted-foreground',
+      cell: (lead) => fmtComp(lead),
+    },
+    {
+      id: 'score',
+      header: 'Score',
+      align: 'right',
+      cell: (lead) => (
+        <span className={cn('font-mono font-semibold tabular-nums', scoreTone(lead.rules_score))}>
+          {lead.rules_score ?? '—'}
+          {lead.llm_score != null ? (
+            <span className="ml-1 text-[10px] text-muted-foreground">/{lead.llm_score}</span>
+          ) : null}
+        </span>
+      ),
+    },
+    {
+      id: 'status',
+      header: 'Status',
+      cell: (lead) => (
+        <span className={cn('font-mono text-xs', STATUS_TONE[lead.status] ?? 'text-muted-foreground')}>
+          {lead.status}
+        </span>
+      ),
+    },
+    {
+      // §24.201 D5 — when the employer posted it (not when we first saw it).
+      id: 'posted',
+      header: 'Posted',
+      cellClassName: 'font-mono text-xs text-muted-foreground',
+      sort: (lead) => timeOf(lead.source_posted_at) ?? 0,
+      cell: (lead) => (
+        <span data-testid="leads-posted" title={lead.source_posted_at ?? 'no posting date'}>
+          {fmtAgeHours(ageHoursOf(lead.source_posted_at))}
+        </span>
+      ),
+    },
+    {
+      id: 'age',
+      header: 'Seen',
+      cellClassName: 'font-mono text-xs text-muted-foreground',
+      cell: (lead) => fmtAgeHours(ageHoursOf(lead.first_seen_at)),
+    },
+  ]
+}
+
+/** An "I applied" this session recorded — the handle its Undo needs. */
+interface AppliedEntry {
+  application_id: string
+  obfuscated_label: string
+  undo_until: string
+  /** The lead's own names — the panel-level Undo outlives the row (a filter can
+   *  hide a just-applied lead), so it carries what it needs to label itself. */
+  company: string
+  title: string
+}
+
+interface LeadDetailProps {
+  lead: AdminLead
+  busy: string | null
+  baseUrl: string
+  onPost: (body: AdminLeadsWrite, busyKey: string) => void
+  niOpen: boolean
+  setNiOpen: (open: boolean) => void
+  onNotInterested: (lead: AdminLead, reason: NotInterestedReason, excludeTitle: boolean) => void
+  applied: AppliedEntry | undefined
+  onApplied: (lead: AdminLead, entry: AppliedEntry) => void
+  onAppliedRefused: (message: string) => void
+}
+
+/** The small uppercase label that heads each detail row. */
+function RowLabel({ children }: { children: string }) {
+  return (
+    <span className="w-12 shrink-0 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+      {children}
+    </span>
+  )
+}
 
 function LeadDetail({
   lead,
   busy,
   baseUrl,
   onPost,
-}: {
-  lead: AdminLead
-  busy: string | null
-  baseUrl: string
-  onPost: (body: AdminLeadsWrite, busyKey: string) => void
-}) {
+  niOpen,
+  setNiOpen,
+  onNotInterested,
+  applied,
+  onApplied,
+  onAppliedRefused,
+}: LeadDetailProps) {
   const settable = SETTABLE_STATUSES.includes(lead.status as (typeof SETTABLE_STATUSES)[number])
   return (
     <div className="flex flex-col gap-3">
@@ -252,7 +491,8 @@ function LeadDetail({
       {lead.snippet ? (
         <p className="max-w-2xl text-[11px] leading-relaxed text-muted-foreground">{lead.snippet}…</p>
       ) : null}
-      <div className="flex flex-wrap items-center gap-3">
+      {/* Links — where the posting lives, and how direct that is. */}
+      <div data-testid="leads-detail-links" className="flex flex-wrap items-center gap-3">
         {lead.source_url ? (
           <a
             href={lead.source_url}
@@ -298,41 +538,414 @@ function LeadDetail({
           <span className="font-mono text-[11px] text-muted-foreground">closed: {lead.closed_reason ?? '—'}</span>
         ) : null}
       </div>
-      {/* Triage actions */}
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">status</label>
-        <select
-          data-testid="leads-status-select"
-          value={settable ? lead.status : ''}
-          disabled={busy != null}
-          onChange={(e) => onPost({ action: 'set_status', id: lead.id, status: e.target.value }, `status-${lead.id}`)}
-          className="rounded-md border border-border bg-background px-2 py-1 font-mono text-[11px] text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {!settable ? (
-            <option value="" disabled>
-              {lead.status}
-            </option>
+      {/* Primary actions — things the owner DID or wants done about this lead. */}
+      <div data-testid="leads-detail-actions" className="flex flex-col gap-2 border-t border-border/60 pt-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <RowLabel>act</RowLabel>
+          <AppliedControl
+            lead={lead}
+            baseUrl={baseUrl}
+            panelBusy={busy}
+            applied={applied}
+            onApplied={onApplied}
+            onRefused={onAppliedRefused}
+          />
+          {/* ── SLOT: per-lead agent actions (§24.202) ──────────────────────
+              "Research company" and "Draft outreach" buttons go here, after
+              "I applied". Not built yet — keep this row's order when adding. */}
+          {/* ── end slot ── */}
+        </div>
+      </div>
+      {/* Triage — what the lead's state in the pool should be. */}
+      <div data-testid="leads-detail-triage" className="flex flex-col gap-2 border-t border-border/60 pt-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <RowLabel>triage</RowLabel>
+          <label
+            htmlFor={`leads-status-${lead.id}`}
+            className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground"
+          >
+            status
+          </label>
+          <select
+            id={`leads-status-${lead.id}`}
+            data-testid="leads-status-select"
+            value={settable ? lead.status : ''}
+            // A promoted lead is an application now: its status is the
+            // Pipeline's to change (the server refuses it too).
+            disabled={busy != null || lead.application_id != null}
+            title={lead.application_id ? 'Already an application — change it on the Pipeline tab' : undefined}
+            onChange={(e) => onPost({ action: 'set_status', id: lead.id, status: e.target.value }, `status-${lead.id}`)}
+            className="rounded-md border border-border bg-background px-2 py-1 font-mono text-[11px] text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {!settable ? (
+              <option value="" disabled>
+                {lead.status}
+              </option>
+            ) : null}
+            {SETTABLE_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          {!lead.application_id && !niOpen ? (
+            <button
+              type="button"
+              data-testid="leads-ni-open"
+              disabled={busy != null}
+              onClick={() => setNiOpen(true)}
+              className="rounded-md border border-border px-2.5 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+              title="Archive this lead and teach the scraper not to bring it back (x)"
+            >
+              Not interested…
+            </button>
           ) : null}
-          {SETTABLE_STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          data-testid="leads-rescore"
-          disabled={busy != null}
-          onClick={() => onPost({ action: 'rescore', id: lead.id }, `rescore-${lead.id}`)}
-          className="rounded-md border border-border px-2.5 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-          title="Recompute this lead's rules_score against the current profile"
-        >
-          {busy === `rescore-${lead.id}` ? 'Re-scoring…' : 'Re-score'}
-        </button>
+          <button
+            type="button"
+            data-testid="leads-rescore"
+            disabled={busy != null}
+            onClick={() => onPost({ action: 'rescore', id: lead.id }, `rescore-${lead.id}`)}
+            className="rounded-md border border-border px-2.5 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+            title="Recompute this lead's rules_score against the current profile"
+          >
+            {busy === `rescore-${lead.id}` ? 'Re-scoring…' : 'Re-score'}
+          </button>
+        </div>
+        {niOpen && !lead.application_id ? (
+          <NotInterestedForm
+            lead={lead}
+            busy={busy}
+            onCancel={() => setNiOpen(false)}
+            onConfirm={(reason, excludeTitle) => onNotInterested(lead, reason, excludeTitle)}
+          />
+        ) : null}
       </div>
       {/* §24.191 — tailor a résumé to this specific lead. Owner-only surface; a
           résumé naming a real employer never appears on a public route. */}
       <TailorResume leadId={lead.id} baseUrl={baseUrl} />
+    </div>
+  )
+}
+
+// ── §24.201 D4: "not interested" ──────────────────────────────────────────────
+
+const REASON_HINT: Record<NotInterestedReason, string> = {
+  role: 'wrong kind of role — this posting and near-identical re-posts stay out',
+  level: 'wrong level — only this posting stays out (its sibling levels may be fine)',
+  location: 'wrong location — only this posting stays out (other locations may be fine)',
+  company: 'not this company — this posting and near-identical re-posts stay out',
+  other: 'anything else — this posting and near-identical re-posts stay out',
+}
+
+/** Step two of "not interested": the reason, the opt-in title exclusion, and
+ *  the confirm. Opening it was step one. */
+function NotInterestedForm({
+  lead,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  lead: AdminLead
+  busy: string | null
+  onCancel: () => void
+  onConfirm: (reason: NotInterestedReason, excludeTitle: boolean) => void
+}) {
+  const [reason, setReason] = useState<NotInterestedReason>('role')
+  const [excludeTitle, setExcludeTitle] = useState(false)
+  return (
+    <div
+      data-testid="leads-ni-form"
+      className="ml-14 flex max-w-2xl flex-col gap-2 rounded-md border border-border bg-background/60 px-3 py-2"
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+          reason
+          <select
+            data-testid="leads-ni-reason"
+            autoFocus
+            value={reason}
+            onChange={(e) => setReason(e.target.value as NotInterestedReason)}
+            className="rounded-md border border-border bg-background px-2 py-1 text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {NOT_INTERESTED_REASONS.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex cursor-pointer items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+          <input
+            type="checkbox"
+            data-testid="leads-ni-exclude-title"
+            checked={excludeTitle}
+            onChange={(e) => setExcludeTitle(e.target.checked)}
+          />
+          exclude this title from future scrapes
+        </label>
+      </div>
+      <p className="font-mono text-[10px] text-muted-foreground">
+        {REASON_HINT[reason]}
+        {excludeTitle ? ` · every lead titled “${lead.title}” is refused from now on` : ''}
+      </p>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          data-testid="leads-ni-confirm"
+          disabled={busy != null}
+          onClick={() => onConfirm(reason, excludeTitle)}
+          className="rounded-md border border-destructive px-2.5 py-1 font-mono text-[11px] text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
+        >
+          {busy === `ni-${lead.id}` ? 'Archiving…' : 'Confirm not interested'}
+        </button>
+        <button
+          type="button"
+          data-testid="leads-ni-cancel"
+          onClick={onCancel}
+          className="rounded-md px-2 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+        >
+          cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── §24.201 D8: "I applied" ───────────────────────────────────────────────────
+
+const MAX_APPLIED_NOTE = 1000
+
+function fmtCountdown(s: number): string {
+  if (s < 60) return `${s}s`
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
+/** Undo, counting down to the server's `undo_until`. Past it, the button goes —
+ *  the application is the Pipeline's to maintain from then on. */
+function UndoCountdown({ until, busy, onUndo }: { until: string; busy: boolean; onUndo: () => void }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
+  const end = timeOf(until)
+  const left = end == null ? 0 : Math.max(0, Math.ceil((end - now) / 1000))
+  if (left <= 0) {
+    return (
+      <span data-testid="leads-applied-undo-expired" className="font-mono text-[11px] text-muted-foreground">
+        undo window passed
+      </span>
+    )
+  }
+  return (
+    <button
+      type="button"
+      data-testid="leads-applied-undo"
+      disabled={busy}
+      onClick={onUndo}
+      className="rounded-md border border-border px-2.5 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+    >
+      {busy ? 'Undoing…' : `Undo (${fmtCountdown(left)})`}
+    </button>
+  )
+}
+
+function AppliedControl({
+  lead,
+  baseUrl,
+  panelBusy,
+  applied,
+  onApplied,
+  onRefused,
+}: {
+  lead: AdminLead
+  baseUrl: string
+  panelBusy: string | null
+  applied: AppliedEntry | undefined
+  onApplied: (lead: AdminLead, entry: AppliedEntry) => void
+  onRefused: (message: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [date, setDate] = useState(todayLocal)
+  const [note, setNote] = useState('')
+  // Only résumés tailored to THIS lead, and only ones that rendered — the server
+  // refuses anything else with a 400 anyway.
+  const [resumes, setResumes] = useState<TailoredRun[] | null>(null)
+  const [resumeId, setResumeId] = useState('')
+  const [duplicate, setDuplicate] = useState<DuplicateApplication | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    let live = true
+    void fetchTailoredRuns(baseUrl, lead.id).then((runs) => {
+      if (!live) return
+      const ready = runs.filter((r) => r.status === 'ready' && r.has_resume)
+      setResumes(ready)
+      // Default to the newest ready résumé — the one most likely sent.
+      setResumeId((cur) => cur || (ready[0]?.id ?? ''))
+    })
+    return () => {
+      live = false
+    }
+  }, [open, baseUrl, lead.id])
+
+  // The Undo itself lives in the panel's "just applied" strip, not here: the
+  // refresh after recording can filter this row (and so this control) away.
+  if (applied) {
+    return (
+      <span data-testid="leads-applied-state" className="font-mono text-[11px] text-primary">
+        ✓ applied · {applied.obfuscated_label} · undo is above the table
+      </span>
+    )
+  }
+  // Already linked (by the agent or an earlier session) — the links row says so.
+  if (lead.application_id) return null
+
+  const submit = async (confirmDuplicate: boolean): Promise<void> => {
+    setBusy(true)
+    setError(null)
+    const out = await postAppliedFromLead(baseUrl, {
+      lead_id: lead.id,
+      ...(date ? { applied_at: date } : {}),
+      ...(note.trim() ? { note: note.trim() } : {}),
+      ...(resumeId ? { tailored_resume_id: resumeId } : {}),
+      ...(confirmDuplicate ? { confirm_duplicate: true } : {}),
+    })
+    setBusy(false)
+    if (out.kind === 'ok') {
+      setOpen(false)
+      setDuplicate(null)
+      onApplied(lead, {
+        application_id: out.result.application_id,
+        obfuscated_label: out.result.obfuscated_label,
+        undo_until: out.result.undo_until,
+        company: lead.company,
+        title: lead.title,
+      })
+    } else if (out.kind === 'duplicate') {
+      setDuplicate(out.duplicate_of)
+    } else if (out.kind === 'already_linked') {
+      setOpen(false)
+      onRefused('This lead is already linked to an application.')
+    } else if (out.kind === 'not_found') {
+      setOpen(false)
+      onRefused('That lead no longer exists.')
+    } else {
+      // 400 = a bad date, or a résumé that is not a ready one of this lead.
+      setError(out.status === 400 ? `Refused: ${out.error}` : out.error)
+    }
+  }
+
+  return (
+    <div className="flex w-full flex-col gap-2 sm:w-auto">
+      {!open ? (
+        <button
+          type="button"
+          data-testid="leads-applied-open"
+          disabled={panelBusy != null}
+          onClick={() => setOpen(true)}
+          className="self-start rounded-md border border-primary/60 px-2.5 py-1 font-mono text-[11px] text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
+          title="Record that you applied — creates the application and links this lead"
+        >
+          I applied
+        </button>
+      ) : (
+        <div
+          data-testid="leads-applied-popover"
+          className="flex max-w-xl flex-col gap-2 rounded-md border border-border bg-background/60 px-3 py-2"
+        >
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+              applied
+              <input
+                type="date"
+                data-testid="leads-applied-date"
+                value={date}
+                max={todayLocal()}
+                onChange={(e) => setDate(e.target.value)}
+                className="rounded-md border border-border bg-background px-2 py-1 text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </label>
+            {resumes && resumes.length > 0 ? (
+              <label className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+                résumé sent
+                <select
+                  data-testid="leads-applied-resume"
+                  value={resumeId}
+                  onChange={(e) => setResumeId(e.target.value)}
+                  className="rounded-md border border-border bg-background px-2 py-1 text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <option value="">not recorded</option>
+                  {resumes.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      tailored {new Date(r.created_at).toLocaleDateString()}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+          </div>
+          <input
+            data-testid="leads-applied-note"
+            aria-label="Application note (optional)"
+            value={note}
+            maxLength={MAX_APPLIED_NOTE}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Note (optional) — e.g. referred by a friend"
+            className="rounded-md border border-border bg-background px-2 py-1.5 font-mono text-[11px] text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          {duplicate ? (
+            <div
+              data-testid="leads-applied-duplicate"
+              className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-amber-400"
+            >
+              <span>
+                You already have an open application: {duplicate.company_name ?? '—'} · {duplicate.role_title ?? '—'} (
+                {duplicate.status})
+              </span>
+              <button
+                type="button"
+                data-testid="leads-applied-create-anyway"
+                disabled={busy}
+                onClick={() => void submit(true)}
+                className="rounded-md border border-amber-400/60 px-2.5 py-1 text-amber-400 transition-colors hover:bg-amber-400/10 disabled:opacity-50"
+              >
+                Create anyway
+              </button>
+            </div>
+          ) : null}
+          {error ? (
+            <p data-testid="leads-applied-error" className="font-mono text-[11px] text-destructive">
+              {error}
+            </p>
+          ) : null}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              data-testid="leads-applied-confirm"
+              disabled={busy || panelBusy != null}
+              onClick={() => void submit(false)}
+              className="rounded-md border border-primary/60 px-2.5 py-1 font-mono text-[11px] text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
+            >
+              {busy ? 'Recording…' : 'Record application'}
+            </button>
+            <button
+              type="button"
+              data-testid="leads-applied-cancel"
+              onClick={() => {
+                setOpen(false)
+                setDuplicate(null)
+                setError(null)
+              }}
+              className="rounded-md px-2 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+            >
+              cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -350,6 +963,7 @@ export function LeadsPanel({
 }) {
   const [status, setStatus] = useState('all')
   const [source, setSource] = useState('all')
+  const [linkKind, setLinkKind] = useState<string>('all')
   const [minScore, setMinScore] = useState('')
   const [minAgeDays, setMinAgeDays] = useState('')
   const [company, setCompany] = useState('')
@@ -360,14 +974,56 @@ export function LeadsPanel({
   const [note, setNote] = useState<string | null>(null)
   // The two-step confirm for the bulk actions — null, or which one is armed.
   const [arming, setArming] = useState<'archive' | 'delete' | null>(null)
+  // §24.201 D2 — the ticked rows (lead ids). Empty = "act on all shown".
+  const [selected, setSelected] = useState<Set<string>>(() => new Set())
+  // §24.201 D3 — keyboard triage: the focused row, the open disclosure, and the
+  // table's display order (what j/k walk — it includes any header sort).
+  const [focusedKey, setFocusedKey] = useState<string | null>(null)
+  const [expandedKey, setExpandedKey] = useState<string | null>(null)
+  const [order, setOrder] = useState<string[]>([])
+  const [niOpenId, setNiOpenId] = useState<string | null>(null)
+  // §24.201 D8 — "I applied"s recorded this session, keyed by lead id, so the
+  // Undo survives the lead refresh that brings back its application_id.
+  const [applied, setApplied] = useState<Record<string, AppliedEntry>>({})
+  // §24.201 D5 — the previous visit's timestamp. A visit is a browser session:
+  // the baseline is read once per session, so a tab switch (which remounts the
+  // panel) keeps the markers instead of counting as a new visit.
+  const [lastVisit, setLastVisit] = useState<number | null>(null)
+  const visitStamped = useRef(false)
+  useEffect(() => {
+    if (visitStamped.current) return
+    visitStamped.current = true
+    setLastVisit(sessionLastVisit())
+  }, [])
 
-  const post = async (body: AdminLeadsWrite, busyKey: string): Promise<void> => {
+  // §24.201 D4 — the owner's title blocklist. A write's response carries the
+  // fresh list; it stands in until the next poll brings the same list back.
+  const [blocklistOverride, setBlocklistOverride] = useState<string[] | null>(null)
+  useEffect(() => setBlocklistOverride(null), [data])
+  const titleBlocklist = blocklistOverride ?? data?.titleBlocklist ?? []
+
+  const post = async (body: AdminLeadsWrite, busyKey: string): Promise<AdminWriteResult> => {
     setBusy(busyKey)
     setError(null)
     const res: AdminWriteResult = await postAdminLeads(baseUrl, body)
     setBusy(null)
-    if (!res.ok) setError(res.error ?? `write failed (${res.status})`)
+    if (isPromotedRefusal(res)) {
+      // The lead became an application since this view was fetched — refresh
+      // so the row shows it.
+      setError(PROMOTED_MESSAGE)
+      onSaved()
+    } else if (!res.ok) setError(res.error ?? `write failed (${res.status})`)
     else onSaved()
+    return res
+  }
+
+  const removeFromBlocklist = async (title: string): Promise<void> => {
+    setNote(null)
+    const res = await post({ action: 'title_blocklist_remove', title }, `blocklist-${title}`)
+    if (!res.ok) return
+    const list = res.data?.title_blocklist
+    if (Array.isArray(list)) setBlocklistOverride(list.filter((t): t is string => typeof t === 'string'))
+    setNote(`“${title}” is no longer excluded — leads with that title can come back.`)
   }
 
   const filtered = useMemo(() => {
@@ -380,6 +1036,7 @@ export function LeadsPanel({
       (l) =>
         (status === 'all' || l.status === status) &&
         (source === 'all' || l.source === source) &&
+        (linkKind === 'all' || linkKindOf(l) === linkKind) &&
         (min == null || Number.isNaN(min) || (l.rules_score ?? 0) >= min) &&
         (minAge == null || Number.isNaN(minAge) || (ageHoursOf(l.first_seen_at) ?? 0) >= minAge * 24) &&
         (q === '' || l.company.toLowerCase().includes(q) || l.title.toLowerCase().includes(q)),
@@ -389,21 +1046,47 @@ export function LeadsPanel({
         ? new Date(l.first_seen_at).getTime()
         : sort === 'last_seen_at'
           ? new Date(l.last_seen_at).getTime()
-          : sort === 'llm_score'
-            ? (l.llm_score ?? -1)
-            : (l.rules_score ?? -1)
+          : sort === 'source_posted_at'
+            ? (timeOf(l.source_posted_at) ?? 0)
+            : sort === 'llm_score'
+              ? (l.llm_score ?? -1)
+              : (l.rules_score ?? -1)
     return [...rows].sort((a, b) => val(b) - val(a))
-  }, [data, status, source, minScore, minAgeDays, company, includeClosed, sort])
+  }, [data, status, source, linkKind, minScore, minAgeDays, company, includeClosed, sort])
 
-  // §24.187: the batch acts on exactly these rows. Disarm the confirm whenever
-  // the visible set changes, so an armed "delete 40" can never fire against a
-  // different 40 after a filter tweak.
+  const columns = useMemo(
+    () =>
+      leadColumns((l) => {
+        if (lastVisit == null) return false
+        const seen = timeOf(l.first_seen_at)
+        return seen != null && seen > lastVisit
+      }),
+    [lastVisit],
+  )
+
+  // §24.187: the batch acts on exactly the rows it says it will. Disarm the
+  // confirm whenever that set changes — a filter tweak OR a selection change —
+  // so an armed "delete 40" can never fire against a different 40.
   const visibleIds = useMemo(() => filtered.map((l) => l.id), [filtered])
   const bulkSignature = visibleIds.join(',')
-  useEffect(() => setArming(null), [bulkSignature])
+  // A ticked row the filters now hide is dropped from the selection: WYSIWYG
+  // means a batch never touches a row the owner cannot see.
+  useEffect(() => {
+    setSelected((prev) => {
+      if (prev.size === 0) return prev
+      const visible = new Set(visibleIds)
+      const next = new Set([...prev].filter((id) => visible.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [bulkSignature]) // keyed on the id signature, not the array identity
+  const selectedVisible = useMemo(() => visibleIds.filter((id) => selected.has(id)), [visibleIds, selected])
+  const bulkMode: 'selected' | 'shown' = selectedVisible.length > 0 ? 'selected' : 'shown'
+  const targetIds = bulkMode === 'selected' ? selectedVisible : visibleIds
+  const targetSignature = `${bulkMode}|${targetIds.join(',')}`
+  useEffect(() => setArming(null), [targetSignature])
 
   const runBulk = async (kind: 'archive' | 'delete'): Promise<void> => {
-    const ids = visibleIds
+    const ids = targetIds
     if (ids.length === 0) return
     setBusy(`bulk-${kind}`)
     setError(null)
@@ -423,15 +1106,156 @@ export function LeadsPanel({
     else {
       setNote(
         kind === 'archive'
-          ? `Archived ${ids.length} lead${ids.length === 1 ? '' : 's'}.`
-          : `Deleted up to ${ids.length} lead${ids.length === 1 ? '' : 's'} (promoted leads skipped).`,
+          ? bulkArchiveNote(ids.length, res.data as BulkSetStatusResult | undefined)
+          : bulkDeleteNote(ids.length, res.data as BulkDeleteResult | undefined),
       )
+      setSelected(new Set())
       onSaved()
     }
   }
 
+  // §24.201 D4 — archive + a tombstone whose reach follows the reason.
+  const notInterested = async (lead: AdminLead, reason: NotInterestedReason, excludeTitle: boolean): Promise<void> => {
+    setBusy(`ni-${lead.id}`)
+    setError(null)
+    setNote(null)
+    const res = await postAdminLeads(baseUrl, {
+      action: 'not_interested',
+      id: lead.id,
+      reason,
+      exclude_title: excludeTitle,
+    })
+    setBusy(null)
+    if (isPromotedRefusal(res)) {
+      setNiOpenId(null)
+      setError(PROMOTED_MESSAGE)
+      onSaved()
+      return
+    }
+    if (!res.ok) {
+      setError(res.error ?? `write failed (${res.status})`)
+      return
+    }
+    const d = (res.data ?? {}) as Partial<NotInterestedResult>
+    if (Array.isArray(d.title_blocklist)) setBlocklistOverride(d.title_blocklist)
+    setNiOpenId(null)
+    setNote(
+      `Not interested (${reason}): archived ${lead.company} — ` +
+        (d.tombstone_match === 'fingerprint'
+          ? 'this posting and near-identical re-posts from this company will not come back'
+          : 'this posting will not come back') +
+        (d.title_blocklisted ? `; the title “${lead.title}” is now excluded.` : '.'),
+    )
+    onSaved()
+  }
+
+  const onApplied = (lead: AdminLead, entry: AppliedEntry): void => {
+    setApplied((prev) => ({ ...prev, [lead.id]: entry }))
+    setError(null)
+    setNote(`Recorded: applied to ${lead.company} (public card: ${entry.obfuscated_label}).`)
+    onSaved()
+  }
+
+  const onAppliedRefused = (message: string): void => {
+    setError(message)
+    onSaved()
+  }
+
+  // Keyed by lead id, not by a row: the lead may no longer be in the view.
+  const undoApplied = async (leadId: string, entry: AppliedEntry): Promise<void> => {
+    setBusy(`undo-${leadId}`)
+    setError(null)
+    setNote(null)
+    const out = await postUndoApplied(baseUrl, entry.application_id)
+    setBusy(null)
+    const drop = (): void =>
+      setApplied((prev) => {
+        const next = { ...prev }
+        delete next[leadId]
+        return next
+      })
+    if (out.kind === 'ok') {
+      drop()
+      setNote(`Undone — the application is gone and the lead is back to “${out.restored_status}”.`)
+      onSaved()
+    } else if (out.kind === 'window_passed') {
+      drop()
+      setError('The undo window has passed — the application stays; it is on the Pipeline tab now.')
+    } else if (out.kind === 'referenced') {
+      drop()
+      setError(
+        `Can’t undo: something else already refers to this application${out.detail ? ` (${out.detail})` : ''}. It stays on the Pipeline tab.`,
+      )
+    } else {
+      setError(out.error)
+    }
+  }
+
+  // ── §24.201 D3: keyboard triage ────────────────────────────────────────────
+  // The table reports its display order; with no rows it renders nothing, so an
+  // empty filter means an empty order (never a stale one).
+  const navOrder = filtered.length === 0 ? [] : order
+  const lastFocusIdx = useRef(0)
+  // When the focused lead leaves the view (archived, filtered out), focus the
+  // row now at its position — so `a`, `a`, `a` walks down the list.
+  useEffect(() => {
+    if (focusedKey == null) return
+    const idx = navOrder.indexOf(focusedKey)
+    if (idx >= 0) {
+      lastFocusIdx.current = idx
+      return
+    }
+    setFocusedKey(
+      navOrder.length === 0 ? null : (navOrder[Math.min(lastFocusIdx.current, navOrder.length - 1)] ?? null),
+    )
+  }, [navOrder, focusedKey])
+
+  const keyHandler = useRef<(e: KeyboardEvent) => void>(() => {})
+  keyHandler.current = (e: KeyboardEvent) => {
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return
+    if (!['j', 'k', 'o', 'a', 'q', 'x'].includes(e.key)) return
+    if (isTypingTarget(e.target) || isTypingTarget(document.activeElement)) return
+    const isNav = e.key === 'j' || e.key === 'k'
+    if (!isNav && (isToggleControl(e.target) || isToggleControl(document.activeElement))) return
+    if (navOrder.length === 0) return
+    const idx = focusedKey == null ? -1 : navOrder.indexOf(focusedKey)
+    if (e.key === 'j' || e.key === 'k') {
+      e.preventDefault()
+      const next = idx < 0 ? 0 : e.key === 'j' ? Math.min(idx + 1, navOrder.length - 1) : Math.max(idx - 1, 0)
+      setFocusedKey(navOrder[next] ?? null)
+      return
+    }
+    const lead = idx < 0 ? undefined : filtered.find((l) => l.id === focusedKey)
+    if (!lead) return
+    e.preventDefault()
+    if (e.key === 'o') {
+      const url = lead.apply_url ?? lead.source_url
+      if (url) window.open(url, '_blank', 'noopener,noreferrer')
+    } else if (e.key === 'a' || e.key === 'q') {
+      if (busy != null) return
+      // A promoted lead is an application now — a stray keystroke must not move
+      // it back out of 'applied' (the same guard `x` has).
+      if (lead.application_id) {
+        setNote(`${lead.company} is already an application — change it on the Pipeline tab.`)
+        return
+      }
+      const to = e.key === 'a' ? 'archived' : 'queued'
+      void post({ action: 'set_status', id: lead.id, status: to }, `status-${lead.id}`)
+    } else if (e.key === 'x') {
+      if (lead.application_id) return
+      setExpandedKey(lead.id)
+      setNiOpenId(lead.id)
+    }
+  }
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => keyHandler.current(e)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   if (!data) return <p className="text-sm text-muted-foreground">No leads data yet.</p>
   const { rollup } = data
+  const targetCount = targetIds.length
 
   return (
     <section data-testid="leads-panel" className="flex flex-col gap-4">
@@ -478,16 +1302,19 @@ export function LeadsPanel({
               </span>
             </InfoTip>
           </h2>
-          <button
-            type="button"
-            data-testid="leads-rescore-all"
-            disabled={busy != null || rollup.activeTotal === 0}
-            onClick={() => post({ action: 'rescore_all' }, 'rescore_all')}
-            className="rounded-md border border-border px-2.5 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-            title="Recompute every active lead's deterministic rules_score against the current profile"
-          >
-            {busy === 'rescore_all' ? 'Re-scoring…' : `Re-score all active (${rollup.activeTotal})`}
-          </button>
+          <div className="flex flex-wrap items-start justify-end gap-2">
+            <TitleBlocklist titles={titleBlocklist} busy={busy} onRemove={(t) => void removeFromBlocklist(t)} />
+            <button
+              type="button"
+              data-testid="leads-rescore-all"
+              disabled={busy != null || rollup.activeTotal === 0}
+              onClick={() => post({ action: 'rescore_all' }, 'rescore_all')}
+              className="rounded-md border border-border px-2.5 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+              title="Recompute every active lead's deterministic rules_score against the current profile"
+            >
+              {busy === 'rescore_all' ? 'Re-scoring…' : `Re-score all active (${rollup.activeTotal})`}
+            </button>
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Stat label="Active" value={rollup.activeTotal} />
@@ -520,11 +1347,13 @@ export function LeadsPanel({
           onChange={setSource}
           options={['all', 'greenhouse', 'lever', 'google_jobs', 'manual']}
         />
+        {/* §24.201 D1 — the fact the owner actually triages on. */}
+        <Select label="Link" value={linkKind} onChange={setLinkKind} options={LINK_FILTER_OPTIONS} />
         <Select
           label="Sort"
           value={sort}
           onChange={(v) => setSort(v as SortKey)}
-          options={['rules_score', 'llm_score', 'first_seen_at', 'last_seen_at']}
+          options={['rules_score', 'llm_score', 'source_posted_at', 'first_seen_at', 'last_seen_at']}
         />
         <input
           type="number"
@@ -565,20 +1394,33 @@ export function LeadsPanel({
         </label>
       </div>
 
-      {/* Batch bar (§24.187) — operates on exactly the rows the filters above
-          select. Both actions are two-step in place: the first click arms, the
-          second commits; any filter change disarms. */}
+      {/* Batch bar (§24.187 + §24.201 D2) — operates on the ticked rows when any
+          are ticked, otherwise on every row the filters show; the count is
+          always the number that will be acted on. Both actions are two-step in
+          place: the first click arms, the second commits; any filter OR
+          selection change disarms. */}
       {filtered.length > 0 ? (
         <div
           data-testid="leads-bulk-bar"
+          data-mode={bulkMode}
           className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2"
         >
           <span className="font-mono text-[11px] text-muted-foreground">
             <span data-testid="leads-bulk-count" className="font-semibold tabular-nums text-foreground">
-              {filtered.length}
+              {targetCount}
             </span>{' '}
-            shown
+            {bulkMode === 'selected' ? `selected of ${filtered.length} shown` : 'shown'}
           </span>
+          {bulkMode === 'selected' ? (
+            <button
+              type="button"
+              data-testid="leads-bulk-clear"
+              onClick={() => setSelected(new Set())}
+              className="rounded-md px-2 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+            >
+              clear selection
+            </button>
+          ) : null}
           <span className="text-border">·</span>
           {arming === 'archive' ? (
             <>
@@ -589,7 +1431,7 @@ export function LeadsPanel({
                 onClick={() => runBulk('archive')}
                 className="rounded-md border border-accent-cool px-2.5 py-1 font-mono text-[11px] text-accent-cool transition-colors hover:bg-accent-cool/10 disabled:opacity-50"
               >
-                {busy === 'bulk-archive' ? 'Archiving…' : `Confirm archive ${filtered.length}?`}
+                {busy === 'bulk-archive' ? 'Archiving…' : `Confirm archive ${targetCount}?`}
               </button>
               <CancelButton onClick={() => setArming(null)} />
             </>
@@ -600,9 +1442,9 @@ export function LeadsPanel({
               disabled={busy != null}
               onClick={() => setArming('archive')}
               className="rounded-md border border-border px-2.5 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-              title="Soft-close every shown lead — leaves the active pool, keeps its history"
+              title={`Soft-close every ${bulkMode === 'selected' ? 'selected' : 'shown'} lead — leaves the active pool, keeps its history`}
             >
-              Archive {filtered.length}
+              Archive {targetCount}
             </button>
           )}
           {arming === 'delete' ? (
@@ -614,11 +1456,13 @@ export function LeadsPanel({
                 onClick={() => runBulk('delete')}
                 className="rounded-md border border-destructive px-2.5 py-1 font-mono text-[11px] text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
               >
-                {busy === 'bulk-delete' ? 'Deleting…' : `Confirm delete ${filtered.length}?`}
+                {busy === 'bulk-delete' ? 'Deleting…' : `Confirm delete ${targetCount}?`}
               </button>
               <CancelButton onClick={() => setArming(null)} />
-              <span className="font-mono text-[11px] text-muted-foreground">
-                permanent · promoted leads are skipped
+              {/* Mirrors the host's bulk_delete exactly: it skips promoted and
+                  email-linked leads only; a tailored résumé cascades with its lead. */}
+              <span data-testid="leads-bulk-delete-warning" className="font-mono text-[11px] text-muted-foreground">
+                permanent · promoted and email-linked leads are skipped; a tailored résumé is deleted with its lead
               </span>
             </>
           ) : (
@@ -628,9 +1472,9 @@ export function LeadsPanel({
               disabled={busy != null}
               onClick={() => setArming('delete')}
               className="rounded-md border border-border px-2.5 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
-              title="Permanently remove every shown lead (leads promoted to an application are skipped)"
+              title={`Permanently remove every ${bulkMode === 'selected' ? 'selected' : 'shown'} lead (promoted and email-linked leads are skipped; a tailored résumé goes with its lead)`}
             >
-              Delete {filtered.length}
+              Delete {targetCount}
             </button>
           )}
         </div>
@@ -648,17 +1492,75 @@ export function LeadsPanel({
         </p>
       ) : null}
 
+      {/* §24.201 D8 — every "I applied" recorded this session, with its Undo.
+          Panel-level on purpose: the refresh after recording flips the lead to
+          'applied', which a Status (or other) filter can hide — the Undo must
+          stay reachable for its whole window regardless of the view. */}
+      {Object.keys(applied).length > 0 ? (
+        <ul data-testid="leads-applied-recent" className="flex flex-col gap-1.5">
+          {Object.entries(applied).map(([leadId, entry]) => (
+            <li
+              key={leadId}
+              data-testid="leads-applied-entry"
+              className="flex flex-wrap items-center gap-2 rounded-md border border-primary/40 px-3 py-1.5"
+            >
+              <span className="font-mono text-[11px] text-primary">
+                ✓ applied · {entry.company} — {entry.title} · public card: {entry.obfuscated_label}
+              </span>
+              <UndoCountdown
+                until={entry.undo_until}
+                busy={busy === `undo-${leadId}`}
+                onUndo={() => void undoApplied(leadId, entry)}
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {filtered.length > 0 ? (
+        <p data-testid="leads-kbd-hint" className="hidden font-mono text-[10px] text-muted-foreground sm:block">
+          keys: <Kbd>j</Kbd>/<Kbd>k</Kbd> move · <Kbd>o</Kbd> open apply link · <Kbd>a</Kbd> archive · <Kbd>q</Kbd>{' '}
+          queue · <Kbd>x</Kbd> not interested
+        </p>
+      ) : null}
+
       {/* Table — the shared DataTable; the score-reasons + triage controls are the
           expandable detail; the filter signature resets pagination to page 1. */}
       <DataTable
-        columns={LEAD_COLUMNS}
+        columns={columns}
         rows={filtered}
         rowKey={(lead) => lead.id}
         rowTestId="leads-row"
         detailTestId="leads-detail"
-        renderDetail={(lead) => <LeadDetail lead={lead} busy={busy} baseUrl={baseUrl} onPost={post} />}
-        resetKey={`${status}|${source}|${minScore}|${minAgeDays}|${company}|${includeClosed}|${sort}`}
-        minWidthClass="min-w-[48rem]"
+        selection={{
+          selected,
+          onChange: setSelected,
+          rowLabel: (lead) => `Select ${lead.company} — ${lead.title}`,
+        }}
+        focusedKey={focusedKey}
+        onRowFocus={(key) => setFocusedKey(key)}
+        expandedKey={expandedKey}
+        onExpandedChange={(key) => {
+          setExpandedKey(key)
+          if (key !== niOpenId) setNiOpenId(null)
+        }}
+        onOrderChange={setOrder}
+        renderDetail={(lead) => (
+          <LeadDetail
+            lead={lead}
+            busy={busy}
+            baseUrl={baseUrl}
+            onPost={post}
+            niOpen={niOpenId === lead.id}
+            setNiOpen={(open) => setNiOpenId(open ? lead.id : null)}
+            onNotInterested={(l, reason, excludeTitle) => void notInterested(l, reason, excludeTitle)}
+            applied={applied[lead.id]}
+            onApplied={onApplied}
+            onAppliedRefused={onAppliedRefused}
+          />
+        )}
+        resetKey={`${status}|${source}|${linkKind}|${minScore}|${minAgeDays}|${company}|${includeClosed}|${sort}`}
+        minWidthClass="min-w-[58rem]"
         empty={
           <p data-testid="leads-empty" className="text-sm text-muted-foreground">
             No leads match this filter.
@@ -667,6 +1569,95 @@ export function LeadsPanel({
       />
     </section>
   )
+}
+
+/** The result line for a bulk delete. Reports the server's own counts and its
+ *  skip reasons (§24.200 D3) when it sends them; an older host that does not
+ *  falls back to the honest "up to N". */
+export function bulkDeleteNote(requested: number, d: BulkDeleteResult | undefined): string {
+  const plural = (n: number) => `${n} lead${n === 1 ? '' : 's'}`
+  if (typeof d?.deleted !== 'number') return `Deleted up to ${plural(requested)} (promoted leads skipped).`
+  const reasons = d.skipped_by_reason ?? {}
+  const parts = [
+    reasons.promoted ? `${reasons.promoted} promoted to an application` : null,
+    reasons.email_linked ? `${reasons.email_linked} linked to an email` : null,
+  ].filter((p): p is string => p != null)
+  const skipped = d.skipped ?? 0
+  const skipText = skipped > 0 ? ` Skipped ${skipped}${parts.length ? `: ${parts.join(', ')}` : ''}.` : ''
+  return `Deleted ${plural(d.deleted)}.${skipText}`
+}
+
+/** The result line for a bulk archive. Promoted leads are skipped by the host
+ *  (an application's status is the Pipeline's to change); an older host that
+ *  sends no counts falls back to the requested number. */
+export function bulkArchiveNote(requested: number, d: BulkSetStatusResult | undefined): string {
+  const plural = (n: number) => `${n} lead${n === 1 ? '' : 's'}`
+  const archived = typeof d?.updated === 'number' ? d.updated : requested
+  const skipped = d?.skipped ?? 0
+  const promoted = d?.skipped_by_reason?.promoted ?? 0
+  const skipText =
+    skipped > 0 ? ` Skipped ${skipped}${promoted ? `: ${promoted} promoted to an application` : ''}.` : ''
+  return `Archived ${plural(archived)}.${skipText}`
+}
+
+/** §24.201 D4 — the owner's excluded titles, in the Leads header. Collapsed by
+ *  default (it only grows); each entry has its own remove — the one-click undo
+ *  of "exclude this title". Hidden when empty. */
+function TitleBlocklist({
+  titles,
+  busy,
+  onRemove,
+}: {
+  titles: string[]
+  busy: string | null
+  onRemove: (title: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  if (titles.length === 0) return null
+  return (
+    <div data-testid="leads-blocklist" className="flex flex-col items-end gap-1.5">
+      <button
+        type="button"
+        data-testid="leads-blocklist-toggle"
+        aria-expanded={open}
+        aria-controls="leads-blocklist-entries"
+        onClick={() => setOpen((o) => !o)}
+        className="rounded-md px-2 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+        title="Titles refused from every future scrape"
+      >
+        {titles.length} excluded title{titles.length === 1 ? '' : 's'} {open ? '▾' : '▸'}
+      </button>
+      {open ? (
+        <ul id="leads-blocklist-entries" aria-label="Excluded titles" className="flex flex-col items-end gap-1">
+          {titles.map((t) => (
+            <li
+              key={t}
+              data-testid="leads-blocklist-entry"
+              className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground"
+            >
+              <span className="max-w-[18rem] truncate text-foreground" title={t}>
+                {t}
+              </span>
+              <button
+                type="button"
+                data-testid="leads-blocklist-remove"
+                aria-label={`Stop excluding “${t}”`}
+                disabled={busy != null}
+                onClick={() => onRemove(t)}
+                className="rounded-md border border-border px-1.5 py-px transition-colors hover:text-foreground disabled:opacity-50"
+              >
+                {busy === `blocklist-${t}` ? '…' : 'remove'}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  )
+}
+
+function Kbd({ children }: { children: string }) {
+  return <kbd className="rounded border border-border px-1 text-foreground">{children}</kbd>
 }
 
 /** The disarm control beside an armed bulk confirm. */

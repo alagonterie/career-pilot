@@ -94,6 +94,29 @@ Critical subset to check first if the run fails:
   rows — within-source dedup via `ON CONFLICT (source, source_job_id)
   DO UPDATE` is working.
 
+**Insert guard (STRATEGY.md §24.200 D1).** The host refuses, before
+caching, search hits whose apply link is not direct (`aggregator` /
+`unknown` by default — the `lead_reject_link_kinds` knob), postings the
+owner removed (tombstones), and owner-blocklisted titles. `search_jobs`
+reports them as `rejected` / `rejected_total` (and in its text as
+`rejected N before caching (...)`). Consequences for this flow:
+
+- A run can legitimately record **zero** leads when every hit was
+  rejected. The e2e accepts "≥1 lead recorded, OR a `rejected` count that
+  explains zero keepers" — it scans the subagent's `search_jobs` results
+  for the rejected count.
+- A rejected hit is not in the cache, so recording it anyway returns
+  `NOT_IN_CACHE` (the gate needs no prompt cooperation).
+- `record_job_lead` can answer a non-error `{ recorded: false, reason }`
+  (a tombstone/blocklist entry written since the search). The subagent
+  must drop it and not retry — check the transcript shows no repeat call
+  for that `source_job_id`.
+- The subagent's summary reports the filtered count (the "Filtered by the
+  host" line) when `rejected_total > 0`.
+
+Host-side proof lives in `src/modules/career-pilot/lead-guard.integration.test.ts`;
+the result pass-through in `container/agent-runner/src/mcp-tools/scrape-jobs.test.ts`.
+
 ### 3. Pre-record judgment quality (automated assertion within the e2e)
 
 This is the discipline check on the subagent's judgment. The e2e asserts

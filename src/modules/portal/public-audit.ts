@@ -31,6 +31,11 @@ import { log } from '../../log.js';
 import { upsertPublicKitView } from './public-kit-view.js';
 import { sanitize, sanitizeForPublic } from './sanitizer.js';
 
+/** The pipeline_events kind/source of the owner's /admin "I applied" record
+ * (§24.201 D8). Owner-sourced events are private: never mirrored publicly. */
+export const OWNER_APPLIED_EVENT_KIND = 'owner_applied';
+export const OWNER_EVENT_SOURCE = 'owner';
+
 const DEFAULT_PUBLIC_SUMMARY_MAX_CHARS = 500;
 const DEFAULT_AUDIT_DROP_ON_UNMATCHED_COMPANY = true;
 
@@ -69,6 +74,7 @@ interface JoinedRow {
   to_status: string | null;
   payload: string;
   proactive: number;
+  source: string | null;
   // applications (LEFT JOINed; null if missing)
   company_name: string | null;
   obfuscated_label: string | null;
@@ -145,7 +151,7 @@ export async function mirrorPipelineEvent(
     row = db
       .prepare(
         `SELECT fe.id, fe.ts, fe.application_id, fe.kind, fe.from_status, fe.to_status, fe.payload, fe.proactive,
-                a.company_name, a.obfuscated_label, a.public_state
+                fe.source, a.company_name, a.obfuscated_label, a.public_state
            FROM pipeline_events fe
            LEFT JOIN applications a ON fe.application_id = a.id
           WHERE fe.id = ?`,
@@ -158,6 +164,15 @@ export async function mirrorPipelineEvent(
 
   if (!row) {
     log.warn('mirrorPipelineEvent: pipeline_event not found', { eventId });
+    return 'skipped';
+  }
+
+  // Owner-sourced events are private by contract (§24.201 D8): the /admin
+  // "I applied" record carries the owner's free-text note and internal ids. Its
+  // creation path never mirrors it, but resanitizeApplicationAuditTrail
+  // re-mirrors EVERY pipeline_events row of an application — so the filter has
+  // to live here, where every mirror passes. The kind check is a second belt.
+  if (row.source === OWNER_EVENT_SOURCE || row.kind === OWNER_APPLIED_EVENT_KIND) {
     return 'skipped';
   }
 

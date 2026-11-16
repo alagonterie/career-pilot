@@ -220,6 +220,7 @@ const LEADS = {
       source: 'greenhouse',
       source_url: 'https://x/1',
       apply_url: null,
+      apply_link_kind: 'ats',
       title: 'Senior Software Engineer',
       company: 'Globex',
       company_domain: null,
@@ -253,9 +254,10 @@ const LEADS = {
     },
     {
       id: 'lead-2',
-      source: 'greenhouse',
+      source: 'google_jobs',
       source_url: 'https://x/2',
       apply_url: null,
+      apply_link_kind: 'aggregator',
       title: 'Backend Engineer',
       company: 'Initech',
       company_domain: null,
@@ -288,6 +290,7 @@ const LEADS = {
       source: 'greenhouse',
       source_url: 'https://x/3',
       apply_url: null,
+      apply_link_kind: null,
       title: 'Platform Engineer',
       company: 'Hooli',
       company_domain: null,
@@ -427,6 +430,31 @@ test.describe('/admin — control center (§24.138)', () => {
     // include-closed reveals the archived lead.
     await page.getByTestId('leads-include-closed').check()
     await expect(page.getByTestId('leads-row')).toHaveCount(3)
+  })
+
+  test('Leads triage: link filter, row selection drives the batch, I-applied popover (§24.201)', async ({ page }) => {
+    await stubAdmin(page)
+    await page.goto('/admin?tab=leads')
+    await expect(page.getByTestId('leads-row')).toHaveCount(2)
+    await expect(page.getByTestId('leads-link-chip').first()).toHaveText('direct ATS')
+
+    // the Link filter isolates the aggregator repost
+    await page.getByTestId('leads-filter-link').selectOption('aggregator')
+    await expect(page.getByTestId('leads-row')).toHaveCount(1)
+    await expect(page.getByTestId('leads-row')).toContainText('Initech')
+    await page.getByTestId('leads-filter-link').selectOption('all')
+
+    // ticking a row narrows the batch to it — and does not expand the row
+    await page.getByTestId('leads-row').nth(1).getByTestId('datatable-select-row').check()
+    await expect(page.getByTestId('leads-bulk-count')).toHaveText('1')
+    await expect(page.getByTestId('leads-bulk-archive')).toHaveText('Archive 1')
+    await expect(page.getByTestId('leads-detail')).toHaveCount(0)
+
+    // the detail's "I applied" opens an inline popover with today's date
+    await page.getByTestId('leads-row').first().click()
+    await page.getByTestId('leads-applied-open').click()
+    await expect(page.getByTestId('leads-applied-popover')).toBeVisible()
+    await expect(page.getByTestId('leads-applied-date')).toHaveValue(/^\d{4}-\d{2}-\d{2}$/)
   })
 
   test('the active tab is URL-driven — deep-link + back/forward (§24.176)', async ({ page }) => {

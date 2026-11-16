@@ -92,6 +92,9 @@ const GJ_PAYLOAD: JobLeadPayload = {
   source_job_id: 'gj-acorns-123',
   source_url: 'https://jobs.ashbyhq.com/acorns/cf23e51e',
   apply_url: 'https://jobs.ashbyhq.com/acorns/cf23e51e?utm_source=google_jobs_apply',
+  // §24.200 D1: the stash now refuses search hits without a direct link, so the
+  // round-trip fixture carries the kind the container classifier gives this URL.
+  apply_link_kind: 'ats',
   title: 'Senior Backend Engineer, AI Team',
   company: 'Acorns',
   company_domain: null,

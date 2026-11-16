@@ -201,6 +201,12 @@ export function upsertPublicPipelineView(db: Database.Database, applicationId: s
       ? sanitize(app.win_confidence_rationale, { application_id: applicationId, db })
       : null;
 
+    // role_title: the same deterministic sanitize. Since §24.201 D8 the /admin
+    // "I applied" copies a SCRAPED posting title verbatim, and board/index titles
+    // often embed the employer ("Staff Engineer - Acme") — unredacted, that
+    // de-anonymizes an obfuscated card. Applies to agent-composed titles too.
+    const roleTitle = app.role_title ? sanitize(app.role_title, { application_id: applicationId, db }) : null;
+
     // kits_json (§24.65): per-kit existence metadata for the /pipeline drawer —
     // ALL kits incl. archived (D1: a closed process keeps its prep story).
     // Enums + timestamps only; the kit's title/drive_url/markdown never land here.
@@ -258,7 +264,7 @@ export function upsertPublicPipelineView(db: Database.Database, applicationId: s
       application_id: app.id,
       application_ref: applicationRef ?? app.obfuscated_label ?? app.id,
       public_state: app.public_state ?? 'obfuscated',
-      role_title: app.role_title ?? null,
+      role_title: roleTitle,
       status: app.status,
       stage,
       applied_at: app.applied_at ?? null,

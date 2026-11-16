@@ -703,6 +703,33 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     note: 'Master toggle for the scheduled job-lead scrape.',
   },
   job_scrape_cron: { type: 'cron', group: 'scouting', label: 'Job-scrape cron', note: CRON_NOTE },
+  lead_tombstone_hamming_max: {
+    type: 'number',
+    group: 'scouting',
+    label: 'Tombstone fingerprint distance (bits)',
+    min: 0,
+    max: 16,
+    integer: true,
+    note: 'How close (SimHash Hamming bits) a new posting from the same company must be to a "not interested" / deleted posting to be refused. 0 = exact fingerprint only (default — no distance has been measured on this pool yet). Raising it refuses near-duplicates too, at the risk of refusing a sibling posting you wanted.',
+  },
+  applied_undo_window_s: {
+    type: 'number',
+    group: 'scouting',
+    label: '"I applied" undo window (seconds)',
+    min: 0,
+    max: 86_400,
+    integer: true,
+    note: 'How long after "I applied" on a lead the Leads tab can still undo it (delete the application it created and restore the lead). After that the pipeline is the agent’s to maintain. Undo is also refused once anything else references the application (an email, a kit, a learning, another pipeline event).',
+  },
+  owner_note_max_chars: {
+    type: 'number',
+    group: 'scouting',
+    label: '"I applied" note length cap (characters)',
+    min: 1,
+    max: 20_000,
+    integer: true,
+    note: 'The longest private note the Leads tab accepts with "I applied". A longer note is refused (400), not truncated. The note is stored as a private pipeline event and never published.',
+  },
   killer_match_enabled: {
     type: 'boolean',
     group: 'scouting',
@@ -1204,6 +1231,10 @@ export const UNSPEC_KNOBS: Record<string, string> = {
   briefing_schedule: 'object — morning/evening times; the daily_briefing_time cron is the scalar lever.',
   pipeline_scribe_ghosting_thresholds_days: 'object — per-stage ghosting thresholds; structured editor.',
   killer_match_source_allow_list: 'array — lead-source allow-list; structured editor.',
+  lead_reject_link_kinds:
+    'array — apply-link kinds the lead insert guard refuses for search-sourced postings; structured editor.',
+  lead_title_blocklist:
+    'array — owner title blocklist; grown by the Leads tab "not interested → exclude this title" action and shrunk by its title_blocklist_remove action, not a free-text knob.',
   llm_pricing_usd_per_mtok: 'object — model pricing map; structured editor.',
   recruiter_sim_pace_presets: 'object — dev-only sim pacing presets.',
 };

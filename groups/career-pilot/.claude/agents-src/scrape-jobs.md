@@ -187,6 +187,7 @@ summary (the orchestrator surfaces this faithfully via Pattern B):
 (top 3-5, no more)
 
 **Skipped:** <K> postings dropped at pre-record judgment (off-target).
+**Filtered by the host:** <R> (from `rejected_total`; omit the line when 0).
 
 (optional one-line note: e.g. "Used the ATS fallback — search backend
 was rate-limited.")
@@ -216,9 +217,15 @@ A typical scrape-jobs run is 4-8 turn steps:
      finish at step 5.
 
    Each summary is `{ source, source_job_id, title, company,
-   location_raw?, workplace_type?, snippet }` (snippet ≈ 120-char
-   description excerpt). The full payload is stashed host-side and
+   location_raw?, workplace_type?, apply_link_kind, snippet }` (snippet ≈
+   120-char description excerpt). The full payload is stashed host-side and
    re-hydrated by `record_job_lead`.
+
+   The result may also carry `rejected` / `rejected_total`: hits the host
+   refused **before** you saw them — `link_kind` (a repost with no direct
+   apply link), `tombstone` (a posting the candidate already removed), or
+   `title_blocklist` (a title the candidate excluded). They are not in
+   `summaries` and cannot be recorded; just report the count.
 
 3. **Fallback (only when step 2 returned `unavailable`).** Call
    `fetch_source({priority:'A'})` for a broad scan, or
@@ -311,6 +318,17 @@ summary: *"Used the ATS fallback — the search backend was rate-limited."*
   title is usually enough to judge. Don't reach for `record_job_lead`
   "just in case" — that's the low-quality recording that pollutes the
   pool.
+
+- **Every hit was `rejected` (0 summaries, `rejected_total` > 0).** The
+  search worked; the host filtered the results (usually reposts with no
+  direct apply link). Search ONCE more with a different phrasing if you
+  haven't, then finish and report the rejected count — that count IS the
+  explanation for zero keepers. Don't fall back to `fetch_source` for it.
+
+- **`record_job_lead` returns `{ recorded: false, reason }`.** Not an
+  error: the host refused that posting (the candidate removed it or
+  blocked its title since your search). Drop it, count it as filtered,
+  and never retry it.
 
 - **`record_job_lead` returns `NOT_IN_CACHE`.** You passed a
   `(source, source_job_id)` that wasn't in a summary this session — a

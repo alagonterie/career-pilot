@@ -90,10 +90,16 @@ export function enqueueKitWake(inDb: Database.Database, applicationId: string, r
  * stage → enqueue a kit wake (unless auto-gen is off or an active kit already exists
  * for that round). On entry to a terminal stage → archive the application's active
  * kits (fire-and-forget; it touches Drive). Never throws.
+ *
+ * `inDb` is the session inbound DB the kit wake is written to. It is only needed
+ * for an interview-round transition; a caller with no agent session (the
+ * `/admin` "I applied" action, §24.201 D8 — always a transition to APPLIED)
+ * passes null, and an interview-round change then logs and skips the wake
+ * instead of failing.
  */
 export function reactToStatusTransitions(
   db: Database.Database,
-  inDb: Database.Database,
+  inDb: Database.Database | null,
   changes: StatusTransition[],
 ): void {
   if (changes.length === 0) return;
@@ -111,7 +117,8 @@ export function reactToStatusTransitions(
         continue;
       }
       if (autoGen && isInterviewRoundStatus(c.to) && !hasActiveKit(db, c.application_id, c.to)) {
-        enqueueKitWake(inDb, c.application_id, c.to);
+        if (inDb) enqueueKitWake(inDb, c.application_id, c.to);
+        else log.warn('interview-kit wake skipped: no session inbound DB for this caller', { change: c });
       }
     } catch (err) {
       log.error('reactToStatusTransitions: one change failed', { change: c, err });

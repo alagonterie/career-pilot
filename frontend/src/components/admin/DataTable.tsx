@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import { cn } from '~/lib/utils'
 
@@ -62,6 +62,27 @@ export interface DataTableProps<Row> {
   initialSort?: { columnId: string; dir: SortDir }
   /** When this changes, jump back to page 1 (e.g. a filter-state signature). */
   resetKey?: string | number
+  /** Optional row selection (§24.201 D2): a leading checkbox column plus a
+   * header checkbox that selects / clears the CURRENT PAGE. Controlled — the
+   * caller owns the set (keys are `rowKey` values). A checkbox click never
+   * toggles the row's disclosure. */
+  selection?: {
+    selected: ReadonlySet<string>
+    onChange: (next: Set<string>) => void
+    /** Accessible label for a row's checkbox (default "Select row"). */
+    rowLabel?: (row: Row) => string
+  }
+  /** Optional keyboard-focus support (§24.201 D3): the focused row's key gets a
+   * visible focus style; the table pages to it when it changes. */
+  focusedKey?: string | null
+  /** Called when a row is clicked, so the caller can move its focus there. */
+  onRowFocus?: (key: string, row: Row) => void
+  /** Controlled disclosure (omit for the internal one-open-at-a-time state). */
+  expandedKey?: string | null
+  onExpandedChange?: (key: string | null) => void
+  /** Reports the row keys in display (sorted) order whenever that order
+   * changes — what a caller's j/k navigation should walk. */
+  onOrderChange?: (keys: string[]) => void
 }
 
 function compare(x: number | string, y: number | string): number {
@@ -84,10 +105,22 @@ export function DataTable<Row>({
   detailTestId,
   initialSort,
   resetKey,
+  selection,
+  focusedKey,
+  onRowFocus,
+  expandedKey,
+  onExpandedChange,
+  onOrderChange,
 }: DataTableProps<Row>) {
   const [sort, setSort] = useState<{ columnId: string; dir: SortDir } | null>(initialSort ?? null)
   const [page, setPage] = useState(1)
-  const [expanded, setExpanded] = useState<string | null>(null)
+  const [innerExpanded, setInnerExpanded] = useState<string | null>(null)
+  const controlledExpand = expandedKey !== undefined
+  const expanded = controlledExpand ? expandedKey : innerExpanded
+  const setExpanded = (next: string | null): void => {
+    if (!controlledExpand) setInnerExpanded(next)
+    onExpandedChange?.(next)
+  }
 
   // Reset to the first page when the caller's filter signature changes.
   useEffect(() => setPage(1), [resetKey])
@@ -101,11 +134,63 @@ export function DataTable<Row>({
     return [...rows].sort((a, b) => dir * compare(accessor(a), accessor(b)))
   }, [rows, sort, columns])
 
+  const orderedKeys = useMemo(() => sorted.map((r, i) => rowKey(r, i)), [sorted, rowKey])
+  const orderSig = orderedKeys.join('\u0000')
+  const orderRef = useRef(orderedKeys)
+  orderRef.current = orderedKeys
+  const onOrderChangeRef = useRef(onOrderChange)
+  onOrderChangeRef.current = onOrderChange
+  // Report the display order only when it actually changes (a poll that
+  // returns the same rows must not churn the caller's state).
+  useEffect(() => {
+    onOrderChangeRef.current?.(orderRef.current)
+  }, [orderSig])
+
+  // Follow the keyboard focus across pages. Keyed on the focus alone, so a
+  // background refresh never yanks the owner off a page they paged to.
+  const scrollPending = useRef(false)
+  useEffect(() => {
+    if (focusedKey == null) return
+    scrollPending.current = true
+    const idx = orderRef.current.indexOf(focusedKey)
+    if (idx >= 0) setPage(Math.floor(idx / pageSize) + 1)
+  }, [focusedKey, pageSize])
+
   const total = sorted.length
   const pageCount = Math.max(1, Math.ceil(total / pageSize))
   const safePage = Math.min(page, pageCount)
+
+  // Bring the focused row into view once per focus move (after any page flip
+  // the move caused) — never on a background re-render or a manual page turn.
+  const rowEls = useRef(new Map<string, HTMLTableRowElement>())
+  useEffect(() => {
+    if (!scrollPending.current || focusedKey == null) return
+    const el = rowEls.current.get(focusedKey)
+    if (!el) return
+    scrollPending.current = false
+    if (typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest' })
+  }, [focusedKey, safePage])
   const start = (safePage - 1) * pageSize
   const pageRows = sorted.slice(start, start + pageSize)
+  const pageKeys = pageRows.map((r, i) => rowKey(r, start + i))
+  const pageSelectedCount = selection ? pageKeys.filter((k) => selection.selected.has(k)).length : 0
+  const allPageSelected = pageKeys.length > 0 && pageSelectedCount === pageKeys.length
+
+  const togglePage = (): void => {
+    if (!selection) return
+    const next = new Set(selection.selected)
+    if (allPageSelected) for (const k of pageKeys) next.delete(k)
+    else for (const k of pageKeys) next.add(k)
+    selection.onChange(next)
+  }
+  const toggleRow = (key: string): void => {
+    if (!selection) return
+    const next = new Set(selection.selected)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    selection.onChange(next)
+  }
+  const colCount = columns.length + (selection ? 1 : 0)
 
   // Click a sortable header: desc (most-first) → asc → off (natural order).
   const onSort = (id: string) =>
@@ -123,6 +208,21 @@ export function DataTable<Row>({
         <table className={cn('w-full text-left text-sm', tableFixed && 'table-fixed', minWidthClass)}>
           <thead>
             <tr className="text-[10px] uppercase tracking-widest text-muted-foreground">
+              {selection ? (
+                <th className="w-8 py-2 pl-4 pr-2 font-mono font-normal">
+                  <input
+                    type="checkbox"
+                    data-testid="datatable-select-page"
+                    aria-label="Select all rows on this page"
+                    checked={allPageSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = pageSelectedCount > 0 && !allPageSelected
+                    }}
+                    onChange={togglePage}
+                    className="cursor-pointer align-middle"
+                  />
+                </th>
+              ) : null}
               {columns.map((col, i) => {
                 const active = sort?.columnId === col.id
                 return (
@@ -130,7 +230,7 @@ export function DataTable<Row>({
                     key={col.id}
                     className={cn(
                       'py-2 pr-4 font-mono font-normal',
-                      i === 0 && 'pl-4',
+                      i === 0 && !selection && 'pl-4',
                       col.align === 'right' && 'text-right',
                       col.headerClassName,
                     )}
@@ -160,28 +260,59 @@ export function DataTable<Row>({
           </thead>
           <tbody>
             {pageRows.map((row, i) => {
-              const key = rowKey(row, start + i)
+              const key = pageKeys[i] as string
               const isOpen = expanded === key
-              const toggle = () => setExpanded((k) => (k === key ? null : key))
+              const toggle = () => setExpanded(expanded === key ? null : key)
               const ctx: CellContext = { expanded: isOpen, toggle }
               const rowClickable = !!renderDetail && expandOnRowClick
+              const isFocused = focusedKey != null && focusedKey === key
+              const isSelected = selection?.selected.has(key) ?? false
+              const onClick =
+                rowClickable || onRowFocus
+                  ? () => {
+                      onRowFocus?.(key, row)
+                      if (rowClickable) toggle()
+                    }
+                  : undefined
               return (
                 <Fragment key={key}>
                   <tr
                     data-testid={typeof rowTestId === 'function' ? rowTestId(row, start + i) : rowTestId}
-                    onClick={rowClickable ? toggle : undefined}
+                    data-focused={isFocused ? 'true' : undefined}
+                    aria-selected={selection ? isSelected : undefined}
+                    ref={(el) => {
+                      if (el) rowEls.current.set(key, el)
+                      else rowEls.current.delete(key)
+                    }}
+                    onClick={onClick}
                     className={cn(
                       'border-t border-border',
                       rowClickable && 'cursor-pointer hover:bg-muted/30',
+                      isSelected && 'bg-muted/40',
+                      isFocused && 'outline outline-2 -outline-offset-2 outline-ring',
                       rowClassName?.(row),
                     )}
                   >
+                    {selection ? (
+                      // The checkbox cell swallows its clicks so ticking a row
+                      // never opens (or closes) its disclosure.
+                      <td className="w-8 py-2 pl-4 pr-2" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          data-testid="datatable-select-row"
+                          aria-label={selection.rowLabel?.(row) ?? 'Select row'}
+                          checked={isSelected}
+                          onChange={() => toggleRow(key)}
+                          className="cursor-pointer align-middle"
+                        />
+                      </td>
+                    ) : null}
                     {columns.map((col, ci) => (
                       <td
                         key={col.id}
                         className={cn(
                           'py-2 pr-4',
-                          ci === 0 && 'pl-4',
+                          ci === 0 && !selection && 'pl-4',
                           col.align === 'right' && 'text-right',
                           col.cellClassName,
                         )}
@@ -192,7 +323,7 @@ export function DataTable<Row>({
                   </tr>
                   {renderDetail && isOpen ? (
                     <tr data-testid={detailTestId} className="border-t border-border/60 bg-muted/20">
-                      <td colSpan={columns.length} className="px-4 py-3">
+                      <td colSpan={colCount} className="px-4 py-3">
                         {renderDetail(row)}
                       </td>
                     </tr>

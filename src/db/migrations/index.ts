@@ -55,6 +55,8 @@ import { migration145 } from './145-job-leads-apply-link-kind.js';
 import { migration146 } from './146-tailored-resumes.js';
 import { migration147 } from './147-retire-old-opus-models.js';
 import { migration148 } from './148-retire-old-haiku-sonnet-models.js';
+import { migration149 } from './149-job-lead-tombstones.js';
+import { migration150 } from './150-applications-sent-resume.js';
 
 export interface Migration {
   version: number;
@@ -117,6 +119,8 @@ const migrations: Migration[] = [
   migration146,
   migration147,
   migration148,
+  migration149,
+  migration150,
 ];
 
 export function runMigrations(db: Database.Database): void {
