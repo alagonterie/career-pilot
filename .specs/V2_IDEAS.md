@@ -148,3 +148,15 @@ Surface the orchestrator's *judgment* publicly: a `/live` feed of why a discover
 **Why deferred:** a production site serving *fake* loading/error states undercuts the "everything here is real, right now" credibility the architecture + sanitizer surfaces build, and it's an unusual visitor affordance. The §24.36 seam is intentionally mock-gated (the production API never honors `__state`), so this is explicitly not wired in.
 
 **Reactivate when:** there's a clear reason to let visitors explore states — and then only as a **purely client-side** "preview states" mode (the frontend faking the UI without the server serving fake data), clearly labeled, so production never returns an untrue response.
+
+## 17. Wider job-source seeds (bulk board directory, monthly hiring thread, enterprise tenants)
+
+§24.199 makes employer ATS boards the primary lead source over a watchlist that grows from the owner's additions and from direct search hits. Three wider seeds were researched and left out:
+
+- **A bulk third-party directory of public ATS board tokens** (several thousand Greenhouse / Lever / Ashby boards under an attribution licence). A sample showed roughly one board in eight dead and the Ashby rows stalest; it would also need its own polling tier so request load tracks relevance.
+- **A monthly ingest of the Hacker News hiring thread** via its public search API, taking only links on ATS hosts (many posts are email-only).
+- **Curated enterprise tenants on Workday's job endpoint**, which is undocumented for this use and returns only relative posting dates.
+
+**Why deferred:** the first production pool should prove the direct-board path at a size the owner can read. A flood of matches from thousands of boards is the opposite problem from the one §24.199 fixes, and each seed adds a source to keep healthy.
+
+**Reactivate when:** the watchlist's organic growth leaves the pool visibly thin for the candidate's target roles — each seed behind its own off-by-default knob.
