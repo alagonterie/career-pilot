@@ -149,6 +149,14 @@ describe('LeadsPanel — sourcing strip (§24.201 D6)', () => {
     expect(screen.getAllByTestId('leads-row')).toHaveLength(3)
     expect(screen.queryByTestId('leads-sourcing')).not.toBeInTheDocument()
     expect(screen.queryByTestId('leads-sweep-now')).not.toBeInTheDocument()
+    // §24.201 D7 — add-by-link ships with board sourcing, so it hides too
+    expect(screen.queryByTestId('leads-add-url-form')).not.toBeInTheDocument()
+  })
+
+  it('mounts "Add lead by link" in the rollup when the host serves board sourcing (§24.201 D7)', () => {
+    render(<LeadsPanel data={withSourcing()} baseUrl="http://x" onSaved={vi.fn()} />)
+    const form = within(screen.getByTestId('leads-rollup')).getByTestId('leads-add-url-form')
+    expect(within(form).getByTestId('leads-add-url-input')).toBeInTheDocument()
   })
 
   it('shows the last sweep in one line, the search refusals by site, and the quota', () => {

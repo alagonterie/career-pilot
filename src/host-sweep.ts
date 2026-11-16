@@ -280,6 +280,15 @@ async function sweep(): Promise<void> {
     maybeStartScheduledSweep(getDb());
     // MODULE-HOOK:career-pilot-ats-sweep:end
 
+    // 0d2. Admin-triggered agent actions (STRATEGY.md §24.202 D4): observe each
+    // queued/running action against the ops session's acknowledgements, and
+    // expire a queued one past admin_action_ttl_minutes — cancelling its task —
+    // BEFORE the session loop below could wake a container for it. Never throws.
+    // MODULE-HOOK:career-pilot-agent-actions:start
+    const { sweepAgentActions } = await import('./modules/career-pilot/agent-actions.js');
+    sweepAgentActions(isContainerRunning);
+    // MODULE-HOOK:career-pilot-agent-actions:end
+
     const sessions = getActiveSessions();
     for (const session of sessions) {
       await sweepSession(session);

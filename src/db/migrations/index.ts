@@ -61,6 +61,8 @@ import { migration151 } from './151-ats-watchlist.js';
 import { migration152 } from './152-lead-source-runs.js';
 import { migration153 } from './153-search-quota-usage.js';
 import { migration154 } from './154-killer-match-allow-ashby.js';
+import { migration155 } from './155-agent-actions.js';
+import { migration156 } from './156-ats-watchlist-ci.js';
 
 export interface Migration {
   version: number;
@@ -129,6 +131,8 @@ const migrations: Migration[] = [
   migration152,
   migration153,
   migration154,
+  migration155,
+  migration156,
 ];
 
 export function runMigrations(db: Database.Database): void {

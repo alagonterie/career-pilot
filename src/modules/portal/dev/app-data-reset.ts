@@ -42,6 +42,9 @@ export const PIPELINE_DATA_TABLES = [
   // configuration, not pipeline state — and survives every reset. So is
   // `search_quota_usage`: a reset must not hand back provider quota really spent.)
   'lead_source_runs',
+  // §24.202 D2 — admin-triggered agent actions. A child of job_leads (ON DELETE
+  // SET NULL, which the FK-off wipe cannot apply), so it is listed ahead of it.
+  'agent_actions',
   'job_leads',
   'simulator_runs',
   'email_events',

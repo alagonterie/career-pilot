@@ -147,7 +147,7 @@ export async function sweepWatchlist(
 
 // ── filters ────────────────────────────────────────────────────────────────
 
-interface CompiledFilter {
+export interface CompiledFilter {
   re: RegExp | null;
   error: string | null;
 }
@@ -162,6 +162,12 @@ export function compileSweepFilter(db: Database.Database, key: string): Compiled
   } catch (err) {
     return { re: null, error: `${key}: ${err instanceof Error ? err.message : String(err)}` };
   }
+  return compileSweepPattern(key, src);
+}
+
+/** Compile one filter pattern exactly as the sweep does (flag `i`; empty → no
+ *  filter; a pattern that does not compile → no filter, with the error). */
+export function compileSweepPattern(key: string, src: unknown): CompiledFilter {
   if (typeof src !== 'string' || src.trim() === '') return { re: null, error: null };
   try {
     return { re: new RegExp(src, 'i'), error: null };
@@ -171,6 +177,53 @@ export function compileSweepFilter(db: Database.Database, key: string): Compiled
       error: `${key} does not compile (filter skipped): ${err instanceof Error ? err.message : String(err)}`,
     };
   }
+}
+
+/** Why the sweep's filters drop a posting — the `lead_source_runs.rejected` keys. */
+export type SweepDropReason = 'filter' | 'location' | 'age';
+
+/** The compiled sweep filters (the stored knobs, or a proposal in the preview). */
+export interface CompiledSweepFilters {
+  include: RegExp | null;
+  exclude: RegExp | null;
+  location: RegExp | null;
+  maxAgeDays: number;
+}
+
+/** The posting fields the filters read. */
+export interface SweepFilterSubject {
+  title?: string | null;
+  location_raw?: string | null;
+  workplace_type?: string | null;
+  source_posted_at?: string | null;
+}
+
+/**
+ * The ONE filter decision the sweep applies to a new posting, and the /admin
+ * filter preview applies to the leads already in the pool — so the preview's
+ * counts mean what the sweep would do. In order: a title that misses the
+ * include pattern or hits the exclude pattern → 'filter'; a location (location
+ * text and workplace type) that misses the location pattern → 'location'; a
+ * publish date older than `maxAgeDays` → 'age'; else null (kept). A posting with
+ * no or an unparseable date is never dropped for age.
+ */
+export function evaluateSweepFilters(
+  posting: SweepFilterSubject,
+  f: CompiledSweepFilters,
+  now: Date,
+): SweepDropReason | null {
+  const title = posting.title ?? '';
+  if (f.include && !f.include.test(title)) return 'filter';
+  if (f.exclude && f.exclude.test(title)) return 'filter';
+  if (f.location) {
+    const where = [posting.location_raw, posting.workplace_type].filter(Boolean).join(' | ');
+    if (!f.location.test(where)) return 'location';
+  }
+  if (posting.source_posted_at) {
+    const posted = Date.parse(posting.source_posted_at);
+    if (Number.isFinite(posted) && posted < now.getTime() - f.maxAgeDays * 86_400_000) return 'age';
+  }
+  return null;
 }
 
 function bump(map: Record<string, number>, key: string, n = 1): void {
@@ -393,7 +446,12 @@ async function sweepBoard(
   }
 
   const known = knownIds(db, ats, presentIds);
-  const ageCutoff = now.getTime() - f.maxAgeDays * 86_400_000;
+  const compiled: CompiledSweepFilters = {
+    include: f.include.re,
+    exclude: f.exclude.re,
+    location: f.location.re,
+    maxAgeDays: f.maxAgeDays,
+  };
   let newForBoard = 0;
   for (const raw of res.postings) {
     if (known.has(raw.source_job_id)) continue;
@@ -404,28 +462,10 @@ async function sweepBoard(
       continue;
     }
     const posting: JobLeadPayload = { ...raw, company: board.company };
-    const title = posting.title ?? '';
-    if (f.include.re && !f.include.re.test(title)) {
-      bump(run.rejected, 'filter');
+    const drop = evaluateSweepFilters(posting, compiled, now);
+    if (drop) {
+      bump(run.rejected, drop);
       continue;
-    }
-    if (f.exclude.re && f.exclude.re.test(title)) {
-      bump(run.rejected, 'filter');
-      continue;
-    }
-    if (f.location.re) {
-      const where = [posting.location_raw, posting.workplace_type].filter(Boolean).join(' | ');
-      if (!f.location.re.test(where)) {
-        bump(run.rejected, 'location');
-        continue;
-      }
-    }
-    if (posting.source_posted_at) {
-      const posted = Date.parse(posting.source_posted_at);
-      if (Number.isFinite(posted) && posted < ageCutoff) {
-        bump(run.rejected, 'age');
-        continue;
-      }
     }
     if (run.new >= f.maxNew) {
       bump(run.rejected, 'cap');

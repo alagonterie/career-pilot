@@ -55,6 +55,7 @@ import { handlePersistInterviewKit } from './interview-kit-actions.js';
 import { handleReadContacts } from './contacts-actions.js';
 import { handleReserveSearchQuota } from './search-quota.js';
 import { handlePersistLearning, handleReadLearnings } from './learnings-actions.js';
+import { handleCompleteAdminAction, handleGetAdminAction } from './agent-actions.js';
 
 /**
  * Every career_pilot action that touches private candidate data is owner-only —
@@ -125,3 +126,7 @@ registerOwnerOnly('career_pilot.filter_seen_email_events', handleFilterSeenEmail
 registerOwnerOnly('career_pilot.persist_learning', handlePersistLearning);
 registerOwnerOnly('career_pilot.read_learnings', handleReadLearnings);
 registerOwnerOnly('career_pilot.read_contacts', handleReadContacts);
+// §24.202 D3: the /admin agent-action loop. Owner-only like every private
+// action; both handlers additionally refuse anything but the ops session.
+registerOwnerOnly('career_pilot.get_admin_action', handleGetAdminAction);
+registerOwnerOnly('career_pilot.complete_admin_action', handleCompleteAdminAction);

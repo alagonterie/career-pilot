@@ -63,6 +63,29 @@ describe('PIPELINE_DATA_TABLES', () => {
     expect(list).not.toContain('search_quota_usage');
   });
 
+  it('lists agent_actions ahead of job_leads (§24.202)', () => {
+    const list = [...APP_DATA_TABLES] as string[];
+    expect(list.indexOf('agent_actions')).toBeGreaterThanOrEqual(0);
+    expect(list.indexOf('agent_actions')).toBeLessThan(list.indexOf('job_leads'));
+  });
+
+  it('a wipe clears agent_actions with the pool and leaves no orphan rows', () => {
+    const db = getDb();
+    const now = '2026-11-16T00:00:00.000Z';
+    db.prepare(
+      `INSERT INTO job_leads (id, source, source_job_id, source_url, content_fingerprint, title, company,
+                              first_seen_at, last_seen_at, status, status_changed_at)
+       VALUES ('l1', 'greenhouse', 'g1', 'https://x/1', 'fp', 'Engineer', 'Acme', ?, ?, 'new', ?)`,
+    ).run(now, now, now);
+    db.prepare(
+      `INSERT INTO agent_actions (id, kind, lead_id, status, created_at) VALUES ('a1', 'research_company', 'l1', 'done', ?)`,
+    ).run(now);
+    const cleared = wipeTables(db, APP_DATA_TABLES);
+    expect(cleared).toMatchObject({ agent_actions: 1, job_leads: 1 });
+    expect((db.prepare('SELECT COUNT(*) AS n FROM agent_actions').get() as { n: number }).n).toBe(0);
+    expect(db.pragma('foreign_key_check')).toEqual([]);
+  });
+
   it('a wipe clears sourcing runs but PRESERVES the watchlist and the search quota counter', () => {
     const db = getDb();
     const now = '2026-11-16T00:00:00.000Z';

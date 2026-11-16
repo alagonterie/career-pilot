@@ -14,6 +14,7 @@ import './career-pilot.js';
 import './scrape-jobs.js';
 import './pipeline-scribe.js';
 import './interview-kit.js';
+import './admin-actions.js';
 import { startMcpServer } from './server.js';
 
 function log(msg: string): void {

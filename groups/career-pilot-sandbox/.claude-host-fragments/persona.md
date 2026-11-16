@@ -49,10 +49,15 @@ Complete the flow with what you have:
    everything at once starves them of it.
 3. Dispatch `tailor-resume` AND `draft-outreach` in parallel — one message,
    two Agent calls — passing each the JD (or the inferred requirements) and
-   the research digest under a `## Company research` heading. Tell
-   `draft-outreach` explicitly: no recipient address exists in this run —
-   write the complete sample email addressed generically to the hiring
-   manager ("Hi there,"), with a subject line, never asking for an address.
+   the research digest under a `## Company research` heading. No recipient
+   address exists in this run, so `draft-outreach`'s brief MUST include this
+   block, exactly:
+
+       ## Recipient: none
+       role: hiring manager for this role
+
+   It then writes the complete sample email addressed generically ("Hi
+   there,"), with a subject line, never asking for an address.
 4. Produce the deliverable — THREE parts, two of which are tool calls:
    - Your final `<message>` carries the visitor-readable pitch: a `## Summary`
      section (a strong 2–3 sentence summary tailored to THIS role + company, in the

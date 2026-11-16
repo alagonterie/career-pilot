@@ -37,7 +37,8 @@ import { getConfig } from '../../get-config.js';
 import { applyPipelineFromEmailEvents } from './pipeline-apply.js';
 import { getActiveKitUrlsByApplication } from './interview-kit-store.js';
 import { reactToStatusTransitions } from './interview-kit-trigger.js';
-import { isClosedStatus, scoreWinConfidence } from './win-confidence.js';
+import { readLatestScribeState } from './pipeline-scribe-state.js';
+import { scoreWinConfidence } from './win-confidence.js';
 import { insertMessage } from '../../db/session-db.js';
 import { log } from '../../log.js';
 import type { Session } from '../../types.js';
@@ -583,35 +584,6 @@ export async function handlePersistPipelineState(
 
 // ── 4. handleReadPipelineState ──────────────────────────────────────────────
 
-interface PipelineScribeOutputRow {
-  id: string;
-  run_at: string;
-  gmail_history_id: string | null;
-  calendar_sync_tokens: string;
-  narratives_json: string;
-  attention_json: string;
-  suggestions_json: string;
-  cheap_out: number;
-  cost_usd: number | null;
-}
-
-/** Live `applications.status` for every application id named by the given items. */
-function liveApplicationStatuses(
-  db: Database.Database,
-  items: Array<Record<string, unknown>>,
-): Map<string, string | null> {
-  const ids = [
-    ...new Set(items.map((x) => x?.application_id).filter((v): v is string => typeof v === 'string' && v !== '')),
-  ];
-  const out = new Map<string, string | null>();
-  if (ids.length === 0) return out;
-  const rows = db
-    .prepare(`SELECT id, status FROM applications WHERE id IN (${ids.map(() => '?').join(', ')})`)
-    .all(...ids) as Array<{ id: string; status: string | null }>;
-  for (const r of rows) out.set(r.id, r.status);
-  return out;
-}
-
 export async function handleReadPipelineState(
   content: Record<string, unknown>,
   session: Session,
@@ -622,40 +594,18 @@ export async function handleReadPipelineState(
 
   try {
     const db = getDb();
-    const row = db
-      .prepare(
-        `SELECT id, run_at, gmail_history_id, calendar_sync_tokens,
-                narratives_json, attention_json, suggestions_json,
-                cheap_out, cost_usd
-         FROM pipeline_scribe_output
-         ORDER BY run_at DESC
-         LIMIT 1`,
-      )
-      .get() as PipelineScribeOutputRow | undefined;
-
-    if (!row) {
+    // §24.199: the stored run is a snapshot; applications move after it (the
+    // owner closes one minutes later, or the sweep stops running for days). The
+    // shared reader reconciles against the live rows on the way out and never
+    // rewrites the run: attention for a now-closed application is dropped (this
+    // is what briefed a withdrawn app as "silent"), and narratives carry the live
+    // status so a stale `current_state` is visible.
+    const state = readLatestScribeState(db);
+    if (!state) {
       writeResponse(inDb, requestId, { ok: true, data: { state: null } });
       return;
     }
-
-    const narratives = JSON.parse(row.narratives_json) as Array<Record<string, unknown>>;
-    const storedAttention = JSON.parse(row.attention_json) as Array<Record<string, unknown>>;
-
-    // §24.199: the stored run is a snapshot; applications move after it (the
-    // owner closes one minutes later, or the sweep stops running for days).
-    // Reconcile against the live rows on the way out — never rewrite the run:
-    //   - attention for an application that is now closed is dropped (nothing
-    //     left to act on — this is what briefed a withdrawn app as "silent");
-    //   - narratives carry the live status so a stale `current_state` is visible.
-    const liveStatus = liveApplicationStatuses(db, [...narratives, ...storedAttention]);
-    for (const n of narratives) {
-      const appId = n?.application_id;
-      if (typeof appId === 'string' && liveStatus.has(appId)) n.application_status = liveStatus.get(appId);
-    }
-    const attention = storedAttention.filter((a) => {
-      const appId = a?.application_id;
-      return !(typeof appId === 'string' && isClosedStatus(liveStatus.get(appId)));
-    });
+    const { narratives, attention } = state;
 
     // §24.53: hang the active interview-kit link on each item by application_id so
     // the orchestrator surfaces it wherever it already surfaces the application
@@ -674,15 +624,15 @@ export async function handleReadPipelineState(
       ok: true,
       data: {
         state: {
-          id: row.id,
-          run_at: row.run_at,
-          gmail_history_id: row.gmail_history_id,
-          calendar_sync_tokens: JSON.parse(row.calendar_sync_tokens),
+          id: state.id,
+          run_at: state.run_at,
+          gmail_history_id: state.gmail_history_id,
+          calendar_sync_tokens: JSON.parse(state.calendar_sync_tokens),
           narratives,
           attention,
-          suggestions: JSON.parse(row.suggestions_json),
-          cheap_out: row.cheap_out === 1,
-          cost_usd: row.cost_usd,
+          suggestions: state.suggestions,
+          cheap_out: state.cheap_out === 1,
+          cost_usd: state.cost_usd,
         },
       },
     });

@@ -989,6 +989,35 @@ describe('LeadsPanel — "I applied" (§24.201 D8)', () => {
     expect(await screen.findByTestId('leads-applied-undo-expired')).toBeInTheDocument()
     expect(screen.queryByTestId('leads-applied-undo')).not.toBeInTheDocument()
   })
+
+  it('says when applying added the lead’s board to the watchlist; nothing when it did not change', async () => {
+    stubApi({
+      applied_from_lead: okApplied({
+        board_promotion: { action: 'added', ats: 'greenhouse', token: 'acme', tier: 'B' },
+      }),
+    })
+    render(<LeadsPanel data={ONE} baseUrl="http://x" onSaved={vi.fn()} />)
+    fireEvent.click(screen.getAllByTestId('leads-row')[0])
+    fireEvent.click(screen.getByTestId('leads-applied-open'))
+    fireEvent.click(screen.getByTestId('leads-applied-confirm'))
+    expect(await screen.findByTestId('leads-applied-board')).toHaveTextContent(
+      'now watching acme on greenhouse (tier B)',
+    )
+  })
+
+  it('no board line when the host sends board_promotion null, unchanged, or nothing', async () => {
+    stubApi({
+      applied_from_lead: okApplied({
+        board_promotion: { action: 'unchanged', ats: 'lever', token: 'acme', reason: 'paused' },
+      }),
+    })
+    render(<LeadsPanel data={ONE} baseUrl="http://x" onSaved={vi.fn()} />)
+    fireEvent.click(screen.getAllByTestId('leads-row')[0])
+    fireEvent.click(screen.getByTestId('leads-applied-open'))
+    fireEvent.click(screen.getByTestId('leads-applied-confirm'))
+    await screen.findByTestId('leads-applied-entry')
+    expect(screen.queryByTestId('leads-applied-board')).not.toBeInTheDocument()
+  })
 })
 
 describe('LeadsPanel — title blocklist (§24.201 D4)', () => {

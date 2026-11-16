@@ -8,6 +8,7 @@ import { PersonaPanel } from '~/components/admin/PersonaPanel'
 import { PipelinePanel } from '~/components/admin/PipelinePanel'
 import { SandboxRunsPanel } from '~/components/admin/SandboxRunsPanel'
 import { VisitorsPanel } from '~/components/admin/VisitorsPanel'
+import { WatchlistPanel } from '~/components/admin/WatchlistPanel'
 import { KnobControls } from '~/components/dev/KnobControls'
 import { StateNote } from '~/components/states'
 import { Skeleton } from '~/components/ui/skeleton'
@@ -28,14 +29,26 @@ import {
   useAdminPipeline,
   useAdminSandboxRuns,
   useAdminSummary,
+  useAdminWatchlist,
   type AdminSummary,
 } from '~/lib/use-admin'
 
-type TabId = 'overview' | 'pipeline' | 'leads' | 'visitors' | 'contacts' | 'sandbox' | 'models' | 'persona' | 'system'
+type TabId =
+  | 'overview'
+  | 'pipeline'
+  | 'leads'
+  | 'watchlist'
+  | 'visitors'
+  | 'contacts'
+  | 'sandbox'
+  | 'models'
+  | 'persona'
+  | 'system'
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'pipeline', label: 'Pipeline' },
   { id: 'leads', label: 'Leads' },
+  { id: 'watchlist', label: 'Watchlist' },
   { id: 'visitors', label: 'Visitors' },
   { id: 'contacts', label: 'Contacts' },
   { id: 'sandbox', label: 'Sandbox' },
@@ -83,6 +96,11 @@ function AdminPage() {
   const sandboxRuns = useAdminSandboxRuns(API_BASE)
   const persona = useAdminPersona(API_BASE)
   const leads = useAdminLeads(API_BASE)
+  const watchlist = useAdminWatchlist(API_BASE)
+  // §24.201 D6 — a host without the watchlist 404s its read: hide the tab
+  // (and its panel, on a deep link) rather than show a broken one.
+  const watchlistMissing = watchlist.status === 'error' && watchlist.data === null
+  const tabs = watchlistMissing ? TABS.filter((t) => t.id !== 'watchlist') : TABS
 
   // Cold 404 on the summary feed = the admin surface is disabled (or not this
   // stack) → the whole page is unavailable. This is the prod-degradation path.
@@ -122,7 +140,7 @@ function AdminPage() {
             className="sticky top-14 z-10 flex flex-wrap gap-1 border-b border-border bg-background"
             aria-label="Admin sections"
           >
-            {TABS.map((t) => (
+            {tabs.map((t) => (
               <button
                 key={t.id}
                 type="button"
@@ -143,9 +161,29 @@ function AdminPage() {
 
           {tab === 'overview' ? <OverviewPanel summary={summary.data} onModeChange={summary.refresh} /> : null}
           {tab === 'pipeline' ? (
-            <PipelinePanel rows={pipeline.data?.applications ?? []} stageCounts={pipeline.data?.stageCounts ?? {}} />
+            <PipelinePanel
+              rows={pipeline.data?.applications ?? []}
+              stageCounts={pipeline.data?.stageCounts ?? {}}
+              scribe={pipeline.data?.scribe}
+              baseUrl={API_BASE}
+            />
           ) : null}
           {tab === 'leads' ? <LeadsPanel data={leads.data ?? null} baseUrl={API_BASE} onSaved={leads.refresh} /> : null}
+          {tab === 'watchlist' ? (
+            watchlistMissing ? (
+              <StateNote data-testid="watchlist-unavailable">
+                The watchlist is not available on this server yet.
+              </StateNote>
+            ) : (
+              <WatchlistPanel
+                data={watchlist.data}
+                knobs={knobs.data?.knobs ?? null}
+                baseUrl={API_BASE}
+                onSaved={watchlist.refresh}
+                onKnobsSaved={knobs.refresh}
+              />
+            )
+          ) : null}
           {tab === 'visitors' ? (
             <VisitorsPanel data={attribution.data} baseUrl={API_BASE} onSaved={attribution.refresh} />
           ) : null}

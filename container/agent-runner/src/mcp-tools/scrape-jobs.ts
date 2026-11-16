@@ -425,7 +425,7 @@ export const discoverAtsBoard: McpToolDefinition = {
   tool: {
     name: 'discover_ats_board',
     description:
-      "Add a company to the employer-board watchlist from a Greenhouse / Lever / Ashby board link (e.g. https://job-boards.greenhouse.io/<board>, https://jobs.lever.co/<board>, https://jobs.ashbyhq.com/<board>, or a posting URL on one of them). The host does NOT open careers pages: if you only have a company's careers page, read it yourself (WebFetch) and pass the board link you find there. Verifies the board through that ATS's public API and adds it to the watchlist — from then on the scheduled board sweep and `fetch_source` cover it, with no file edit. Returns `{ ats: 'greenhouse'|'lever'|'ashby'|null, token, confidence: 'high'|'none', verified, added, already_listed?, watchlist_id?, company?, tier?, state?, blocked_by_owner?, postings_on_board?, reason? }`. `already_listed: true` means it was already watched (a retired board that answers again is made active). `blocked_by_owner: true` means the candidate paused this company's board — it stays paused; tell the candidate rather than retrying. `verified: false` means the board did not answer — nothing was added. `reason: 'not_a_board_link'` means the URL is not a link on one of those three ATSs — find the board link on the page, or the company uses another system and there is nothing to add. Use when the candidate asks to watch / track / add a company.",
+      "Add a company to the employer-board watchlist from a Greenhouse / Lever / Ashby board link (e.g. https://job-boards.greenhouse.io/<board>, https://jobs.lever.co/<board>, https://jobs.ashbyhq.com/<board>, or a posting URL on one of them). The host does NOT open careers pages: if you only have a company's careers page, read it yourself (WebFetch) and pass the board link you find there. Verifies the board through that ATS's public API and adds it to the watchlist — from then on the scheduled board sweep and `fetch_source` cover it, with no file edit. Returns `{ ats: 'greenhouse'|'lever'|'ashby'|null, token, confidence: 'high'|'none', verified, added, already_listed?, watchlist_id?, company?, tier?, state?, blocked_by_owner?, postings_on_board?, reason? }`. `already_listed: true` means it was already watched (a retired board that answers again is made active). `blocked_by_owner: true` means the candidate paused this company's board (it stays paused) or removed it (`reason: 'removed_by_owner'`; only the candidate can add it back) — tell the candidate rather than retrying. `reason: 'eu_board_unsupported'` means the board is EU-hosted and cannot be read yet — nothing added. `verified: false` means the board did not answer — nothing was added. `reason: 'watchlist_full'` means the board is real but the watchlist is at its size limit — nothing was added; tell the candidate. `reason: 'not_a_board_link'` means the URL is not a link on one of those three ATSs — find the board link on the page, or the company uses another system and there is nothing to add. Use when the candidate asks to watch / track / add a company.",
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -466,9 +466,27 @@ export const discoverAtsBoard: McpToolDefinition = {
     }>('career_pilot.discover_ats_board', { careers_url, company: args.company ?? null, tier: args.tier ?? null });
     if (!res.ok) return actionErr('discover_ats_board', res.error);
     const { ats, token, verified, added, already_listed, company, reason, blocked_by_owner } = res.data;
-    if (ats && token && verified && blocked_by_owner) {
+    if (ats && token && blocked_by_owner && reason === 'removed_by_owner') {
+      return ok(
+        `${ats} board "${token}" was REMOVED from the watchlist by the candidate — nothing added. Only the candidate can add it back, from the admin Watchlist tab. Tell the candidate; do not retry.`,
+        res.data,
+      );
+    }
+    if (ats && token && blocked_by_owner) {
       return ok(
         `${company ?? token} (${ats} board "${token}") is on the watchlist but PAUSED by the candidate — it stays paused. Tell the candidate; do not retry.`,
+        res.data,
+      );
+    }
+    if (ats && token && reason === 'eu_board_unsupported') {
+      return ok(
+        `${ats} board "${token}" is hosted in the EU region, which cannot be read yet — nothing added. Tell the candidate; do not retry.`,
+        res.data,
+      );
+    }
+    if (ats && token && verified && reason === 'watchlist_full') {
+      return ok(
+        `${ats} board "${token}" is real, but the watchlist is full — nothing added. Tell the candidate; they can remove or pause boards on the admin Watchlist tab, or raise the limit.`,
         res.data,
       );
     }

@@ -58,6 +58,7 @@ import {
   applyAdminLeadsWriteAsync,
   applyAdminPersonaWrite,
   applyAdminSandboxRunDelete,
+  applyAdminWatchlistWriteAsync,
   buildAdminContacts,
   buildAdminKnobs,
   buildAdminLeads,
@@ -65,8 +66,10 @@ import {
   buildAdminPipeline,
   buildAdminSandboxRuns,
   buildAdminSummary,
+  buildAdminWatchlist,
   buildAttributionReport,
 } from './admin.js';
+import { readAdminAction, readAdminActions, writeAdminAction } from './admin-actions.js';
 import { relayContactSubmission, type ContactInput } from './contact-relay.js';
 import {
   applyDevControl,
@@ -561,6 +564,56 @@ async function handleAdminControl(
     return json(res, 400, { error: 'invalid JSON body' }, cors);
   }
   const out = await applyAdminControl(getDb(), body);
+  json(res, out.status, out.body, cors);
+}
+
+/** `GET /api/admin/watchlist` (§24.201 D6) — the employer boards the sweep reads. */
+function handleAdminWatchlist(res: http.ServerResponse, cors: Record<string, string>): void {
+  json(res, 200, buildAdminWatchlist(getDb()), cors);
+}
+
+/** `POST /api/admin/watchlist` (§24.201 D6, §24.200 D7) — add by URL, pause /
+ *  resume, remove, and the sweep-filter preview. */
+async function handleAdminWatchlistWrite(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  cors: Record<string, string>,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch {
+    return json(res, 400, { error: 'invalid JSON body' }, cors);
+  }
+  const out = await applyAdminWatchlistWriteAsync(getDb(), body);
+  json(res, out.status, out.body, cors);
+}
+
+/** `GET /api/admin/actions[?lead_id=]` (§24.202) — the agent actions, newest first, + the page's gate. */
+function handleAdminActions(res: http.ServerResponse, leadId: string | null, cors: Record<string, string>): void {
+  const out = readAdminActions(getDb(), leadId);
+  json(res, out.status, out.body, cors);
+}
+
+/** `GET /api/admin/actions/<id>` (§24.202) — one action with its result and progress; the poll target. */
+function handleAdminAction(res: http.ServerResponse, id: string, cors: Record<string, string>): void {
+  const out = readAdminAction(getDb(), id);
+  json(res, out.status, out.body, cors);
+}
+
+/** `POST /api/admin/actions` (§24.202) — enqueue a lead action or a Run now. 202 on success. */
+async function handleAdminActionWrite(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  cors: Record<string, string>,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch {
+    return json(res, 400, { error: 'invalid JSON body' }, cors);
+  }
+  const out = writeAdminAction(getDb(), body);
   json(res, out.status, out.body, cors);
 }
 
@@ -1384,6 +1437,16 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
       if (method === 'POST' && path === '/api/admin/persona') return await handleAdminPersonaWrite(req, res, cors);
       if (method === 'GET' && path === '/api/admin/leads') return handleAdminLeads(res, cors);
       if (method === 'POST' && path === '/api/admin/leads') return await handleAdminLeadsWrite(req, res, cors);
+      if (method === 'GET' && path === '/api/admin/watchlist') return handleAdminWatchlist(res, cors);
+      if (method === 'POST' && path === '/api/admin/watchlist') return await handleAdminWatchlistWrite(req, res, cors);
+      // §24.202 — the agent-action buttons.
+      if (method === 'GET' && path === '/api/admin/actions')
+        return handleAdminActions(res, url.searchParams.get('lead_id') || null, cors);
+      if (method === 'POST' && path === '/api/admin/actions') return await handleAdminActionWrite(req, res, cors);
+      if (method === 'GET' && path.startsWith('/api/admin/actions/')) {
+        const id = path.slice('/api/admin/actions/'.length);
+        if (id.length > 0 && !id.includes('/')) return handleAdminAction(res, id, cors);
+      }
       // §24.191 — per-lead résumé tailoring. Owner-only by virtue of this
       // prefix; a résumé naming a real employer never appears on a public route.
       if (path.startsWith('/api/admin/leads/')) {

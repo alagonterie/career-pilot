@@ -15,10 +15,12 @@
  */
 import type Database from 'better-sqlite3';
 
+import { hasTable } from '../../db/connection.js';
 import { nextEvenSeq } from '../../db/session-db.js';
 import { getConfig } from '../../get-config.js';
 import { log } from '../../log.js';
 
+import { promoteBoardForAppliedLead } from './ats-watchlist.js';
 import { archiveKitsForApplication } from './interview-kit-actions.js';
 import { hasActiveKit, isInterviewRoundStatus, isTerminalStatus } from './interview-kit-store.js';
 import { promoteLeadOnApplied } from './lead-promotion.js';
@@ -47,13 +49,13 @@ export function buildKitWakePrompt(applicationId: string, round: string): string
   return `[scheduled trigger: build-interview-kit] application_id=${applicationId} round=${round.toUpperCase()}`;
 }
 
-function hasPendingKitWake(inDb: Database.Database, seriesId: string): boolean {
+function pendingKitWakeId(inDb: Database.Database, seriesId: string): string | null {
   const row = inDb
     .prepare(
       "SELECT id FROM messages_in WHERE series_id = ? AND kind = 'task' AND status IN ('pending', 'paused') LIMIT 1",
     )
-    .get(seriesId);
-  return row !== undefined;
+    .get(seriesId) as { id: string } | undefined;
+  return row?.id ?? null;
 }
 
 function generateTaskId(): string {
@@ -67,21 +69,56 @@ function generateTaskId(): string {
  * when a row was inserted.
  */
 export function enqueueKitWake(inDb: Database.Database, applicationId: string, round: string): boolean {
+  return enqueueKitWakeTask(inDb, applicationId, round).inserted;
+}
+
+/**
+ * Same as `enqueueKitWake`, returning the task row's id — the inserted row, or
+ * the already-pending wake it deduped onto. The `/admin` *Build interview kit*
+ * action (§24.202 D3) records it so it can observe that task's acknowledgement.
+ */
+export function enqueueKitWakeTask(
+  inDb: Database.Database,
+  applicationId: string,
+  round: string,
+): { id: string; inserted: boolean } {
   const seriesId = kitWakeSeriesId(applicationId, round);
-  if (hasPendingKitWake(inDb, seriesId)) return false;
+  const pending = pendingKitWakeId(inDb, seriesId);
+  if (pending) return { id: pending, inserted: false };
+  const id = generateTaskId();
   inDb
     .prepare(
       `INSERT INTO messages_in (id, seq, timestamp, status, tries, process_after, recurrence, kind, platform_id, channel_type, thread_id, content, series_id)
        VALUES (@id, @seq, datetime('now'), 'pending', 0, datetime('now'), NULL, 'task', NULL, NULL, NULL, @content, @seriesId)`,
     )
     .run({
-      id: generateTaskId(),
+      id,
       seq: nextEvenSeq(inDb),
       content: JSON.stringify({ prompt: buildKitWakePrompt(applicationId, round) }),
       seriesId,
     });
   log.info('interview-kit wake enqueued', { applicationId, round, seriesId });
-  return true;
+  return { id, inserted: true };
+}
+
+/**
+ * The trigger deduped its kit wake onto `messageId`. When that wake belongs to
+ * an `/admin` *Build interview kit* action still in flight, the trigger now
+ * relies on it too: the action no longer owns it alone, so the action's expiry
+ * must leave it queued (`agent_actions.owns_task = 0`). Never throws.
+ */
+export function releaseSharedActionTask(db: Database.Database, messageId: string): void {
+  try {
+    if (!hasTable(db, 'agent_actions')) return;
+    db.prepare("UPDATE agent_actions SET owns_task = 0 WHERE message_id = ? AND status IN ('queued', 'running')").run(
+      messageId,
+    );
+  } catch (err) {
+    log.warn('interview-kit wake: could not mark an admin action’s wake as shared', {
+      messageId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 /**
@@ -109,7 +146,16 @@ export function reactToStatusTransitions(
       // §24.175: a transition into a submitted stage promotes the originating
       // lead (link + flip to `applied`). No-op for non-submitted transitions.
       // §24.195: an application with no discovered lead gets a synthesized one.
-      promoteLeadOnApplied(db, c, { createIfMissing: true });
+      const promoted = promoteLeadOnApplied(db, c, { createIfMissing: true });
+      // §24.200 D7 owner signal, on the agent path too: an application linked
+      // to a lead here promotes that lead's board (added as 'applied', or its
+      // tier raised). Only when THIS call linked it — the /admin "I applied"
+      // action links first and promotes the board itself, so it is never
+      // promoted twice. A rejection is not a reason to watch a board more.
+      // Best-effort; never throws.
+      if (promoted && String(c.to).toUpperCase() !== 'REJECTED') {
+        promoteBoardForAppliedLead(db, promoted.leadId);
+      }
       if (isTerminalStatus(c.to)) {
         void archiveKitsForApplication(db, c.application_id).catch((err) =>
           log.error('interview-kit archive on terminal transition failed', { applicationId: c.application_id, err }),
@@ -117,8 +163,10 @@ export function reactToStatusTransitions(
         continue;
       }
       if (autoGen && isInterviewRoundStatus(c.to) && !hasActiveKit(db, c.application_id, c.to)) {
-        if (inDb) enqueueKitWake(inDb, c.application_id, c.to);
-        else log.warn('interview-kit wake skipped: no session inbound DB for this caller', { change: c });
+        if (inDb) {
+          const wake = enqueueKitWakeTask(inDb, c.application_id, c.to);
+          if (!wake.inserted) releaseSharedActionTask(db, wake.id);
+        } else log.warn('interview-kit wake skipped: no session inbound DB for this caller', { change: c });
       }
     } catch (err) {
       log.error('reactToStatusTransitions: one change failed', { change: c, err });

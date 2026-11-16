@@ -41,13 +41,58 @@ const PIPELINE = {
       obfuscated_label: 'infra-e',
       role_title: 'Staff Engineer',
       status: 'screening',
-      stage: 'screen',
+      stage: 'screening',
       applied_at: '2026-06-10T00:00:00.000Z',
       last_activity_at: '2026-06-18T00:00:00.000Z',
       win_confidence: 68,
+      // §24.203: the read-only catch-up fields.
+      stage_entered_at: '2026-06-06T00:00:00.000Z',
+      days_in_stage: 12,
+      ghosting_threshold_days: 10,
+      ghosting: true,
+      win_confidence_rationale: 'Strong platform match; the screen went well.',
+      lead_ids: ['lead-1'],
+      posting_url: 'https://boards.example.com/wayne/1',
+      sent_resume_id: 'tr-1',
+      timeline: [
+        {
+          id: 'ev-1',
+          ts: '2026-06-06T00:00:00.000Z',
+          kind: 'status_change',
+          from_status: 'applied',
+          to_status: 'screening',
+          source: 'agent',
+          summary: 'Recruiter booked a screen',
+        },
+      ],
+      narrative: {
+        current_state: 'Waiting on the hiring manager after the screen.',
+        last_event_at: '2026-06-06T00:00:00.000Z',
+        timeline_excerpt: ['Applied Jun 10', 'Screen Jun 16'],
+      },
+      suggestions: [{ action: 'draft_followup', rationale: 'Quiet since the screen', evidence_msg_id: null }],
+      attention: [{ priority: 'action_owed', reason: 'Follow-up owed', hint: 'Send a short note' }],
+      attention_top: 'action_owed',
+      last_email: {
+        at: '2026-06-16T00:00:00.000Z',
+        subject: 'Thanks for your time',
+        from_addr: 'recruiter@wayne.example',
+        classification: 'interview_followup',
+        thread_id: 'thr-1',
+        thread_url: 'https://mail.google.com/mail/#all/thr-1',
+      },
+      learnings: [],
+      kits: [],
+      active_kit_url: null,
+      tailored_resumes: [
+        { id: 'tr-1', lead_id: 'lead-1', created_at: '2026-06-09T00:00:00.000Z', bio_outcome: null, sent: true },
+      ],
     },
   ],
-  stageCounts: { screen: 1 },
+  stageCounts: { screening: 1 },
+  ghostingThresholdsDays: { applied: 21, screen: 10, onsite: 7 },
+  ghostingStageMap: { applied: 'applied', screening: 'screen', tech: 'onsite', final: 'onsite' },
+  scribe: { run_at: '2026-06-18T06:00:00.000Z', attention_unlinked: [] },
 }
 
 const CONTACTS = {
@@ -344,6 +389,158 @@ const LEADS = {
   },
 }
 
+// §24.201 D6 — the employer-board watchlist (contract: AdminWatchlistView).
+const WATCHLIST = {
+  boards: [
+    {
+      id: 1,
+      ats: 'greenhouse',
+      token: 'globex',
+      company: 'Globex',
+      tier: 'A',
+      origin: 'seed',
+      state: 'active',
+      notes: null,
+      last_ok_at: '2026-06-25T00:00:00Z',
+      last_error: null,
+      consecutive_failures: 0,
+      consecutive_absent: 0,
+      leads_found: 12,
+      last_hit_at: '2026-06-24T00:00:00Z',
+      created_at: '2026-06-01T00:00:00Z',
+      updated_at: '2026-06-25T00:00:00Z',
+      open_leads: 3,
+      board_url: 'https://job-boards.greenhouse.io/globex',
+    },
+    {
+      id: 2,
+      ats: 'lever',
+      token: 'acme',
+      company: 'Acme',
+      tier: 'B',
+      origin: 'owner',
+      state: 'paused',
+      notes: null,
+      last_ok_at: null,
+      last_error: 'HTTP 500',
+      consecutive_failures: 2,
+      consecutive_absent: 0,
+      leads_found: 0,
+      last_hit_at: null,
+      created_at: '2026-06-10T00:00:00Z',
+      updated_at: '2026-06-20T00:00:00Z',
+      open_leads: 0,
+      board_url: 'https://jobs.lever.co/acme',
+    },
+  ],
+  counts: { total: 2, active: 1, paused: 1, absent: 0, by_origin: { seed: 1, owner: 1 } },
+  caps: { max_boards: 200, counted: 2, max_auto_adds_per_run: 5 },
+}
+
+// The §24.200 D5 sweep-filter knobs, as GET /api/admin/knobs serves them.
+function sweepKnob(key: string, label: string, value: string | number, num?: { min: number; max: number }) {
+  return {
+    key,
+    value,
+    default: value,
+    overridden: false,
+    type: num ? 'number' : 'text',
+    group: 'scouting',
+    label,
+    min: num?.min ?? null,
+    max: num?.max ?? null,
+    integer: !!num,
+    options: null,
+    maxLength: num ? null : 1000,
+    note: null,
+  }
+}
+const SWEEP_KNOBS = [
+  sweepKnob('ats_sweep_title_include', 'Sweep: titles to keep (regex)', '\\bengineer\\b'),
+  sweepKnob('ats_sweep_title_exclude', 'Sweep: titles to drop (regex)', '\\bsales\\b'),
+  sweepKnob('ats_sweep_location_filter', 'Sweep: locations to keep (regex)', ''),
+  sweepKnob('ats_sweep_max_age_days', 'Sweep: max posting age (days)', 30, { min: 1, max: 365 }),
+  sweepKnob('ats_sweep_max_new_per_run', 'Sweep: max new leads per run', 40, { min: 0, max: 500 }),
+]
+
+const SWEEP_PREVIEW = {
+  ok: true,
+  total: 40,
+  current: { keep: 30, drop: 10, drop_by_reason: { filter: 10 } },
+  proposed: { keep: 26, drop: 14, drop_by_reason: { filter: 10, location: 4 } },
+  newly_dropped: 4,
+  newly_kept: 0,
+  sample_newly_dropped: [{ id: 'lead-1', title: 'Senior Software Engineer', company: 'Globex', reason: 'location' }],
+  sample_newly_kept: [],
+}
+
+// §24.202 — the agent-action switches served with the leads read, and the
+// action rows the page polls. Every field matches the contract's row shapes.
+const ACTION_META = {
+  pause_state: 'active',
+  can_enqueue: true,
+  daily_cap: 20,
+  used_today: 2,
+  note_max_chars: 500,
+  ttl_minutes: 60,
+  guard_minutes: 15,
+  compose_authuser: null,
+  run_now: {
+    job_scrape: { in_flight_action_id: null, next_scheduled_at: '2026-11-16T18:00:00.000Z', guarded: false },
+    daily_briefing: { in_flight_action_id: null, next_scheduled_at: '2026-11-17T08:00:00.000Z', guarded: true },
+  },
+  kit_rounds: ['SCREENING', 'TECH_SCREEN', 'SYS_DESIGN', 'FINAL'],
+}
+
+const ACTION_ROW = {
+  id: 'act-1',
+  kind: 'draft_outreach',
+  series: null,
+  lead_id: 'lead-1',
+  company: 'Globex',
+  title: 'Senior Software Engineer',
+  application_id: null,
+  round: null,
+  note: null,
+  status: 'queued',
+  error: null,
+  created_at: '2026-11-16T10:00:00.000Z',
+  started_at: null,
+  completed_at: null,
+  expires_at: '2026-11-16T11:00:00.000Z',
+  has_result: false,
+}
+
+const ACTION_DONE = {
+  ...ACTION_ROW,
+  status: 'done',
+  started_at: '2026-11-16T10:00:02.000Z',
+  completed_at: '2026-11-16T10:01:30.000Z',
+  has_result: true,
+  result_md: '## Globex\n\nBuilds distributed systems.',
+  result_json: {
+    subject: 'Senior Software Engineer at Globex',
+    body: 'Hi,\n\nI build distributed systems & would love to talk.',
+    to: null,
+    research_md: '## Globex\n\nBuilds distributed systems.',
+  },
+  progress: [],
+}
+
+/** A finished research result whose lead was deleted — reachable only from the
+ *  "Recent agent actions" list. */
+const ACTION_ORPHAN = {
+  ...ACTION_ROW,
+  id: 'act-0',
+  kind: 'research_company',
+  lead_id: null,
+  company: 'Initech',
+  title: 'Backend Engineer',
+  status: 'done',
+  completed_at: '2026-11-15T09:00:00.000Z',
+  has_result: true,
+}
+
 /** Stub the admin reads (+ the knob/control/sandbox POSTs). `available:false` → every read 404s. */
 async function stubAdmin(page: Page, available = true): Promise<void> {
   const read = (body: unknown) => (route: import('@playwright/test').Route) =>
@@ -370,6 +567,10 @@ async function stubAdmin(page: Page, available = true): Promise<void> {
   await page.route('**/api/admin/leads', async (route) => {
     if (route.request().method() === 'POST') return route.fulfill(jsonRoute({ ok: true }, 200))
     return route.fulfill(available ? jsonRoute(LEADS) : jsonRoute({ error: 'not_found' }, 404))
+  })
+  await page.route('**/api/admin/watchlist', async (route) => {
+    if (route.request().method() === 'POST') return route.fulfill(jsonRoute({ ok: true }, 200))
+    return route.fulfill(available ? jsonRoute(WATCHLIST) : jsonRoute({ error: 'not_found' }, 404))
   })
 }
 
@@ -435,6 +636,43 @@ test.describe('/admin — control center (§24.138)', () => {
     const a11y = await new AxeBuilder({ page }).analyze()
     expect(a11y.violations).toEqual([])
     expect(consoleErrors).toEqual([])
+  })
+
+  test('the Pipeline tab is read-only and shows attention, days in stage and the row detail (§24.203)', async ({
+    page,
+  }) => {
+    await stubAdmin(page)
+    const pipelinePosts: string[] = []
+    page.on('request', (req) => {
+      if (req.url().includes('/api/admin/pipeline') && req.method() !== 'GET') pipelinePosts.push(req.method())
+    })
+    await page.goto('/admin')
+    await page.getByTestId('admin-tab-pipeline').click()
+
+    const row = page.getByTestId('pipeline-row-app-1')
+    await expect(row.getByTestId('pipeline-attention-chip')).toHaveAttribute('data-priority', 'action_owed')
+    await expect(row.getByTestId('pipeline-days')).toHaveAttribute('data-ghosting', 'true')
+    await expect(row.getByTestId('pipeline-last-email')).toContainText('Thanks for your time')
+
+    await row.click()
+    const detail = page.getByTestId('pipeline-detail')
+    await expect(detail.getByTestId('pipeline-detail-rationale')).toContainText('Strong platform match')
+    await expect(detail.getByTestId('pipeline-detail-timeline')).toContainText('applied → screening')
+    await expect(detail.getByTestId('pipeline-link-thread')).toHaveAttribute(
+      'href',
+      'https://mail.google.com/mail/#all/thr-1',
+    )
+    await expect(detail.getByTestId('pipeline-resume')).toHaveAttribute('data-sent', 'true')
+    await expect(detail.getByRole('button')).toHaveCount(0)
+
+    // The stage chip filters; pressing it again shows every stage.
+    await page.getByTestId('pipeline-stage-chip-screening').click()
+    await expect(page.getByTestId('pipeline-stage-chip-screening')).toHaveAttribute('aria-pressed', 'true')
+    await expect(row).toBeVisible()
+
+    const a11y = await new AxeBuilder({ page }).analyze()
+    expect(a11y.violations).toEqual([])
+    expect(pipelinePosts).toEqual([])
   })
 
   test('the Leads tab shows the pool rollup + a lead with its score-reasons breakdown (§24.173)', async ({ page }) => {
@@ -509,6 +747,192 @@ test.describe('/admin — control center (§24.138)', () => {
     await expect
       .poll(() => posted.find((b) => b.action === 'not_interested'))
       .toMatchObject({ id: 'lead-1', block_company: true })
+  })
+
+  test('Watchlist tab + sweep filters + add a lead by link (§24.201 D6/D7)', async ({ page }) => {
+    await stubAdmin(page)
+    // the knob read now carries the sweep filters (a later route wins)
+    await page.route('**/api/admin/knobs', async (route) => {
+      if (route.request().method() === 'POST') return route.fulfill(jsonRoute({ applied: true }, 200))
+      return route.fulfill(jsonRoute({ knobs: [...KNOBS.knobs, ...SWEEP_KNOBS] }))
+    })
+    const watchPosts: Record<string, unknown>[] = []
+    await page.route('**/api/admin/watchlist', async (route) => {
+      if (route.request().method() !== 'POST') return route.fulfill(jsonRoute(WATCHLIST))
+      const body = route.request().postDataJSON() as Record<string, unknown>
+      watchPosts.push(body)
+      if (body.action === 'add_by_url' && String(body.url).includes('example.com')) {
+        return route.fulfill(
+          jsonRoute(
+            {
+              error: 'not_board_url',
+              message: 'Only Greenhouse, Lever and Ashby links can be added. Other career sites are not fetched.',
+            },
+            400,
+          ),
+        )
+      }
+      if (body.action === 'add_by_url') {
+        const board = { ...WATCHLIST.boards[1], id: 3, company: 'Umbrella', token: 'umbrella', state: 'active' }
+        return route.fulfill(jsonRoute({ ok: true, board, inserted: true, reactivated: false }))
+      }
+      if (body.action === 'preview_filters') {
+        const f = body.filters as Record<string, unknown>
+        if (f.ats_sweep_title_exclude === '(sales') {
+          return route.fulfill(
+            jsonRoute(
+              {
+                error: 'invalid_filter',
+                field: 'ats_sweep_title_exclude',
+                message: 'ats_sweep_title_exclude is not a valid regular expression: Unterminated group',
+              },
+              400,
+            ),
+          )
+        }
+        return route.fulfill(jsonRoute(SWEEP_PREVIEW))
+      }
+      return route.fulfill(jsonRoute({ ok: true }))
+    })
+    const knobPosts: unknown[] = []
+    page.on('request', (req) => {
+      if (req.url().endsWith('/api/admin/knobs') && req.method() === 'POST') knobPosts.push(req.postDataJSON())
+    })
+
+    await page.goto('/admin?tab=watchlist')
+    await expect(page.getByTestId('watchlist-panel')).toBeVisible()
+    await expect(page.getByTestId('watchlist-row')).toHaveCount(2)
+    await expect(page.getByTestId('watchlist-counts')).toContainText('2 / 200')
+
+    // pause the active board
+    await page.getByTestId('watchlist-row').first().getByTestId('watchlist-pause').click()
+    await expect
+      .poll(() => watchPosts.find((b) => b.action === 'set_state'))
+      .toEqual({ action: 'set_state', id: 1, state: 'paused' })
+
+    // remove is two-step
+    await page.getByTestId('watchlist-row').nth(1).getByTestId('watchlist-remove').click()
+    expect(watchPosts.some((b) => b.action === 'remove')).toBe(false)
+    await page.getByTestId('watchlist-remove-yes').click()
+    await expect.poll(() => watchPosts.find((b) => b.action === 'remove')).toEqual({ action: 'remove', id: 2 })
+
+    // a career-site link is refused with the host's sentence
+    await page.getByTestId('watchlist-add-url').fill('https://careers.example.com/jobs')
+    await page.getByTestId('watchlist-add-submit').click()
+    await expect(page.getByTestId('watchlist-add-error')).toContainText('Only Greenhouse, Lever and Ashby links')
+
+    // sweep filters: the preview shows the counts and calls itself an estimate
+    await page.getByTestId('sweep-input-ats_sweep_location_filter').fill('remote')
+    await page.getByTestId('sweep-preview').click()
+    await expect(page.getByTestId('sweep-preview-headline')).toContainText('current filters keep 30, these keep 26')
+    await expect(page.getByTestId('sweep-preview-result')).toContainText('An estimate')
+
+    // an uncompilable pattern: the host's message inline, no knob written
+    await page.getByTestId('sweep-input-ats_sweep_title_exclude').fill('(sales')
+    await page.getByTestId('sweep-save').click()
+    await expect(page.getByTestId('sweep-field-error')).toContainText('not a valid regular expression')
+    expect(knobPosts).toEqual([])
+
+    const a11y = await new AxeBuilder({ page }).analyze()
+    expect(a11y.violations).toEqual([])
+
+    // Leads tab: add a lead by its posting link, then watch its board
+    await page.route('**/api/admin/leads', async (route) => {
+      if (route.request().method() !== 'POST') return route.fulfill(jsonRoute(LEADS))
+      return route.fulfill(
+        jsonRoute({
+          ok: true,
+          lead_id: 'lead-9',
+          outcome: 'created',
+          lead_status: 'new',
+          tombstone_cleared: false,
+          board_proposed: { ats: 'ashby', token: 'umbrella', company: 'Umbrella', already_listed: false, state: null },
+        }),
+      )
+    })
+    await page.getByTestId('admin-tab-leads').click()
+    await page.getByTestId('leads-add-url-input').fill('https://jobs.ashbyhq.com/umbrella/0b1c2d3e')
+    await page.getByTestId('leads-add-url-submit').click()
+    await expect(page.getByTestId('leads-add-url-note')).toHaveText('Lead added.')
+    await page.getByTestId('leads-add-url-watch').click()
+    await expect(page.getByTestId('leads-add-url-watch-note')).toHaveText("Now watching Umbrella's board.")
+    expect(watchPosts.at(-1)).toEqual({
+      action: 'add_by_url',
+      url: 'https://jobs.ashbyhq.com/umbrella/0b1c2d3e',
+      company: 'Umbrella',
+    })
+  })
+
+  test('Leads agent actions: draft outreach → poll → subject, body, compose link; Run now; recent (§24.202)', async ({
+    page,
+  }) => {
+    await stubAdmin(page)
+    await page.route('**/api/admin/leads', async (route) => {
+      if (route.request().method() === 'POST') return route.fulfill(jsonRoute({ ok: true }, 200))
+      return route.fulfill(jsonRoute({ ...LEADS, agentActions: ACTION_META }))
+    })
+    const actionPosts: Record<string, unknown>[] = []
+    await page.route('**/api/admin/actions', async (route) => {
+      if (route.request().method() === 'POST') {
+        actionPosts.push(route.request().postDataJSON() as Record<string, unknown>)
+        return route.fulfill(jsonRoute({ ok: true, action_id: 'act-1', status: 'queued' }, 202))
+      }
+      return route.fulfill(jsonRoute({ actions: [ACTION_DONE, ACTION_ORPHAN], meta: ACTION_META }))
+    })
+    // act-1 reads queued once, then done; act-0 is the orphaned research result
+    let act1Reads = 0
+    await page.route('**/api/admin/actions/*', async (route) => {
+      if (route.request().url().endsWith('/act-0')) {
+        return route.fulfill(
+          jsonRoute({ ...ACTION_ORPHAN, result_md: 'Initech **makes TPS reports**.', result_json: null, progress: [] }),
+        )
+      }
+      act1Reads += 1
+      return route.fulfill(
+        jsonRoute(act1Reads === 1 ? { ...ACTION_ROW, result_md: null, result_json: null } : ACTION_DONE),
+      )
+    })
+
+    await page.goto('/admin?tab=leads')
+    // Run now sits with the header actions; the briefing is guarded (due soon)
+    await expect(page.getByTestId('agent-run-now-job_scrape')).toBeEnabled()
+    await expect(page.getByTestId('agent-run-now-daily_briefing')).toBeDisabled()
+
+    await page.getByTestId('leads-row').first().click()
+    await page.getByTestId('agent-action-open-draft_outreach').click()
+    await expect(page.getByTestId('agent-action-note')).toHaveAttribute(
+      'placeholder',
+      'Who it is for, or leave blank for a draft with no recipient',
+    )
+    await page.getByTestId('agent-action-submit').click()
+    await expect.poll(() => actionPosts).toEqual([{ action: 'enqueue', kind: 'draft_outreach', lead_id: 'lead-1' }])
+
+    await expect(page.getByTestId('agent-action-status')).toHaveAttribute('data-status', 'done')
+    await expect(page.getByTestId('agent-action-outreach-subject')).toHaveText('Senior Software Engineer at Globex')
+    await expect(page.getByTestId('agent-action-outreach-body')).toContainText('would love to talk')
+    const href = await page.getByTestId('agent-action-compose').getAttribute('href')
+    expect(href).toBe(
+      'https://mail.google.com/mail/?view=cm&fs=1&su=Senior%20Software%20Engineer%20at%20Globex&body=Hi%2C%0A%0AI%20build%20distributed%20systems%20%26%20would%20love%20to%20talk.',
+    )
+    const a11y = await new AxeBuilder({ page }).analyze()
+    expect(a11y.violations).toEqual([])
+
+    // a result whose lead was deleted is still reachable
+    await page.getByTestId('agent-actions-recent').locator('summary').click()
+    await expect(page.getByTestId('agent-actions-recent-deleted')).toHaveText('lead deleted')
+    await page.getByTestId('agent-actions-recent-row').nth(1).getByTestId('agent-actions-recent-show').click()
+    await expect(page.getByTestId('agent-actions-recent').getByTestId('agent-action-research')).toContainText(
+      'makes TPS reports',
+    )
+  })
+
+  test('the Watchlist tab is hidden on a host without the watchlist (§24.201 D6)', async ({ page }) => {
+    await stubAdmin(page)
+    await page.route('**/api/admin/watchlist', (route) => route.fulfill(jsonRoute({ error: 'not_found' }, 404)))
+    await page.goto('/admin?tab=leads')
+    await expect(page.getByTestId('leads-panel')).toBeVisible()
+    await expect(page.getByTestId('admin-tab-system')).toBeVisible()
+    await expect(page.getByTestId('admin-tab-watchlist')).toHaveCount(0)
   })
 
   test('the active tab is URL-driven — deep-link + back/forward (§24.176)', async ({ page }) => {

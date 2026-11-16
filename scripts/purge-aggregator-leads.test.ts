@@ -170,4 +170,25 @@ describe('purgeAggregatorLeads', () => {
     expect(again.deleted).toBe(0);
     expect(again.rederived_changed).toBe(0);
   });
+
+  it('skips (and reports) a lead an admin agent action is still working on (§24.202 D2)', () => {
+    seed({ id: 'agg-busy' });
+    seed({ id: 'agg-done' });
+    seed({ id: 'agg-free' });
+    const ins = getDb().prepare(
+      `INSERT INTO agent_actions (id, kind, lead_id, company, title, status, created_at)
+       VALUES (?, 'research_company', ?, 'Acme', 'Senior Engineer', ?, '${NOW}')`,
+    );
+    ins.run('act-1', 'agg-busy', 'running');
+    ins.run('act-2', 'agg-done', 'done');
+    const r = purgeAggregatorLeads(getDb(), { apply: true });
+    expect(r.skipped_by_reason).toEqual({ action_in_flight: 1 });
+    expect(r.deleted).toBe(2);
+    expect(ids()).toEqual(['agg-busy']);
+    // the finished action outlived its lead
+    expect(getDb().prepare("SELECT lead_id, company FROM agent_actions WHERE id = 'act-2'").get()).toEqual({
+      lead_id: null,
+      company: 'Acme',
+    });
+  });
 });

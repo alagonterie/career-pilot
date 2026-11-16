@@ -187,6 +187,7 @@ export function matchTombstone(
   db: Database.Database,
   p: JobLeadPayload,
   fingerprint?: string,
+  opts: { idOnly?: boolean } = {},
 ): { tombstone: TombstoneRow; via: 'id' | 'fingerprint' } | null {
   if (!hasTable(db, 'job_lead_tombstones')) return null;
 
@@ -201,6 +202,7 @@ export function matchTombstone(
     if (isLinkReason(t.reason) && isDirectKind(kind)) continue;
     return { tombstone: t, via: 'id' };
   }
+  if (opts.idOnly) return null;
 
   const fpTombstones = db
     .prepare(
@@ -222,16 +224,34 @@ export function matchTombstone(
   return null;
 }
 
+/** Options only the owner's own add-by-URL may pass (see `checkLeadGuard`). */
+export interface LeadGuardOptions {
+  /**
+   * The owner picked this exact posting (§24.201 D7 "add a lead by URL"): the
+   * title blocklist does not apply to it, and a FINGERPRINT tombstone written
+   * for some OTHER posting does not refuse it (that tombstone is left in place —
+   * it still refuses the posting it was written for and its other siblings).
+   * The caller deletes the posting's OWN tombstones (same source + id) before
+   * writing, so the id check stays in force here. No other caller may set this.
+   */
+  ownerChosen?: boolean;
+}
+
 /**
  * Decide whether one payload may enter job_leads. `fingerprint` may be passed
  * when the caller already computed it (the writer does).
  */
-export function checkLeadGuard(db: Database.Database, p: JobLeadPayload, fingerprint?: string): LeadGuardResult {
+export function checkLeadGuard(
+  db: Database.Database,
+  p: JobLeadPayload,
+  fingerprint?: string,
+  opts: LeadGuardOptions = {},
+): LeadGuardResult {
   if (isRejectedLinkKind(db, p)) {
     return { ok: false, reason: 'link_kind', detail: `apply link kind '${resolveApplyLinkKind(p)}' is not accepted` };
   }
 
-  const hit = matchTombstone(db, p, fingerprint);
+  const hit = matchTombstone(db, p, fingerprint, { idOnly: opts.ownerChosen === true });
   if (hit) {
     if (hit.via === 'fingerprint') {
       log.info('lead guard: fingerprint tombstone refused a posting', {
@@ -251,7 +271,7 @@ export function checkLeadGuard(db: Database.Database, p: JobLeadPayload, fingerp
     };
   }
 
-  if (isTitleBlocklisted(db, p.title ?? '')) {
+  if (!opts.ownerChosen && isTitleBlocklisted(db, p.title ?? '')) {
     return { ok: false, reason: 'title_blocklist', detail: 'title is on the owner blocklist' };
   }
   return { ok: true };
@@ -276,4 +296,38 @@ export function writeTombstone(db: Database.Database, t: TombstoneInput): string
      VALUES (@id, @source, @source_job_id, @content_fingerprint, @company, @title, @reason, @match, @created_at)`,
   ).run({ id, ...t, created_at: new Date().toISOString() });
   return id;
+}
+
+/**
+ * For the owner's add-by-URL: the owner chose this posting, so what earlier
+ * removed IT stops applying.
+ *
+ *   - `deleted`    — this posting's own tombstones (same source + source_job_id,
+ *                    any reason or reach), deleted.
+ *   - `overridden` — fingerprint tombstones written for OTHER postings that
+ *                    would refuse this one. They are NOT deleted: each still
+ *                    refuses the posting it was written for (deleting it would
+ *                    let the next sweep bring back a job the owner deleted).
+ *                    The writer skips them for this one payload instead
+ *                    (`ownerChosen`).
+ */
+export function clearMatchingTombstones(
+  db: Database.Database,
+  p: JobLeadPayload,
+  fingerprint?: string,
+): { deleted: number; overridden: number } {
+  if (!hasTable(db, 'job_lead_tombstones')) return { deleted: 0, overridden: 0 };
+  const deleted = db
+    .prepare('DELETE FROM job_lead_tombstones WHERE source = ? AND source_job_id = ?')
+    .run(p.source, p.source_job_id).changes;
+  // What still matches can only be another posting's fingerprint tombstone.
+  const overridden = matchTombstone(db, p, fingerprint) ? 1 : 0;
+  if (deleted > 0 || overridden > 0)
+    log.info('lead guard: tombstones cleared / overridden by an owner add', {
+      source: p.source,
+      source_job_id: p.source_job_id,
+      deleted,
+      overridden,
+    });
+  return { deleted, overridden };
 }

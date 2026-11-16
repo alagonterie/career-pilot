@@ -52,6 +52,29 @@ fork version recorded in `package.json` — the two are never conflated.
   search component reads idle, not down, when its budget is spent.
 - **Health checks** flag a sweep that has gone stale, boards that keep failing,
   and boards that have gone away.
+- **The watched-company list grows on its own, and has its own page.** A search
+  result that links straight to an employer's board adds that board; applying to
+  a job adds or promotes its board. A new Watchlist tab shows every board with
+  its state and last result, and lets the owner pause, resume, remove, or add a
+  company by pasting its board link. A removed or paused board stays that way.
+- **Sweep filters can be edited on the page,** with a preview of how many
+  current leads a change would keep before it is saved.
+- **Add a lead by pasting its posting link.** A link on a supported board is
+  read directly and added as a lead, even if an earlier filter or deletion
+  would have turned it away.
+- **The owner's Pipeline tab catches up with the public one,** and stays
+  read-only. Each application opens to show the confidence reasoning, a stage
+  timeline, the latest notes and suggestions, lessons learned, and links to the
+  posting, interview kits, tailored résumés and the latest email thread. It adds
+  a needs-attention marker, days in the current stage, the last email, and
+  filtering by stage.
+- **Common requests to the agent are buttons.** From a lead: research the
+  company, draft outreach, or build an interview kit; from the page header: run
+  the job search or the daily briefing now. Results appear on the lead — an
+  outreach draft shows its subject and body with copy and open-in-mail
+  controls, with no recipient unless the note names one. Each press is limited
+  to one at a time per lead, counted against a daily cap, refused while the
+  system is paused, and cancelled if it has not started within a time limit.
 
 ### Fixed
 

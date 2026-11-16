@@ -7,6 +7,7 @@ import {
   NOT_INTERESTED_REASONS,
   postAdminLeads,
   postAppliedFromLead,
+  boardPromotionNote,
   postSweepNow,
   postUndoApplied,
   type AdminLead,
@@ -14,6 +15,7 @@ import {
   type AdminLeadsView,
   type AdminLeadsWrite,
   type AdminWriteResult,
+  type AgentActionsMeta,
   type BulkDeleteResult,
   type BulkSetStatusResult,
   type DuplicateApplication,
@@ -24,6 +26,8 @@ import {
 } from '~/lib/use-admin'
 import { cn } from '~/lib/utils'
 
+import { AddLeadByUrl } from './AddLeadByUrl'
+import { LeadAgentActions, RecentAgentActions, RunNowControls } from './AgentActions'
 import { DataTable, type Column } from './DataTable'
 import { TailorResume } from './TailorResume'
 
@@ -417,8 +421,20 @@ function leadColumns(isNew: (lead: AdminLead) => boolean): Column<AdminLead>[] {
       id: 'status',
       header: 'Status',
       cell: (lead) => (
-        <span className={cn('font-mono text-xs', STATUS_TONE[lead.status] ?? 'text-muted-foreground')}>
-          {lead.status}
+        <span className="flex items-center gap-1.5">
+          <span className={cn('font-mono text-xs', STATUS_TONE[lead.status] ?? 'text-muted-foreground')}>
+            {lead.status}
+          </span>
+          {/* §24.202 — an agent action holds this lead (refreshed by the leads poll). */}
+          {lead.actions?.in_flight ? (
+            <span
+              data-testid="leads-action-inflight"
+              title="An agent action for this lead is queued or running"
+              className="whitespace-nowrap font-mono text-[10px] text-accent-cool"
+            >
+              ◌ agent
+            </span>
+          ) : null}
         </span>
       ),
     },
@@ -452,6 +468,8 @@ interface AppliedEntry {
    *  hide a just-applied lead), so it carries what it needs to label itself. */
   company: string
   title: string
+  /** What applying did to the lead's watchlist board (one line), if anything. */
+  board_note?: string | null
 }
 
 interface LeadDetailProps {
@@ -470,6 +488,9 @@ interface LeadDetailProps {
   applied: AppliedEntry | undefined
   onApplied: (lead: AdminLead, entry: AppliedEntry) => void
   onAppliedRefused: (message: string) => void
+  /** §24.202 — absent on a host without agent actions. */
+  agentMeta?: AgentActionsMeta
+  onChanged: () => void
 }
 
 /** The small uppercase label that heads each detail row. */
@@ -492,6 +513,8 @@ function LeadDetail({
   applied,
   onApplied,
   onAppliedRefused,
+  agentMeta,
+  onChanged,
 }: LeadDetailProps) {
   const settable = SETTABLE_STATUSES.includes(lead.status as (typeof SETTABLE_STATUSES)[number])
   return (
@@ -561,10 +584,9 @@ function LeadDetail({
             onApplied={onApplied}
             onRefused={onAppliedRefused}
           />
-          {/* ── SLOT: per-lead agent actions (§24.202) ──────────────────────
-              "Research company" and "Draft outreach" buttons go here, after
-              "I applied". Not built yet — keep this row's order when adding. */}
-          {/* ── end slot ── */}
+          {/* §24.202 — the per-lead agent actions, after "I applied". Hidden on
+              a host without agent actions. */}
+          {agentMeta ? <LeadAgentActions lead={lead} meta={agentMeta} baseUrl={baseUrl} onChanged={onChanged} /> : null}
         </div>
       </div>
       {/* Triage — what the lead's state in the pool should be. */}
@@ -853,6 +875,7 @@ function AppliedControl({
         undo_until: out.result.undo_until,
         company: lead.company,
         title: lead.title,
+        board_note: boardPromotionNote(out.result.board_promotion),
       })
     } else if (out.kind === 'duplicate') {
       setDuplicate(out.duplicate_of)
@@ -1356,6 +1379,9 @@ export function LeadsPanel({
           </h2>
           <div className="flex flex-wrap items-start justify-end gap-2">
             <TitleBlocklist titles={titleBlocklist} busy={busy} onRemove={(t) => void removeFromBlocklist(t)} />
+            {data.agentActions ? (
+              <RunNowControls meta={data.agentActions} baseUrl={baseUrl} onChanged={onSaved} />
+            ) : null}
             {data.sourcing ? (
               <button
                 type="button"
@@ -1381,6 +1407,13 @@ export function LeadsPanel({
           </div>
         </div>
         {data.sourcing ? <SourcingStrip sourcing={data.sourcing} /> : null}
+        {/* §24.201 D7 — shown with the board-sourcing strip: a host without the
+            sweep predates adding a lead by its link. */}
+        {data.sourcing ? <AddLeadByUrl baseUrl={baseUrl} onSaved={onSaved} /> : null}
+        {/* §24.202 — the way back to a result whose lead was deleted. */}
+        {data.agentActions ? (
+          <RecentAgentActions baseUrl={baseUrl} authuser={data.agentActions.compose_authuser} />
+        ) : null}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Stat label="Active" value={rollup.activeTotal} />
           <Stat label="Newest" value={fmtAgeHours(rollup.newestAgeHours)} />
@@ -1567,6 +1600,11 @@ export function LeadsPanel({
               <span className="font-mono text-[11px] text-primary">
                 ✓ applied · {entry.company} — {entry.title} · public card: {entry.obfuscated_label}
               </span>
+              {entry.board_note ? (
+                <span data-testid="leads-applied-board" className="font-mono text-[11px] text-muted-foreground">
+                  · {entry.board_note}
+                </span>
+              ) : null}
               <UndoCountdown
                 until={entry.undo_until}
                 busy={busy === `undo-${leadId}`}
@@ -1619,6 +1657,8 @@ export function LeadsPanel({
             applied={applied[lead.id]}
             onApplied={onApplied}
             onAppliedRefused={onAppliedRefused}
+            agentMeta={data.agentActions}
+            onChanged={onSaved}
           />
         )}
         resetKey={`${status}|${source}|${linkKind}|${minScore}|${minAgeDays}|${company}|${includeClosed}|${sort}`}
@@ -1643,6 +1683,7 @@ export function bulkDeleteNote(requested: number, d: BulkDeleteResult | undefine
   const parts = [
     reasons.promoted ? `${reasons.promoted} promoted to an application` : null,
     reasons.email_linked ? `${reasons.email_linked} linked to an email` : null,
+    reasons.action_in_flight ? `${reasons.action_in_flight} with an agent action still running` : null,
   ].filter((p): p is string => p != null)
   const skipped = d.skipped ?? 0
   const skipText = skipped > 0 ? ` Skipped ${skipped}${parts.length ? `: ${parts.join(', ')}` : ''}.` : ''

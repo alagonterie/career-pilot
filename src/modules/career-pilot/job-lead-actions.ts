@@ -42,9 +42,20 @@ import {
 } from './scrape-jobs/types.js';
 import type { Session } from '../../types.js';
 
-import { ensureSeededOnce, isValidBoardToken, upsertBoard } from './ats-watchlist.js';
+import {
+  ensureSeededOnce,
+  findBoard,
+  EU_BOARD_UNSUPPORTED_MESSAGE,
+  growWatchlistFromSearchHits,
+  isBoardRemoved,
+  isValidBoardToken,
+  parseAtsUrl,
+  readWatchlistCaps,
+  upsertBoard,
+  type AtsUrlRef,
+} from './ats-watchlist.js';
 import { computeFingerprint } from './lead-fingerprint.js';
-import { checkLeadGuard, resolveApplyLinkKind, type LeadRefusalReason } from './lead-guard.js';
+import { checkLeadGuard, resolveApplyLinkKind, type LeadGuardOptions, type LeadRefusalReason } from './lead-guard.js';
 import { runKitCleanupSweep } from './interview-kit-actions.js';
 import { computeRulesScore, profileFromRow } from './lead-rules-score.js';
 import { recordSearchRun, searchPayloadSite } from './search-quota.js';
@@ -218,12 +229,17 @@ export function refreshLastSeenOfOpenLead(db: Database.Database, source: string,
  * refreshes the mutable content fields, but never overwrites id, first_seen_at,
  * status or application_id — those are downstream-owned. Every path that adds a
  * lead goes through here so the guard cannot be skipped. Throws only on a DB
- * error; callers map that to their own error frame.
+ * error; callers map that to their own error frame. `guardOpts.ownerChosen` is
+ * passed ONLY by the owner's add-by-URL (§24.201 D7) — see `LeadGuardOptions`.
  */
-export function upsertJobLead(db: Database.Database, fp: JobLeadPayload): UpsertJobLeadResult {
+export function upsertJobLead(
+  db: Database.Database,
+  fp: JobLeadPayload,
+  guardOpts: LeadGuardOptions = {},
+): UpsertJobLeadResult {
   // Fingerprint first: the guard's tombstone compare and the row share it.
   const fingerprint = computeFingerprint(fp);
-  const guard = checkLeadGuard(db, fp, fingerprint);
+  const guard = checkLeadGuard(db, fp, fingerprint, guardOpts);
   if (!guard.ok) {
     const refreshed = refreshLastSeenOfOpenLead(db, fp.source, fp.source_job_id);
     log.info('job_lead refused by insert guard', {
@@ -1217,13 +1233,37 @@ const ATS_REF_PATTERNS: ReadonlyArray<{ ats: AtsSource; re: RegExp }> = [
   { ats: 'ashby', re: /https?:\/\/jobs\.ashbyhq\.com\/([\w.-]+)/i },
 ];
 
-/** First ATS board reference in `text` with a well-formed token, or null. Exported for tests. */
-export function detectAtsBoard(text: string): { ats: AtsSource; token: string } | null {
+/**
+ * First ATS board reference in `text` with a well-formed token, or null. The
+ * token is lower-cased — the watchlist's canonical form, as `parseAtsUrl` does —
+ * and an EU-region host is marked `region:'eu'`. Exported for tests.
+ */
+export function detectAtsBoard(text: string): AtsUrlRef | null {
   for (const { ats, re } of ATS_REF_PATTERNS) {
     const m = re.exec(text);
-    if (m && isValidBoardToken(m[1])) return { ats, token: m[1] };
+    if (m && isValidBoardToken(m[1])) {
+      const ref: AtsUrlRef = { ats, token: m[1].toLowerCase() };
+      if (/^https?:\/\/[^/]*\.eu\./i.test(m[0])) ref.region = 'eu';
+      return ref;
+    }
   }
   return null;
+}
+
+/**
+ * The board a `discover_ats_board` URL names: `parseAtsUrl` first (the one parser
+ * every growth path shares), then the API / embed-script forms only
+ * `detectAtsBoard` knows — and only when the URL's own host is an ATS host, so a
+ * board link inside some other site's query string is not taken as one.
+ */
+function discoverRef(url: string): AtsUrlRef | null {
+  const parsed = parseAtsUrl(url);
+  if (parsed && isValidBoardToken(parsed.token)) {
+    return parsed.region
+      ? { ats: parsed.ats, token: parsed.token, region: parsed.region }
+      : { ats: parsed.ats, token: parsed.token };
+  }
+  return /^https?:\/\/(?:[\w-]+\.)*(?:greenhouse\.io|lever\.co|ashbyhq\.com)\//i.test(url) ? detectAtsBoard(url) : null;
 }
 
 /**
@@ -1274,13 +1314,64 @@ export async function handleDiscoverAtsBoard(
   try {
     // Only the URL string itself is inspected (anchored on its host, so a board
     // link inside a query string of some other site is not taken as one).
-    const detected = /^https?:\/\/(?:[\w-]+\.)*(?:greenhouse\.io|lever\.co|ashbyhq\.com)\//i.test(careers_url)
-      ? detectAtsBoard(careers_url)
-      : null;
+    const detected = discoverRef(careers_url);
     if (!detected) {
       writeResponse(inDb, requestId, {
         ok: true,
         data: { ats: null, token: null, confidence: 'none', added: false, reason: 'not_a_board_link' },
+      });
+      return;
+    }
+    if (detected.region === 'eu') {
+      writeResponse(inDb, requestId, {
+        ok: true,
+        data: {
+          ats: detected.ats,
+          token: detected.token,
+          confidence: 'high',
+          added: false,
+          reason: 'eu_board_unsupported',
+          message: EU_BOARD_UNSUPPORTED_MESSAGE,
+        },
+      });
+      return;
+    }
+
+    // An owner pause, or an owner remove, is never lifted from here — only the
+    // owner's own Watchlist tab does that. Answered before any fetch.
+    const existing = findBoard(getDb(), detected.ats, detected.token);
+    if (existing?.state === 'paused') {
+      writeResponse(inDb, requestId, {
+        ok: true,
+        data: {
+          ats: detected.ats,
+          token: existing.token,
+          confidence: 'high',
+          added: false,
+          already_listed: true,
+          watchlist_id: existing.id,
+          company: existing.company,
+          tier: existing.tier,
+          state: existing.state,
+          blocked_by_owner: true,
+          reason: 'blocked_by_owner',
+        },
+      });
+      return;
+    }
+    if (!existing && isBoardRemoved(getDb(), detected.ats, detected.token)) {
+      writeResponse(inDb, requestId, {
+        ok: true,
+        data: {
+          ats: detected.ats,
+          token: detected.token,
+          confidence: 'high',
+          added: false,
+          blocked_by_owner: true,
+          reason: 'removed_by_owner',
+          message:
+            'The owner removed this board from the watchlist. Only the owner can add it back, from the admin page.',
+        },
       });
       return;
     }
@@ -1297,6 +1388,27 @@ export async function handleDiscoverAtsBoard(
           verified: false,
           added: false,
           reason: board.absent ? 'board_absent' : `board_fetch_failed: ${board.error ?? 'unknown'}`,
+        },
+      });
+      return;
+    }
+
+    // Growth is bounded (§24.200 D7): a NEW board, or a RETIRED one being revived
+    // (it rejoins the counted rows), past `ats_watchlist_max_boards` is not
+    // added. An active row is still answered.
+    const caps = readWatchlistCaps(getDb());
+    const wouldCount = !existing || existing.state === 'absent';
+    if (wouldCount && caps.counted >= caps.max_boards) {
+      writeResponse(inDb, requestId, {
+        ok: true,
+        data: {
+          ats: detected.ats,
+          token: detected.token,
+          confidence: 'high',
+          verified: true,
+          added: false,
+          reason: 'watchlist_full',
+          max_boards: caps.max_boards,
         },
       });
       return;
@@ -1518,6 +1630,7 @@ export async function handleStashJobPayloads(
     // cooperation from the subagent.
     const rejected: Partial<Record<LeadRefusalReason, number>> = {};
     const rejectedBySite: Record<string, number> = {};
+    const accepted: JobLeadPayload[] = [];
     for (const raw of payloads as JobLeadPayload[]) {
       // Defensive: the container builds these, but a malformed entry must not
       // poison the cache or crash the stash. Require the dedup key + the fields
@@ -1549,20 +1662,36 @@ export async function handleStashJobPayloads(
       }
       payloadCache.set(source, sourceJobId, raw);
       summaries.push(toSummary(raw));
+      accepted.push(raw);
     }
     const rejectedTotal = Object.values(rejected).reduce((a, b) => a + (b ?? 0), 0);
     if (rejectedTotal > 0) log.info('stash_job_payloads: payloads refused by insert guard', { rejected });
+    // §24.200 D7 growth: a hit whose link is already a direct ATS link yields
+    // its board (origin 'search'), bounded by the watchlist caps. Boards over
+    // a cap are recorded on the run row as rejected 'watchlist_cap'.
+    const growth = growWatchlistFromSearchHits(db, accepted);
+    if (growth.added.length > 0)
+      log.info('stash_job_payloads: watchlist grew from search hits', { added: growth.added });
+    const runRejected: Record<string, number> = { ...(rejected as Record<string, number>) };
+    if (growth.rejected_cap > 0) runRejected.watchlist_cap = growth.rejected_cap;
     // §24.201 D6: the Leads tab's "last search" line (refusals by reason and by
     // the site each refused hit came through). Best-effort.
     recordSearchRun(db, {
-      rejected: rejected as Record<string, number>,
+      rejected: runRejected,
       rejected_by_site: rejectedBySite,
       stashed: summaries.length,
     });
 
     writeResponse(inDb, requestId, {
       ok: true,
-      data: { summaries, stashed: summaries.length, skipped, rejected, rejected_total: rejectedTotal },
+      data: {
+        summaries,
+        stashed: summaries.length,
+        skipped,
+        rejected,
+        rejected_total: rejectedTotal,
+        boards_added: growth.added.length,
+      },
     });
   } catch (err) {
     log.error('handleStashJobPayloads failed', { err });

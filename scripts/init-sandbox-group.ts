@@ -88,6 +88,9 @@ export const SANDBOX_DISALLOWED_TOOLS = [
   'mcp__nanoclaw__persist_pipeline_state',
   'mcp__nanoclaw__read_pipeline_state',
   'mcp__nanoclaw__read_email_events',
+  // admin-actions.ts — the owner's admin-page agent actions
+  'mcp__nanoclaw__get_admin_action',
+  'mcp__nanoclaw__complete_admin_action',
 ];
 
 function generateId(prefix: string): string {

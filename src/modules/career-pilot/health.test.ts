@@ -21,6 +21,7 @@ import { ensureSchema, openInboundDb as openDbAtPath, openOutboundDbRw } from '.
 import { inboundDbPath, outboundDbPath, sessionsBaseDir } from '../../session-manager.js';
 import type { Session } from '../../types.js';
 
+import { applyAdminActionWrite, getAgentActionRow } from './agent-actions.js';
 import { recordBoardFetch } from './ats-watchlist.js';
 import { exitCodeForReport, runHealthChecks, type HealthFinding, type HealthReport } from './health.js';
 import { OPS_THREAD_ID } from './ops-session.js';
@@ -428,6 +429,53 @@ describe('runHealthChecks', () => {
     const report = await run();
     expect(find(report, 'health-check-error:request-telemetry')?.severity).toBe('warn');
     expect(exitCodeForReport(report)).toBe(0); // a warn never exit-codes
+  });
+});
+
+describe('runHealthChecks — admin-action one-shots (§24.202 D3)', () => {
+  it('a finished Run now / admin-action one-shot leaves the ops-series check green', async () => {
+    seedSession('sess-chat', null);
+    seedHealthyOps();
+    getDb()
+      .prepare(
+        `INSERT INTO job_leads (id, source, source_job_id, source_url, content_fingerprint, title, company,
+                                first_seen_at, last_seen_at, status, status_changed_at)
+         VALUES ('lead-1', 'greenhouse', 'g1', 'https://x/1', 'fp', 'Engineer', 'Acme', ?, ?, 'new', ?)`,
+      )
+      .run(new Date(NOW).toISOString(), new Date(NOW).toISOString(), new Date(NOW).toISOString());
+    // Real enqueue path, written into the ops session's inbound.db on disk.
+    const deps = {
+      now: () => new Date(NOW),
+      ops: () => ({
+        agentGroupId: GROUP_ID,
+        sessionId: 'sess-ops',
+        open: () => {
+          const inDb = openDbAtPath(inboundDbPath(GROUP_ID, 'sess-ops'));
+          return { inDb, outDb: null, close: () => inDb.close() };
+        },
+      }),
+    };
+    const ids: string[] = [];
+    for (const body of [
+      { action: 'run_now', series: 'daily_briefing' },
+      { action: 'run_now', series: 'job_scrape' },
+      { action: 'enqueue', kind: 'research_company', lead_id: 'lead-1' },
+    ]) {
+      const out = applyAdminActionWrite(getDb(), body, deps);
+      expect(out.status).toBe(202);
+      ids.push((out.body as { action_id: string }).action_id);
+    }
+    // Each one-shot ran and finished — the newest rows in the queue are now terminal.
+    const db = openDbAtPath(inboundDbPath(GROUP_ID, 'sess-ops'));
+    for (const id of ids) {
+      db.prepare("UPDATE messages_in SET status = 'completed' WHERE id = ?").run(
+        getAgentActionRow(getDb(), id)!.message_id,
+      );
+    }
+    db.close();
+    const report = await run();
+    expect(find(report, 'dead-series')?.severity).toBe('ok');
+    expect(report.findings.filter((f) => f.id.startsWith('dead-series:'))).toEqual([]);
   });
 });
 

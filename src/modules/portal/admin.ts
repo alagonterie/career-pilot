@@ -32,8 +32,15 @@ import {
   normalizeProfileValue,
   type AppliedFromLeadDeps,
 } from '../career-pilot/actions.js';
+import {
+  type AgentActionsMeta,
+  type LeadActionsSummary,
+  buildAgentActionsMeta,
+  leadActionSummaries,
+  leadIdsWithActionInFlight,
+} from '../career-pilot/agent-actions.js';
 import { isSweepRunning, readLastSweep, startSweep, type LastSweepView } from '../career-pilot/ats-sweep.js';
-import { parseAtsJobUrl, pauseBoardsForCompany } from '../career-pilot/ats-watchlist.js';
+import { parseAtsJobUrl, pauseBoardsForCompany, promoteBoardForAppliedLead } from '../career-pilot/ats-watchlist.js';
 import { type HealthFinding, runHealthChecks } from '../career-pilot/health.js';
 import {
   readLastSearch,
@@ -61,6 +68,13 @@ import { type CandidateProfile, readCandidateProfile, renderPersona } from '../c
 import type { JobLeadPayload } from '../career-pilot/scrape-jobs/types.js';
 
 import { originJwtEnabled } from './access-jwt.js';
+import {
+  applyAddLeadByUrl,
+  applyAdminWatchlistWriteAsync,
+  buildAdminWatchlist,
+  previewSweepFilters,
+  type WatchlistAdminDeps,
+} from './admin-watchlist.js';
 import { isDevEnv } from './dev-inspector.js';
 import { executeControlCommand, executeKillswitch } from './kill-switch.js';
 import { ADMIN_DENY, ADMIN_KNOB_KEYS, KNOB_SPECS, applyKnobWrite, buildKnobs, type KnobView } from './knob-registry.js';
@@ -350,47 +364,10 @@ export function applyAdminSandboxRunDelete(raw: unknown): { status: number; body
   return deleted ? { status: 200, body: { id, deleted: true } } : { status: 404, body: { error: 'not_found', id } };
 }
 
-// ── §24.138: the Pipeline summary (owner view — REAL company names) ───────────
+// ── §24.138 / §24.203: the Pipeline tab (owner view — REAL company names) ─────
+// Read-only by design: built in admin-pipeline.ts, and there is no pipeline writer.
 
-interface AdminPipelineRow {
-  application_id: string;
-  company_name: string | null;
-  obfuscated_label: string | null;
-  role_title: string | null;
-  status: string;
-  stage: string;
-  applied_at: string | null;
-  last_activity_at: string | null;
-  win_confidence: number | null;
-}
-
-export interface AdminPipeline {
-  applications: AdminPipelineRow[];
-  stageCounts: Record<string, number>;
-}
-
-/**
- * The owner pipeline view: the pipeline read-model joined to `applications` for the
- * REAL company name (the public surface anonymizes; /admin is owner-gated, so it
- * shows the unredacted name). Empty on an un-migrated DB.
- */
-export function buildAdminPipeline(db: Database.Database): AdminPipeline {
-  if (!hasTable(db, 'public_pipeline_view')) return { applications: [], stageCounts: {} };
-  const applications = db
-    .prepare(
-      `SELECT v.application_id, a.company_name, a.obfuscated_label,
-              COALESCE(a.role_title, v.role_title) AS role_title, v.status, v.stage,
-              v.applied_at, v.last_activity_at, v.win_confidence
-         FROM public_pipeline_view v
-         LEFT JOIN applications a ON a.id = v.application_id
-        ORDER BY v.last_activity_at DESC, v.applied_at DESC`,
-    )
-    .all() as AdminPipelineRow[];
-
-  const stageCounts: Record<string, number> = {};
-  for (const r of applications) stageCounts[r.stage] = (stageCounts[r.stage] ?? 0) + 1;
-  return { applications, stageCounts };
-}
+export { buildAdminPipeline, type AdminPipeline, type AdminPipelineRow } from './admin-pipeline.js';
 
 // ── §24.138: the mode controls (pause/resume · kill-switch · live mode) ───────
 
@@ -636,6 +613,9 @@ export interface AdminLead {
   killer_match_pushed_at: string | null;
   application_id: string | null;
   snippet: string | null;
+  /** §24.202: the per-lead agent-action lock + newest action per kind. Omitted
+   *  when agent_actions is not migrated. */
+  actions?: LeadActionsSummary;
 }
 
 export interface AdminLeadsRollup {
@@ -661,6 +641,9 @@ export interface AdminLeadsView {
   /** §24.201 D6: the sourcing system's state — last board sweep, whether one is
    *  running, the last search's refusals, and the search quota. */
   sourcing: AdminSourcingView;
+  /** §24.202: the agent-action buttons' gate + counters. Omitted when agent_actions
+   *  is not migrated. */
+  agentActions?: AgentActionsMeta;
 }
 
 export interface AdminSourcingView {
@@ -790,13 +773,33 @@ export function buildAdminLeads(db: Database.Database): AdminLeadsView {
       .all(ADMIN_LEADS_CLOSED_CAP) as AdminLead[],
   );
 
-  return {
+  const view: AdminLeadsView = {
     rollup: { activeTotal, closedTotal, byStatus, bySource, llmScored, pushed24h, added24h, added7d, newestAgeHours },
     leads,
     closed,
     titleBlocklist: readTitleBlocklist(db),
     sourcing: empty.sourcing,
   };
+  attachAgentActions(db, view);
+  return view;
+}
+
+/** §24.202: per-lead action summaries + the buttons' meta. Observes the ops
+ *  session first (so an expired action no longer reads as in flight). A failure
+ *  here degrades to "no buttons" rather than failing the whole Leads read. */
+function attachAgentActions(db: Database.Database, view: AdminLeadsView): void {
+  if (!hasTable(db, 'agent_actions')) return;
+  try {
+    const meta = buildAgentActionsMeta(db);
+    const summaries = leadActionSummaries(db);
+    for (const l of [...view.leads, ...view.closed]) {
+      const s = summaries.get(l.id);
+      l.actions = s ?? { in_flight: false, latest: {} };
+    }
+    view.agentActions = meta;
+  } catch (err) {
+    log.warn('admin: agent-action summary read failed', { err: err instanceof Error ? err.message : String(err) });
+  }
 }
 
 /** Map a stored job_leads row to the JobLeadPayload subset computeRulesScore
@@ -1088,9 +1091,11 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
       : null;
     const del = db.prepare(`DELETE FROM job_leads WHERE id = ? AND application_id IS NULL`);
     const canTombstone = hasTable(db, 'job_lead_tombstones');
+    // §24.202 D2: a lead an agent action is working on stays until it finishes.
+    const actionInFlight = leadIdsWithActionInFlight(db);
     let deleted = 0;
-    const skippedByReason: { promoted?: number; email_linked?: number } = {};
-    const bump = (k: 'promoted' | 'email_linked'): void => {
+    const skippedByReason: { promoted?: number; email_linked?: number; action_in_flight?: number } = {};
+    const bump = (k: 'promoted' | 'email_linked' | 'action_in_flight'): void => {
       skippedByReason[k] = (skippedByReason[k] ?? 0) + 1;
     };
     db.transaction(() => {
@@ -1105,6 +1110,10 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
           bump('email_linked');
           continue;
         }
+        if (actionInFlight.has(id)) {
+          bump('action_in_flight');
+          continue;
+        }
         // §24.200 D2: the delete remembers why. A rejected-kind lead was deleted
         // for its link (id-only — the same job re-found with a direct link must
         // come back); a direct lead was deleted by owner intent (fingerprint).
@@ -1116,7 +1125,8 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
         deleted += del.run(id).changes;
       }
     })();
-    const skipped = (skippedByReason.promoted ?? 0) + (skippedByReason.email_linked ?? 0);
+    const skipped =
+      (skippedByReason.promoted ?? 0) + (skippedByReason.email_linked ?? 0) + (skippedByReason.action_in_flight ?? 0);
     log.info('admin: job_leads bulk deleted', {
       requested: parsed.ids.length,
       deleted,
@@ -1241,16 +1251,28 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
 export async function applyAdminLeadsWriteAsync(
   db: Database.Database,
   raw: unknown,
-  deps: AppliedFromLeadDeps = {},
+  deps: AppliedFromLeadDeps & WatchlistAdminDeps = {},
 ): Promise<{ status: number; body: unknown }> {
   if (typeof raw === 'object' && raw !== null) {
     const body = raw as Record<string, unknown>;
     if (body.action === 'applied_from_lead' || body.action === 'undo_applied') {
       if (!hasTable(db, 'job_leads')) return { status: 404, body: { error: 'job_leads not migrated' } };
-      return body.action === 'applied_from_lead'
-        ? applyAppliedFromLead(db, body, deps)
-        : applyUndoApplied(db, body, { now: deps.now });
+      if (body.action === 'undo_applied') return applyUndoApplied(db, body, { now: deps.now });
+      const out = await applyAppliedFromLead(db, body, deps);
+      // §24.200 D7 owner signal: applying from a lead promotes that lead's board
+      // (added as origin 'applied', or its tier raised). Best-effort, after the
+      // application committed; an undo leaves the board as it is.
+      if (out.status === 200 && typeof body.lead_id === 'string') {
+        const board = promoteBoardForAppliedLead(db, body.lead_id);
+        return { status: out.status, body: { ...(out.body as Record<string, unknown>), board_promotion: board } };
+      }
+      return out;
     }
+    // §24.201 D7: add one posting by its URL (async: read through its adapter).
+    if (body.action === 'add_lead_by_url') return applyAddLeadByUrl(db, body, deps);
   }
   return applyAdminLeadsWrite(db, raw);
 }
+
+export { applyAdminWatchlistWriteAsync, buildAdminWatchlist, previewSweepFilters };
+export type { AdminWatchlistBoard, AdminWatchlistView, SweepFilterPreview } from './admin-watchlist.js';

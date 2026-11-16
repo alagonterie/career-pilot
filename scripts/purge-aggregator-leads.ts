@@ -18,7 +18,8 @@
  *   4. SKIPS, and reports by reason, any lead with an application, a tailored
  *      résumé (the delete would cascade it away), an email_events link (that FK
  *      has no delete action — the delete would throw), or a status the owner set
- *      deliberately (queued / reviewed).
+ *      deliberately (queued / reviewed), or a lead an /admin agent action is still
+ *      working on (a queued or running `agent_actions` row, §24.202 D2).
  *
  * Dry-run by default — nothing is written without --apply (not even the
  * re-derived kinds).
@@ -36,9 +37,10 @@ import Database from 'better-sqlite3';
 import { hasTable } from '../src/db/connection.js';
 import { getConfig } from '../src/get-config.js';
 import { rederiveStoredApplyLink } from '../src/modules/career-pilot/apply-link.js';
+import { leadIdsWithActionInFlight } from '../src/modules/career-pilot/agent-actions.js';
 import { writeTombstone } from '../src/modules/career-pilot/lead-guard.js';
 
-export type PurgeSkipReason = 'application' | 'tailored_resume' | 'email_link' | 'owner_status';
+export type PurgeSkipReason = 'application' | 'tailored_resume' | 'email_link' | 'owner_status' | 'action_in_flight';
 
 /** Statuses the owner sets deliberately — a purge must not undo a decision. */
 const OWNER_STATUSES = new Set(['queued', 'reviewed']);
@@ -106,6 +108,7 @@ export function purgeAggregatorLeads(db: Database.Database, opts: { apply: boole
   const hasEmail = hasTable(db, 'email_events');
   const resumeChild = hasResumes ? db.prepare(`SELECT 1 FROM tailored_resumes WHERE lead_id = ? LIMIT 1`) : null;
   const emailLink = hasEmail ? db.prepare(`SELECT 1 FROM email_events WHERE linked_job_lead_id = ? LIMIT 1`) : null;
+  const actionInFlight = leadIdsWithActionInFlight(db);
   const updateKind = db.prepare(`UPDATE job_leads SET apply_url = @url, apply_link_kind = @kind WHERE id = @id`);
   const del = db.prepare(`DELETE FROM job_leads WHERE id = ?`);
 
@@ -140,6 +143,10 @@ export function purgeAggregatorLeads(db: Database.Database, opts: { apply: boole
       }
       if (OWNER_STATUSES.has(r.status)) {
         skip('owner_status');
+        continue;
+      }
+      if (actionInFlight.has(r.id)) {
+        skip('action_in_flight');
         continue;
       }
 

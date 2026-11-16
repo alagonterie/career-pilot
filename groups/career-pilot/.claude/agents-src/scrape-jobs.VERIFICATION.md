@@ -147,6 +147,25 @@ transcript of a scheduled run and a company-scoped run:
   reads the page itself), and it never lifts an owner's pause ("block
   company" → `blocked_by_owner:true`). Proof:
   `src/modules/career-pilot/board-lifecycle.integration.test.ts`.
+- The watchlist grows by itself: a `search_jobs` hit whose apply link is
+  already a direct ATS link adds its board (origin `search`) when the
+  stash sees it, at most `ats_watchlist_max_auto_adds_per_run` per search
+  and never past `ats_watchlist_max_boards` (the excess is counted as
+  rejected `watchlist_cap` in that search's run row); a paused or retired
+  board is never re-added; `discover_ats_board` answers
+  `reason:'watchlist_full'` at the size limit; and `fetch_source({ company })`
+  reaches a board added that way. Proof:
+  `src/modules/career-pilot/watchlist-growth.test.ts`. The subagent prompt
+  needs no change for this — growth is host-side.
+- Board tokens are one key whatever their case: a mixed-case link to an
+  owner-paused board answers `blocked_by_owner` and adds no second row; a
+  retired board revived by `discover_ats_board` counts against the size limit;
+  a board the owner REMOVED is never re-added by a search hit, by applying, or
+  by `discover_ats_board` (`reason:'removed_by_owner'`); an EU-hosted board
+  link is recognised but never added (`reason:'eu_board_unsupported'`); an
+  application reported to the agent promotes its lead's board like the admin
+  "I applied" button. Proof: `src/modules/career-pilot/watchlist-growth.test.ts`
+  and `src/modules/portal/admin-watchlist.test.ts`.
 - The persona routes "watch / track / add <company>" to `discover_ats_board`,
   and its company-scoped scrape brief says the subagent reads the watched
   board (`fetch_source`) and searches only when the company is not watched —
