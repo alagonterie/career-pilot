@@ -133,6 +133,13 @@ function printSessions(t: Transcript, utc: boolean): void {
 }
 
 function main(): void {
+  // A reader that closes early (`| head`, `| grep -m1`) is a normal way to use
+  // this — stop quietly instead of surfacing EPIPE as an uncaught exception.
+  process.stdout.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EPIPE') process.exit(0);
+    throw err;
+  });
+
   let parsed: Parsed;
   try {
     parsed = parseArgs(process.argv.slice(2));
