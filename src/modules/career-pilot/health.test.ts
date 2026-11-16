@@ -292,7 +292,7 @@ describe('runHealthChecks', () => {
       insertTelemetry({ provider: 'serpapi', surface: 'serpapi-search', status_code: 429, ok: 0 });
     }
     let report = await run();
-    expect(find(report, 'failure-streak:serpapi')?.severity).toBe('critical');
+    expect(find(report, 'failure-streak:serpapi/serpapi-search')?.severity).toBe('critical');
 
     insertTelemetry({
       provider: 'serpapi',
@@ -300,7 +300,44 @@ describe('runHealthChecks', () => {
       ts: new Date(NOW - 1_000).toISOString(), // newest
     });
     report = await run();
-    expect(find(report, 'failure-streak:serpapi')).toBeUndefined();
+    expect(find(report, 'failure-streak:serpapi/serpapi-search')).toBeUndefined();
+  });
+
+  it('flags a failing surface even while a sibling surface of the same provider succeeds (§24.199)', async () => {
+    // The incident shape: the sweep fails every time; the hourly probe keeps succeeding in between.
+    for (let i = 0; i < 3; i++) {
+      insertTelemetry({
+        provider: 'gmail',
+        surface: 'pipeline-scribe-gmail',
+        ts: new Date(NOW - (i + 1) * 3_600_000).toISOString(),
+        status_code: 400,
+        ok: 0,
+      });
+      insertTelemetry({
+        provider: 'gmail',
+        surface: 'gmail-health-probe',
+        ts: new Date(NOW - (i + 1) * 3_600_000 + 60_000).toISOString(),
+      });
+    }
+    const report = await run();
+    const f = find(report, 'failure-streak:gmail/pipeline-scribe-gmail');
+    expect(f?.severity).toBe('critical');
+    expect(f?.next_step).toContain("surface='pipeline-scribe-gmail'");
+    expect(find(report, 'failure-streak:gmail/gmail-health-probe')).toBeUndefined();
+  });
+
+  it('does not flag a streak on a dormant surface (nothing tried inside the stale window)', async () => {
+    for (let i = 0; i < 3; i++) {
+      insertTelemetry({
+        provider: 'drive',
+        surface: 'interview-kit-drive',
+        ts: new Date(NOW - (200 + i) * 3_600_000).toISOString(), // > 48h window
+        status_code: 500,
+        ok: 0,
+      });
+    }
+    const report = await run();
+    expect(find(report, 'failure-streak:drive/interview-kit-drive')).toBeUndefined();
   });
 
   it('warns on an active surface whose newest success is stale — and skips dormant surfaces', async () => {

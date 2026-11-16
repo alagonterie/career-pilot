@@ -49,7 +49,7 @@ import { classifyJobIndustry } from './job-classify.js';
 import { normCompany, normText } from './lead-promotion.js';
 import { isOpsSession } from './ops-session.js';
 import { validateProactivePref } from './quiet-hours.js';
-import { scoreWinConfidence } from './win-confidence.js';
+import { isClosedStatus, scoreWinConfidence, zeroClosedApplications } from './win-confidence.js';
 
 // ── Response writer (shared by all handlers) ──
 
@@ -1138,6 +1138,8 @@ const APPLICATION_COLUMNS = [
   'last_activity_at',
 ] as const;
 
+const WRITABLE_APPLICATION_COLUMNS: ReadonlySet<string> = new Set(APPLICATION_COLUMNS);
+
 const INSERT_REQUIRED = ['company_name', 'role_title', 'status'] as const;
 
 // §24.11 Sub-milestone 4.3: the obfuscation-policy fields. A change to any
@@ -1185,6 +1187,13 @@ export async function handleUpdateApplication(
 
     const now = new Date().toISOString();
 
+    // §24.199: patch keys this handler does not write (scorer-owned
+    // win_confidence_rationale, the immutable obfuscated_label, typos). Reported
+    // back so the caller is never told `ok` about a field that did not land.
+    const ignoredFields = Object.keys(patch).filter(
+      (k) => k === 'obfuscated_label' || !WRITABLE_APPLICATION_COLUMNS.has(k),
+    );
+
     if (!existing) {
       // INSERT branch
       const missing = INSERT_REQUIRED.filter((k) => !patch[k]);
@@ -1228,7 +1237,7 @@ export async function handleUpdateApplication(
       log.info('Application created', { id, obfuscated_label });
       writeResponse(inDb, requestId, {
         ok: true,
-        data: { id, created: true, obfuscated_label },
+        data: { id, created: true, obfuscated_label, ignored_fields: ignoredFields },
       });
       upsertPublicPipelineView(db, id);
       // §24.53: a new application created straight into an interview stage
@@ -1255,7 +1264,7 @@ export async function handleUpdateApplication(
       db.prepare('UPDATE applications SET last_activity_at = @now WHERE id = @id').run({ id, now });
       writeResponse(inDb, requestId, {
         ok: true,
-        data: { id, created: false, obfuscated_label: existing.obfuscated_label },
+        data: { id, created: false, obfuscated_label: existing.obfuscated_label, ignored_fields: ignoredFields },
       });
       upsertPublicPipelineView(db, id);
       return;
@@ -1268,10 +1277,18 @@ export async function handleUpdateApplication(
     }
     db.prepare(`UPDATE applications SET ${setClause}, last_activity_at = @last_activity_at WHERE id = @id`).run(params);
 
-    log.info('Application updated', { id, fields: updatable });
+    // §24.199: a closed application settles at 0 + the closed rationale NOW —
+    // deterministic, before the response, so a read-back in the same turn sees
+    // it. Runs whenever the resulting status is closed (not only on the
+    // transition), which also repairs a row closed before this existed.
+    const statusChanged = updatable.includes('status') && patch.status !== existing.status;
+    const resultingStatus = updatable.includes('status') ? patch.status : existing.status;
+    if (isClosedStatus(resultingStatus)) zeroClosedApplications(db);
+
+    log.info('Application updated', { id, fields: updatable, ignored: ignoredFields });
     writeResponse(inDb, requestId, {
       ok: true,
-      data: { id, created: false, obfuscated_label: existing.obfuscated_label },
+      data: { id, created: false, obfuscated_label: existing.obfuscated_label, ignored_fields: ignoredFields },
     });
 
     // §24.11 Sub-milestone 4.3 — retroactive resanitization. Runs AFTER
@@ -1312,10 +1329,18 @@ export async function handleUpdateApplication(
 
     // §24.53: an agent-driven status move into an interview stage enqueues a kit
     // wake; into a terminal stage archives kits. Only when status actually changed.
-    if (patch.status && updatable.includes('status') && patch.status !== existing.status) {
+    if (patch.status && statusChanged) {
       reactToStatusTransitions(db, inDb, [
         { application_id: id, from: existing.status ?? null, to: String(patch.status) },
       ]);
+      // §24.199: a stage move among live statuses is momentum evidence, and a
+      // re-opened application must not keep the closed rationale — re-score.
+      // Fire-and-forget, after the response (as the create branch does).
+      if (!isClosedStatus(patch.status)) {
+        void scoreWinConfidence(db).catch((scoreErr) => {
+          log.error('scoreWinConfidence after status change failed', { scoreErr });
+        });
+      }
     }
   } catch (err) {
     log.error('handleUpdateApplication failed', { id, err });

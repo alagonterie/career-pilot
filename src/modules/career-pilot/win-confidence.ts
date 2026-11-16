@@ -84,29 +84,57 @@ function extractJsonObject(text: string): Record<string, unknown> {
   return JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
 }
 
+/** Statuses in which an application is over — win confidence is 0 by definition. */
+export const CLOSED_STATUSES = ['REJECTED', 'WITHDRAWN'] as const;
+const CLOSED_SET: ReadonlySet<string> = new Set(CLOSED_STATUSES);
+
+export function isClosedStatus(status: unknown): boolean {
+  return typeof status === 'string' && CLOSED_SET.has(status.toUpperCase());
+}
+
+/** The one rationale a closed application carries. */
+export const CLOSED_RATIONALE = 'Application closed — no longer active.';
+
+/**
+ * Settle every closed application at confidence 0 + the closed rationale and
+ * refresh its board row. Deterministic (no LLM), idempotent, never throws.
+ * Returns how many rows it corrected.
+ *
+ * The predicate is "not already settled" — NOT "score is non-zero": a closed
+ * row whose score someone already set to 0 but whose rationale still tells the
+ * open-application story must be corrected too (§24.199).
+ */
+export function zeroClosedApplications(db: Database.Database): number {
+  let closed = 0;
+  try {
+    const closedRows = db
+      .prepare(
+        `SELECT id FROM applications
+          WHERE upper(status) IN (${CLOSED_STATUSES.map(() => '?').join(', ')})
+            AND (win_confidence IS NOT 0 OR win_confidence_rationale IS NOT ?)`,
+      )
+      .all(...CLOSED_STATUSES, CLOSED_RATIONALE) as Array<{ id: string }>;
+    for (const r of closedRows) {
+      db.prepare('UPDATE applications SET win_confidence = 0, win_confidence_rationale = ? WHERE id = ?').run(
+        CLOSED_RATIONALE,
+        r.id,
+      );
+      upsertPublicPipelineView(db, r.id);
+      closed++;
+    }
+  } catch (err) {
+    log.error('zeroClosedApplications failed', { err });
+  }
+  return closed;
+}
+
 /**
  * Score `applications.win_confidence` with intelligence + refresh the board.
  * Closed apps → 0; active apps → an LLM rating from their recruiter signals.
  */
 export async function scoreWinConfidence(db: Database.Database): Promise<WinConfidenceResult> {
   // 1. Closed applications are 0 by definition — deterministic, no LLM.
-  let closed = 0;
-  try {
-    const closedRows = db
-      .prepare(
-        "SELECT id FROM applications WHERE upper(status) IN ('REJECTED','WITHDRAWN') AND (win_confidence IS NULL OR win_confidence <> 0 OR win_confidence_rationale IS NULL)",
-      )
-      .all() as Array<{ id: string }>;
-    for (const r of closedRows) {
-      db.prepare(
-        "UPDATE applications SET win_confidence = 0, win_confidence_rationale = 'Application closed — no longer active.' WHERE id = ?",
-      ).run(r.id);
-      upsertPublicPipelineView(db, r.id);
-      closed++;
-    }
-  } catch (err) {
-    log.error('scoreWinConfidence: zeroing closed applications failed', { err });
-  }
+  const closed = zeroClosedApplications(db);
 
   // 2. Active applications → an LLM rating that blends fit + momentum.
   const active = db

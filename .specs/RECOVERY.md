@@ -51,7 +51,7 @@ The same checks also run host-side on a timer (`health_check_interval_sec`, defa
 | `orphan-responses:<session>` | warn | `cp-resp-*` rows piling up — the orphan TTL sweep isn't keeping the prompt window clear | Check logs for `orphan response sweep failed`; verify `action_response_orphan_ttl_sec` |
 | `outbound-backlog:<session>` | warn | Due outbound messages not delivering | Check logs for `Message delivery failed`; channel adapter / Telegram trouble |
 | `auth-failure:<provider>` | critical | 401/403s recorded in the last 24 h | For gmail/calendar: reconnect in the OneCLI UI; publish the GCP consent screen to production to stop the 7-day expiry. Others: query `request_telemetry` for the error detail |
-| `failure-streak:<provider>` | critical | The newest N requests to a provider ALL failed | Provider outage, dead credential, or quota — the printed query shows the errors |
+| `failure-streak:<provider>/<surface>` | critical | The newest N requests from one call site ALL failed (per surface since §24.199 — a healthy sibling surface, e.g. the hourly `gmail-health-probe`, no longer masks a dead one; dormant surfaces are skipped) | Provider outage, dead credential, quota, or a bad stored input (the 2026-11 quoted Gmail sync pointer) — the printed query shows the errors |
 | `stale-surface:<surface>` | warn | A call site is active but hasn't succeeded inside the window | Query that surface's recent rows; usually a softer echo of one of the above |
 | `gmail-token` | critical | LIVE probe says the token is dead — even if OneCLI shows "connected" | Reconnect in OneCLI UI; publish the consent screen |
 | `onecli-gateway` | critical | `onecli run` cannot execute — every gateway-injected credential path is down | `systemctl status onecli` / `onecli start` on the box |
@@ -83,6 +83,27 @@ SELECT surface, ROUND(SUM(cost_microusd) / 1e6, 4) usd, COUNT(*) n
   FROM request_telemetry WHERE ts >= datetime('now', '-7 day') AND cost_microusd IS NOT NULL
  GROUP BY surface ORDER BY usd DESC;
 ```
+
+### Reading the conversation — `pnpm transcript` (§24.198)
+
+For "the agent told me X" / "why did it reply that?": read the actual exchange instead of working from a screenshot. Merges every session of an agent group (the owner chat session **and** the ops session that sends briefings) into one timeline, on any channel. **Strictly read-only** — safe to point at prod.
+
+```bash
+# On the box, from the env's repo root as the service user (no env loading needed):
+pnpm transcript                       # last 50 messages that crossed the channel (owner group)
+pnpm transcript --since 24h           # ISO timestamp, or relative 30m / 24h / 7d (also --until)
+pnpm transcript --since 24h --tools   # + the tool calls/results, telemetry, tasks behind each reply
+pnpm transcript --json --limit 0      # everything, machine-readable, untruncated
+pnpm transcript --sessions            # which sessions exist (row counts + time ranges)
+# Narrowing: --channel <type>  --session <id>  --group <folder|id>  --full  --utc
+
+# One-liner from a dev machine (Tailscale; /opt/career-pilot = PROD, /opt/career-pilot-dev = dev):
+tailscale ssh root@career-pilot-dev "cd /opt/career-pilot && sudo -u career-pilot pnpm transcript --since 24h --tools"
+```
+
+Reading the output: `AGENT` rows carry a delivery tag only when the host did **not** deliver them (`FAILED` / `PENDING`); the `chat` / `ops` column is the session a row lives in; under `--tools`, a `→` call and its `←` result share a trailing `[requestId]`, `· mirror:` rows are the copies of ops-session sends injected into the chat session's context, and `· task:` rows are timestamped when they were **queued** — the `due` time beside them is when they fire (so a window can show tomorrow's pending task but not the already-queued one that triggered today's turn). The output is the owner's real conversation — never paste it into the repo.
+
+**Resetting the agent's conversation context:** send `/clear` (aliases `/new`, `/reset`) in the chat; the agent replies "Session cleared." It resets only that session's conversation — not workspace memory (`CLAUDE.local.md`, `conversations/`), not DB state, and not the ops session's context.
 
 ---
 

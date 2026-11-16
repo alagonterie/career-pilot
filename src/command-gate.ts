@@ -20,7 +20,10 @@ export type GateResult =
   | { action: 'control'; command: string };
 
 const FILTERED_COMMANDS = new Set(['/help', '/login', '/logout', '/doctor', '/config', '/remote-control']);
-const ADMIN_COMMANDS = new Set(['/clear', '/compact', '/context', '/cost', '/files']);
+// '/new' and '/reset' are aliases of '/clear' (the runner resets the session on
+// any of the three) — listed here so they are admin-gated like '/clear' rather
+// than falling through as unknown commands. See STRATEGY.md §24.198.
+const ADMIN_COMMANDS = new Set(['/clear', '/new', '/reset', '/compact', '/context', '/cost', '/files']);
 // Operator control plane. Admin-only; non-admins are denied. All classify as
 // { action: 'control' }; the router executes /pause /resume /halt inline
 // (5.4a) but routes /killswitch through a confirmation card (5.4b) — it never

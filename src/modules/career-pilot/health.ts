@@ -399,34 +399,39 @@ function checkRequestTelemetry(now: number, findings: HealthFinding[]): void {
     findings.push({ id: 'auth-failure', severity: 'ok', title: 'No auth failures in the last 24h', detail: '' });
   }
 
-  // Failure streaks: the newest N rows for a provider all failed.
+  const staleHours = getConfig<number>(db, 'health_surface_stale_hours');
+  const staleCutoff = iso(now - staleHours * 3_600_000);
+
+  // Failure streaks: the newest N rows of one (provider, surface) all failed.
+  // Per SURFACE, not per provider (§24.199): a healthy sibling surface — the
+  // hourly gmail-health-probe — otherwise masks a call site failing every time.
+  // Dormant surfaces (nothing tried inside the stale window) are not incidents.
   const streakN = getConfig<number>(db, 'health_failure_streak_threshold');
-  const providers = db.prepare('SELECT DISTINCT provider FROM request_telemetry').all() as Array<{
-    provider: string;
-  }>;
+  const callSites = db
+    .prepare('SELECT provider, surface, MAX(ts) AS last_any FROM request_telemetry GROUP BY provider, surface')
+    .all() as Array<{ provider: string; surface: string; last_any: string }>;
   let anyStreak = false;
-  for (const { provider } of providers) {
+  for (const { provider, surface, last_any } of callSites) {
+    if (last_any < staleCutoff) continue;
     const newest = db
-      .prepare('SELECT ok FROM request_telemetry WHERE provider = ? ORDER BY ts DESC LIMIT ?')
-      .all(provider, streakN) as Array<{ ok: number }>;
+      .prepare('SELECT ok FROM request_telemetry WHERE provider = ? AND surface = ? ORDER BY ts DESC LIMIT ?')
+      .all(provider, surface, streakN) as Array<{ ok: number }>;
     if (newest.length >= streakN && newest.every((r) => r.ok === 0)) {
       anyStreak = true;
       findings.push({
-        id: `failure-streak:${provider}`,
+        id: `failure-streak:${provider}/${surface}`,
         severity: 'critical',
-        title: `The last ${newest.length} '${provider}' requests ALL failed`,
-        detail: `Every recent request to this provider is failing — outage, dead credential, or quota.`,
-        next_step: `${Q_TS} data/v2.db "SELECT ts, surface, status_code, error FROM request_telemetry WHERE provider='${provider}' ORDER BY ts DESC LIMIT ${streakN}"`,
+        title: `The last ${newest.length} '${provider}' requests from '${surface}' ALL failed`,
+        detail: `Every recent request from this call site is failing — outage, dead credential, quota, or a bad stored input.`,
+        next_step: `${Q_TS} data/v2.db "SELECT ts, status_code, error FROM request_telemetry WHERE provider='${provider}' AND surface='${surface}' ORDER BY ts DESC LIMIT ${streakN}"`,
       });
     }
   }
   if (!anyStreak) {
-    findings.push({ id: 'failure-streak', severity: 'ok', title: 'No provider failure streaks', detail: '' });
+    findings.push({ id: 'failure-streak', severity: 'ok', title: 'No failure streaks on any call site', detail: '' });
   }
 
   // Stale surfaces: active recently, but the newest SUCCESS is old (or absent).
-  const staleHours = getConfig<number>(db, 'health_surface_stale_hours');
-  const staleCutoff = iso(now - staleHours * 3_600_000);
   const surfaces = db
     .prepare(
       `SELECT surface, MAX(ts) AS last_any, MAX(CASE WHEN ok = 1 THEN ts END) AS last_ok

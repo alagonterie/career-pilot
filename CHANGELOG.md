@@ -13,6 +13,44 @@ fork version recorded in `package.json` — the two are never conflated.
 
 ## [Unreleased]
 
+## [1.1.10] - 2026-11-16
+
+### Added
+
+- **The conversation between the owner and the agent can be read from a
+  terminal**, with one command, on any channel: what was said in both directions,
+  whether each reply was actually delivered, and optionally the steps the agent
+  took to produce it. It only reads; it never changes anything. Diagnosing "why
+  did it tell me that?" no longer starts from a screenshot.
+- **`/new` and `/reset` start a fresh conversation**, the same as `/clear`, and
+  the agent confirms it. Previously `/new` happened to work, silently, by
+  accident of the runtime underneath.
+
+### Changed
+
+- **The health check now notices one part of the system failing even while a
+  related part is fine.** It used to judge a whole outside service at once, so a
+  routine hourly check that kept succeeding could hide a daily job that failed
+  every single time. Each call site is now judged on its own.
+
+### Fixed
+
+- **The inbox sweep could stop permanently after saving a malformed bookmark.**
+  The marker recording how far the mailbox had been read was once saved with
+  stray characters around it; the mail service then refused every later request
+  and no new mail was read. A malformed marker is now cleaned on the way in and
+  on the way out, and if the mail service ever rejects one the sweep re-reads a
+  recent window instead of failing.
+- **A closed application could still be reported as waiting on a reply.** The
+  morning briefing worked from the last sweep's picture of the pipeline, which
+  could predate the application being closed. That picture is now checked
+  against each application's current status before it is used.
+- **A closed application could keep the confidence note it had while it was
+  open.** Closing an application now settles its confidence and its note
+  immediately, and moving an application to a new stage re-scores it.
+- **Updating an application reported success for a detail it had not saved.**
+  The agent is now told exactly which details were not saved.
+
 ## [1.1.9] - 2026-11-13
 
 ### Changed

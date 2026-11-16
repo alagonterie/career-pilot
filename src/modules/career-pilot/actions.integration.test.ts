@@ -425,6 +425,101 @@ describe('handleUpdateApplication', () => {
     expect(row.applied_at).toBe('2026-05-26T10:00:00Z');
   });
 
+  // §24.199 — the prod shape: an application closed by the owner kept its
+  // open-application rationale, and the tool said `ok` about a field it dropped.
+  describe('closing an application + ignored patch fields (§24.199)', () => {
+    const confidenceOf = (id: string) =>
+      getDb().prepare('SELECT win_confidence, win_confidence_rationale FROM applications WHERE id = ?').get(id) as {
+        win_confidence: number | null;
+        win_confidence_rationale: string | null;
+      };
+
+    async function createOpen(id: string): Promise<void> {
+      await handleUpdateApplication(
+        actionContent('career_pilot.update_application', {
+          id,
+          patch: { company_name: 'Acme', role_title: 'Backend', status: 'APPLIED' },
+        }),
+        FAKE_SESSION,
+        inDb,
+      );
+      getDb()
+        .prepare('UPDATE applications SET win_confidence = 31, win_confidence_rationale = ? WHERE id = ?')
+        .run('Aligns well with the stack; early days.', id);
+    }
+
+    it('UPDATE to a closed status settles confidence at 0 + the closed rationale before responding', async () => {
+      await createOpen('app-close');
+      const c = actionContent('career_pilot.update_application', {
+        id: 'app-close',
+        patch: { status: 'WITHDRAWN' },
+      });
+      await handleUpdateApplication(c, FAKE_SESSION, inDb);
+
+      expect(confidenceOf('app-close')).toEqual({
+        win_confidence: 0,
+        win_confidence_rationale: 'Application closed — no longer active.',
+      });
+      const view = getDb()
+        .prepare('SELECT win_confidence, win_confidence_rationale FROM public_pipeline_view WHERE application_id = ?')
+        .get('app-close') as { win_confidence: number | null; win_confidence_rationale: string | null };
+      expect(view.win_confidence).toBe(0);
+      expect(view.win_confidence_rationale).toContain('closed');
+    });
+
+    it('repairs an already-closed row whose score is 0 but whose rationale is stale', async () => {
+      await createOpen('app-stale');
+      // The exact prod state: WITHDRAWN, confidence already 0, open-application rationale.
+      getDb().prepare("UPDATE applications SET status = 'WITHDRAWN', win_confidence = 0 WHERE id = ?").run('app-stale');
+
+      const c = actionContent('career_pilot.update_application', {
+        id: 'app-stale',
+        patch: { status: 'WITHDRAWN', win_confidence: 0, win_confidence_rationale: 'Application closed.' },
+      });
+      await handleUpdateApplication(c, FAKE_SESSION, inDb);
+
+      expect(confidenceOf('app-stale').win_confidence_rationale).toBe('Application closed — no longer active.');
+      const resp = readResponse(c.requestId);
+      if (!resp.frame.ok) throw new Error('unreachable');
+      expect((resp.frame.data as { ignored_fields: string[] }).ignored_fields).toEqual(['win_confidence_rationale']);
+    });
+
+    it('reports ignored_fields: [] when every patch key was written, and lists unknown/immutable keys', async () => {
+      await createOpen('app-ign');
+      const clean = actionContent('career_pilot.update_application', {
+        id: 'app-ign',
+        patch: { role_title: 'Staff Backend' },
+      });
+      await handleUpdateApplication(clean, FAKE_SESSION, inDb);
+      const cleanResp = readResponse(clean.requestId);
+      if (!cleanResp.frame.ok) throw new Error('unreachable');
+      expect((cleanResp.frame.data as { ignored_fields: string[] }).ignored_fields).toEqual([]);
+
+      const noisy = actionContent('career_pilot.update_application', {
+        id: 'app-ign',
+        patch: { role_title: 'Principal', obfuscated_label: 'hacked-a', notes: 'x' },
+      });
+      await handleUpdateApplication(noisy, FAKE_SESSION, inDb);
+      const noisyResp = readResponse(noisy.requestId);
+      if (!noisyResp.frame.ok) throw new Error('unreachable');
+      expect((noisyResp.frame.data as { ignored_fields: string[] }).ignored_fields.sort()).toEqual([
+        'notes',
+        'obfuscated_label',
+      ]);
+    });
+
+    it('a status change among live statuses does not touch the closed rationale path', async () => {
+      await createOpen('app-live');
+      await handleUpdateApplication(
+        actionContent('career_pilot.update_application', { id: 'app-live', patch: { status: 'SCREENING' } }),
+        FAKE_SESSION,
+        inDb,
+      );
+      // No gateway configured in tests → the fire-and-forget scorer leaves the score as is.
+      expect(confidenceOf('app-live').win_confidence).toBe(31);
+    });
+  });
+
   it('uses jd_analyzed.role_category for obfuscated_label industry slug', async () => {
     const c1 = actionContent('career_pilot.update_application', {
       id: 'fintech-1',

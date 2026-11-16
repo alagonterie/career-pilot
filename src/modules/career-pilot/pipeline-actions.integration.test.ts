@@ -41,6 +41,7 @@ import {
   handlePersistPipelineState,
   handleReadEmailEvents,
   handleReadPipelineState,
+  usableHistoryId,
 } from './pipeline-actions.js';
 
 const tmpDir = path.join(os.tmpdir(), `nanoclaw-cp-pipeline-test-${process.pid}`);
@@ -239,7 +240,7 @@ describe('handleGetGmailSyncState', () => {
 
   it('returns the stored history_id after persist writes it', async () => {
     await handlePersistPipelineState(
-      actionContent('career_pilot.persist_pipeline_state', makeValidPayload({ gmail_history_id: 'h-12345' })),
+      actionContent('career_pilot.persist_pipeline_state', makeValidPayload({ gmail_history_id: '12345' })),
       OWNER_SESSION,
       inDb,
     );
@@ -248,7 +249,71 @@ describe('handleGetGmailSyncState', () => {
     const res = readResponse(c.requestId);
     if (!res.frame.ok) throw new Error('unreachable');
     const data = res.frame.data as { history_id: string };
-    expect(data.history_id).toBe('h-12345');
+    expect(data.history_id).toBe('12345');
+  });
+
+  it('usableHistoryId: a decimal string or nothing — and it unwraps quoted digits (§24.199)', () => {
+    expect(usableHistoryId('29613')).toBe('29613');
+    expect(usableHistoryId(29613)).toBe('29613');
+    // The 2026-11-13 box value: digits wrapped in literal quote characters.
+    expect(usableHistoryId('"29613"')).toBe('29613');
+    expect(usableHistoryId(" '29613' ")).toBe('29613');
+    expect(usableHistoryId('""29613""')).toBe('29613'); // double-wrapped
+    for (const bad of [null, undefined, '', 'null', 'undefined', '""', 'h-12345', '29613abc', '2 9613', {}, true]) {
+      expect(usableHistoryId(bad)).toBeNull();
+    }
+  });
+
+  it('stores quoted digits unwrapped, in both the sync pointer and the run log (§24.199)', async () => {
+    await handlePersistPipelineState(
+      actionContent('career_pilot.persist_pipeline_state', makeValidPayload({ gmail_history_id: '"29613"' })),
+      OWNER_SESSION,
+      inDb,
+    );
+    const sync = getDb().prepare("SELECT history_id FROM gmail_sync_state WHERE account_id = 'primary'").get() as {
+      history_id: string;
+    };
+    expect(sync.history_id).toBe('29613');
+    const run = getDb().prepare('SELECT gmail_history_id FROM pipeline_scribe_output').get() as {
+      gmail_history_id: string | null;
+    };
+    expect(run.gmail_history_id).toBe('29613');
+  });
+
+  it('heals an already-stored quoted pointer on read — the delta resumes, no full sync (§24.199)', async () => {
+    getDb()
+      .prepare("INSERT INTO gmail_sync_state (account_id, history_id, last_full_sync_at) VALUES ('primary', ?, ?)")
+      .run('"29613"', '2026-11-13T19:33:08Z');
+    const c = actionContent('career_pilot.get_gmail_sync_state', {});
+    await handleGetGmailSyncState(c, OWNER_SESSION, inDb);
+    const res = readResponse(c.requestId);
+    if (!res.frame.ok) throw new Error('unreachable');
+    expect((res.frame.data as { history_id: string | null }).history_id).toBe('29613');
+  });
+
+  it('an unusable id never overwrites a good stored pointer, and is logged as null on the run', async () => {
+    await handlePersistPipelineState(
+      actionContent('career_pilot.persist_pipeline_state', makeValidPayload({ gmail_history_id: '29613' })),
+      OWNER_SESSION,
+      inDb,
+    );
+    await new Promise((r) => setTimeout(r, 10));
+    await handlePersistPipelineState(
+      actionContent(
+        'career_pilot.persist_pipeline_state',
+        makeValidPayload({ new_email_events: [], gmail_history_id: 'history-12345' }),
+      ),
+      OWNER_SESSION,
+      inDb,
+    );
+    const sync = getDb().prepare("SELECT history_id FROM gmail_sync_state WHERE account_id = 'primary'").get() as {
+      history_id: string;
+    };
+    expect(sync.history_id).toBe('29613');
+    const newest = getDb()
+      .prepare('SELECT gmail_history_id FROM pipeline_scribe_output ORDER BY run_at DESC LIMIT 1')
+      .get() as { gmail_history_id: string | null };
+    expect(newest.gmail_history_id).toBeNull();
   });
 
   it('never stores the stringified-null historyId (the 2026-06-13 box bug)', async () => {
@@ -367,7 +432,7 @@ function makeValidPayload(overrides: Record<string, unknown> = {}): Record<strin
     narratives: [{ company: 'Acme', current_state: 'applied', timeline_excerpt: ['applied 2d ago'] }],
     attention: [{ priority: 'fyi', reason: 'New application', application_id: null }],
     suggestions: [],
-    gmail_history_id: 'hist-12345',
+    gmail_history_id: '12345',
     calendar_sync_tokens: { primary: 'cal-token-abc' },
     cheap_out: false,
     cost_usd: 0.25,
@@ -394,13 +459,13 @@ describe('handlePersistPipelineState', () => {
       .prepare('SELECT id, gmail_history_id, cheap_out, cost_usd FROM pipeline_scribe_output')
       .all() as Array<{ id: string; gmail_history_id: string; cheap_out: number; cost_usd: number }>;
     expect(outputRows).toHaveLength(1);
-    expect(outputRows[0].gmail_history_id).toBe('hist-12345');
+    expect(outputRows[0].gmail_history_id).toBe('12345');
     expect(outputRows[0].cheap_out).toBe(0);
 
     const syncRow = getDb().prepare("SELECT history_id FROM gmail_sync_state WHERE account_id = 'primary'").get() as {
       history_id: string;
     };
-    expect(syncRow.history_id).toBe('hist-12345');
+    expect(syncRow.history_id).toBe('12345');
 
     const calRow = getDb()
       .prepare("SELECT sync_token FROM calendar_sync_state WHERE calendar_id = 'primary'")
@@ -543,6 +608,69 @@ describe('handleReadPipelineState', () => {
     const state = (res.frame.data as { state: { narratives: Array<{ company: string }> } }).state;
     expect(state.narratives).toHaveLength(1);
     expect(state.narratives[0].company).toBe('Stripe');
+  });
+
+  it('reconciles the snapshot against live application state (§24.199)', async () => {
+    const seedApp = (id: string, status: string) =>
+      getDb()
+        .prepare(
+          `INSERT INTO applications
+             (id, company_name, obfuscated_label, public_state, role_title, status, applied_at, last_activity_at, created_at)
+           VALUES (?, ?, ?, 'obfuscated', 'Engineer', ?, datetime('now'), datetime('now'), datetime('now'))`,
+        )
+        .run(id, `Co ${id}`, `misc-${id}`, status);
+    // The run saw both as live; the owner then withdrew app-closed.
+    seedApp('app-closed', 'WITHDRAWN');
+    seedApp('app-open', 'SCREENING');
+
+    await handlePersistPipelineState(
+      actionContent(
+        'career_pilot.persist_pipeline_state',
+        makeValidPayload({
+          new_email_events: [],
+          narratives: [
+            { company: 'Acme', application_id: 'app-closed', current_state: 'applied' },
+            { company: 'Globex', application_id: 'app-open', current_state: 'applied' },
+            { company: 'Initech', application_id: null, current_state: 'discovered' },
+          ],
+          attention: [
+            { priority: 'low', reason: 'Silent 55 days', application_id: 'app-closed' },
+            { priority: 'high', reason: 'Screen tomorrow', application_id: 'app-open' },
+            { priority: 'fyi', reason: 'New lead', application_id: null },
+            { priority: 'fyi', reason: 'Unknown application', application_id: 'app-missing' },
+          ],
+        }),
+      ),
+      OWNER_SESSION,
+      inDb,
+    );
+
+    const c = actionContent('career_pilot.read_pipeline_state', {});
+    await handleReadPipelineState(c, OWNER_SESSION, inDb);
+    const res = readResponse(c.requestId);
+    if (!res.frame.ok) throw new Error('unreachable');
+    const state = (
+      res.frame.data as {
+        state: {
+          narratives: Array<{ application_id: string | null; current_state: string; application_status?: string }>;
+          attention: Array<{ reason: string }>;
+        };
+      }
+    ).state;
+
+    // Attention for the closed application is gone; everything else survives.
+    expect(state.attention.map((a) => a.reason)).toEqual(['Screen tomorrow', 'New lead', 'Unknown application']);
+    // Narratives keep the snapshot's story but carry the live status beside it.
+    expect(state.narratives).toHaveLength(3);
+    expect(state.narratives[0]).toMatchObject({ current_state: 'applied', application_status: 'WITHDRAWN' });
+    expect(state.narratives[1]).toMatchObject({ application_status: 'SCREENING' });
+    expect(state.narratives[2].application_status).toBeUndefined();
+
+    // The stored run is not rewritten.
+    const stored = getDb().prepare('SELECT attention_json FROM pipeline_scribe_output').get() as {
+      attention_json: string;
+    };
+    expect(JSON.parse(stored.attention_json)).toHaveLength(4);
   });
 
   it('refuses with FORBIDDEN for sandbox sessions', async () => {

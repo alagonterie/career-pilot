@@ -381,19 +381,19 @@ describe('poll loop — stale session recovery', () => {
   });
 });
 
-describe('poll loop — /clear command', () => {
-  it('clears session, writes confirmation, skips query', async () => {
+describe('poll loop — /clear command and its aliases', () => {
+  it.each(['/clear', '/new', '/reset'])('%s clears session, writes confirmation, skips query', async (command) => {
     // Seed a continuation so we can verify it gets cleared
     setContinuation('mock', 'existing-session-id');
     expect(getContinuation('mock')).toBe('existing-session-id');
 
-    // Insert a /clear command
+    // Insert the reset command
     getInboundDb()
       .prepare(
         `INSERT INTO messages_in (id, kind, timestamp, status, platform_id, channel_type, content)
          VALUES ('m-clear', 'chat', datetime('now'), 'pending', 'chan-1', 'discord', ?)`,
       )
-      .run(JSON.stringify({ text: '/clear' }));
+      .run(JSON.stringify({ text: command }));
 
     const provider = new MockProvider({}, () => '<message to="discord-test">should not run</message>');
     const controller = new AbortController();

@@ -144,7 +144,7 @@ async function gmailFetch<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-class GmailApiError extends Error {
+export class GmailApiError extends Error {
   constructor(
     public status: number,
     message: string,
@@ -217,6 +217,103 @@ function gmailDateFromLookback(days: number): string {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}/${m}/${day}`;
+}
+
+/** A Gmail historyId is a uint64 — a decimal string. Anything else is not sendable. */
+export function sendableHistoryId(v: unknown): string | null {
+  return typeof v === 'string' && /^\d+$/.test(v) ? v : null;
+}
+
+export interface GmailDeltaResolution {
+  messageIds: string[];
+  /** The pointer to persist for the next run (null only if the profile had none). */
+  newHistoryId: string | null;
+  fullSyncPerformed: boolean;
+}
+
+/**
+ * Decide WHICH message ids are new since the last sweep.
+ *
+ * Delta path: `history.list` from the stored pointer. Full-sync path: a
+ * date-windowed `messages.list` (capped) plus a fresh pointer from the profile.
+ *
+ * The full sync is the recovery path for ANY unusable pointer, not just an
+ * expired one: no pointer, a pointer that is not a decimal string (never sent),
+ * a 404 (expired), or a 400 (Gmail rejects the value). A bad stored pointer must
+ * never be able to fail the sweep outright — it did, for three days, when a
+ * quoted id was stored and only 404 was handled.
+ */
+export async function resolveGmailDelta(opts: {
+  priorHistoryId: unknown;
+  lookbackDays: number;
+  fullSyncInboxOnly: boolean;
+  fetchJson: <T>(path: string) => Promise<T>;
+}): Promise<GmailDeltaResolution> {
+  const priorHistoryId = sendableHistoryId(opts.priorHistoryId);
+  let messageIds: string[] = [];
+  let newHistoryId: string | null = null;
+  let fullSyncPerformed = false;
+
+  if (priorHistoryId) {
+    try {
+      const data = await opts.fetchJson<GmailHistoryResponse>(
+        `/gmail/v1/users/me/history?startHistoryId=${encodeURIComponent(priorHistoryId)}&historyTypes=messageAdded`,
+      );
+      newHistoryId = data.historyId ?? priorHistoryId;
+      const seen = new Set<string>();
+      for (const h of data.history ?? []) {
+        for (const ma of h.messagesAdded ?? []) {
+          if (!seen.has(ma.message.id)) {
+            seen.add(ma.message.id);
+            messageIds.push(ma.message.id);
+          }
+        }
+        for (const m of h.messages ?? []) {
+          if (!seen.has(m.id)) {
+            seen.add(m.id);
+            messageIds.push(m.id);
+          }
+        }
+      }
+    } catch (e) {
+      if (e instanceof GmailApiError && (e.status === 404 || e.status === 400)) {
+        // Pointer expired (404) or rejected (400) → full-sync path below.
+        messageIds = [];
+        newHistoryId = null;
+      } else {
+        throw e;
+      }
+    }
+  }
+
+  if (!priorHistoryId || newHistoryId === null) {
+    // Full-sync via messages.list with date window. Cap at 200 to bound
+    // first-run cost; subsequent runs are delta-only.
+    fullSyncPerformed = true;
+    const after = gmailDateFromLookback(opts.lookbackDays);
+    // Inbox-scope the recovery window unless the knob opts into All Mail.
+    const query = opts.fullSyncInboxOnly ? `after:${after} in:inbox` : `after:${after}`;
+    let pageToken: string | undefined;
+    const cap = 200;
+    const seen = new Set<string>();
+    do {
+      const qs = `q=${encodeURIComponent(query)}&maxResults=100${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
+      const data = await opts.fetchJson<GmailMessagesListResponse>(`/gmail/v1/users/me/messages?${qs}`);
+      for (const m of data.messages ?? []) {
+        if (!seen.has(m.id)) {
+          seen.add(m.id);
+          messageIds.push(m.id);
+          if (messageIds.length >= cap) break;
+        }
+      }
+      pageToken = data.nextPageToken;
+    } while (pageToken && messageIds.length < cap);
+
+    const profile = await opts.fetchJson<GmailProfileResponse>('/gmail/v1/users/me/profile');
+    newHistoryId = profile.historyId ?? null;
+  }
+
+  return { messageIds, newHistoryId, fullSyncPerformed };
 }
 
 interface CalendarEventDateTime {
@@ -361,79 +458,17 @@ export const queryGmailDelta: McpToolDefinition = {
       // the host knob says otherwise — archived mail is already-triaged, and the
       // calendar delta owns scheduling. Defaults on if the host omits the field.
       const fullSyncInboxOnly = stateRes.data.fullsync_inbox_only !== false;
-      // Guard the null→"null" stringification: a stored historyId of the literal
-      // string "null"/"undefined"/"" is truthy but invalid — sending it as
-      // startHistoryId 400s Gmail ("Invalid value at 'start_history_id', null").
-      // Treat it as "no prior" → fall through to the full-sync path, which
-      // re-seeds a real historyId (heals the box's broken morning curator).
-      const rawHistoryId = stateRes.data.history_id;
-      const priorHistoryId =
-        rawHistoryId && rawHistoryId !== 'null' && rawHistoryId !== 'undefined' ? rawHistoryId : null;
-
       const lookbackDays = Number(process.env.PIPELINE_CURATOR_GMAIL_LOOKBACK_DAYS) || DEFAULT_LOOKBACK_DAYS;
 
-      let messageIds: string[] = [];
-      let newHistoryId: string | null = null;
-      let fullSyncPerformed = false;
-
-      if (priorHistoryId) {
-        try {
-          const data = await gmailFetch<GmailHistoryResponse>(
-            `/gmail/v1/users/me/history?startHistoryId=${encodeURIComponent(priorHistoryId)}&historyTypes=messageAdded`,
-          );
-          newHistoryId = data.historyId ?? priorHistoryId;
-          const seen = new Set<string>();
-          for (const h of data.history ?? []) {
-            for (const ma of h.messagesAdded ?? []) {
-              if (!seen.has(ma.message.id)) {
-                seen.add(ma.message.id);
-                messageIds.push(ma.message.id);
-              }
-            }
-            for (const m of h.messages ?? []) {
-              if (!seen.has(m.id)) {
-                seen.add(m.id);
-                messageIds.push(m.id);
-              }
-            }
-          }
-        } catch (e) {
-          if (e instanceof GmailApiError && e.status === 404) {
-            // historyId expired → fall through to full-sync path below
-            messageIds = [];
-            newHistoryId = null;
-          } else {
-            throw e;
-          }
-        }
-      }
-
-      if (!priorHistoryId || newHistoryId === null) {
-        // Full-sync via messages.list with date window. Cap at 200 to bound
-        // first-run cost; subsequent runs are delta-only.
-        fullSyncPerformed = true;
-        const after = gmailDateFromLookback(lookbackDays);
-        // Inbox-scope the recovery window unless the knob opts into All Mail.
-        const query = fullSyncInboxOnly ? `after:${after} in:inbox` : `after:${after}`;
-        let pageToken: string | undefined;
-        const cap = 200;
-        const seen = new Set<string>();
-        do {
-          const qs = `q=${encodeURIComponent(query)}&maxResults=100${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
-          const data = await gmailFetch<GmailMessagesListResponse>(`/gmail/v1/users/me/messages?${qs}`);
-          for (const m of data.messages ?? []) {
-            if (!seen.has(m.id)) {
-              seen.add(m.id);
-              messageIds.push(m.id);
-              if (messageIds.length >= cap) break;
-            }
-          }
-          pageToken = data.nextPageToken;
-        } while (pageToken && messageIds.length < cap);
-
-        const profile = await gmailFetch<GmailProfileResponse>('/gmail/v1/users/me/profile');
-        newHistoryId = profile.historyId ?? null;
-      }
+      const resolved = await resolveGmailDelta({
+        priorHistoryId: stateRes.data.history_id,
+        lookbackDays,
+        fullSyncInboxOnly,
+        fetchJson: gmailFetch,
+      });
+      let messageIds = resolved.messageIds;
+      const newHistoryId = resolved.newHistoryId;
+      const fullSyncPerformed = resolved.fullSyncPerformed;
 
       // Deterministic noise-suppression (§24.102): drop message ids already
       // classified on a prior run (present in email_events) BEFORE fetching their
@@ -665,7 +700,7 @@ export const persistPipelineState: McpToolDefinition = {
         gmail_history_id: {
           type: 'string',
           description:
-            'Snapshot of the Gmail historyId at the end of this run. Updates gmail_sync_state.primary so the next delta-fetch starts from here.',
+            'The `history_id` returned by query_gmail_delta this run, passed through verbatim — bare digits (e.g. 29613), with no quote characters or other wrapping inside the value. Updates gmail_sync_state.primary so the next delta-fetch starts from here. Omit or pass null if query_gmail_delta returned none.',
         },
         calendar_sync_tokens: {
           type: 'object',

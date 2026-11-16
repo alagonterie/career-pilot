@@ -164,7 +164,7 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
 
     // Command handling: the host router gates filtered and unauthorized
     // admin commands before they reach the container. The only command
-    // the runner handles directly is /clear (session reset).
+    // the runner handles directly is /clear and its aliases (session reset).
     const normalMessages: MessageInRow[] = [];
     const commandIds: string[] = [];
 

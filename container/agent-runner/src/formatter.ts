@@ -11,7 +11,9 @@ import { TIMEZONE, formatLocalTime } from './timezone.js';
  */
 export type CommandCategory = 'admin' | 'filtered' | 'passthrough' | 'none';
 
-const ADMIN_COMMANDS = new Set(['/remote-control', '/clear', '/compact', '/context', '/cost', '/files']);
+/** Session-reset commands: '/clear' plus its aliases. All take the runner's own reset path. */
+const CLEAR_COMMANDS = new Set(['/clear', '/new', '/reset']);
+const ADMIN_COMMANDS = new Set(['/remote-control', ...CLEAR_COMMANDS, '/compact', '/context', '/cost', '/files']);
 const FILTERED_COMMANDS = new Set(['/help', '/login', '/logout', '/doctor', '/config', '/start']);
 
 export interface CommandInfo {
@@ -56,14 +58,15 @@ export function categorizeMessage(msg: MessageInRow): CommandInfo {
 }
 
 /**
- * Narrow check for /clear — the only command the runner handles directly.
- * All other command gating (filtered, admin) is done by the host router
- * before messages reach the container.
+ * Narrow check for a session reset (/clear, /new, /reset) — the only command
+ * the runner handles directly. Matches the command token, not a prefix, so
+ * "/clearly ..." is not a reset. All other command gating (filtered, admin)
+ * is done by the host router before messages reach the container.
  */
 export function isClearCommand(msg: MessageInRow): boolean {
   const content = parseContent(msg.content);
   const text = (content.text || '').trim();
-  return text.toLowerCase().startsWith('/clear');
+  return CLEAR_COMMANDS.has(text.split(/\s/)[0].toLowerCase());
 }
 
 /**
