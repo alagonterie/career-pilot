@@ -13,6 +13,8 @@ fork version recorded in `package.json` — the two are never conflated.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-16
+
 ### Added
 
 - **Reposted listings are refused before they are stored.** A job that only
@@ -92,6 +94,11 @@ fork version recorded in `package.json` — the two are never conflated.
   posting is still up.
 - **No alert for a job already applied to.** The strong-match alert skips leads
   that are applied, archived or linked to an application.
+- **A blocked contact or demo submit now says why.** When the bot check has not
+  passed, the form explains it instead of showing a dead button, and a failed
+  send asks for a fresh check so a retry can succeed.
+- **The conversation reader exits quietly** when its output is cut short by the
+  command reading it.
 
 ## [1.1.10] - 2026-11-16
 
