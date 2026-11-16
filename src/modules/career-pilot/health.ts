@@ -26,6 +26,7 @@ import { getActiveSessions } from '../../db/sessions.js';
 import { getConfig } from '../../get-config.js';
 import { inboundDbPath, openInboundDb, openOutboundDb, outboundDbPath } from '../../session-manager.js';
 import type { Session } from '../../types.js';
+import { getPauseState } from '../portal/system-modes.js';
 
 import { OPS_SERIES_IDS, OWNER_GROUP_FOLDER, findOpsSession, isOpsSession } from './ops-session.js';
 import { probeGmailProfile } from './recruiter-sim/inject.js';
@@ -462,6 +463,175 @@ function checkRequestTelemetry(now: number, findings: HealthFinding[]): void {
   }
 }
 
+/**
+ * The direct employer-board sweep (§24.200 D5/D8): stale when no sweep has
+ * succeeded inside `ats_sweep_stale_hours` (it is the primary lead source), and
+ * one finding listing the watched boards whose last successful fetch is older
+ * than `ats_board_failing_days`, and one listing boards RETIRED (set `absent`)
+ * inside that same window — retirement drops a board from every other check, so
+ * it must be said out loud once. A sweep that reached no board is recorded
+ * ok=0, so an outage reads as stale here. Inert while the sweep is switched off
+ * or the system is halted (it is not supposed to run); with no active boards it
+ * is ok only when none was retired — a watchlist whose boards were all retired
+ * is the primary source gone, not "nothing to do".
+ */
+function checkBoardSweep(now: number, findings: HealthFinding[]): void {
+  const db = getDb();
+  if (!hasTable(db, 'lead_source_runs') || !hasTable(db, 'ats_watchlist')) return;
+  const enabled = getConfig<boolean>(db, 'ats_sweep_enabled');
+  const pause = getPauseState();
+  const active = (db.prepare(`SELECT COUNT(*) AS n FROM ats_watchlist WHERE state = 'active'`).get() as { n: number })
+    .n;
+  if (!enabled || pause === 'halted' || pause === 'killswitch') {
+    findings.push({
+      id: 'ats-sweep-stale',
+      severity: 'ok',
+      title: !enabled
+        ? 'Employer-board sweep is switched off'
+        : `Employer-board sweep not expected to run (system ${pause})`,
+      detail: '',
+    });
+    return;
+  }
+  const failingDays = getConfig<number>(db, 'ats_board_failing_days');
+  const failCutoff = iso(now - failingDays * 86_400_000);
+  if (active === 0) {
+    const absent = (db.prepare(`SELECT COUNT(*) AS n FROM ats_watchlist WHERE state = 'absent'`).get() as { n: number })
+      .n;
+    findings.push(
+      absent === 0
+        ? { id: 'ats-sweep-stale', severity: 'ok', title: 'No active employer boards to sweep', detail: '' }
+        : {
+            id: 'ats-sweep-stale',
+            severity: 'warn',
+            title: `No active employer boards — ${absent} retired as absent`,
+            detail:
+              'Every watched board that is not paused has been retired, so the sweep (the primary lead source) has nothing to fetch.',
+            next_step: `${Q_TS} data/v2.db "SELECT id, ats, token, company, last_ok_at, last_error, consecutive_absent, updated_at FROM ats_watchlist WHERE state='absent' ORDER BY updated_at DESC"; confirm each board URL, then re-add a live one with discover_ats_board (it reactivates a retired board).`,
+          },
+    );
+    checkRetiredBoards(db, failingDays, failCutoff, findings);
+    return;
+  }
+
+  const staleHours = getConfig<number>(db, 'ats_sweep_stale_hours');
+  const staleCutoff = iso(now - staleHours * 3_600_000);
+  const lastOk = (
+    db.prepare(`SELECT MAX(finished_at) AS m FROM lead_source_runs WHERE kind = 'sweep' AND ok = 1`).get() as {
+      m: string | null;
+    }
+  ).m;
+  if (!lastOk || lastOk < staleCutoff) {
+    const last = db
+      .prepare(
+        `SELECT started_at, ok, error FROM lead_source_runs WHERE kind = 'sweep' ORDER BY started_at DESC LIMIT 1`,
+      )
+      .get() as { started_at: string; ok: number | null; error: string | null } | undefined;
+    findings.push({
+      id: 'ats-sweep-stale',
+      severity: 'warn',
+      title: lastOk
+        ? `No successful employer-board sweep since ${lastOk}`
+        : 'No employer-board sweep has ever succeeded',
+      detail: `Nothing inside the ${staleHours}h window (ats_sweep_stale_hours). ${
+        last
+          ? `Latest attempt started ${last.started_at} (${last.ok === null ? 'still running or interrupted' : last.ok === 1 ? 'ok' : `failed: ${last.error ?? 'unknown'}`}).`
+          : 'No attempt is recorded at all — the host sweep tick may not be reaching it.'
+      } New board postings are not reaching the pool and close-on-absence is not running.`,
+      next_step: `${Q_TS} data/v2.db "SELECT id, trigger, started_at, finished_at, ok, error, boards_ok, boards_failed FROM lead_source_runs WHERE kind='sweep' ORDER BY started_at DESC LIMIT 5"; check ats_sweep_cron, then grep the host log for "ats sweep"; /admin → Leads → Sweep now starts one on demand.`,
+    });
+  } else {
+    findings.push({
+      id: 'ats-sweep-stale',
+      severity: 'ok',
+      title: `Employer-board sweep succeeded at ${lastOk}`,
+      detail: '',
+    });
+  }
+
+  checkRetiredBoards(db, failingDays, failCutoff, findings);
+
+  const failing = db
+    .prepare(
+      `SELECT ats, token, company, last_ok_at, last_error, consecutive_failures FROM ats_watchlist
+        WHERE state = 'active' AND consecutive_failures > 0
+          AND COALESCE(last_ok_at, created_at) < ?
+        ORDER BY consecutive_failures DESC, company`,
+    )
+    .all(failCutoff) as Array<{
+    ats: string;
+    token: string;
+    company: string;
+    last_ok_at: string | null;
+    last_error: string | null;
+    consecutive_failures: number;
+  }>;
+  if (failing.length === 0) {
+    findings.push({ id: 'ats-board-failing', severity: 'ok', title: 'No watched board is failing', detail: '' });
+    return;
+  }
+  const shown = failing
+    .slice(0, 10)
+    .map(
+      (b) =>
+        `${b.company} (${b.ats}/${b.token}: ${b.consecutive_failures} failed sweeps, last ok ${b.last_ok_at ?? 'never'}, ${b.last_error ?? 'no error recorded'})`,
+    )
+    .join('; ');
+  findings.push({
+    id: 'ats-board-failing',
+    severity: 'warn',
+    title: `${failing.length} watched board(s) have not fetched successfully in ${failingDays}+ day(s)`,
+    detail: `${shown}${failing.length > 10 ? `; and ${failing.length - 10} more` : ''}. Only "board gone" answers retire a board (after ats_watchlist_retire_after in a row); other failures keep it active and listed here. A renamed board needs its new token.`,
+    next_step: `${Q_TS} data/v2.db "SELECT id, ats, token, company, state, last_ok_at, last_error, consecutive_failures FROM ats_watchlist WHERE state='active' AND consecutive_failures > 0 ORDER BY consecutive_failures DESC"; open the board URL for its ATS to confirm the token, then fix or pause the row.`,
+  });
+}
+
+/** Boards retired (set `absent`) since `cutoff` — each is a lead source that just stopped. */
+function checkRetiredBoards(
+  db: Database.Database,
+  failingDays: number,
+  cutoff: string,
+  findings: HealthFinding[],
+): void {
+  const retired = db
+    .prepare(
+      `SELECT ats, token, company, last_ok_at, last_error, updated_at FROM ats_watchlist
+        WHERE state = 'absent' AND updated_at >= ?
+        ORDER BY updated_at DESC, company`,
+    )
+    .all(cutoff) as Array<{
+    ats: string;
+    token: string;
+    company: string;
+    last_ok_at: string | null;
+    last_error: string | null;
+    updated_at: string;
+  }>;
+  if (retired.length === 0) {
+    findings.push({
+      id: 'ats-board-retired',
+      severity: 'ok',
+      title: 'No watched board was retired recently',
+      detail: '',
+    });
+    return;
+  }
+  const shown = retired
+    .slice(0, 10)
+    .map(
+      (b) =>
+        `${b.company} (${b.ats}/${b.token}: retired ${b.updated_at}, last ok ${b.last_ok_at ?? 'never'}, ${b.last_error ?? 'no error recorded'})`,
+    )
+    .join('; ');
+  findings.push({
+    id: 'ats-board-retired',
+    severity: 'warn',
+    title: `${retired.length} watched board(s) retired as absent in the last ${failingDays} day(s)`,
+    detail: `${shown}${retired.length > 10 ? `; and ${retired.length - 10} more` : ''}. A retired board is no longer swept and its open leads age out through the stale rule.`,
+    next_step: `${Q_TS} data/v2.db "SELECT id, ats, token, company, last_ok_at, last_error, consecutive_absent, updated_at FROM ats_watchlist WHERE state='absent' ORDER BY updated_at DESC"; open the board URL for its ATS — if the company moved boards, add the new one with discover_ats_board; a retired board that answers again is reactivated the same way.`,
+  });
+}
+
 /** LIVE probe: gateway reachability + Gmail token validity in one exchange. */
 async function checkGmailLive(findings: HealthFinding[]): Promise<void> {
   const probe = await probeGmailProfile();
@@ -533,6 +703,7 @@ export async function runHealthChecks(opts: RunHealthChecksOpts = {}): Promise<H
     await guarded('orphan-responses', () => checkOrphanResponses(handles, findings));
     await guarded('outbound-backlog', () => checkOutboundBacklog(handles, findings));
     await guarded('request-telemetry', () => checkRequestTelemetry(now, findings));
+    await guarded('ats-sweep', () => checkBoardSweep(now, findings));
     if (!opts.skipLiveProbes) {
       await guarded('gmail-live', () => checkGmailLive(findings));
     }

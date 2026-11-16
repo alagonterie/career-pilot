@@ -57,6 +57,10 @@ import { migration147 } from './147-retire-old-opus-models.js';
 import { migration148 } from './148-retire-old-haiku-sonnet-models.js';
 import { migration149 } from './149-job-lead-tombstones.js';
 import { migration150 } from './150-applications-sent-resume.js';
+import { migration151 } from './151-ats-watchlist.js';
+import { migration152 } from './152-lead-source-runs.js';
+import { migration153 } from './153-search-quota-usage.js';
+import { migration154 } from './154-killer-match-allow-ashby.js';
 
 export interface Migration {
   version: number;
@@ -121,6 +125,10 @@ const migrations: Migration[] = [
   migration148,
   migration149,
   migration150,
+  migration151,
+  migration152,
+  migration153,
+  migration154,
 ];
 
 export function runMigrations(db: Database.Database): void {

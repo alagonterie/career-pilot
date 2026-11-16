@@ -78,7 +78,16 @@ import {
   buildDevState,
   isDevEnv,
 } from './dev-inspector.js';
-import { computeRunningTopology, emptyObservability, getObservability, sandboxSpend24hUsd } from './observability.js';
+import {
+  boardSweepProbe,
+  computeRunningTopology,
+  emptyObservability,
+  getObservability,
+  jobSearchProbe,
+  sandboxSpend24hUsd,
+  type BoardSweepProbe,
+  type JobSearchProbe,
+} from './observability.js';
 import { getTelemetry } from './portkey-analytics.js';
 import { getPublicProfile, type WorkProfile } from './profile.js';
 import { masterFooter, renderResumePdf, resumeFilename, tailoredFooter } from './resume-pdf.js';
@@ -837,6 +846,20 @@ function handleArchitecture(res: http.ServerResponse, cors: Record<string, strin
   // the (host-tier) staleness threshold backend-side, so the FE just renders.
   const lastSweepAt = getLastSweepAtMs();
   const sweepAgeSec = lastSweepAt === null ? null : Math.max(0, Math.floor((Date.now() - lastSweepAt) / 1000));
+  // §24.200 D8 job-source probes: the employer-board sweep's freshness and the
+  // search supplement's quota. Omitted on a read failure (the FE reads idle).
+  let boardSweep: BoardSweepProbe | undefined;
+  let jobSearch: JobSearchProbe | undefined;
+  try {
+    boardSweep = boardSweepProbe();
+  } catch {
+    boardSweep = undefined;
+  }
+  try {
+    jobSearch = jobSearchProbe();
+  } catch {
+    jobSearch = undefined;
+  }
 
   json(
     res,
@@ -861,6 +884,8 @@ function handleArchitecture(res: http.ServerResponse, cors: Record<string, strin
         last_run_age_sec: sweepAgeSec,
         fresh: sweepAgeSec !== null && sweepAgeSec <= sweepStaleSec,
       },
+      board_sweep: boardSweep,
+      job_search: jobSearch,
       backend: 'online',
     },
     cors,
@@ -1107,6 +1132,9 @@ function emptyPayloadFor(path: string): unknown {
         // §24.80: a bare/quiet system — sandbox enabled but unused, sweep not yet ticked.
         sandbox: { enabled: true, spend_24h_usd: 0, daily_budget_usd: 0 },
         sweep: { last_run_age_sec: null, fresh: false },
+        // §24.200 D8: no boards watched yet, search budget untouched.
+        board_sweep: { enabled: true, boards: 0, running: false, last_success_age_sec: null, fresh: false },
+        job_search: { quota_spent: false },
         backend: 'online',
       };
     case '/api/system-status':

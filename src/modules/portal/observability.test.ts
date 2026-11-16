@@ -18,10 +18,12 @@ import { OPS_THREAD_ID } from '../career-pilot/ops-session.js';
 
 import {
   _resetObservabilityCache,
+  boardSweepProbe,
   computeObservability,
   computeRunningTopology,
   emptyObservability,
   getObservability,
+  jobSearchProbe,
 } from './observability.js';
 
 const NOW = Date.parse('2026-06-12T18:00:00.000Z');
@@ -275,5 +277,112 @@ describe('§9 projection safety', () => {
     // And the actual sensitive VALUES never leak either.
     expect(json).not.toContain('invalid_grant');
     expect(json).not.toContain('sess-secret-123');
+  });
+});
+
+// §24.200 D8: the /architecture job-source probes.
+function setPref(key: string, value: string | number | boolean): void {
+  getDb()
+    .prepare('INSERT OR REPLACE INTO preferences (key, value, updated_at) VALUES (?, ?, ?)')
+    .run(key, typeof value === 'string' ? JSON.stringify(value) : String(value), new Date().toISOString());
+}
+
+function board(token: string, state: 'active' | 'paused' | 'absent'): void {
+  const now = new Date(NOW).toISOString();
+  getDb()
+    .prepare(
+      `INSERT INTO ats_watchlist (ats, token, company, tier, origin, state, created_at, updated_at)
+       VALUES ('greenhouse', ?, 'Acme', 'A', 'owner', ?, ?, ?)`,
+    )
+    .run(token, state, now, now);
+}
+
+function sweepRun(id: string, finishedAgeSec: number, ok: 0 | 1 | null): void {
+  const finished = new Date(NOW - finishedAgeSec * 1000).toISOString();
+  getDb()
+    .prepare(
+      `INSERT INTO lead_source_runs (id, kind, trigger, started_at, finished_at, ok)
+       VALUES (?, 'sweep', 'schedule', ?, ?, ?)`,
+    )
+    .run(id, finished, ok === null ? null : finished, ok);
+}
+
+describe('boardSweepProbe (the employer-board node)', () => {
+  it('counts only ACTIVE boards — an absent/retired or paused board is not watched', () => {
+    board('acme-a', 'active');
+    board('acme-b', 'active');
+    board('acme-gone', 'absent');
+    board('acme-paused', 'paused');
+    expect(boardSweepProbe(NOW).boards).toBe(2);
+  });
+
+  it('is fresh only when a sweep finished OK within ats_sweep_stale_hours', () => {
+    board('acme-a', 'active');
+    // Never swept → not fresh, no age.
+    expect(boardSweepProbe(NOW)).toMatchObject({ last_success_age_sec: null, fresh: false });
+    // A failed run and a still-running row never count as success.
+    sweepRun('r-fail', 600, 0);
+    sweepRun('r-open', 60, null);
+    expect(boardSweepProbe(NOW).fresh).toBe(false);
+    // An OK sweep 2h ago, stale threshold 6h (default) → fresh.
+    sweepRun('r-ok', 2 * 3600, 1);
+    expect(boardSweepProbe(NOW)).toMatchObject({ last_success_age_sec: 7200, fresh: true });
+    // Tighten the threshold below its age → stale (the node reads down).
+    setPref('ats_sweep_stale_hours', 1);
+    expect(boardSweepProbe(NOW)).toMatchObject({ last_success_age_sec: 7200, fresh: false });
+  });
+
+  it('reports the sweep switched off and serves no board identity', () => {
+    board('acme-secret-token', 'active');
+    setPref('ats_sweep_enabled', false);
+    const probe = boardSweepProbe(NOW);
+    expect(probe.enabled).toBe(false);
+    expect(probe.running).toBe(false);
+    const json = JSON.stringify(probe);
+    expect(json).not.toContain('acme-secret-token');
+    expect(json).not.toContain('Acme');
+  });
+
+  it('degrades to zero boards / never swept on a bare DB (no tables)', () => {
+    closeDb();
+    initTestDb(); // no migrations
+    const probe = boardSweepProbe(NOW);
+    expect(probe).toMatchObject({ boards: 0, last_success_age_sec: null, fresh: false });
+  });
+});
+
+describe('jobSearchProbe (the search-supplement node)', () => {
+  const at = new Date(NOW);
+  const day = at.toISOString().slice(0, 10);
+  function usage(pages: number): void {
+    getDb()
+      .prepare('INSERT INTO search_quota_usage (day, pages, updated_at) VALUES (?, ?, ?)')
+      .run(day, pages, at.toISOString());
+  }
+
+  it('is not spent with budget left', () => {
+    setPref('search_daily_page_cap', 10);
+    setPref('search_monthly_quota', 100);
+    usage(3);
+    expect(jobSearchProbe(at)).toEqual({ quota_spent: false });
+  });
+
+  it("is spent once today's page cap is used up", () => {
+    setPref('search_daily_page_cap', 3);
+    setPref('search_monthly_quota', 100);
+    usage(3);
+    expect(jobSearchProbe(at).quota_spent).toBe(true);
+  });
+
+  it("is spent once the period's quota is used up", () => {
+    setPref('search_daily_page_cap', 50);
+    setPref('search_monthly_quota', 5);
+    usage(5);
+    expect(jobSearchProbe(at).quota_spent).toBe(true);
+  });
+
+  it('reads spent when search is switched off (cap 0)', () => {
+    setPref('search_daily_page_cap', 0);
+    expect(jobSearchProbe(at).quota_spent).toBe(true);
   });
 });

@@ -54,4 +54,35 @@ describe('PIPELINE_DATA_TABLES', () => {
     expect(db.pragma('foreign_key_check')).toEqual([]);
     expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
   });
+
+  it('lists lead_source_runs ahead of job_leads and never lists ats_watchlist or search_quota_usage (§24.200)', () => {
+    const list = [...APP_DATA_TABLES] as string[];
+    expect(list.indexOf('lead_source_runs')).toBeGreaterThanOrEqual(0);
+    expect(list.indexOf('lead_source_runs')).toBeLessThan(list.indexOf('job_leads'));
+    expect(list).not.toContain('ats_watchlist');
+    expect(list).not.toContain('search_quota_usage');
+  });
+
+  it('a wipe clears sourcing runs but PRESERVES the watchlist and the search quota counter', () => {
+    const db = getDb();
+    const now = '2026-11-16T00:00:00.000Z';
+    db.prepare(
+      `INSERT INTO ats_watchlist (ats, token, company, tier, origin, state, created_at, updated_at)
+       VALUES ('ashby', 'acme', 'Acme', 'A', 'owner', 'paused', ?, ?)`,
+    ).run(now, now);
+    db.prepare(`INSERT INTO lead_source_runs (id, started_at, ok) VALUES ('run-1', ?, 1)`).run(now);
+    db.prepare(`INSERT INTO search_quota_usage (day, pages, updated_at) VALUES ('2026-11-16', 3, ?)`).run(now);
+
+    const cleared = wipeTables(db, APP_DATA_TABLES);
+    expect(cleared).toMatchObject({ lead_source_runs: 1 });
+    expect(cleared).not.toHaveProperty('ats_watchlist');
+
+    expect((db.prepare('SELECT COUNT(*) AS n FROM lead_source_runs').get() as { n: number }).n).toBe(0);
+    expect(db.prepare("SELECT state, origin FROM ats_watchlist WHERE token = 'acme'").get()).toEqual({
+      state: 'paused',
+      origin: 'owner',
+    });
+    expect((db.prepare('SELECT pages FROM search_quota_usage').get() as { pages: number }).pages).toBe(3);
+    expect(db.pragma('foreign_key_check')).toEqual([]);
+  });
 });

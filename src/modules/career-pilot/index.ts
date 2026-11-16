@@ -53,6 +53,7 @@ import {
 } from './pipeline-actions.js';
 import { handlePersistInterviewKit } from './interview-kit-actions.js';
 import { handleReadContacts } from './contacts-actions.js';
+import { handleReserveSearchQuota } from './search-quota.js';
 import { handlePersistLearning, handleReadLearnings } from './learnings-actions.js';
 
 /**
@@ -103,6 +104,8 @@ registerOwnerOnly('career_pilot.update_job_lead_status', handleUpdateJobLeadStat
 registerOwnerOnly('career_pilot.discover_ats_board', handleDiscoverAtsBoard);
 registerOwnerOnly('career_pilot.fetch_source', handleFetchSource);
 registerOwnerOnly('career_pilot.stash_job_payloads', handleStashJobPayloads);
+// §24.200 D8: search_jobs reserves each result page before fetching it.
+registerOwnerOnly('career_pilot.reserve_search_quota', handleReserveSearchQuota);
 registerOwnerOnly('career_pilot.get_lead_summaries_for_ranking', handleGetLeadSummariesForRanking);
 registerOwnerOnly('career_pilot.write_llm_scores', handleWriteLlmScores);
 registerOwnerOnly('career_pilot.claim_killer_matches', handleClaimKillerMatches);

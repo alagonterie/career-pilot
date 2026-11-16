@@ -211,6 +211,68 @@ describe('searchGoogleJobs', () => {
   });
 });
 
+describe('searchGoogleJobs — the host quota reservation (§24.200 D8)', () => {
+  function pagedFetch(): { calls: () => number } {
+    let n = 0;
+    globalThis.fetch = (async () => {
+      n += 1;
+      return new Response(
+        JSON.stringify({
+          jobs_results: [{ ...REMOTE_JOB, job_id: `job-${n}` }],
+          serpapi_pagination: { next_page_token: `tok-${n}` },
+        }),
+        { status: 200 },
+      );
+    }) as unknown as typeof fetch;
+    return { calls: () => n };
+  }
+
+  it('reserves BEFORE fetching: a refused first page fetches nothing and is QUOTA-unavailable', async () => {
+    const f = pagedFetch();
+    let asked = 0;
+    const err = await searchGoogleJobs(
+      { query: 'senior backend engineer' },
+      {
+        reservePage: async () => {
+          asked += 1;
+          return { granted: false, reason: 'daily_cap', message: 'daily search budget spent (10/10 pages today)' };
+        },
+      },
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SearchJobsError);
+    expect((err as SearchJobsError).code).toBe('QUOTA');
+    expect((err as SearchJobsError).message).toMatch(/daily search budget spent/);
+    expect(asked).toBe(1);
+    expect(f.calls()).toBe(0);
+  });
+
+  it('reserves one page per fetch, and a refusal on a later page keeps what was fetched', async () => {
+    const f = pagedFetch();
+    let asked = 0;
+    const out = await searchGoogleJobs(
+      { query: 'senior backend engineer', limit: 30 },
+      { reservePage: async () => ({ granted: ++asked <= 2 }) },
+    );
+    expect(f.calls()).toBe(2);
+    expect(asked).toBe(3);
+    expect(out.map((p) => p.source_job_id)).toEqual(['job-1', 'job-2']);
+  });
+
+  it('fails closed when the reservation itself throws', async () => {
+    const f = pagedFetch();
+    const err = await searchGoogleJobs(
+      { query: 'senior backend engineer' },
+      {
+        reservePage: async () => {
+          throw new Error('host did not respond');
+        },
+      },
+    ).catch((e: unknown) => e);
+    expect((err as SearchJobsError).code).toBe('QUOTA');
+    expect(f.calls()).toBe(0);
+  });
+});
+
 // ── §24.190: apply-link directness ranking ───────────────────────────────────
 
 describe('pickApplyLink / normalizeGoogleJob link directness (§24.190)', () => {

@@ -277,4 +277,28 @@ describe('GET /api/architecture', () => {
     expect(cold.sweep.last_run_age_sec).toBeNull();
     expect(cold.sweep.fresh).toBe(false);
   });
+
+  it('exposes the §24.200 D8 job-source probes (board sweep freshness + search quota)', async () => {
+    const now = new Date().toISOString();
+    getDb()
+      .prepare(
+        `INSERT INTO ats_watchlist (ats, token, company, tier, origin, state, created_at, updated_at)
+         VALUES ('greenhouse', 'acme', 'Acme', 'A', 'owner', 'active', ?, ?)`,
+      )
+      .run(now, now);
+    getDb()
+      .prepare(
+        `INSERT INTO lead_source_runs (id, kind, trigger, started_at, finished_at, ok)
+         VALUES ('run-1', 'sweep', 'schedule', ?, ?, 1)`,
+      )
+      .run(now, now);
+    const body = (await (await fetch(`${base}/api/architecture`)).json()) as {
+      board_sweep: { enabled: boolean; boards: number; running: boolean; fresh: boolean };
+      job_search: { quota_spent: boolean };
+    };
+    expect(body.board_sweep).toMatchObject({ enabled: true, boards: 1, running: false, fresh: true });
+    expect(body.job_search).toEqual({ quota_spent: false });
+    // Aggregate only — no board identity on the public payload.
+    expect(JSON.stringify(body)).not.toContain('Acme');
+  });
 });

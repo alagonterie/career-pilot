@@ -58,12 +58,14 @@
  *                           progress row; reply points at the kit link.
  *   --flow=scrape-jobs      Seeded profile. NO bookmarked application.
  *                           Full Phase 2.5 v1.0 DoD: scrape-jobs subagent
- *                           dispatched, fetch_source called against real
- *                           Greenhouse + Lever boards from ats-targets.json,
- *                           ≥1 record_job_lead row landed in job_leads
+ *                           dispatched with a company-scoped brief for a
+ *                           watched board (the ats_watchlist table, seeded
+ *                           from ats-targets.json) so fetch_source reads it
+ *                           live, ≥1 record_job_lead row landed in job_leads
  *                           with non-null fingerprint + rules_score (or a
  *                           search_jobs `rejected` count that explains zero
- *                           keepers — §24.200 insert guard),
+ *                           keepers — §24.200 insert guard — or, with no board
+ *                           read at all, a search `unavailable` answer),
  *                           ≥80% of recorded leads have rules_score>0
  *                           (relaxable per §24.5 empirical prediction),
  *                           ≥1 record_progress row, orchestrator's reply
@@ -158,7 +160,16 @@ import { fileURLToPath } from 'url';
 
 import Database from 'better-sqlite3';
 
-import { RECORD_REFUSAL_MARKER, zeroLeadsExplainedByRejects } from './scrape-zero-leads.js';
+import {
+  RECORD_REFUSAL_MARKER,
+  SEARCH_UNAVAILABLE_MARKER,
+  zeroLeadsExplainedByRejects,
+  zeroLeadsExplainedBySearchUnavailable,
+} from './scrape-zero-leads.js';
+
+/** The scrape flow's company: a tier-A board in the shipped watchlist seed
+ *  (groups/career-pilot/data/ats-targets.json), so fetch_source reaches it. */
+const E2E_SCRAPE_COMPANY = 'Stripe';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1628,7 +1639,9 @@ async function runScrapeJobs(): Promise<void> {
   // job_leads). No chain rule by default; the orchestrator dispatches
   // scrape-jobs directly. Subagent:
   //   - reads candidate profile from mounted candidate.md fragment
-  //   - calls fetch_source (host aggregates Greenhouse + Lever ATS boards)
+  //   - calls fetch_source for the named company's watched board (the brief
+  //     is company-scoped: a generic refresh is one search_jobs query, which
+  //     answers {unavailable} without a search key — the usual local case)
   //   - applies pre-record judgment per posting
   //   - calls record_job_lead for postings that pass
   //   - returns short Pattern B summary
@@ -1642,10 +1655,11 @@ async function runScrapeJobs(): Promise<void> {
   //
   // Assertion blocks mapped to spec DoD items 1-11:
   //   1. scrape-jobs subagent dispatched ≥1 time.
-  //   2. fetch_source called ≥1 time, returned non-empty postings.
+  //   2. a source tool (fetch_source for the company, else search_jobs) ≥1×.
   //   3. ≥1 record_job_lead call landed → ≥1 row in job_leads, OR (§24.200)
   //      zero keepers explained by search_jobs' `rejected` count (the host
-  //      insert guard refuses non-direct-link hits before caching them).
+  //      insert guard refuses non-direct-link hits before caching them), OR
+  //      search answered {unavailable} and no board was read.
   //   4. All recorded leads have non-null content_fingerprint (16-char
   //      hex) and rules_score (0-100). Host-side compute path works.
   //   5. ≥80% of recorded leads have rules_score>0 (pre-record judgment
@@ -1660,9 +1674,12 @@ async function runScrapeJobs(): Promise<void> {
     // empirically triggers GLM's "ack + fake-fire Agent + exit" pattern
     // (XML-shaped <Agent .../> emitted as text). Forcing the orchestrator
     // to surface results in-turn means it can't short-circuit before the
-    // Agent actually runs. Trigger phrase ("refresh job leads") is still
-    // present so the routing test is intact.
-    'Refresh my job leads and tell me what new postings landed in the pool.',
+    // Agent actually runs. Trigger phrases ("find roles at <company>",
+    // "refresh job leads") keep the routing test intact. Company-scoped
+    // (§24.200 D8): the subagent reads that company's watched board with
+    // fetch_source, which needs no search key; a generic brief would be one
+    // search_jobs query and nothing else.
+    `Find roles at ${E2E_SCRAPE_COMPANY} — refresh my job leads from their board and tell me what new postings landed in the pool.`,
     600_000,
   );
   if (reply.length === 0) fail('reply was empty');
@@ -1694,10 +1711,12 @@ async function runScrapeJobs(): Promise<void> {
   }
   ok(`at least one scrape-jobs success: ${successfulScrapes.length}/${scrapeCalls.length}`);
 
-  // 2. A source tool called ≥1 time inside the subagent. §24.50: search_jobs
-  // (SerpApi / google_jobs) is PRIMARY; fetch_source (Greenhouse/Lever ATS) is
-  // the down-fallback the subagent uses when search_jobs returns {unavailable}
-  // — the common local/CI case (no SerpApi key configured). We accept either.
+  // 2. A source tool called ≥1 time inside the subagent. §24.200 D4/D8: the
+  // watched employer boards are primary and swept by the HOST (no agent turn);
+  // inside the subagent, fetch_source (Greenhouse/Lever/Ashby boards) serves a
+  // company-scoped brief and search_jobs (SerpApi / google_jobs) is the one-query
+  // supplement for everything else — which reports {unavailable} when no SerpApi
+  // key is configured (the common local/CI case) or the search quota is spent.
   const allSubJsonls = listAllSubagentJsonls(jsonl);
   const scrapeSubJsonls = allSubJsonls
     .map((p) => ({ path: p, text: extractFinalAssistantText(p) ?? '' }))
@@ -1715,6 +1734,8 @@ async function runScrapeJobs(): Promise<void> {
   // rejected legitimately records zero leads — this tally is what explains it.
   const searchJobsIds = new Set<string>();
   let searchRejectedTotal = 0;
+  // §24.200 D8: search answered {unavailable} (no key / quota spent).
+  let searchUnavailable = false;
   // record_job_lead calls the host deliberately refused (recorded:false) — the
   // only record calls a rejected count may excuse.
   const recordLeadIds = new Set<string>();
@@ -1738,8 +1759,10 @@ async function runScrapeJobs(): Promise<void> {
             continue;
           }
           if (!searchJobsIds.has(r.tool_use_id)) continue;
-          const m = /rejected (\d+) before caching/.exec(JSON.stringify(block));
+          const text = JSON.stringify(block);
+          const m = /rejected (\d+) before caching/.exec(text);
           if (m) searchRejectedTotal += Number(m[1]);
+          if (text.includes(SEARCH_UNAVAILABLE_MARKER)) searchUnavailable = true;
         }
         continue;
       }
@@ -1771,7 +1794,7 @@ async function runScrapeJobs(): Promise<void> {
   }
   ok(
     `scrape-jobs called a source tool: search_jobs ${searchJobsCalls.length}×, ` +
-      `fetch_source ${fetchSourceCalls.length}× (ATS fallback)`,
+      `fetch_source ${fetchSourceCalls.length}× (employer boards)`,
   );
 
   // 3. ≥1 record_job_lead call landed → ≥1 row in job_leads — OR (§24.200 D1)
@@ -1783,7 +1806,17 @@ async function runScrapeJobs(): Promise<void> {
     recordCalls: recordLeadCalls.length,
     recordRefusals,
   });
-  if (recordLeadCalls.length === 0 && zeroExplainedByRejects) {
+  const zeroExplainedByUnavailable = zeroLeadsExplainedBySearchUnavailable({
+    searchUnavailable,
+    fetchSourceCalls: fetchSourceCalls.length,
+    recordCalls: recordLeadCalls.length,
+  });
+  if (recordLeadCalls.length === 0 && zeroExplainedByUnavailable) {
+    ok(
+      'scrape-jobs recorded 0 leads, explained by search_jobs reporting itself unavailable (no search key, or the ' +
+        `quota is spent) with no board read — check that ${E2E_SCRAPE_COMPANY} is an active ats_watchlist row`,
+    );
+  } else if (recordLeadCalls.length === 0 && zeroExplainedByRejects) {
     ok(
       `scrape-jobs recorded 0 leads, explained by ${searchRejectedTotal} search hit(s) the host rejected before ` +
         'caching (non-direct apply link / removed by the owner / blocked title)',
@@ -1792,7 +1825,7 @@ async function runScrapeJobs(): Promise<void> {
     fail(
       `scrape-jobs did not call record_job_lead. ` +
         'Subagent must call record_job_lead for at least one fetched posting. ' +
-        'Likely cause: pre-record judgment dropped everything, OR the source (search_jobs, or the fetch_source fallback) returned zero postings.',
+        'Likely cause: pre-record judgment dropped everything, OR the source (search_jobs, or fetch_source for a company-scoped brief) returned zero postings.',
     );
   } else {
     ok(`scrape-jobs called record_job_lead ${recordLeadCalls.length} time(s)`);
@@ -1833,7 +1866,9 @@ async function runScrapeJobs(): Promise<void> {
   } finally {
     db.close();
   }
-  if (leadsRows.length === 0 && zeroExplainedByRejects) {
+  if (leadsRows.length === 0 && zeroExplainedByUnavailable) {
+    ok('0 job_lead rows landed — search was unavailable and no board was read; row checks pass vacuously');
+  } else if (leadsRows.length === 0 && zeroExplainedByRejects) {
     ok(
       `0 job_lead rows landed — explained by ${searchRejectedTotal} rejected search hit(s); row checks pass vacuously`,
     );
@@ -1946,7 +1981,7 @@ async function runScrapeJobs(): Promise<void> {
   ok(
     mentionedCompany
       ? `orchestrator reply surfaces count AND specific company "${mentionedCompany}" — Pattern B faithful`
-      : 'orchestrator reply surfaces a count (no rows this run, explained by rejects — company check skipped)',
+      : 'orchestrator reply surfaces a count (no rows this run, explained by rejects or an unavailable search — company check skipped)',
   );
 }
 

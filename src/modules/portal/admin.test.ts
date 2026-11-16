@@ -6,10 +6,15 @@
  * by-artifact + top-country summary, and the recent-visit feed; empty on a bare
  * DB; nothing leaks beyond the two private tables.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { closeDb, getDb, initTestDb } from '../../db/connection.js';
 import { runMigrations } from '../../db/migrations/index.js';
+import { ensureAtsWatchlistSeeded } from '../career-pilot/ats-watchlist.js';
 
 import { getConfig } from '../../get-config.js';
 import { getLiveMode, getPauseState } from './system-modes.js';
@@ -627,6 +632,27 @@ describe('buildAdminLeads / applyAdminLeadsWrite (§24.173)', () => {
     ]);
   });
 
+  it('bulk_delete of a search hit that IS a board posting also tombstones the board copy', () => {
+    seedLead({ id: 'hit', source: 'google_jobs', apply_link_kind: 'ats' });
+    seedLead({ id: 'agg', source: 'google_jobs', apply_link_kind: 'aggregator' });
+    getDb()
+      .prepare(`UPDATE job_leads SET apply_url = ?, source_url = ? WHERE id IN ('hit', 'agg')`)
+      .run('https://job-boards.greenhouse.io/acme/jobs/4455667', 'https://job-boards.greenhouse.io/acme/jobs/4455667');
+
+    const out = applyAdminLeadsWrite(getDb(), { action: 'bulk_delete', ids: ['hit', 'agg'], confirm: true });
+    expect(out.body).toMatchObject({ deleted: 2 });
+    const rows = getDb()
+      .prepare(`SELECT source, source_job_id, reason, match FROM job_lead_tombstones ORDER BY source, source_job_id`)
+      .all();
+    expect(rows).toEqual([
+      // a link-reason delete never reaches the board copy: the job was fine
+      { source: 'google_jobs', source_job_id: 'agg', reason: 'link:aggregator', match: 'id' },
+      { source: 'google_jobs', source_job_id: 'hit', reason: 'deleted', match: 'fingerprint' },
+      // the board's own listing of the deleted job is refused by id
+      { source: 'greenhouse', source_job_id: '4455667', reason: 'deleted', match: 'id' },
+    ]);
+  });
+
   it('bulk_delete skips-and-reports an email-linked lead instead of throwing (FKs on)', () => {
     expect(getDb().pragma('foreign_keys', { simple: true })).toBe(1);
     seedLead({ id: 'plain' });
@@ -658,7 +684,15 @@ describe('buildAdminLeads / applyAdminLeadsWrite (§24.173)', () => {
       seedLead({ id });
       const out = applyAdminLeadsWrite(getDb(), { action: 'not_interested', id, reason });
       expect(out.status).toBe(200);
-      expect(out.body).toEqual({ ok: true, id, tombstone_match: match, title_blocklisted: false, title_blocklist: [] });
+      // §24.201 D4: the response also says whether "block company" paused a board.
+      expect(out.body).toEqual({
+        ok: true,
+        id,
+        tombstone_match: match,
+        title_blocklisted: false,
+        title_blocklist: [],
+        company_blocked: false,
+      });
     }
     const closed = buildAdminLeads(getDb()).closed;
     expect(closed).toHaveLength(5);
@@ -830,5 +864,147 @@ describe('buildAdminLeads / applyAdminLeadsWrite (§24.173)', () => {
       expect(lead).toHaveProperty(k);
     }
     expect(lead.apply_link_kind).toBe('ats');
+  });
+});
+
+describe('Leads sourcing: sweep_now, block_company and the sourcing read (§24.201 D4, D6)', () => {
+  // These tests own the watchlist (an empty seed) and must never reach a real
+  // board: any fetch fails the test.
+  const emptySeed = path.join(os.tmpdir(), `nanoclaw-admin-empty-seed-${process.pid}.json`);
+  beforeEach(async () => {
+    fs.writeFileSync(emptySeed, '[]');
+    ensureAtsWatchlistSeeded(getDb(), emptySeed);
+    vi.stubGlobal('fetch', () => {
+      throw new Error('network access in a unit test');
+    });
+    const { _awaitInFlightSweepForTesting } = await import('../career-pilot/ats-sweep.js');
+    await _awaitInFlightSweepForTesting();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    fs.rmSync(emptySeed, { force: true });
+  });
+  function seedPlainLead(id: string, company: string): void {
+    const now = new Date().toISOString();
+    getDb()
+      .prepare(
+        `INSERT INTO job_leads (id, source, source_job_id, source_url, content_fingerprint, title, company,
+           first_seen_at, last_seen_at, status, status_changed_at, rules_score)
+         VALUES (?, 'greenhouse', ?, 'https://x/' || ?, 'fp-' || ?, 'Senior Software Engineer', ?, ?, ?, 'new', ?, 50)`,
+      )
+      .run(id, id, id, id, company, now, now, now);
+  }
+
+  function seedBoard(token: string, company: string): void {
+    const now = new Date().toISOString();
+    getDb()
+      .prepare(
+        `INSERT INTO ats_watchlist (ats, token, company, tier, origin, state, created_at, updated_at)
+         VALUES ('greenhouse', ?, ?, 'B', 'owner', 'active', ?, ?)`,
+      )
+      .run(token, company, now, now);
+  }
+
+  it('the read carries `sourcing` in the admin contract shape', () => {
+    const v = buildAdminLeads(getDb());
+    expect(v.sourcing).toEqual({
+      lastSweep: null,
+      sweepRunning: false,
+      lastSearch: null,
+      searchQuota: {
+        used_period: 0,
+        monthly_quota: expect.any(Number),
+        used_today: 0,
+        daily_cap: expect.any(Number),
+        period_start: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      },
+    });
+
+    const t = '2026-11-16T10:00:00.000Z';
+    getDb()
+      .prepare(
+        `INSERT INTO lead_source_runs (id, kind, trigger, started_at, finished_at, ok, boards_ok, boards_failed,
+           new_count, refreshed_count, closed_count, reopened_count, rejected_json, failing_boards_json)
+         VALUES ('run-1', 'sweep', 'manual', ?, ?, 1, 4, 1, 3, 10, 2, 1, '{"filter":5,"cap":1}',
+           '[{"company":"Acme","ats":"lever","error":"HTTP 500"}]')`,
+      )
+      .run(t, t);
+    getDb()
+      .prepare(
+        `INSERT INTO lead_source_runs (id, kind, trigger, started_at, finished_at, ok, rejected_json, rejected_by_site_json)
+         VALUES ('s-1', 'search', 'agent', ?, ?, 1, '{"link_kind":4}', '{"RepostBoard":4}')`,
+      )
+      .run(t, t);
+    const s = buildAdminLeads(getDb()).sourcing;
+    expect(s.lastSweep).toEqual({
+      id: 'run-1',
+      started_at: t,
+      finished_at: t,
+      ok: true,
+      trigger: 'manual',
+      boards_ok: 4,
+      boards_failed: 1,
+      new: 3,
+      refreshed: 10,
+      closed: 2,
+      reopened: 1,
+      rejected: { filter: 5, cap: 1 },
+      failing_boards: [{ company: 'Acme', ats: 'lever', error: 'HTTP 500' }],
+    });
+    expect(s.lastSearch).toEqual({ at: t, rejected: { link_kind: 4 }, rejected_by_site: { RepostBoard: 4 } });
+  });
+
+  it('sweep_now answers 202 and starts a sweep; a second call while it runs is 409 already_running', async () => {
+    const { _awaitInFlightSweepForTesting } = await import('../career-pilot/ats-sweep.js');
+    const first = applyAdminLeadsWrite(getDb(), { action: 'sweep_now' });
+    expect(first).toEqual({ status: 202, body: { ok: true, started: true } });
+    expect(buildAdminLeads(getDb()).sourcing.sweepRunning).toBe(true);
+    expect(applyAdminLeadsWrite(getDb(), { action: 'sweep_now' })).toEqual({
+      status: 409,
+      body: { error: 'already_running' },
+    });
+    await _awaitInFlightSweepForTesting();
+    expect(buildAdminLeads(getDb()).sourcing.lastSweep).toMatchObject({ trigger: 'manual' });
+  });
+
+  it('sweep_now is 409 halted under halted / killswitch', async () => {
+    const { setPauseState } = await import('./system-modes.js');
+    setPauseState('killswitch');
+    expect(applyAdminLeadsWrite(getDb(), { action: 'sweep_now' })).toEqual({ status: 409, body: { error: 'halted' } });
+  });
+
+  it('not_interested with block_company pauses the company board (normalized match) and says so', () => {
+    seedBoard('acme', 'Acme, Inc.');
+    seedBoard('other', 'Globex');
+    seedPlainLead('l1', 'ACME Inc');
+    const out = applyAdminLeadsWrite(getDb(), {
+      action: 'not_interested',
+      id: 'l1',
+      reason: 'company',
+      block_company: true,
+    });
+    expect(out.status).toBe(200);
+    expect(out.body).toMatchObject({ ok: true, company_blocked: true });
+    const states = getDb().prepare(`SELECT token, state FROM ats_watchlist ORDER BY token`).all();
+    expect(states).toEqual([
+      { token: 'acme', state: 'paused' },
+      { token: 'other', state: 'active' },
+    ]);
+  });
+
+  it('block_company is false when no watched board matches; nothing is paused without the flag', () => {
+    seedBoard('acme', 'Acme');
+    seedPlainLead('l1', 'Initech');
+    seedPlainLead('l2', 'Acme');
+    expect(
+      applyAdminLeadsWrite(getDb(), { action: 'not_interested', id: 'l1', reason: 'company', block_company: true })
+        .body,
+    ).toMatchObject({ company_blocked: false });
+    expect(applyAdminLeadsWrite(getDb(), { action: 'not_interested', id: 'l2', reason: 'company' }).body).toMatchObject(
+      {
+        company_blocked: false,
+      },
+    );
+    expect((getDb().prepare(`SELECT state FROM ats_watchlist`).get() as { state: string }).state).toBe('active');
   });
 });

@@ -7,14 +7,17 @@ import {
   NOT_INTERESTED_REASONS,
   postAdminLeads,
   postAppliedFromLead,
+  postSweepNow,
   postUndoApplied,
   type AdminLead,
+  type AdminLeadsSourcing,
   type AdminLeadsView,
   type AdminLeadsWrite,
   type AdminWriteResult,
   type BulkDeleteResult,
   type BulkSetStatusResult,
   type DuplicateApplication,
+  type LeadSweepRun,
   type NotInterestedReason,
   type NotInterestedResult,
   type TailoredRun,
@@ -67,7 +70,10 @@ type SortKey = 'rules_score' | 'llm_score' | 'first_seen_at' | 'last_seen_at' | 
 // ── §24.201 D1: link kind, derived ────────────────────────────────────────────
 
 /** The board sources whose apply link is direct by construction. */
-const BOARD_SOURCES = new Set(['greenhouse', 'lever', 'ashby'])
+export const BOARD_SOURCES: ReadonlySet<string> = new Set(['greenhouse', 'lever', 'ashby'])
+
+/** Every lead source the host writes — the Source filter's options. */
+export const LEAD_SOURCES = ['greenhouse', 'lever', 'ashby', 'google_jobs', 'manual'] as const
 
 export type LinkKind = 'company' | 'ats' | 'aggregator' | 'unknown' | 'manual'
 const LINK_FILTER_OPTIONS = ['all', 'company', 'ats', 'aggregator', 'unknown', 'manual'] as const
@@ -455,7 +461,12 @@ interface LeadDetailProps {
   onPost: (body: AdminLeadsWrite, busyKey: string) => void
   niOpen: boolean
   setNiOpen: (open: boolean) => void
-  onNotInterested: (lead: AdminLead, reason: NotInterestedReason, excludeTitle: boolean) => void
+  onNotInterested: (
+    lead: AdminLead,
+    reason: NotInterestedReason,
+    excludeTitle: boolean,
+    blockCompany: boolean | undefined,
+  ) => void
   applied: AppliedEntry | undefined
   onApplied: (lead: AdminLead, entry: AppliedEntry) => void
   onAppliedRefused: (message: string) => void
@@ -616,7 +627,9 @@ function LeadDetail({
             lead={lead}
             busy={busy}
             onCancel={() => setNiOpen(false)}
-            onConfirm={(reason, excludeTitle) => onNotInterested(lead, reason, excludeTitle)}
+            onConfirm={(reason, excludeTitle, blockCompany) =>
+              onNotInterested(lead, reason, excludeTitle, blockCompany)
+            }
           />
         ) : null}
       </div>
@@ -637,8 +650,9 @@ const REASON_HINT: Record<NotInterestedReason, string> = {
   other: 'anything else — this posting and near-identical re-posts stay out',
 }
 
-/** Step two of "not interested": the reason, the opt-in title exclusion, and
- *  the confirm. Opening it was step one. */
+/** Step two of "not interested": the reason, the opt-in title exclusion, the
+ *  opt-in board block (board-sourced leads only — only they have a board on the
+ *  watchlist to pause), and the confirm. Opening it was step one. */
 function NotInterestedForm({
   lead,
   busy,
@@ -648,10 +662,12 @@ function NotInterestedForm({
   lead: AdminLead
   busy: string | null
   onCancel: () => void
-  onConfirm: (reason: NotInterestedReason, excludeTitle: boolean) => void
+  onConfirm: (reason: NotInterestedReason, excludeTitle: boolean, blockCompany: boolean | undefined) => void
 }) {
   const [reason, setReason] = useState<NotInterestedReason>('role')
   const [excludeTitle, setExcludeTitle] = useState(false)
+  const [blockCompany, setBlockCompany] = useState(false)
+  const boardLead = BOARD_SOURCES.has(lead.source)
   return (
     <div
       data-testid="leads-ni-form"
@@ -683,17 +699,31 @@ function NotInterestedForm({
           />
           exclude this title from future scrapes
         </label>
+        {boardLead ? (
+          <label className="flex cursor-pointer items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+            <input
+              type="checkbox"
+              data-testid="leads-ni-block-company"
+              checked={blockCompany}
+              onChange={(e) => setBlockCompany(e.target.checked)}
+            />
+            block this company&apos;s board
+          </label>
+        ) : null}
       </div>
       <p className="font-mono text-[10px] text-muted-foreground">
         {REASON_HINT[reason]}
         {excludeTitle ? ` · every lead titled “${lead.title}” is refused from now on` : ''}
+        {boardLead && blockCompany ? ` · ${lead.company}'s board stops being swept` : ''}
       </p>
       <div className="flex items-center gap-2">
         <button
           type="button"
           data-testid="leads-ni-confirm"
           disabled={busy != null}
-          onClick={() => onConfirm(reason, excludeTitle)}
+          // Sent only where the box is offered: a search-sourced lead has no
+          // board to pause, so its request leaves the field off entirely.
+          onClick={() => onConfirm(reason, excludeTitle, boardLead ? blockCompany : undefined)}
           className="rounded-md border border-destructive px-2.5 py-1 font-mono text-[11px] text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
         >
           {busy === `ni-${lead.id}` ? 'Archiving…' : 'Confirm not interested'}
@@ -1115,7 +1145,12 @@ export function LeadsPanel({
   }
 
   // §24.201 D4 — archive + a tombstone whose reach follows the reason.
-  const notInterested = async (lead: AdminLead, reason: NotInterestedReason, excludeTitle: boolean): Promise<void> => {
+  const notInterested = async (
+    lead: AdminLead,
+    reason: NotInterestedReason,
+    excludeTitle: boolean,
+    blockCompany: boolean | undefined,
+  ): Promise<void> => {
     setBusy(`ni-${lead.id}`)
     setError(null)
     setNote(null)
@@ -1124,6 +1159,7 @@ export function LeadsPanel({
       id: lead.id,
       reason,
       exclude_title: excludeTitle,
+      ...(blockCompany === undefined ? {} : { block_company: blockCompany }),
     })
     setBusy(null)
     if (isPromotedRefusal(res)) {
@@ -1139,14 +1175,30 @@ export function LeadsPanel({
     const d = (res.data ?? {}) as Partial<NotInterestedResult>
     if (Array.isArray(d.title_blocklist)) setBlocklistOverride(d.title_blocklist)
     setNiOpenId(null)
-    setNote(
-      `Not interested (${reason}): archived ${lead.company} — ` +
-        (d.tombstone_match === 'fingerprint'
-          ? 'this posting and near-identical re-posts from this company will not come back'
-          : 'this posting will not come back') +
-        (d.title_blocklisted ? `; the title “${lead.title}” is now excluded.` : '.'),
-    )
+    setNote(notInterestedNote(lead, reason, d, blockCompany === true))
     onSaved()
+  }
+
+  // §24.201 D6 — "Sweep now". Its own in-flight flag, so a sweep request does
+  // not lock the row controls (and vice versa).
+  const [sweepBusy, setSweepBusy] = useState(false)
+  const sweepNow = async (): Promise<void> => {
+    setSweepBusy(true)
+    setError(null)
+    setNote(null)
+    const out = await postSweepNow(baseUrl)
+    setSweepBusy(false)
+    if (out.kind === 'started') {
+      setNote('Sweep started — its results appear here when it finishes.')
+      onSaved()
+    } else if (out.kind === 'already_running') {
+      setError('A sweep is already running — its results appear here when it finishes.')
+      onSaved()
+    } else if (out.kind === 'halted') {
+      setError('The system is halted, so no sweep was started. Resume it on the Overview tab first.')
+    } else {
+      setError(out.error)
+    }
   }
 
   const onApplied = (lead: AdminLead, entry: AppliedEntry): void => {
@@ -1304,6 +1356,18 @@ export function LeadsPanel({
           </h2>
           <div className="flex flex-wrap items-start justify-end gap-2">
             <TitleBlocklist titles={titleBlocklist} busy={busy} onRemove={(t) => void removeFromBlocklist(t)} />
+            {data.sourcing ? (
+              <button
+                type="button"
+                data-testid="leads-sweep-now"
+                disabled={sweepBusy || data.sourcing.sweepRunning}
+                onClick={() => void sweepNow()}
+                className="rounded-md border border-border px-2.5 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+                title="Fetch every active employer board on the watchlist now, instead of waiting for the schedule"
+              >
+                {sweepBusy ? 'Starting…' : data.sourcing.sweepRunning ? 'Sweeping…' : 'Sweep now'}
+              </button>
+            ) : null}
             <button
               type="button"
               data-testid="leads-rescore-all"
@@ -1316,6 +1380,7 @@ export function LeadsPanel({
             </button>
           </div>
         </div>
+        {data.sourcing ? <SourcingStrip sourcing={data.sourcing} /> : null}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Stat label="Active" value={rollup.activeTotal} />
           <Stat label="Newest" value={fmtAgeHours(rollup.newestAgeHours)} />
@@ -1341,12 +1406,7 @@ export function LeadsPanel({
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
         <Select label="Status" value={status} onChange={setStatus} options={['all', ...SETTABLE_STATUSES, 'applied']} />
-        <Select
-          label="Source"
-          value={source}
-          onChange={setSource}
-          options={['all', 'greenhouse', 'lever', 'google_jobs', 'manual']}
-        />
+        <Select label="Source" value={source} onChange={setSource} options={['all', ...LEAD_SOURCES]} />
         {/* §24.201 D1 — the fact the owner actually triages on. */}
         <Select label="Link" value={linkKind} onChange={setLinkKind} options={LINK_FILTER_OPTIONS} />
         <Select
@@ -1553,7 +1613,9 @@ export function LeadsPanel({
             onPost={post}
             niOpen={niOpenId === lead.id}
             setNiOpen={(open) => setNiOpenId(open ? lead.id : null)}
-            onNotInterested={(l, reason, excludeTitle) => void notInterested(l, reason, excludeTitle)}
+            onNotInterested={(l, reason, excludeTitle, blockCompany) =>
+              void notInterested(l, reason, excludeTitle, blockCompany)
+            }
             applied={applied[lead.id]}
             onApplied={onApplied}
             onAppliedRefused={onAppliedRefused}
@@ -1598,6 +1660,132 @@ export function bulkArchiveNote(requested: number, d: BulkSetStatusResult | unde
   const skipText =
     skipped > 0 ? ` Skipped ${skipped}${promoted ? `: ${promoted} promoted to an application` : ''}.` : ''
   return `Archived ${plural(archived)}.${skipText}`
+}
+
+/** The result line for "not interested": the tombstone's reach, then each
+ *  opt-in consequence the server confirmed. `blockAsked` is whether the owner
+ *  ticked "block this company's board" — only then is `company_blocked` read. */
+export function notInterestedNote(
+  lead: Pick<AdminLead, 'company' | 'title'>,
+  reason: NotInterestedReason,
+  d: Partial<NotInterestedResult>,
+  blockAsked: boolean,
+): string {
+  const parts = [
+    d.tombstone_match === 'fingerprint'
+      ? 'this posting and near-identical re-posts from this company will not come back'
+      : 'this posting will not come back',
+  ]
+  if (d.title_blocklisted) parts.push(`the title “${lead.title}” is now excluded`)
+  if (blockAsked) {
+    parts.push(
+      d.company_blocked === true
+        ? `${lead.company}'s board paused`
+        : d.company_blocked === false
+          ? `no board on the watchlist for ${lead.company}`
+          : 'the board block was not confirmed',
+    )
+  }
+  return `Not interested (${reason}): archived ${lead.company} — ${parts.join('; ')}.`
+}
+
+// ── §24.201 D6: the sourcing strip ────────────────────────────────────────────
+
+/** "3h ago", "just now", or "—". */
+function ago(iso: string | null): string {
+  const h = ageHoursOf(iso)
+  if (h == null) return '—'
+  return h < 1 ? 'just now' : `${fmtAgeHours(h)} ago`
+}
+
+/** `{a: 3, b: 1}` → "a 3 · b 1", largest first, zero counts dropped; '' when empty. */
+function countsLine(counts: Record<string, number> | null | undefined): string {
+  return Object.entries(counts ?? {})
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, n]) => `${k} ${n}`)
+    .join(' · ')
+}
+
+/** The last sweep in one line: when, what changed in the pool, board health. */
+export function sweepSummary(run: LeadSweepRun): string {
+  const when = run.finished_at ?? run.started_at
+  const head = `Last sweep ${ago(when)}${run.trigger === 'manual' ? ' (manual)' : ''}${run.ok ? '' : ' · failed'}`
+  return (
+    `${head} · ${run.new} new · ${run.closed} closed · ${run.reopened} reopened · ` +
+    `boards ${run.boards_ok} ok / ${run.boards_failed} failed`
+  )
+}
+
+/** The search quota as "used / quota this period · today used / cap". */
+export function quotaLine(q: AdminLeadsSourcing['searchQuota']): string {
+  return `${q.used_period} / ${q.monthly_quota} this period · today ${q.used_today} / ${q.daily_cap}`
+}
+
+/** §24.201 D6 — the direct-board sweep and the search supplement, compactly:
+ *  the last sweep's summary (expandable to its rejections and failing boards),
+ *  the last search's refusals by reposting site, and the search quota. */
+function SourcingStrip({ sourcing }: { sourcing: AdminLeadsSourcing }) {
+  const [open, setOpen] = useState(false)
+  const run = sourcing.lastSweep
+  const rejected = countsLine(run?.rejected)
+  const failing = run?.failing_boards ?? []
+  const bySite = countsLine(sourcing.lastSearch?.rejected_by_site)
+  return (
+    <div
+      data-testid="leads-sourcing"
+      className="flex flex-col gap-1 border-t border-border/60 pt-2 font-mono text-[11px] text-muted-foreground"
+    >
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="text-[10px] uppercase tracking-widest text-foreground">Sourcing</span>
+        {sourcing.sweepRunning ? (
+          <span data-testid="leads-sweep-running" className="text-accent-cool">
+            sweep running…
+          </span>
+        ) : null}
+        <span data-testid="leads-sweep-summary" className={cn(run && !run.ok && 'text-amber-400')}>
+          {run ? sweepSummary(run) : 'No sweep has run yet'}
+        </span>
+        {run ? (
+          <button
+            type="button"
+            data-testid="leads-sweep-detail-toggle"
+            aria-expanded={open}
+            aria-controls="leads-sweep-detail"
+            onClick={() => setOpen((o) => !o)}
+            className="rounded-md px-1.5 py-px transition-colors hover:text-foreground"
+          >
+            details {open ? '▾' : '▸'}
+          </button>
+        ) : null}
+      </div>
+      {run && open ? (
+        <div id="leads-sweep-detail" data-testid="leads-sweep-detail" className="ml-2 flex flex-col gap-0.5">
+          <span>refreshed {run.refreshed} still-open leads</span>
+          <span data-testid="leads-sweep-rejected">rejected: {rejected || 'none'}</span>
+          {failing.length > 0 ? (
+            <ul data-testid="leads-sweep-failing" aria-label="Failing boards" className="flex flex-col gap-0.5">
+              {failing.map((b) => (
+                <li key={`${b.ats}:${b.company}`} data-testid="leads-sweep-failing-board" className="text-amber-400">
+                  {b.company} ({b.ats}) — {b.error}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <span>no failing boards</span>
+          )}
+        </div>
+      ) : null}
+      {sourcing.lastSearch ? (
+        <span data-testid="leads-search-summary">
+          Last search {ago(sourcing.lastSearch.at)} · rejected by site: {bySite || 'none'}
+        </span>
+      ) : null}
+      <span data-testid="leads-search-quota" title="Search pages spent — the search index is a capped supplement">
+        Search quota {quotaLine(sourcing.searchQuota)}
+      </span>
+    </div>
+  )
 }
 
 /** §24.201 D4 — the owner's excluded titles, in the Leads header. Collapsed by

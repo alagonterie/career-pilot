@@ -21,7 +21,10 @@ vi.mock('./scrape-jobs/targets.js', () => ({
   filterTargets: () => [{ source: 'greenhouse', token: 'acme', company: 'Acme', priority: 'A' }],
 }));
 vi.mock('./scrape-jobs/sources.js', () => ({
-  getAdapter: () => ({ source: 'greenhouse', list: async () => boardPostings.map((p) => ({ ...p })) }),
+  getAdapter: () => ({
+    source: 'greenhouse',
+    list: async () => ({ ok: true, absent: false, postings: boardPostings.map((p) => ({ ...p })) }),
+  }),
 }));
 
 import { closeDb, getDb, initTestDb } from '../../db/connection.js';

@@ -313,6 +313,7 @@ describe('linkKindOf (§24.201 D1)', () => {
     expect(linkKindOf({ apply_link_kind: null, source: 'manual' })).toBe('manual')
     expect(linkKindOf({ apply_link_kind: null, source: 'greenhouse' })).toBe('ats')
     expect(linkKindOf({ apply_link_kind: null, source: 'lever' })).toBe('ats')
+    expect(linkKindOf({ apply_link_kind: null, source: 'ashby' })).toBe('ats')
     expect(linkKindOf({ apply_link_kind: null, source: 'google_jobs' })).toBe('unknown')
   })
 })

@@ -16,6 +16,7 @@
  */
 import type Database from 'better-sqlite3';
 
+import { getConfig } from '../../get-config.js';
 import { log } from '../../log.js';
 
 import { computeFingerprint } from './lead-fingerprint.js';
@@ -138,7 +139,22 @@ export function promoteLeadOnApplied(
           WHERE closed_at IS NULL AND application_id IS NULL AND status != 'applied'`,
       )
       .all() as LeadRow[];
-    const match = matchLead(app, candidates);
+    // §24.201 D8: an application reported AFTER its posting came off the board
+    // still links to that lead (closed as 'absent' within the grace window)
+    // instead of synthesizing a duplicate. Open leads are always preferred.
+    const graceDays = getConfig<number>(db, 'lead_promotion_absent_grace_days');
+    const recentlyAbsent =
+      graceDays > 0
+        ? (db
+            .prepare(
+              `SELECT id, source_url, apply_url, company, title, rules_score
+                 FROM job_leads
+                WHERE closed_at IS NOT NULL AND closed_reason = 'absent' AND closed_at >= ?
+                  AND application_id IS NULL AND status != 'applied'`,
+            )
+            .all(new Date(Date.now() - graceDays * 86_400_000).toISOString()) as LeadRow[])
+        : [];
+    const match = matchLead(app, candidates) ?? matchLead(app, recentlyAbsent);
     if (!match) {
       // A rejection is not worth a lead: there is nothing left to tailor for.
       if (!opts.createIfMissing || String(change.to).toUpperCase() === 'REJECTED') return null;

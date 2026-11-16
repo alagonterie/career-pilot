@@ -13,8 +13,19 @@ export type Region = 'owner' | 'triggers' | 'host' | 'container' | 'public'
  * no health claim — we never paint a color we don't actually probe (§24.24).
  * `provider` reads per-provider health from request_telemetry (§24.69).
  * `sandbox`/`sweep` are the §24.80 promotions: the public-demo kill switch + 24h
- * spend-vs-cap, and the host sweep loop's freshness. */
-export type ProbeKind = 'structural' | 'pause' | 'backend' | 'container' | 'sessions' | 'provider' | 'sandbox' | 'sweep'
+ * spend-vs-cap, and the host sweep loop's freshness. `boards` is the §24.200 D8
+ * employer-board sweep: down only when no sweep has succeeded recently; its
+ * board adapters' telemetry can amber it, never redden it. */
+export type ProbeKind =
+  | 'structural'
+  | 'pause'
+  | 'backend'
+  | 'container'
+  | 'sessions'
+  | 'provider'
+  | 'sandbox'
+  | 'sweep'
+  | 'boards'
 
 export type NodeStatus = 'healthy' | 'degraded' | 'down' | 'idle' | 'structural'
 
@@ -29,6 +40,9 @@ export interface ArchNode {
    * ⇒ down) or 'gateway' (down only when EVERY present provider is down — the
    * OneCLI shape: one service failing is that service's problem, not the gateway's). */
   providerAggregate?: 'worst' | 'gateway'
+  /** §24.200 D8: a budgeted search node — reads `idle` (at rest by design), not
+   * down, while the search page budget is spent (`arch.job_search.quota_spent`). */
+  quotaIdle?: boolean
   description: string
   /** Repo-relative source path for the line-anchored code link (omitted when none applies). */
   source?: string
@@ -158,9 +172,9 @@ export const NODES: ArchNode[] = [
     description:
       'Per-session message store — inbound (host writes, container reads) and outbound (container writes, host reads + delivers).',
     source: 'src/db/session-db.ts',
-    x: 58,
+    x: 25,
     y: 234,
-    w: 188,
+    w: 164,
     h: NODE_H,
   },
   {
@@ -170,9 +184,9 @@ export const NODES: ArchNode[] = [
     probe: 'pause',
     description: 'Routes inbound messages and runs the sweep loop. Status tracks the pause-state ladder.',
     source: 'src/router.ts',
-    x: 286,
+    x: 207,
     y: 234,
-    w: 188,
+    w: 164,
     h: NODE_H,
   },
   {
@@ -182,18 +196,37 @@ export const NODES: ArchNode[] = [
     probe: 'provider',
     // Every credential-injected provider that rides this proxy; it's only "down"
     // when EVERYthing through it is failing (one dead service is that service's
-    // node). The public, key-less ATS boards (greenhouse/lever) are host-side
-    // fetches that never traverse the gateway — deliberately NOT here (§24.122,
-    // correcting the §24.69 D6 "union" that misattributed host traffic to it).
+    // node). The public, key-less employer boards (host-boards' adapters) are
+    // host-side fetches that never traverse the gateway — deliberately NOT here
+    // (§24.122, correcting the §24.69 D6 "union" that misattributed host traffic).
     providers: ['gmail', 'calendar', 'drive', 'serpapi', 'portkey'],
     providerAggregate: 'gateway',
     description:
       'The credential perimeter — inherited with the NanoClaw fork and kept. Every outbound HTTPS call a container makes rides this proxy, and the real secrets (the Portkey key, the job-search API key, Google OAuth tokens) are injected on the wire. A container never holds a real credential.',
     link: 'https://github.com/onecli/onecli',
     linkLabel: 'OneCLI on GitHub',
-    x: 514,
+    x: 389,
     y: 234,
-    w: 188,
+    w: 164,
+    h: NODE_H,
+  },
+  {
+    id: 'host-boards',
+    label: 'Employer boards',
+    region: 'host',
+    probe: 'boards',
+    // §24.200 D8: the PRIMARY job source. Status = sweep freshness (down when no
+    // sweep has finished OK within ats_sweep_stale_hours) folded with the board
+    // adapters' telemetry, which can only amber it. A board that moved or went
+    // away is recorded ok by its adapter (§24.184 D1) and, once retired, is no
+    // longer fetched — it can never redden this node.
+    providers: ['greenhouse', 'lever', 'ashby'],
+    description:
+      'The primary job source. On a schedule (every couple of hours by default) the host reads a watchlist of employers’ own public job boards — applicant-tracking APIs that need no key, fetched straight from the host, not through the gateway. It keeps postings that match the candidate’s filters, skips anything already dismissed, and closes a lead once its posting comes down. Fresh postings land in the job-leads pool the orchestrator re-reads while scouting. Down only when no sweep has succeeded recently; a board that moved or went away is skipped and retired, not counted as an outage. Not an LLM call — plain HTTPS fetches.',
+    source: 'src/modules/career-pilot/ats-sweep.ts',
+    x: 571,
+    y: 234,
+    w: 164,
     h: NODE_H,
   },
 
@@ -273,15 +306,14 @@ export const NODES: ArchNode[] = [
     label: 'Job search API',
     region: 'container',
     probe: 'provider',
-    // Health tracks ONLY the primary Job-search API (serpapi). The key-less ATS
-    // board scrapers (greenhouse/lever) are host-side best-effort: a dead/renamed
-    // seed token 404s (fail-soft, skipped) but was reddening this node even though
-    // the API itself was healthy (§24.184). The description still names the ATS
-    // fallback tier; only the health mapping is scoped. (host-onecli excludes them
-    // for a related reason.)
+    // §24.200 D8: the search-index SUPPLEMENT (the employer boards are now the
+    // primary — host-boards). Health tracks ONLY the search provider; the board
+    // adapters have their own node (§24.184 already scoped this one to the search
+    // API). A spent page budget reads idle, not down (quotaIdle).
     providers: ['serpapi'],
+    quotaIdle: true,
     description:
-      'The job-search sources the scrape-jobs subagent works from. Its primary is a commercial Google-Jobs search index, queried directly with the API key injected in flight by the OneCLI gateway; when that’s rate-limited or down it falls back to public applicant-tracking job boards, which need no key. Fresh postings land in the job-leads pool the orchestrator continuously re-reads while scouting. Not an LLM call — plain HTTPS fetches.',
+      'The search-index supplement the scrape-jobs subagent queries — one focused search per run against a commercial job-search index, reached directly with the API key injected in flight by the OneCLI gateway. It finds employers beyond the board watchlist (in-house career sites no public board API reaches) and keeps only postings that link straight to an employer. It runs on a fixed page budget: once that’s spent it rests — idle, not down — until the budget resets. Fresh postings join the same job-leads pool. Not an LLM call — plain HTTPS fetches.',
     source: 'container/agent-runner/src/mcp-tools/scrape-jobs.ts',
     x: 558,
     y: 430,
@@ -364,6 +396,8 @@ export const EDGES: ArchEdge[] = [
   // inbound edge above, Google Workspace reads as the duplex service it is.
   { from: 'host-onecli', to: 'trig-google' },
   { from: 'trig-cron', to: 'host-router' },
+  // The cron sweep fires the employer-board sweep on its schedule (§24.200 D8).
+  { from: 'trig-cron', to: 'host-boards' },
   { from: 'host-router', to: 'host-db', bidirectional: true },
   { from: 'host-router', to: 'cont-runtime' },
   // The egress proxy is duplex by nature — containers call out through it and
@@ -443,7 +477,26 @@ export function deriveNodeStatus(
     case 'sessions':
       return (arch?.sessions.running ?? 0) > 0 ? 'healthy' : 'idle'
     case 'provider':
+      // §24.200 D8: a budgeted search node at its page budget is at rest by
+      // design (the tool answers "unavailable" without calling out) — idle.
+      if (node.quotaIdle && arch?.job_search?.quota_spent) return 'idle'
       return deriveProviderStatus(node, obs)
+    case 'boards': {
+      // §24.200 D8: the employer-board sweep. Idle when there's nothing to judge
+      // (older backend, switched off, no boards watched, or the system halted —
+      // the sweep is refused then by design). Down only on FRESHNESS: no sweep
+      // has finished OK within the host-tier stale threshold (bar the very first
+      // sweep still in flight). Once fresh, the board adapters' telemetry can
+      // only amber the node — one employer's board failing is that board's
+      // problem, not an outage of the source.
+      const b = arch?.board_sweep
+      if (b == null) return 'idle'
+      const p = mode?.pause_state
+      if (!b.enabled || b.boards === 0 || p === 'halted' || p === 'killswitch') return 'idle'
+      if (!b.fresh) return b.last_success_age_sec == null && b.running ? 'idle' : 'down'
+      const t = deriveProviderStatus(node, obs)
+      return t === 'down' || t === 'degraded' ? 'degraded' : 'healthy'
+    }
     case 'sandbox': {
       // §24.80: the public-demo health. `down` when the kill switch is off;
       // `degraded` once the day's sandbox spend reaches its budget; `idle` when

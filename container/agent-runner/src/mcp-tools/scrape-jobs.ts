@@ -13,7 +13,7 @@
  *   Orchestrator:
  *     - query_job_leads         — typed-args SELECT
  *     - update_job_lead_status  — pipeline transition
- *     - discover_ats_board      — careers-page → ATS provider+token
+ *     - discover_ats_board      — board link → watchlist (no page fetch)
  *
  * Kept in a separate file from career-pilot.ts (Phase 1 tools) so the
  * Phase 2.5 split stays readable. Both files self-register via
@@ -27,7 +27,7 @@ import {
   type JobLeadForRanking,
   type RankedLead,
 } from '../career-pilot/rank-leads.js';
-import { searchGoogleJobs, SearchJobsError } from '../career-pilot/serpapi-search.js';
+import { searchGoogleJobs, SearchJobsError, type PageReservation } from '../career-pilot/serpapi-search.js';
 import { registerTools } from './server.js';
 import type { McpToolDefinition } from './types.js';
 
@@ -50,28 +50,32 @@ export const fetchSource: McpToolDefinition = {
   tool: {
     name: 'fetch_source',
     description:
-      "Fetch normalized job postings from public ATS APIs (Greenhouse + Lever in v1.0). Returns `{ summaries, boards_scanned, postings_total }` — each summary is a lightweight per-posting object with `{ source, source_job_id, title, company, location_raw?, workplace_type?, snippet }`, where snippet is a ~120-char excerpt of the description. The full payload is stashed host-side (1h TTL) keyed by (source, source_job_id); when you decide to keep a posting, call `record_job_lead({ source, source_job_id })` and the host looks up the full payload automatically. You do NOT pass full posting data through record_job_lead. Pass `priority` for a broad scan (default Tier-A targets), or `company` for a single-company scan. Read-only — does NOT write to job_leads.",
+      'Fetch normalized job postings from the public ATS APIs (Greenhouse, Lever, Ashby) of the employer boards on the watchlist. Returns `{ summaries, boards_scanned, postings_total }` — each summary is a lightweight per-posting object with `{ source, source_job_id, title, company, location_raw?, workplace_type?, snippet }`, where snippet is a ~120-char excerpt of the description. The full payload is stashed host-side (1h TTL) keyed by (source, source_job_id); when you decide to keep a posting, call `record_job_lead({ source, source_job_id })` and the host looks up the full payload automatically. You do NOT pass full posting data through record_job_lead. The host already sweeps every watched board on its own schedule and adds new matches itself, so a generic refresh does not need this tool; it is the tool for company-scoped requests (`company`), or a `priority` tier scan when explicitly asked. Read-only — does NOT write to job_leads.',
     inputSchema: {
       type: 'object' as const,
       properties: {
         priority: {
           type: 'string',
           enum: ['A', 'B', 'C'],
-          description: 'Filter targets to one priority tier. Defaults to "A" if neither priority nor company is given. Use "A" for a broad scan of high-signal targets; "B"/"C" only when explicitly broadening.',
+          description:
+            'Filter targets to one priority tier. Defaults to "A" if neither priority nor company is given. Use "A" for a broad scan of high-signal targets; "B"/"C" only when explicitly broadening.',
         },
         company: {
           type: 'string',
-          description: 'Filter targets to a single company name (exact match, case-insensitive). Use for the "find roles at <company>" trigger.',
+          description:
+            'Filter targets to a single company name (exact match, case-insensitive). Use for the "find roles at <company>" trigger.',
         },
         since: {
           type: 'string',
-          description: 'ISO 8601 timestamp. Filter out postings whose source_posted_at is earlier than this. Optional — most runs leave this unset to see everything.',
+          description:
+            'ISO 8601 timestamp. Filter out postings whose source_posted_at is earlier than this. Optional — most runs leave this unset to see everything.',
         },
         limit: {
           type: 'integer',
           minimum: 1,
           maximum: 300,
-          description: 'Max summaries to return across all boards (default 150, cap 300). Distributed across boards via perBoardCap = ceil(limit / target_count), floor 3. Default depth chosen so per-board cap (~12 per board at 12 priority-A boards) sees past the freshest-batch sales/GTM skew that Greenhouse returns on updated_at DESC ordering.',
+          description:
+            'Max summaries to return across all boards (default 150, cap 300). Distributed across boards via perBoardCap = ceil(limit / target_count), floor 3. Default depth chosen so per-board cap (~12 per board at 12 priority-A boards) sees past the freshest-batch sales/GTM skew that Greenhouse returns on updated_at DESC ordering.',
         },
       },
     },
@@ -84,19 +88,25 @@ export const fetchSource: McpToolDefinition = {
       // Default broad scan: priority A
       args.priority = 'A';
     }
-    const res = await sendAction<{ summaries: unknown[]; boards_scanned: number; postings_total: number; note?: string }>(
-      'career_pilot.fetch_source',
-      {
-        priority: args.priority ?? null,
-        company: args.company ?? null,
-        since: args.since ?? null,
-        limit: args.limit ?? null,
-      },
-    );
+    const res = await sendAction<{
+      summaries: unknown[];
+      boards_scanned: number;
+      postings_total: number;
+      note?: string;
+    }>('career_pilot.fetch_source', {
+      priority: args.priority ?? null,
+      company: args.company ?? null,
+      since: args.since ?? null,
+      limit: args.limit ?? null,
+    });
     if (!res.ok) return actionErr('fetch_source', res.error);
     const { summaries, boards_scanned, postings_total, note } = res.data;
     const noteSuffix = note ? ` (${note})` : '';
-    return ok(`fetch_source: ${postings_total} summaries across ${boards_scanned} boards${noteSuffix}.`, { summaries, boards_scanned, postings_total });
+    return ok(`fetch_source: ${postings_total} summaries across ${boards_scanned} boards${noteSuffix}.`, {
+      summaries,
+      boards_scanned,
+      postings_total,
+    });
   },
 };
 
@@ -106,7 +116,7 @@ export const searchJobs: McpToolDefinition = {
   tool: {
     name: 'search_jobs',
     description:
-      "PRIMARY job source. Search Google for Jobs (via SerpApi) with a natural-language `query` + optional `location`/`remote`. Returns `{ summaries, total, provider: 'google_jobs', rejected, rejected_total }` — each summary is `{ source, source_job_id, title, company, location_raw?, workplace_type?, apply_link_kind, snippet }`, the same shape fetch_source returns. `rejected` counts hits the host refused before you saw them, by reason (`link_kind`: no direct apply link; `tombstone`: the owner removed that posting; `title_blocklist`: a title the owner excluded) — those are not in `summaries` and cannot be recorded. Google aggregates LinkedIn/Indeed/company sites and dedupes across them, so results match what a human sees searching by hand. The full payload is stashed host-side (1h TTL) keyed by (source, source_job_id); to keep a posting call `record_job_lead({ source: 'google_jobs', source_job_id })`. If SerpApi is unavailable (rate-limited / not configured / down) the result is `{ unavailable: true, reason }` — when you see that, FALL BACK to fetch_source (the ATS poller). Each call costs SerpApi quota (~1 unit per 10 results); prefer a few targeted queries over deep pagination. Read-only — does NOT write to job_leads.",
+      "Search SUPPLEMENT (the host sweeps the watched employer boards on its own schedule; this reaches in-house career sites no board API covers). ONE focused query per run. Search Google for Jobs (via SerpApi) with a natural-language `query` + optional `location`/`remote`. Returns `{ summaries, total, provider: 'google_jobs', rejected, rejected_total }` — each summary is `{ source, source_job_id, title, company, location_raw?, workplace_type?, apply_link_kind, snippet }`, the same shape fetch_source returns. `rejected` counts hits the host refused before you saw them, by reason (`link_kind`: no direct apply link; `tombstone`: the owner removed that posting; `title_blocklist`: a title the owner excluded) — those are not in `summaries` and cannot be recorded. Google aggregates LinkedIn/Indeed/company sites and dedupes across them, so results match what a human sees searching by hand. The full payload is stashed host-side (1h TTL) keyed by (source, source_job_id); to keep a posting call `record_job_lead({ source: 'google_jobs', source_job_id })`. If search is unavailable (the day's or the period's search budget is spent, rate-limited, not configured, down) the result is `{ unavailable: true, reason }` — do not retry search this run. Each ~10 results spends one page of a capped search quota the host reserves before fetching; do not paginate. Read-only — does NOT write to job_leads.",
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -117,17 +127,20 @@ export const searchJobs: McpToolDefinition = {
         },
         location: {
           type: 'string',
-          description: 'Search origin, e.g. "United States" or "New York, NY". Optional — omit for a nationwide search.',
+          description:
+            'Search origin, e.g. "United States" or "New York, NY". Optional — omit for a nationwide search.',
         },
         remote: {
           type: 'boolean',
-          description: 'When true, biases toward remote roles (appends "remote" to the query if absent). Use when the candidate prefers remote.',
+          description:
+            'When true, biases toward remote roles (appends "remote" to the query if absent). Use when the candidate prefers remote.',
         },
         limit: {
           type: 'integer',
           minimum: 1,
           maximum: 30,
-          description: 'Max postings to return (default 10, cap 30). Each ~10 results = one SerpApi search against the monthly quota; keep modest.',
+          description:
+            'Max postings to return (default 10, cap 30). Each ~10 results = one page reserved from the capped search quota; leave at the default.',
         },
       },
       required: ['query'],
@@ -141,19 +154,17 @@ export const searchJobs: McpToolDefinition = {
     }
     let payloads;
     try {
-      payloads = await searchGoogleJobs({
-        query,
-        location: (args.location as string | undefined) ?? null,
-        remote: (args.remote as boolean | undefined) ?? null,
-        limit: (args.limit as number | undefined) ?? null,
-      });
+      payloads = await searchGoogleJobs(
+        {
+          query,
+          location: (args.location as string | undefined) ?? null,
+          remote: (args.remote as boolean | undefined) ?? null,
+          limit: (args.limit as number | undefined) ?? null,
+        },
+        { reservePage: reserveSearchPage },
+      );
     } catch (e) {
-      const reason =
-        e instanceof SearchJobsError ? `${e.code}: ${e.message}` : e instanceof Error ? e.message : String(e);
-      return ok(`search_jobs unavailable (${reason}). Fall back to fetch_source (ATS) for this run.`, {
-        unavailable: true,
-        reason,
-      });
+      return searchUnavailable(e);
     }
     if (payloads.length === 0) {
       return ok(
@@ -204,6 +215,33 @@ export function formatSearchJobsResult(query: string, data: StashResult) {
   });
 }
 
+/** The host's reservation answer (`career_pilot.reserve_search_quota`). */
+interface ReserveQuotaResult {
+  granted: boolean;
+  reason?: string;
+  message?: string;
+}
+
+/**
+ * Reserve ONE result page from the host's search quota before fetching it. Any
+ * failure to get a yes (host refusal, error frame, timeout) is a refusal — the
+ * spend gate fails closed.
+ */
+export async function reserveSearchPage(): Promise<PageReservation> {
+  const res = await sendAction<ReserveQuotaResult>('career_pilot.reserve_search_quota', { pages: 1 });
+  if (!res.ok) return { granted: false, message: `quota check failed (${res.error.code}): ${res.error.message}` };
+  return { granted: res.data.granted === true, reason: res.data.reason, message: res.data.message };
+}
+
+/** search_jobs' `unavailable` answer for any search failure, quota refusal included. */
+export function searchUnavailable(e: unknown) {
+  const reason = e instanceof SearchJobsError ? `${e.code}: ${e.message}` : e instanceof Error ? e.message : String(e);
+  return ok(`search_jobs unavailable (${reason}). Do not retry search this run.`, {
+    unavailable: true,
+    reason,
+  });
+}
+
 // ── record_job_lead ────────────────────────────────────────────────────────
 
 export const recordJobLead: McpToolDefinition = {
@@ -214,8 +252,16 @@ export const recordJobLead: McpToolDefinition = {
     inputSchema: {
       type: 'object' as const,
       properties: {
-        source: { type: 'string', enum: ['greenhouse', 'lever', 'google_jobs'], description: 'Source identifier — must match a value returned by search_jobs (google_jobs) or fetch_source (greenhouse/lever).' },
-        source_job_id: { type: 'string', description: 'Source-assigned stable job id, taken verbatim from a fetch_source summary.' },
+        source: {
+          type: 'string',
+          enum: ['greenhouse', 'lever', 'ashby', 'google_jobs'],
+          description:
+            'Source identifier — must match a value returned by search_jobs (google_jobs) or fetch_source (greenhouse/lever/ashby).',
+        },
+        source_job_id: {
+          type: 'string',
+          description: 'Source-assigned stable job id, taken verbatim from a fetch_source summary.',
+        },
       },
       required: ['source', 'source_job_id'],
     },
@@ -268,7 +314,11 @@ export const queryJobLeads: McpToolDefinition = {
           enum: ['new', 'reviewed', 'queued', 'applied', 'rejected', 'archived'],
           description: 'Filter to one pipeline status. Omit for any non-closed status.',
         },
-        source: { type: 'string', enum: ['greenhouse', 'lever', 'google_jobs'], description: 'Filter to one source.' },
+        source: {
+          type: 'string',
+          enum: ['greenhouse', 'lever', 'ashby', 'google_jobs'],
+          description: 'Filter to one source.',
+        },
         min_rules_score: {
           type: 'integer',
           minimum: 0,
@@ -279,7 +329,10 @@ export const queryJobLeads: McpToolDefinition = {
           type: 'string',
           description: 'ISO 8601. Only return leads with first_seen_at >= since. Use for "what came in this week".',
         },
-        company: { type: 'string', description: 'Exact company match (case-insensitive). Use for "show me Stripe leads".' },
+        company: {
+          type: 'string',
+          description: 'Exact company match (case-insensitive). Use for "show me Stripe leads".',
+        },
         not_yet_llm_scored: {
           type: 'boolean',
           description: 'Only return leads where llm_score IS NULL. Useful for Phase 3 daily-briefing pre-rank.',
@@ -288,7 +341,8 @@ export const queryJobLeads: McpToolDefinition = {
           type: 'integer',
           minimum: 1,
           maximum: 100,
-          description: 'Max rows to return (default 20, cap 100). For broad surfacing use 5-10; for follow-up queries 20-50.',
+          description:
+            'Max rows to return (default 20, cap 100). For broad surfacing use 5-10; for follow-up queries 20-50.',
         },
         order_by: {
           type: 'string',
@@ -343,7 +397,8 @@ export const updateJobLeadStatus: McpToolDefinition = {
         },
         reason: {
           type: 'string',
-          description: 'Optional one-line reason (stored in closed_reason for archived, otherwise discarded). E.g. "candidate not interested", "below comp floor", "applied to similar role earlier".',
+          description:
+            'Optional one-line reason (stored in closed_reason for archived, otherwise discarded). E.g. "candidate not interested", "below comp floor", "applied to similar role earlier".',
         },
       },
       required: ['id', 'status'],
@@ -370,32 +425,70 @@ export const discoverAtsBoard: McpToolDefinition = {
   tool: {
     name: 'discover_ats_board',
     description:
-      "Given a company's careers page URL, fetch it and detect whether they use Greenhouse or Lever as their ATS. Returns `{ ats: 'greenhouse'|'lever'|null, token: string|null, confidence: 'high'|'none' }`. Useful when the candidate wants to add a new target company to the scraping list — call this to grab the board token, then update `ats-targets.json` (a separate step, not in this tool). Read-only — does NOT modify the seed list.",
+      "Add a company to the employer-board watchlist from a Greenhouse / Lever / Ashby board link (e.g. https://job-boards.greenhouse.io/<board>, https://jobs.lever.co/<board>, https://jobs.ashbyhq.com/<board>, or a posting URL on one of them). The host does NOT open careers pages: if you only have a company's careers page, read it yourself (WebFetch) and pass the board link you find there. Verifies the board through that ATS's public API and adds it to the watchlist — from then on the scheduled board sweep and `fetch_source` cover it, with no file edit. Returns `{ ats: 'greenhouse'|'lever'|'ashby'|null, token, confidence: 'high'|'none', verified, added, already_listed?, watchlist_id?, company?, tier?, state?, blocked_by_owner?, postings_on_board?, reason? }`. `already_listed: true` means it was already watched (a retired board that answers again is made active). `blocked_by_owner: true` means the candidate paused this company's board — it stays paused; tell the candidate rather than retrying. `verified: false` means the board did not answer — nothing was added. `reason: 'not_a_board_link'` means the URL is not a link on one of those three ATSs — find the board link on the page, or the company uses another system and there is nothing to add. Use when the candidate asks to watch / track / add a company.",
     inputSchema: {
       type: 'object' as const,
       properties: {
         careers_url: {
           type: 'string',
-          description: 'Full http(s) URL to the company\'s careers/jobs page (e.g., "https://www.anthropic.com/careers").',
+          description:
+            'A Greenhouse / Lever / Ashby board or posting URL (e.g., "https://jobs.ashbyhq.com/acme"). Not a careers page: the host never fetches a page.',
+        },
+        company: {
+          type: 'string',
+          description:
+            'The company name to show on its leads (e.g., "Acme"). Pass it whenever you know it; without it the board token is used as the name.',
+        },
+        tier: {
+          type: 'string',
+          enum: ['A', 'B', 'C'],
+          description: 'Priority tier for `fetch_source` scans (A = top targets). Defaults to B.',
         },
       },
       required: ['careers_url'],
     },
-    annotations: { readOnlyHint: true },
+    annotations: { readOnlyHint: false },
   },
   async handler(args) {
     const careers_url = args.careers_url as string;
     if (!careers_url) return err('careers_url is required');
-    const res = await sendAction<{ ats: string | null; token: string | null; confidence: string; http_status?: number; error?: string }>(
-      'career_pilot.discover_ats_board',
-      { careers_url },
-    );
+    const res = await sendAction<{
+      ats: string | null;
+      token: string | null;
+      confidence: string;
+      verified?: boolean;
+      added?: boolean;
+      already_listed?: boolean;
+      company?: string;
+      reason?: string;
+      blocked_by_owner?: boolean;
+      error?: string;
+    }>('career_pilot.discover_ats_board', { careers_url, company: args.company ?? null, tier: args.tier ?? null });
     if (!res.ok) return actionErr('discover_ats_board', res.error);
-    const { ats, token, confidence } = res.data;
-    if (ats && token) {
-      return ok(`Detected: ${ats} board token "${token}" (confidence ${confidence}).`, res.data);
+    const { ats, token, verified, added, already_listed, company, reason, blocked_by_owner } = res.data;
+    if (ats && token && verified && blocked_by_owner) {
+      return ok(
+        `${company ?? token} (${ats} board "${token}") is on the watchlist but PAUSED by the candidate — it stays paused. Tell the candidate; do not retry.`,
+        res.data,
+      );
     }
-    return ok(`No ATS detected at ${careers_url}.`, res.data);
+    if (ats && token && verified) {
+      const what = added ? 'Added to the watchlist' : already_listed ? 'Already on the watchlist' : 'Verified';
+      return ok(`${what}: ${company ?? token} (${ats} board "${token}").`, res.data);
+    }
+    if (ats && token) {
+      return ok(
+        `Found ${ats} board "${token}" but it did not verify (${reason ?? 'no answer'}) — nothing added.`,
+        res.data,
+      );
+    }
+    if (reason === 'not_a_board_link') {
+      return ok(
+        `${careers_url} is not a Greenhouse / Lever / Ashby board link — nothing added. Read the careers page yourself and pass the board link it points to; if there is none, the company uses another system.`,
+        res.data,
+      );
+    }
+    return ok(`No supported ATS board detected at ${careers_url} — nothing added.`, res.data);
   },
 };
 
@@ -474,13 +567,10 @@ export const rankLeads: McpToolDefinition = {
     // job_leads. Persona's silent-skip path doesn't reach here — by the
     // time we have `scored`, we already have at least one valid score.
     const briefHash = computeBriefHash(brief);
-    const writeRes = await sendAction<{ updated: number }>(
-      'career_pilot.write_llm_scores',
-      {
-        scored_leads: scored,
-        brief_hash: briefHash,
-      },
-    );
+    const writeRes = await sendAction<{ updated: number }>('career_pilot.write_llm_scores', {
+      scored_leads: scored,
+      brief_hash: briefHash,
+    });
     if (!writeRes.ok) return actionErr('rank_leads', writeRes.error);
 
     const total = scored.length;
@@ -540,7 +630,7 @@ export const closeStaleLeads: McpToolDefinition = {
   tool: {
     name: 'close_stale_leads',
     description:
-      "Periodic sweep: closes job_leads whose last_seen_at is older than the configured threshold (default 14 days). Returns `{ closed_count, threshold_days, cutoff }`. Promoted leads (those with application_id set) are excluded so application history is preserved. Already-closed leads are untouched. This is housekeeping — the persona should call it on the scheduled trigger and emit only an <internal> audit; no <message> block. Threshold + cadence are configurable via the `close_detection_*` preferences.",
+      'Periodic sweep: closes job_leads whose last_seen_at is older than the configured threshold (default 14 days). Returns `{ closed_count, threshold_days, cutoff }`. Promoted leads (those with application_id set) are excluded so application history is preserved. Already-closed leads are untouched. This is housekeeping — the persona should call it on the scheduled trigger and emit only an <internal> audit; no <message> block. Threshold + cadence are configurable via the `close_detection_*` preferences.',
     inputSchema: {
       type: 'object' as const,
       properties: {},
@@ -561,4 +651,14 @@ export const closeStaleLeads: McpToolDefinition = {
   },
 };
 
-registerTools([searchJobs, fetchSource, recordJobLead, queryJobLeads, updateJobLeadStatus, discoverAtsBoard, rankLeads, queryKillerMatches, closeStaleLeads]);
+registerTools([
+  searchJobs,
+  fetchSource,
+  recordJobLead,
+  queryJobLeads,
+  updateJobLeadStatus,
+  discoverAtsBoard,
+  rankLeads,
+  queryKillerMatches,
+  closeStaleLeads,
+]);

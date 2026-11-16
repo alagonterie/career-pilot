@@ -29,7 +29,16 @@ function provider(name: string, status: ProviderStatus, over: Partial<ProviderSt
   }
 }
 
-const ALL_PROVIDERS = ['gmail', 'calendar', 'drive', 'serpapi', 'greenhouse', 'lever', 'portkey']
+const ALL_PROVIDERS = ['gmail', 'calendar', 'drive', 'serpapi', 'greenhouse', 'lever', 'ashby', 'portkey']
+
+// §24.200 D8 — a watched, freshly-swept employer-board sweep.
+const BOARDS_OK: NonNullable<ArchitectureData['board_sweep']> = {
+  enabled: true,
+  boards: 12,
+  running: false,
+  last_success_age_sec: 1800,
+  fresh: true,
+}
 const OBS: Observability = {
   spend_by_class: {
     chat: { microusd_24h: 0, buckets: [] },
@@ -141,6 +150,65 @@ describe('deriveNodeStatus (the honesty core)', () => {
     expect(deriveNodeStatus(sw, { ...ARCH, sweep: { last_run_age_sec: 600, fresh: false } }, MODE, OBS)).toBe('down')
   })
 
+  it('lights the employer-board node from sweep freshness; board telemetry only ambers it (§24.200 D8)', () => {
+    const boards = byId('host-boards')
+    const withBoards = (b: Partial<NonNullable<ArchitectureData['board_sweep']>>): ArchitectureData => ({
+      ...ARCH,
+      board_sweep: { ...BOARDS_OK, ...b },
+    })
+    // Older backend (no block) → idle, no claim.
+    expect(deriveNodeStatus(boards, ARCH, MODE, OBS)).toBe('idle')
+    // Fresh sweep + clean board telemetry → healthy.
+    expect(deriveNodeStatus(boards, withBoards({}), MODE, OBS)).toBe('healthy')
+    // Fresh sweep with no board telemetry in the window → still healthy (the sweep succeeded).
+    expect(deriveNodeStatus(boards, withBoards({}), MODE, obsWith())).toBe('healthy')
+    // No sweep has succeeded within the stale threshold → down.
+    expect(deriveNodeStatus(boards, withBoards({ fresh: false, last_success_age_sec: 30_000 }), MODE, OBS)).toBe('down')
+    expect(deriveNodeStatus(boards, withBoards({ fresh: false, last_success_age_sec: null }), MODE, OBS)).toBe('down')
+    // …except the very first sweep, still in flight → idle, not a false red.
+    expect(
+      deriveNodeStatus(boards, withBoards({ fresh: false, last_success_age_sec: null, running: true }), MODE, OBS),
+    ).toBe('idle')
+    // Nothing to judge → idle: switched off, no boards watched, or the system halted.
+    expect(deriveNodeStatus(boards, withBoards({ enabled: false, fresh: false }), MODE, OBS)).toBe('idle')
+    expect(deriveNodeStatus(boards, withBoards({ boards: 0, fresh: false }), MODE, OBS)).toBe('idle')
+    expect(deriveNodeStatus(boards, withBoards({ fresh: false }), { ...MODE, pause_state: 'killswitch' }, OBS)).toBe(
+      'idle',
+    )
+    // One board provider failing every call (e.g. 429s) ambers a fresh node —
+    // it never reddens it: one employer's board is that board's problem.
+    expect(
+      deriveNodeStatus(
+        boards,
+        withBoards({}),
+        MODE,
+        obsWith(provider('greenhouse', 'healthy'), provider('lever', 'down'), provider('ashby', 'healthy')),
+      ),
+    ).toBe('degraded')
+    // A board that moved/went away 404s, which the adapter records as ok
+    // (§24.184 D1) — healthy provider rows, so it cannot redden or amber the node.
+    expect(
+      deriveNodeStatus(boards, withBoards({}), MODE, obsWith(provider('lever', 'healthy', { requests_24h: 9 }))),
+    ).toBe('healthy')
+  })
+
+  it('reads the search supplement idle, not down, while its page budget is spent (§24.200 D8)', () => {
+    const jobs = byId('cont-jobs')
+    const down = obsWith(provider('serpapi', 'down'))
+    // Without the quota block (older backend) the telemetry decides.
+    expect(deriveNodeStatus(jobs, ARCH, MODE, down)).toBe('down')
+    expect(deriveNodeStatus(jobs, { ...ARCH, job_search: { quota_spent: false } }, MODE, down)).toBe('down')
+    // Budget spent → idle (at rest by design), whatever the telemetry says.
+    expect(deriveNodeStatus(jobs, { ...ARCH, job_search: { quota_spent: true } }, MODE, down)).toBe('idle')
+    expect(deriveNodeStatus(jobs, { ...ARCH, job_search: { quota_spent: true } }, MODE, OBS)).toBe('idle')
+    // Budget left + clean telemetry → healthy.
+    expect(deriveNodeStatus(jobs, { ...ARCH, job_search: { quota_spent: false } }, MODE, OBS)).toBe('healthy')
+    // The quota override is opt-in: an ordinary provider node ignores it.
+    expect(deriveNodeStatus(byId('cont-portkey'), { ...ARCH, job_search: { quota_spent: true } }, MODE, OBS)).toBe(
+      'healthy',
+    )
+  })
+
   it('gateway-folds the OneCLI node: down only when EVERY provider is down', () => {
     const gw = providerNode(['gmail', 'portkey'], 'gateway')
     // One down, one healthy → the gateway is up but impaired → degraded.
@@ -196,6 +264,33 @@ describe('ArchDiagram', () => {
     render(<ArchDiagram arch={ARCH} mode={MODE} obs={OBS} selectedId={null} onSelect={() => {}} />)
     expect(screen.getByTestId('arch-node-host-onecli')).toHaveAttribute('data-status', 'healthy')
     expect(screen.getByTestId('arch-node-cont-jobs')).toHaveAttribute('data-status', 'healthy')
+  })
+
+  it('draws the employer-board sweep as a HOST-tier node lit by its freshness (§24.200 D8)', () => {
+    const { rerender } = render(<ArchDiagram arch={ARCH} mode={MODE} obs={OBS} selectedId={null} onSelect={() => {}} />)
+    expect(byId('host-boards').region).toBe('host')
+    // No board_sweep block yet → idle, not a fake green or red.
+    expect(screen.getByTestId('arch-node-host-boards')).toHaveAttribute('data-status', 'idle')
+    rerender(
+      <ArchDiagram
+        arch={{ ...ARCH, board_sweep: BOARDS_OK }}
+        mode={MODE}
+        obs={OBS}
+        selectedId={null}
+        onSelect={() => {}}
+      />,
+    )
+    expect(screen.getByTestId('arch-node-host-boards')).toHaveAttribute('data-status', 'healthy')
+    expect(screen.getByTestId('arch-node-host-boards')).toHaveAccessibleName('Employer boards — Healthy')
+  })
+
+  it('lays the host row out without overlapping nodes (four aligned columns)', () => {
+    const host = NODES.filter((n) => n.region === 'host').sort((a, b) => a.x - b.x)
+    expect(host.map((n) => n.id)).toEqual(['host-db', 'host-router', 'host-onecli', 'host-boards'])
+    for (let i = 1; i < host.length; i++) expect(host[i].x).toBeGreaterThanOrEqual(host[i - 1].x + host[i - 1].w)
+    const band = { x: 8, w: 744 }
+    expect(host[0].x).toBeGreaterThanOrEqual(band.x)
+    expect(host[host.length - 1].x + host[host.length - 1].w).toBeLessThanOrEqual(band.x + band.w)
   })
 
   it('renders the owner as an actor — no status suffix in its accessible name', () => {
@@ -365,28 +460,76 @@ describe('NodePanel', () => {
     const jobs = byId('cont-jobs')
     const prose = `${jobs.label} ${jobs.description}`
     expect(prose).not.toMatch(/serpapi/i)
-    // §24.122: the node aggregates a key-less ATS fallback too, so the prose
-    // must name that second tier — without leaking a vendor brand.
-    expect(jobs.description).toMatch(/fall(s)? back/i)
-    expect(jobs.description).toMatch(/no key|need no key/i)
-    expect(prose).not.toMatch(/greenhouse|lever/i)
+    // §24.200 D8: re-described as the search-index SUPPLEMENT on a page budget
+    // (the employer boards are the primary now) — no longer a "fallback" story.
+    expect(jobs.description).toMatch(/supplement/i)
+    expect(jobs.description).toMatch(/commercial job-search index/i)
+    expect(jobs.description).toMatch(/budget/i)
+    expect(jobs.description).toMatch(/idle, not down/i)
+    expect(jobs.description).not.toMatch(/fall(s)? back/i)
     // Quality bar still holds without naming the vendor: a resolving source link.
     render(<NodePanel node={jobs} status="healthy" arch={ARCH} mode={MODE} obs={OBS} onClose={() => {}} />)
     expect(screen.getByRole('link', { name: /scrape-jobs\.ts/ })).toBeInTheDocument()
   })
 
+  it('names no job-source vendor brand anywhere on the public map (§24.63 D1 / §24.200 D8)', () => {
+    // The search vendor is aliased for legal reasons, and the board APIs
+    // (including the newly-added one) are described generically — the provider
+    // slugs are data, never prose.
+    for (const n of NODES) {
+      const prose = `${n.label} ${n.description} ${n.linkLabel ?? ''} ${n.link ?? ''}`
+      expect(prose, n.id).not.toMatch(/serpapi|greenhouse|\blever\b|ashby/i)
+    }
+    const boards = byId('host-boards')
+    expect(boards.description).toMatch(/employers’ own public job boards/i)
+    expect(boards.description).toMatch(/need no key/i)
+    expect(boards.description).toMatch(/primary job source/i)
+  })
+
   it('maps the OneCLI gateway only to credential-injected providers (§24.122)', () => {
     // The gateway's health must reflect only traffic that actually rides the
-    // proxy with an injected secret. greenhouse/lever are host-side, key-less
-    // public fetches — folding them in here misattributes non-gateway traffic
-    // (the §24.69 D6 "union" bug). cont-jobs now maps ONLY serpapi too (§24.184):
-    // the ATS scrapers' dead-board-token 404s are fail-soft config drift, not API
-    // failures, and were reddening the node — the badge tracks the primary API.
+    // proxy with an injected secret. The employer-board adapters are host-side,
+    // key-less public fetches — folding them in here misattributes non-gateway
+    // traffic (the §24.69 D6 "union" bug). cont-jobs maps ONLY serpapi (§24.184);
+    // the board adapters (greenhouse/lever/ashby) have their own host node
+    // (§24.200 D8), where a dead board token cannot redden anything.
     const gateway = byId('host-onecli')
     expect(gateway.providers).toEqual(['gmail', 'calendar', 'drive', 'serpapi', 'portkey'])
-    expect(gateway.providers).not.toContain('greenhouse')
-    expect(gateway.providers).not.toContain('lever')
+    for (const ats of ['greenhouse', 'lever', 'ashby']) {
+      expect(gateway.providers).not.toContain(ats)
+      expect(byId('cont-jobs').providers).not.toContain(ats)
+    }
     expect(byId('cont-jobs').providers).toEqual(['serpapi'])
+    expect(byId('host-boards').providers).toEqual(['greenhouse', 'lever', 'ashby'])
+  })
+
+  it('shows the board-sweep facts — freshness + a board COUNT, never which boards (§24.200 D8)', () => {
+    render(
+      <NodePanel
+        node={byId('host-boards')}
+        status="healthy"
+        arch={{ ...ARCH, board_sweep: BOARDS_OK }}
+        mode={MODE}
+        obs={OBS}
+        onClose={() => {}}
+      />,
+    )
+    expect(screen.getByText('Last good sweep')).toBeInTheDocument()
+    expect(screen.getByText('30m ago')).toBeInTheDocument()
+    expect(screen.getByText('Boards watched')).toBeInTheDocument()
+    expect(screen.getByText('12')).toBeInTheDocument()
+    // The adapters' aggregate telemetry follows (3 providers × 2 requests).
+    expect(screen.getByText('Requests 24h')).toBeInTheDocument()
+    expect(screen.getByText('6')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /ats-sweep\.ts/ })).toBeInTheDocument()
+  })
+
+  it('explains a spent search budget as rest by design, not a fault (§24.200 D8)', () => {
+    const arch: ArchitectureData = { ...ARCH, job_search: { quota_spent: true } }
+    render(<NodePanel node={byId('cont-jobs')} status="idle" arch={arch} mode={MODE} obs={OBS} onClose={() => {}} />)
+    expect(screen.getByText('Search budget')).toBeInTheDocument()
+    expect(screen.getByText('spent for now')).toBeInTheDocument()
+    expect(screen.getByTestId('arch-idle-note')).toHaveTextContent(/search budget is spent/i)
   })
 
   it('anchors the orchestrator source in the agent-runner tree, not the host provider config (§24.63)', () => {

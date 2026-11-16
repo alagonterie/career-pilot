@@ -46,6 +46,8 @@ export interface RulesScoreResult {
 const SOURCE_MULTIPLIERS: Record<Source, number> = {
   greenhouse: 1.1,
   lever: 1.1,
+  // An employer's own Ashby board: direct by construction, like the two above.
+  ashby: 1.1,
   // Aggregator (Google for Jobs via SerpApi, §24.50) — neutral, no gentle
   // up-bias: it's not a source-of-record ATS, and the query itself is the
   // relevance filter. Keep at 1.0 so its leads compete on raw signal.

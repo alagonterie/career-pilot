@@ -271,6 +271,15 @@ async function sweep(): Promise<void> {
     reapStaleSandboxSessions();
     // MODULE-HOOK:career-pilot-sandbox-reap:end
 
+    // 0d. Direct employer-board sweep (STRATEGY.md §24.200 D5): start it when
+    // `ats_sweep_cron` says it is due. Detached + single-flight — the tick never
+    // waits on it (board fetches must not stall container wakes); not started
+    // under halted/killswitch; missed occurrences collapse into one run.
+    // MODULE-HOOK:career-pilot-ats-sweep:start
+    const { maybeStartScheduledSweep } = await import('./modules/career-pilot/ats-sweep.js');
+    maybeStartScheduledSweep(getDb());
+    // MODULE-HOOK:career-pilot-ats-sweep:end
+
     const sessions = getActiveSessions();
     for (const session of sessions) {
       await sweepSession(session);

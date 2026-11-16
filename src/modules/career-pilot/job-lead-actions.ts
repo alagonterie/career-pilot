@@ -6,10 +6,11 @@
  *                                          rules_score, UPSERTs into job_leads
  *   - career_pilot.query_job_leads       — typed-args SELECT
  *   - career_pilot.update_job_lead_status — pipeline-state UPDATE
- *   - career_pilot.discover_ats_board    — regex-detect ATS provider+token
- *                                          from a careers page URL
+ *   - career_pilot.discover_ats_board    — parse ATS provider+token from a
+ *                                          board link (never fetched) and add a
+ *                                          verified board to ats_watchlist
  *   - career_pilot.fetch_source          — aggregate ATS list across
- *                                          seed-targets, returns lightweight
+ *                                          active ats_watchlist boards, returns lightweight
  *                                          PostingSummary[] (subagent's
  *                                          inline-cap budget) and stashes
  *                                          full JobLeadPayloads in the
@@ -29,15 +30,24 @@ import { getConfig } from '../../get-config.js';
 import { insertMessage } from '../../db/session-db.js';
 import { log } from '../../log.js';
 import * as payloadCache from './scrape-jobs/payload-cache.js';
-import { getAdapter } from './scrape-jobs/sources.js';
+import { getAdapter, toUtcIso } from './scrape-jobs/sources.js';
 import { filterTargets } from './scrape-jobs/targets.js';
-import type { JobLeadPayload, PostingSummary, Source, SourcePriority } from './scrape-jobs/types.js';
+import {
+  ATS_SOURCES,
+  type AtsSource,
+  type JobLeadPayload,
+  type PostingSummary,
+  type Source,
+  type SourcePriority,
+} from './scrape-jobs/types.js';
 import type { Session } from '../../types.js';
 
+import { ensureSeededOnce, isValidBoardToken, upsertBoard } from './ats-watchlist.js';
 import { computeFingerprint } from './lead-fingerprint.js';
 import { checkLeadGuard, resolveApplyLinkKind, type LeadRefusalReason } from './lead-guard.js';
 import { runKitCleanupSweep } from './interview-kit-actions.js';
 import { computeRulesScore, profileFromRow } from './lead-rules-score.js';
+import { recordSearchRun, searchPayloadSite } from './search-quota.js';
 import { isWithinQuietHours, readProactiveGateConfig, startOfLocalDayUtcIso } from './quiet-hours.js';
 
 // ── Response writer (mirrors actions.ts) ──────────────────────────────────
@@ -95,7 +105,7 @@ function toSummary(p: JobLeadPayload): PostingSummary {
 
 // ── record_job_lead ────────────────────────────────────────────────────────
 
-const VALID_SOURCES = new Set<Source>(['greenhouse', 'lever', 'google_jobs']);
+const VALID_SOURCES = new Set<Source>([...ATS_SOURCES, 'google_jobs']);
 /** The job_leads lifecycle vocabulary — exported as the ONE source of truth so the
  * owner-only /admin Leads tab (§24.173) shares the exact allow-list the agent's
  * `update_job_lead_status` enforces, rather than re-declaring it. */
@@ -303,7 +313,9 @@ export function upsertJobLead(db: Database.Database, fp: JobLeadPayload): Upsert
     has_equity: fp.has_equity == null ? null : fp.has_equity ? 1 : 0,
     description_html: fp.description_html ?? null,
     description_text: fp.description_text ?? null,
-    source_posted_at: fp.source_posted_at ?? null,
+    // Canonical UTC for every writer: killer-match compares this column as text
+    // against a `…Z` cutoff, so a stored offset would skew its window.
+    source_posted_at: toUtcIso(fp.source_posted_at),
     now,
     rules_score: score,
     rules_score_reasons: JSON.stringify(reasons),
@@ -718,8 +730,12 @@ export function buildKillerMatchEligibilityClause(
   prefs.sourceAllowList.forEach((src, i) => {
     params[`src_${i}`] = src;
   });
+  // §24.200 D6e: never alert on a posting the owner already applied to (from the
+  // Leads tab the link lands before any email does) or set aside.
   const whereSql = `killer_match_pushed_at IS NULL
         AND closed_at IS NULL
+        AND application_id IS NULL
+        AND status NOT IN ('applied', 'archived')
         AND rules_score >= @min_rules_score
         AND source IN (${placeholders})
         AND source_posted_at IS NOT NULL
@@ -833,16 +849,209 @@ function readCloseDetectionThresholdDays(db: Database.Database): number {
  * directly implies the posting is no longer being scraped. Promoted leads
  * (`application_id` set) are excluded — the application history outweighs the
  * pool-cleanliness signal.
+ *
+ * §24.200 D6c: scoped to SEARCH-sourced leads. A board lead's presence is
+ * refreshed by the sweep and its closure is decided by close-on-absence
+ * (`closeAbsentLeads`) from a real fetch of its board; the age of `last_seen_at`
+ * says nothing about it, so this rule must never close one — WHILE its board is
+ * being swept. A board lead whose board is not an `active` watchlist row (paused
+ * by "block company", retired as absent, or never watched) has no
+ * close-on-absence path any more, so it falls back to this rule: its
+ * last_seen_at stopped advancing when the sweeps stopped, and it ages out.
  */
+export const STALE_RULE_SOURCES: readonly Source[] = ['google_jobs'];
+
 export function buildCloseStaleEligibilityClause(
   thresholdDays: number,
   now: Date,
 ): { whereSql: string; params: Record<string, unknown> } {
   const cutoff = new Date(now.getTime() - thresholdDays * 86_400_000).toISOString();
+  const params: Record<string, unknown> = { cutoff };
+  const placeholders = STALE_RULE_SOURCES.map((src, i) => {
+    params[`stale_src_${i}`] = src;
+    return `@stale_src_${i}`;
+  }).join(', ');
+  const boardPlaceholders = ATS_SOURCES.map((src, i) => {
+    params[`board_src_${i}`] = src;
+    return `@board_src_${i}`;
+  }).join(', ');
   const whereSql = `closed_at IS NULL
             AND application_id IS NULL
+            AND (source IN (${placeholders})
+                 OR (source IN (${boardPlaceholders})
+                     AND NOT EXISTS (SELECT 1 FROM ats_watchlist w
+                                      WHERE w.ats = job_leads.source
+                                        AND w.token = job_leads.source_board_token
+                                        AND w.state = 'active')))
             AND last_seen_at < @cutoff`;
-  return { whereSql, params: { cutoff } };
+  return { whereSql, params };
+}
+
+// ── board-lead lifecycle primitives (§24.200 D6c) ─────────────────────────
+//
+// The deterministic sweep calls these after each fetch of one watched board.
+// They are pure DB operations (no fetch, no config), synchronous, and safe to
+// run inside the caller's transaction. `presentIds` is ALWAYS the board's full
+// id list from an `ok` fetch — before any title / location / age filter — since
+// a filtered-out posting is still on the board.
+
+const ID_CHUNK = 500;
+
+function chunks<T>(xs: readonly T[]): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < xs.length; i += ID_CHUNK) out.push(xs.slice(i, i + ID_CHUNK));
+  return out;
+}
+
+/**
+ * Stamp `last_seen_at` on every known OPEN lead of `source` whose id is still on
+ * the board. Returns how many leads were refreshed.
+ */
+export function markLeadsPresent(
+  db: Database.Database,
+  source: AtsSource,
+  presentIds: readonly string[],
+  now: Date = new Date(),
+): number {
+  let n = 0;
+  const nowIso = now.toISOString();
+  for (const part of chunks(presentIds)) {
+    const ph = part.map(() => '?').join(', ');
+    n += db
+      .prepare(
+        `UPDATE job_leads SET last_seen_at = ?
+          WHERE source = ? AND closed_at IS NULL AND source_job_id IN (${ph})`,
+      )
+      .run(nowIso, source, ...part).changes;
+  }
+  return n;
+}
+
+export interface CloseAbsentResult {
+  /** Ids of the leads closed with closed_reason='absent'. */
+  closed: string[];
+  /** Open `queued` leads whose posting came down: NOT closed — the owner meant
+   *  to apply, so the run summary surfaces them instead. */
+  queued: Array<{ id: string; title: string; company: string }>;
+  /** True when an `ok` fetch returned zero postings for a board that had open
+   *  leads — treated as a bad response, so nothing was closed. */
+  suspect: boolean;
+}
+
+/**
+ * Close-on-absence for ONE board after an `ok` fetch: an open lead of
+ * (source, boardToken) whose id is not in `presentIds` is closed with
+ * closed_reason='absent' — except a promoted lead (`application_id` set) or one
+ * the owner applied to / queued (requisitions routinely come down right after
+ * the candidate applies). Call it only for an `ok` fetch: a failed fetch or an
+ * `absent` board must close nothing.
+ */
+export function closeAbsentLeads(
+  db: Database.Database,
+  source: AtsSource,
+  boardToken: string,
+  presentIds: readonly string[],
+  now: Date = new Date(),
+): CloseAbsentResult {
+  const open = db
+    .prepare(
+      `SELECT id, source_job_id, title, company, status, application_id
+         FROM job_leads
+        WHERE source = ? AND source_board_token = ? AND closed_at IS NULL`,
+    )
+    .all(source, boardToken) as Array<{
+    id: string;
+    source_job_id: string;
+    title: string;
+    company: string;
+    status: string;
+    application_id: string | null;
+  }>;
+  if (open.length === 0) return { closed: [], queued: [], suspect: false };
+  if (presentIds.length === 0) {
+    log.warn('close-on-absence: ok fetch returned an empty board that had open leads — closing nothing', {
+      source,
+      boardToken,
+      open: open.length,
+    });
+    return { closed: [], queued: [], suspect: true };
+  }
+
+  const present = new Set(presentIds);
+  const gone = open.filter((l) => !present.has(l.source_job_id));
+  const queued = gone
+    .filter((l) => l.application_id == null && l.status === 'queued')
+    .map((l) => ({ id: l.id, title: l.title, company: l.company }));
+  const toClose = gone.filter((l) => l.application_id == null && l.status !== 'applied' && l.status !== 'queued');
+
+  const nowIso = now.toISOString();
+  const close = db.prepare(
+    `UPDATE job_leads SET closed_at = ?, closed_reason = 'absent'
+      WHERE id = ? AND closed_at IS NULL AND application_id IS NULL AND status NOT IN ('applied', 'queued')`,
+  );
+  const closed: string[] = [];
+  for (const l of toClose) {
+    if (close.run(nowIso, l.id).changes > 0) closed.push(l.id);
+  }
+  if (closed.length > 0) log.info('close-on-absence: leads closed', { source, boardToken, closed: closed.length });
+  return { closed, queued, suspect: false };
+}
+
+/**
+ * Reopen leads of `source` that were closed as `absent` and are back on the
+ * board: clears closed_at / closed_reason and stamps last_seen_at. A lead closed
+ * for any other reason (archived, not interested, stale) stays closed. Returns
+ * the reopened ids.
+ */
+export function reopenAbsentLeads(
+  db: Database.Database,
+  source: AtsSource,
+  presentIds: readonly string[],
+  now: Date = new Date(),
+): string[] {
+  const reopened: string[] = [];
+  const nowIso = now.toISOString();
+  for (const part of chunks(presentIds)) {
+    const ph = part.map(() => '?').join(', ');
+    const rows = db
+      .prepare(
+        `SELECT id FROM job_leads
+          WHERE source = ? AND closed_at IS NOT NULL AND closed_reason = 'absent' AND source_job_id IN (${ph})`,
+      )
+      .all(source, ...part) as Array<{ id: string }>;
+    const reopen = db.prepare(
+      `UPDATE job_leads SET closed_at = NULL, closed_reason = NULL, last_seen_at = ?
+        WHERE id = ? AND closed_reason = 'absent'`,
+    );
+    for (const r of rows) if (reopen.run(nowIso, r.id).changes > 0) reopened.push(r.id);
+  }
+  if (reopened.length > 0) log.info('close-on-absence: leads reopened', { source, reopened: reopened.length });
+  return reopened;
+}
+
+export interface BoardPresenceResult extends CloseAbsentResult {
+  reopened: string[];
+  refreshed: number;
+}
+
+/**
+ * The three primitives in the order one `ok` board fetch needs them, in one
+ * transaction: reopen what came back, stamp what is present, close what is gone.
+ * (`refreshed` includes the reopened leads, which are open again by then.)
+ */
+export function applyBoardPresence(
+  db: Database.Database,
+  source: AtsSource,
+  boardToken: string,
+  presentIds: readonly string[],
+  now: Date = new Date(),
+): BoardPresenceResult {
+  return db.transaction(() => {
+    const reopened = presentIds.length > 0 ? reopenAbsentLeads(db, source, presentIds, now) : [];
+    const refreshed = markLeadsPresent(db, source, presentIds, now);
+    const closeRes = closeAbsentLeads(db, source, boardToken, presentIds, now);
+    return { ...closeRes, reopened, refreshed };
+  })();
 }
 
 export async function handleCloseStaleLeads(
@@ -854,6 +1063,7 @@ export async function handleCloseStaleLeads(
   try {
     const db = getDb();
     const thresholdDays = readCloseDetectionThresholdDays(db);
+    ensureSeededOnce(db); // the clause asks the watchlist which boards are swept
     const now = new Date();
     const nowIso = now.toISOString();
     const { whereSql, params } = buildCloseStaleEligibilityClause(thresholdDays, now);
@@ -968,6 +1178,7 @@ export async function handleCheckTriggerEligibility(
 
     if (trigger === 'close-detection') {
       const thresholdDays = readCloseDetectionThresholdDays(db);
+      ensureSeededOnce(db);
       const { whereSql, params } = buildCloseStaleEligibilityClause(thresholdDays, new Date());
       const row = db.prepare(`SELECT COUNT(*) AS n FROM job_leads WHERE ${whereSql}`).get(params) as { n: number };
       writeResponse(inDb, requestId, { ok: true, data: { trigger, eligible: row.n > 0, count: row.n } });
@@ -989,10 +1200,51 @@ export async function handleCheckTriggerEligibility(
 
 // ── discover_ats_board ─────────────────────────────────────────────────────
 
-const GREENHOUSE_URL_RE =
-  /https?:\/\/(?:boards\.greenhouse\.io|boards-api\.greenhouse\.io)\/(?:embed\/job_board\?for=)?([\w-]+)/i;
-const LEVER_URL_RE = /https?:\/\/jobs\.lever\.co\/([\w-]+)/i;
+// Board references as they appear in a careers page's HTML (links, embeds,
+// iframes). Each captures the board token. Greenhouse: the current
+// job-boards.* host, the legacy boards.* host (incl. the embed and embed-js
+// `?for=` forms) and the API host. Ashby: the hosted board / embed host and the
+// public posting API.
+const ATS_REF_PATTERNS: ReadonlyArray<{ ats: AtsSource; re: RegExp }> = [
+  {
+    ats: 'greenhouse',
+    re: /https?:\/\/(?:job-boards|boards)\.(?:eu\.)?greenhouse\.io\/embed\/job_board(?:\/js)?\?for=([\w.-]+)/i,
+  },
+  { ats: 'greenhouse', re: /https?:\/\/boards-api\.greenhouse\.io\/v1\/boards\/([\w.-]+)/i },
+  { ats: 'greenhouse', re: /https?:\/\/(?:job-boards|boards)\.(?:eu\.)?greenhouse\.io\/(?!embed\b)([\w.-]+)/i },
+  { ats: 'lever', re: /https?:\/\/jobs\.(?:eu\.)?lever\.co\/([\w.-]+)/i },
+  { ats: 'ashby', re: /https?:\/\/api\.ashbyhq\.com\/posting-api\/job-board\/([\w.-]+)/i },
+  { ats: 'ashby', re: /https?:\/\/jobs\.ashbyhq\.com\/([\w.-]+)/i },
+];
 
+/** First ATS board reference in `text` with a well-formed token, or null. Exported for tests. */
+export function detectAtsBoard(text: string): { ats: AtsSource; token: string } | null {
+  for (const { ats, re } of ATS_REF_PATTERNS) {
+    const m = re.exec(text);
+    if (m && isValidBoardToken(m[1])) return { ats, token: m[1] };
+  }
+  return null;
+}
+
+/**
+ * Parse a Greenhouse / Lever / Ashby board link and — once the board's public
+ * API answers — add it to the watchlist as origin 'owner' (§24.200 D7), so the
+ * next sweep and every `fetch_source` reach it with no file edit.
+ *
+ * The host NEVER fetches the supplied URL (§24.200 D7, §24.201 D7): it parses
+ * `{ats, token}` against fixed per-ATS host patterns and calls only the
+ * adapter's own API host. A careers page that merely embeds a board is answered
+ * `reason:'not_a_board_link'` — the agent reads the page itself (in its
+ * container) and passes the board link it finds. An agent-supplied URL is
+ * untrusted (job-page text can steer the model), and a host-side fetch of it
+ * would be a probe of the VM's own network.
+ *
+ * An unverified board is reported but not added. Re-adding a RETIRED (`absent`)
+ * board that answers again reactivates it; a PAUSED board stays paused — a pause
+ * is the owner's "block company", and only the owner lifts it — and is reported
+ * `blocked_by_owner:true`. Optional payload: `company` (defaults to the token),
+ * `tier` (A/B/C, default B).
+ */
 export async function handleDiscoverAtsBoard(
   content: Record<string, unknown>,
   _session: Session,
@@ -1001,6 +1253,8 @@ export async function handleDiscoverAtsBoard(
   const requestId = reqId(content);
   const p = payload(content);
   const careers_url = p.careers_url as string;
+  const companyArg = typeof p.company === 'string' ? p.company.trim() : '';
+  const tierArg = p.tier as SourcePriority | null | undefined;
 
   if (!careers_url || !/^https?:\/\//i.test(careers_url)) {
     writeResponse(inDb, requestId, {
@@ -1009,40 +1263,76 @@ export async function handleDiscoverAtsBoard(
     });
     return;
   }
+  if (tierArg != null && tierArg !== 'A' && tierArg !== 'B' && tierArg !== 'C') {
+    writeResponse(inDb, requestId, {
+      ok: false,
+      error: { code: 'BAD_ARGS', message: 'tier must be A, B, or C' },
+    });
+    return;
+  }
 
   try {
-    const res = await fetch(careers_url, {
-      headers: { 'User-Agent': 'career-pilot/0.1 ats-discovery' },
-      redirect: 'follow',
-    });
-    if (!res.ok) {
+    // Only the URL string itself is inspected (anchored on its host, so a board
+    // link inside a query string of some other site is not taken as one).
+    const detected = /^https?:\/\/(?:[\w-]+\.)*(?:greenhouse\.io|lever\.co|ashbyhq\.com)\//i.test(careers_url)
+      ? detectAtsBoard(careers_url)
+      : null;
+    if (!detected) {
       writeResponse(inDb, requestId, {
         ok: true,
-        data: { ats: null, token: null, confidence: 'none', http_status: res.status },
+        data: { ats: null, token: null, confidence: 'none', added: false, reason: 'not_a_board_link' },
       });
       return;
     }
-    const html = await res.text();
 
-    const ghMatch = GREENHOUSE_URL_RE.exec(html);
-    if (ghMatch) {
+    // Verify through the adapter's own fixed API host before trusting the token.
+    const board = await getAdapter(detected.ats).list(detected.token);
+    if (!board.ok) {
       writeResponse(inDb, requestId, {
         ok: true,
-        data: { ats: 'greenhouse', token: ghMatch[1], confidence: 'high' },
+        data: {
+          ats: detected.ats,
+          token: detected.token,
+          confidence: 'high',
+          verified: false,
+          added: false,
+          reason: board.absent ? 'board_absent' : `board_fetch_failed: ${board.error ?? 'unknown'}`,
+        },
       });
       return;
     }
-    const leverMatch = LEVER_URL_RE.exec(html);
-    if (leverMatch) {
+
+    const upsert = upsertBoard(getDb(), {
+      ats: detected.ats,
+      token: detected.token,
+      company: companyArg || detected.token,
+      tier: tierArg ?? undefined,
+      origin: 'owner',
+      reactivate: true, // revives a retired board only; never lifts an owner's pause
+    });
+    if (!upsert.ok) {
       writeResponse(inDb, requestId, {
-        ok: true,
-        data: { ats: 'lever', token: leverMatch[1], confidence: 'high' },
+        ok: false,
+        error: { code: 'BAD_ARGS', message: `cannot add board: ${upsert.error}` },
       });
       return;
     }
     writeResponse(inDb, requestId, {
       ok: true,
-      data: { ats: null, token: null, confidence: 'none' },
+      data: {
+        ats: detected.ats,
+        token: detected.token,
+        confidence: 'high',
+        verified: true,
+        added: upsert.inserted,
+        already_listed: !upsert.inserted,
+        watchlist_id: upsert.row.id,
+        company: upsert.row.company,
+        tier: upsert.row.tier,
+        state: upsert.row.state,
+        ...(upsert.row.state === 'paused' ? { blocked_by_owner: true } : {}),
+        postings_on_board: board.postings.length,
+      },
     });
   } catch (err) {
     log.warn('discover_ats_board fetch failed', { careers_url, err: err instanceof Error ? err.message : String(err) });
@@ -1098,7 +1388,9 @@ export async function handleFetchSource(
           summaries: [],
           boards_scanned: 0,
           postings_total: 0,
-          note: company ? `no seed entry for company "${company}"` : `no seed entries with priority ${priority}`,
+          note: company
+            ? `no active watchlist board for company "${company}"`
+            : `no active watchlist boards with priority ${priority}`,
         },
       });
       return;
@@ -1118,12 +1410,19 @@ export async function handleFetchSource(
     // ceil(limit / target_count), with a floor of 3 to keep small
     // scans (single-company) workable.
     const perBoardCap = Math.max(3, Math.ceil(limit / Math.max(1, targets.length)));
+    let boardsFailed = 0;
     for (const target of targets) {
       const adapter = getAdapter(target.source);
-      const postings = await adapter.list(target.token);
+      const board = await adapter.list(target.token);
+      if (!board.ok) {
+        // An absent or failing board contributes nothing; the sweep owns the
+        // watchlist bookkeeping for it.
+        boardsFailed += 1;
+        continue;
+      }
       let acceptedFromThisBoard = 0;
-      for (const posting of postings) {
-        // Fill in the company name from the seed entry (adapters don't have it).
+      for (const posting of board.postings) {
+        // Fill in the company name from the watchlist row (adapters don't have it).
         posting.company = target.company;
         // Optional since-filter.
         if (sinceTs && posting.source_posted_at) {
@@ -1156,6 +1455,7 @@ export async function handleFetchSource(
       data: {
         summaries: allSummaries,
         boards_scanned: targets.length,
+        boards_failed: boardsFailed,
         postings_total: allSummaries.length,
         rejected,
         rejected_total: rejectedTotal,
@@ -1217,6 +1517,7 @@ export async function handleStashJobPayloads(
     // later record_job_lead for one is NOT_IN_CACHE — the gate needs no prompt
     // cooperation from the subagent.
     const rejected: Partial<Record<LeadRefusalReason, number>> = {};
+    const rejectedBySite: Record<string, number> = {};
     for (const raw of payloads as JobLeadPayload[]) {
       // Defensive: the container builds these, but a malformed entry must not
       // poison the cache or crash the stash. Require the dedup key + the fields
@@ -1241,6 +1542,8 @@ export async function handleStashJobPayloads(
       const guard = checkLeadGuard(db, raw);
       if (!guard.ok) {
         rejected[guard.reason] = (rejected[guard.reason] ?? 0) + 1;
+        const site = searchPayloadSite(raw);
+        if (site) rejectedBySite[site] = (rejectedBySite[site] ?? 0) + 1;
         refreshLastSeenOfOpenLead(db, source, sourceJobId);
         continue;
       }
@@ -1249,6 +1552,13 @@ export async function handleStashJobPayloads(
     }
     const rejectedTotal = Object.values(rejected).reduce((a, b) => a + (b ?? 0), 0);
     if (rejectedTotal > 0) log.info('stash_job_payloads: payloads refused by insert guard', { rejected });
+    // §24.201 D6: the Leads tab's "last search" line (refusals by reason and by
+    // the site each refused hit came through). Best-effort.
+    recordSearchRun(db, {
+      rejected: rejected as Record<string, number>,
+      rejected_by_site: rejectedBySite,
+      stashed: summaries.length,
+    });
 
     writeResponse(inDb, requestId, {
       ok: true,

@@ -3,7 +3,7 @@
  * fetch records one request_telemetry row — 2xx ok, a board-absent 404/410 ok
  * (a dead/renamed seed token is config drift, not a failure), a real transient
  * failure (403/5xx / network throw) ok:0 with its status — and in-process cache
- * hits record nothing. The adapters' fail-soft contract (return []) is unchanged.
+ * hits record nothing. The adapters stay fail-soft: a failure is a {ok:false} result, never a throw (§24.200 D6b).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -67,7 +67,7 @@ describe('board-adapter telemetry', () => {
       vi.fn(async () => new Response('gone', { status: 404 })),
     );
     const out = await leverAdapter.list(freshToken());
-    expect(out).toEqual([]); // fail-soft contract unchanged — the scan still skips it
+    expect(out).toMatchObject({ ok: false, absent: true, postings: [] }); // reported absent; the scan still skips it
     expect(rows()).toHaveLength(1);
     // ok:1 so a stale seed token can't inflate the provider error rate / health streak.
     expect(rows()[0]).toMatchObject({ provider: 'lever', ok: 1, status_code: 404 });
@@ -79,7 +79,7 @@ describe('board-adapter telemetry', () => {
       vi.fn(async () => new Response('boom', { status: 503 })),
     );
     const out = await greenhouseAdapter.list(freshToken());
-    expect(out).toEqual([]);
+    expect(out).toMatchObject({ ok: false, absent: false, postings: [] });
     expect(rows()).toHaveLength(1);
     expect(rows()[0]).toMatchObject({ provider: 'greenhouse', ok: 0, status_code: 503 });
   });
@@ -92,7 +92,7 @@ describe('board-adapter telemetry', () => {
       }),
     );
     const out = await greenhouseAdapter.list(freshToken());
-    expect(out).toEqual([]);
+    expect(out).toMatchObject({ ok: false, absent: false, postings: [] });
     expect(rows()).toHaveLength(1);
     expect(rows()[0]).toMatchObject({ provider: 'greenhouse', ok: 0, status_code: null });
   });

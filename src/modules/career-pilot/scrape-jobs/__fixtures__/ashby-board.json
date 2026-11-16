@@ -1,0 +1,88 @@
+{
+  "apiVersion": "1",
+  "jobs": [
+    {
+      "id": "0b6c2f0e-1111-4a8e-9a8f-000000000001",
+      "title": "Senior Software Engineer, Platform",
+      "department": "Engineering",
+      "team": "Platform",
+      "employmentType": "FullTime",
+      "location": "Remote - United States",
+      "secondaryLocations": [{ "location": "Remote - Canada", "address": null }],
+      "publishedAt": "2026-11-10T17:04:12.000+00:00",
+      "isListed": true,
+      "isRemote": true,
+      "workplaceType": "Remote",
+      "address": { "postalAddress": { "addressCountry": "United States" } },
+      "jobUrl": "https://jobs.ashbyhq.com/acme/0b6c2f0e-1111-4a8e-9a8f-000000000001",
+      "applyUrl": "https://jobs.ashbyhq.com/acme/0b6c2f0e-1111-4a8e-9a8f-000000000001/application",
+      "descriptionHtml": "<p>Build the <b>platform</b> &amp; its tooling.</p>",
+      "descriptionPlain": "Build the platform & its tooling.",
+      "compensation": {
+        "compensationTierSummary": "$180K – $220K • Offers Equity",
+        "summaryComponents": [
+          {
+            "compensationType": "Salary",
+            "interval": "1 YEAR",
+            "currencyCode": "USD",
+            "minValue": 180000,
+            "maxValue": 220000
+          },
+          {
+            "compensationType": "EquityPercentage",
+            "interval": "NONE",
+            "currencyCode": null,
+            "minValue": null,
+            "maxValue": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "0b6c2f0e-2222-4a8e-9a8f-000000000002",
+      "title": "Staff Backend Engineer",
+      "department": "Engineering",
+      "team": "Core",
+      "employmentType": "FullTime",
+      "location": "New York, NY",
+      "secondaryLocations": [],
+      "publishedAt": "2026-11-12T09:00:00.000+00:00",
+      "isListed": true,
+      "isRemote": true,
+      "workplaceType": "Hybrid",
+      "address": { "postalAddress": { "addressCountry": "United States" } },
+      "jobUrl": "https://jobs.ashbyhq.com/acme/0b6c2f0e-2222-4a8e-9a8f-000000000002",
+      "applyUrl": "https://jobs.ashbyhq.com/acme/0b6c2f0e-2222-4a8e-9a8f-000000000002/application",
+      "descriptionHtml": "<p>Three days a week in our office. Remote-friendly culture.</p>",
+      "descriptionPlain": "Three days a week in our office. Remote-friendly culture."
+    },
+    {
+      "id": "0b6c2f0e-3333-4a8e-9a8f-000000000003",
+      "title": "Site Reliability Engineer",
+      "department": "Engineering",
+      "team": "Infra",
+      "employmentType": "Contract",
+      "location": "Berlin, Germany",
+      "secondaryLocations": [],
+      "publishedAt": "2026-11-01T12:00:00.000+00:00",
+      "isListed": true,
+      "isRemote": false,
+      "workplaceType": "OnSite",
+      "jobUrl": "https://jobs.ashbyhq.com/acme/0b6c2f0e-3333-4a8e-9a8f-000000000003",
+      "applyUrl": "https://jobs.ashbyhq.com/acme/0b6c2f0e-3333-4a8e-9a8f-000000000003/application",
+      "descriptionPlain": "Keep it up."
+    },
+    {
+      "id": "0b6c2f0e-4444-4a8e-9a8f-000000000004",
+      "title": "Unlisted Engineer (referral only)",
+      "employmentType": "FullTime",
+      "location": "Remote",
+      "publishedAt": "2026-11-11T12:00:00.000+00:00",
+      "isListed": false,
+      "isRemote": true,
+      "workplaceType": "Remote",
+      "jobUrl": "https://jobs.ashbyhq.com/acme/0b6c2f0e-4444-4a8e-9a8f-000000000004",
+      "descriptionPlain": "Not published."
+    }
+  ]
+}

@@ -27,8 +27,10 @@ following checks, in increasing rigor:
 - The rendered file's frontmatter contains `tools:
   [mcp__nanoclaw__record_progress, mcp__nanoclaw__search_jobs,
   mcp__nanoclaw__fetch_source, mcp__nanoclaw__record_job_lead]` — exactly
-  those four, no more. (`search_jobs` = the primary Google-for-Jobs source;
-  `fetch_source` = the ATS fallback. STRATEGY.md §24.50.)
+  those four, no more. (`fetch_source` = the watched employer boards, for
+  company-scoped requests; `search_jobs` = the one-query search supplement.
+  The scheduled board sweep is host-run, not a tool. STRATEGY.md §24.200 D4/D5/D8,
+  which reverses §24.50's search-primary / ATS-fallback split.)
 - The rendered file does NOT exist in `groups/career-pilot-sandbox/`
   (the source isn't in that group → no render → orchestrator can't
   delegate to scrape-jobs from sandbox sessions; defense-in-depth per
@@ -48,11 +50,13 @@ host re-hydrates from cache, computes `content_fingerprint` +
 `rules_score`, UPSERTs into `job_leads` → orchestrator calls
 `query_job_leads` to surface results in a Pattern B reply.
 
-**Fallback mode** (no SerpApi key — the CI default): `search_jobs` returns
-`{ unavailable }` → the subagent calls `fetch_source` (Greenhouse/Lever) →
+**Unavailable mode** (no SerpApi key — the CI default — or the search quota
+spent): `search_jobs` returns `{ unavailable }` and the subagent finishes
+reporting the reason; it does NOT poll boards to compensate (the host sweep
+feeds the pool). **Company-scoped mode** (brief names a watched company):
+the subagent calls `fetch_source({ company })` (Greenhouse/Lever/Ashby) →
 same stash → `PostingSummary[]` → `record_job_lead` path. Assert leads
-still land. Everything downstream of the summary is shared between the two
-modes (§24.50).
+land. Everything downstream of the summary is shared between the modes.
 
 **`--llm-provider=ollama` is currently broken for this flow.** GLM-4.7-
 Flash emits `<Agent .../>` XML text instead of calling the Agent tool;
@@ -117,6 +121,50 @@ reports them as `rejected` / `rejected_total` (and in its text as
 Host-side proof lives in `src/modules/career-pilot/lead-guard.integration.test.ts`;
 the result pass-through in `container/agent-runner/src/mcp-tools/scrape-jobs.test.ts`.
 
+**Sourcing split (STRATEGY.md §24.200 D4/D5/D8).** The direct employer
+boards are the primary feed and are swept by the HOST on `ats_sweep_cron`
+(no agent turn, no LLM); search is a gated supplement. Check in the
+transcript of a scheduled run and a company-scoped run:
+
+- A generic / scheduled run makes **at most one** `search_jobs` call and
+  no `fetch_source({ priority })` call (the host already sweeps the
+  boards). It never asks for more than the default page.
+- A company-scoped brief ("roles at Acme") calls `fetch_source({ company })`
+  first; it falls back to ONE `search_jobs` with the company in the query
+  only when `boards_scanned` is 0.
+- `search_jobs` reserves each result page from the host
+  (`career_pilot.reserve_search_quota`) BEFORE fetching; past
+  `search_daily_page_cap` / `search_monthly_quota` it returns
+  `{ unavailable, reason: "QUOTA: ..." }` and the subagent finishes without
+  retrying. Proof: `container/agent-runner/src/career-pilot/serpapi-search.test.ts`
+  (reservation precedes every fetch; refusal = no fetch) and
+  `src/modules/career-pilot/search-quota.test.ts` (daily + period refusals).
+- `fetch_source` covers Ashby boards too, reads boards from the
+  `ats_watchlist` table (not the seed file), and reports `boards_failed`.
+  `discover_ats_board` (orchestrator tool) adds a verified board to the
+  watchlist itself — no file edit. It takes a board link and never fetches
+  the supplied URL (a careers page is answered `not_a_board_link`; the agent
+  reads the page itself), and it never lifts an owner's pause ("block
+  company" → `blocked_by_owner:true`). Proof:
+  `src/modules/career-pilot/board-lifecycle.integration.test.ts`.
+- The persona routes "watch / track / add <company>" to `discover_ats_board`,
+  and its company-scoped scrape brief says the subagent reads the watched
+  board (`fetch_source`) and searches only when the company is not watched —
+  the same rule as this subagent's prompt. Check by reading both after any
+  edit to either.
+- The sweep itself: `src/modules/career-pilot/ats-sweep.integration.test.ts`
+  (incl. a run where every board fails is recorded `ok=0`, and a posting
+  already in the pool as a search hit is refreshed, not inserted twice); on
+  the box, `SELECT trigger, ok, new_count, rejected_json FROM
+  lead_source_runs WHERE kind='sweep' ORDER BY started_at DESC LIMIT 5`, and
+  `pnpm health` reports `ats-sweep-stale` / `ats-board-failing` /
+  `ats-board-retired`. Only "board gone" (404/410) answers retire a board;
+  an outage never does (`src/modules/career-pilot/ats-watchlist.test.ts`).
+- Tier-4: `scripts/test/e2e.ts --flow=scrape-jobs` sends a company-scoped
+  brief for a seeded watched board, so `fetch_source` runs without a search
+  key; zero keepers are excused only by a search `rejected` count, or by a
+  search `unavailable` answer in a run that read no board
+  (`scripts/test/scrape-zero-leads.test.ts`).
 ### 3. Pre-record judgment quality (automated assertion within the e2e)
 
 This is the discipline check on the subagent's judgment. The e2e asserts
@@ -198,8 +246,8 @@ Re-run this verification plan whenever any of the following changes:
 - `scrape-jobs.md` (this subagent's runtime contract) — re-run §1, §2, §3
 - The `search_jobs` MCP tool or `container/agent-runner/src/career-pilot/
   serpapi-search.ts` (normalizer / `parseSalaryString` /
-  `parseRelativePostedAt`) — re-run the `serpapi-search` unit tests + §2
-  in both primary and fallback modes
+  `parseRelativePostedAt` / the quota reservation) — re-run the
+  `serpapi-search` unit tests + §2 in every mode
 - Pre-record judgment rules — re-run §3, §4
 - The host-side `fetch_source` action or source adapters — re-run §2, §5
 - The `record_job_lead` host action or rules-score formula — re-run

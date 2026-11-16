@@ -196,7 +196,8 @@ describe('handleClaimKillerMatches', () => {
     seedLead({
       id: 'wrong-source',
       company: 'Notion',
-      source: 'ashby',
+      // Not in the default allow-list ('ashby' is, since §24.200 D6d).
+      source: 'manual',
       rules_score: 95,
       source_posted_at: freshTimestamp(1),
     });
@@ -393,12 +394,17 @@ function daysAgoIso(days: number): string {
   return new Date(Date.now() - days * 86_400_000).toISOString();
 }
 
+// The stale rule closes only search-sourced leads (§24.200 D6c), so these seed
+// google_jobs leads by default; a board lead is exempt (covered below and in
+// board-lifecycle.integration.test.ts).
 function seedJobLeadForClose(opts: {
   id: string;
+  source?: string;
   last_seen_at: string;
   closed_at?: string | null;
   application_id?: string | null;
   company?: string;
+  source_board_token?: string | null;
 }): void {
   const now = new Date().toISOString();
   // Insert the application FIRST so the FK on job_leads.application_id resolves.
@@ -413,14 +419,14 @@ function seedJobLeadForClose(opts: {
   getDb()
     .prepare(
       `INSERT INTO job_leads (
-        id, source, source_job_id, source_url,
+        id, source, source_board_token, source_job_id, source_url,
         content_fingerprint, title, company,
         first_seen_at, last_seen_at,
         rules_score, rules_score_reasons,
         status, status_changed_at,
         application_id, closed_at
       ) VALUES (
-        @id, 'greenhouse', @sjid, @url,
+        @id, @source, @board, @sjid, @url,
         @fp, @title, @company,
         @first_seen, @last_seen,
         50, '{}',
@@ -430,6 +436,8 @@ function seedJobLeadForClose(opts: {
     )
     .run({
       id: opts.id,
+      source: opts.source ?? 'google_jobs',
+      board: opts.source_board_token ?? null,
       sjid: `sj-${opts.id}`,
       url: `https://example.com/${opts.id}`,
       fp: `fp-${opts.id}`,
@@ -522,6 +530,38 @@ describe('handleCloseStaleLeads', () => {
 
     const row = getDb().prepare('SELECT id FROM job_leads WHERE closed_at IS NOT NULL').get() as { id: string };
     expect(row.id).toBe('borderline');
+  });
+
+  it('does NOT close a stale BOARD lead of an active watched board — those close on absence, not age (§24.200 D6c)', async () => {
+    // A board lead whose board is NOT being swept (paused / retired / unwatched)
+    // does fall back to the stale rule — board-lifecycle.integration.test.ts.
+    const now = new Date().toISOString();
+    for (const [ats, token] of [
+      ['greenhouse', 'acme'],
+      ['ashby', 'acme'],
+    ]) {
+      getDb()
+        .prepare(
+          `INSERT INTO ats_watchlist (ats, token, company, tier, origin, state, created_at, updated_at)
+           VALUES (?, ?, 'Acme', 'A', 'seed', 'active', ?, ?)`,
+        )
+        .run(ats, token, now, now);
+    }
+    seedJobLeadForClose({
+      id: 'board-old',
+      source: 'greenhouse',
+      source_board_token: 'acme',
+      last_seen_at: daysAgoIso(30),
+    });
+    seedJobLeadForClose({ id: 'ashby-old', source: 'ashby', source_board_token: 'acme', last_seen_at: daysAgoIso(30) });
+    seedJobLeadForClose({ id: 'search-old', last_seen_at: daysAgoIso(30) });
+    const res = await callCloseStaleLeads();
+    if (!res.frame.ok) throw new Error('unreachable');
+    expect(res.frame.data.closed_count).toBe(1);
+    const closed = getDb().prepare('SELECT id FROM job_leads WHERE closed_at IS NOT NULL').all() as Array<{
+      id: string;
+    }>;
+    expect(closed.map((r) => r.id)).toEqual(['search-old']);
   });
 
   it('returns closed_count=0 when no leads exist or none are stale', async () => {

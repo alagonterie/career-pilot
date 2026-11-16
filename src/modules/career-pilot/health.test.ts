@@ -21,6 +21,7 @@ import { ensureSchema, openInboundDb as openDbAtPath, openOutboundDbRw } from '.
 import { inboundDbPath, outboundDbPath, sessionsBaseDir } from '../../session-manager.js';
 import type { Session } from '../../types.js';
 
+import { recordBoardFetch } from './ats-watchlist.js';
 import { exitCodeForReport, runHealthChecks, type HealthFinding, type HealthReport } from './health.js';
 import { OPS_THREAD_ID } from './ops-session.js';
 
@@ -427,6 +428,151 @@ describe('runHealthChecks', () => {
     const report = await run();
     expect(find(report, 'health-check-error:request-telemetry')?.severity).toBe('warn');
     expect(exitCodeForReport(report)).toBe(0); // a warn never exit-codes
+  });
+});
+
+describe('runHealthChecks — the employer-board sweep (§24.200 D5)', () => {
+  function board(token: string, over: Record<string, unknown> = {}): void {
+    getDb()
+      .prepare(
+        `INSERT INTO ats_watchlist (ats, token, company, tier, origin, state, last_ok_at, last_error,
+           consecutive_failures, created_at, updated_at)
+         VALUES ('greenhouse', @token, @company, 'B', 'seed', @state, @last_ok_at, @last_error,
+           @consecutive_failures, @created_at, @created_at)`,
+      )
+      .run({
+        token,
+        company: `Company ${token}`,
+        state: 'active',
+        last_ok_at: new Date(NOW - 3_600_000).toISOString(),
+        last_error: null,
+        consecutive_failures: 0,
+        created_at: '2026-05-01T00:00:00.000Z',
+        ...over,
+      });
+  }
+  function sweepRun(id: string, finishedAgoMs: number, ok: 0 | 1, error: string | null = null): void {
+    const t = new Date(NOW - finishedAgoMs).toISOString();
+    getDb()
+      .prepare(
+        `INSERT INTO lead_source_runs (id, kind, trigger, started_at, finished_at, ok, error)
+         VALUES (?, 'sweep', 'schedule', ?, ?, ?, ?)`,
+      )
+      .run(id, t, t, ok, error);
+  }
+  function setPref(key: string, value: string): void {
+    getDb()
+      .prepare('INSERT OR REPLACE INTO preferences (key, value, updated_at) VALUES (?, ?, ?)')
+      .run(key, value, new Date(NOW).toISOString());
+  }
+
+  it('is ok with a recent successful sweep and healthy boards', async () => {
+    board('acme');
+    sweepRun('r1', 3_600_000, 1);
+    const report = await run();
+    expect(find(report, 'ats-sweep-stale')?.severity).toBe('ok');
+    expect(find(report, 'ats-board-failing')?.severity).toBe('ok');
+  });
+
+  it('warns when no sweep has succeeded inside ats_sweep_stale_hours, with a concrete next step', async () => {
+    board('acme');
+    setPref('ats_sweep_stale_hours', '6');
+    sweepRun('old-ok', 7 * 3_600_000, 1);
+    sweepRun('recent-fail', 3_600_000, 0, 'database is locked');
+    const f = find(await run(), 'ats-sweep-stale');
+    expect(f?.severity).toBe('warn');
+    expect(f?.title).toMatch(/No successful employer-board sweep since/);
+    expect(f?.detail).toMatch(/failed: database is locked/);
+    expect(f?.next_step).toMatch(/lead_source_runs/);
+  });
+
+  it('warns when no sweep has ever succeeded', async () => {
+    board('acme');
+    const f = find(await run(), 'ats-sweep-stale');
+    expect(f?.severity).toBe('warn');
+    expect(f?.title).toMatch(/ever succeeded/);
+  });
+
+  it('stays quiet when the sweep is off, the system is halted, or no board is active', async () => {
+    const { setPauseState } = await import('../portal/system-modes.js');
+    expect(find(await run(), 'ats-sweep-stale')?.severity).toBe('ok'); // no boards
+    board('acme');
+    setPref('ats_sweep_enabled', 'false');
+    expect(find(await run(), 'ats-sweep-stale')?.severity).toBe('ok');
+    setPref('ats_sweep_enabled', 'true');
+    setPauseState('halted');
+    expect(find(await run(), 'ats-sweep-stale')?.severity).toBe('ok');
+  });
+
+  it('reports active boards whose last successful fetch is older than ats_board_failing_days', async () => {
+    setPref('ats_board_failing_days', '3');
+    sweepRun('r1', 3_600_000, 1);
+    board('fresh');
+    board('broken', {
+      last_ok_at: new Date(NOW - 5 * 86_400_000).toISOString(),
+      last_error: 'HTTP 500',
+      consecutive_failures: 30,
+    });
+    board('never', { last_ok_at: null, last_error: 'board absent (HTTP 404)', consecutive_failures: 4 });
+    board('blip', { last_ok_at: new Date(NOW - 86_400_000).toISOString(), consecutive_failures: 2 });
+    board('paused', {
+      state: 'paused',
+      last_ok_at: new Date(NOW - 30 * 86_400_000).toISOString(),
+      consecutive_failures: 9,
+    });
+    const f = find(await run(), 'ats-board-failing');
+    expect(f?.severity).toBe('warn');
+    expect(f?.title).toMatch(/^2 watched board\(s\)/);
+    expect(f?.detail).toContain('greenhouse/broken');
+    expect(f?.detail).toContain('greenhouse/never');
+    expect(f?.detail).not.toContain('greenhouse/blip');
+    expect(f?.detail).not.toContain('greenhouse/paused');
+    expect(f?.next_step).toMatch(/ats_watchlist/);
+  });
+
+  function boardId(token: string): number {
+    return (getDb().prepare('SELECT id FROM ats_watchlist WHERE token = ?').get(token) as { id: number }).id;
+  }
+
+  it('a board failing transiently for days (real fetch path, default knobs) stays active and is reported failing', async () => {
+    // Defaults: retire after 12 failures, failing after 3 days. 40 sweeps of
+    // 5xx/timeouts at the 2h cadence is ~3.3 days — past both thresholds.
+    sweepRun('r1', 3_600_000, 1);
+    board('flaky', { last_ok_at: new Date(NOW - 4 * 86_400_000).toISOString() });
+    for (let i = 0; i < 40; i++) {
+      recordBoardFetch(getDb(), boardId('flaky'), { ok: false, absent: false, error: 'HTTP 503' }, new Date(NOW));
+    }
+    const report = await run();
+    const f = find(report, 'ats-board-failing');
+    expect(f?.severity).toBe('warn');
+    expect(f?.detail).toContain('greenhouse/flaky');
+    expect(find(report, 'ats-board-retired')?.severity).toBe('ok');
+  });
+
+  it('a board retired through the real retire path is reported, and an all-retired watchlist is not "nothing to do"', async () => {
+    sweepRun('r1', 3_600_000, 1);
+    board('gone', { last_error: null });
+    for (let i = 0; i < 12; i++) {
+      recordBoardFetch(getDb(), boardId('gone'), { ok: false, absent: true, error: 'HTTP 404' }, new Date(NOW));
+    }
+    expect(
+      (getDb().prepare("SELECT state FROM ats_watchlist WHERE token = 'gone'").get() as { state: string }).state,
+    ).toBe('absent');
+    const report = await run();
+    const retired = find(report, 'ats-board-retired');
+    expect(retired?.severity).toBe('warn');
+    expect(retired?.detail).toContain('greenhouse/gone');
+    expect(retired?.next_step).toMatch(/ats_watchlist/);
+    const stale = find(report, 'ats-sweep-stale');
+    expect(stale?.severity).toBe('warn');
+    expect(stale?.title).toMatch(/No active employer boards — 1 retired/);
+  });
+
+  it('a board retired long ago is no longer re-reported', async () => {
+    sweepRun('r1', 3_600_000, 1);
+    board('acme');
+    board('old-gone', { state: 'absent', created_at: new Date(NOW - 30 * 86_400_000).toISOString() });
+    expect(find(await run(), 'ats-board-retired')?.severity).toBe('ok');
   });
 });
 

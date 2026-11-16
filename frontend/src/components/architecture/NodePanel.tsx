@@ -40,6 +40,27 @@ function fmtMs(ms: number): string {
   return ms >= 1000 ? `${Math.round(ms / 1000)}s` : `${ms}ms`
 }
 
+/** Aggregate request-telemetry facts across a node's mapped providers (§24.69
+ * D-B — aggregate only). Empty when none of them has a row in the window. */
+function providerFacts(node: ArchNode, obs: Observability | null): { label: string; value: string }[] {
+  if (obs == null) return []
+  const present = (node.providers ?? [])
+    .map((p) => obs.providers.find((x) => x.provider === p))
+    .filter((p): p is NonNullable<typeof p> => p != null)
+  if (present.length === 0) return []
+  const requests = present.reduce((s, p) => s + p.requests_24h, 0)
+  const errors = present.reduce((s, p) => s + p.errors_24h, 0)
+  const ages = present.map((p) => p.last_success_age_sec).filter((n): n is number => n != null)
+  const p50s = present.map((p) => p.p50_ms).filter((n): n is number => n != null)
+  const facts = [
+    { label: 'Requests 24h', value: String(requests) },
+    { label: 'Error rate', value: `${Math.round((requests > 0 ? errors / requests : 0) * 100)}%` },
+    { label: 'Last success', value: ages.length ? fmtAge(Math.min(...ages)) : '—' },
+  ]
+  if (p50s.length) facts.push({ label: 'p50 latency', value: fmtMs(Math.max(...p50s)) })
+  return facts
+}
+
 /** The live facts we actually have for a probed node (none for structural). */
 function nodeFacts(
   node: ArchNode,
@@ -80,23 +101,27 @@ function nodeFacts(
       return facts
     }
     case 'provider': {
-      if (obs == null) return []
-      const present = (node.providers ?? [])
-        .map((p) => obs.providers.find((x) => x.provider === p))
-        .filter((p): p is NonNullable<typeof p> => p != null)
-      if (present.length === 0) return []
-      // Aggregate across this node's providers (§24.69 D-B — aggregate only).
-      const requests = present.reduce((s, p) => s + p.requests_24h, 0)
-      const errors = present.reduce((s, p) => s + p.errors_24h, 0)
-      const ages = present.map((p) => p.last_success_age_sec).filter((n): n is number => n != null)
-      const p50s = present.map((p) => p.p50_ms).filter((n): n is number => n != null)
-      const facts = [
-        { label: 'Requests 24h', value: String(requests) },
-        { label: 'Error rate', value: `${Math.round((requests > 0 ? errors / requests : 0) * 100)}%` },
-        { label: 'Last success', value: ages.length ? fmtAge(Math.min(...ages)) : '—' },
-      ]
-      if (p50s.length) facts.push({ label: 'p50 latency', value: fmtMs(Math.max(...p50s)) })
+      const facts = providerFacts(node, obs)
+      // §24.200 D8: a budgeted search node says whether its page budget is left
+      // (a yes/no only — no page counts on the public page).
+      if (node.quotaIdle && arch?.job_search) {
+        facts.push({ label: 'Search budget', value: arch.job_search.quota_spent ? 'spent for now' : 'available' })
+      }
       return facts
+    }
+    case 'boards': {
+      // §24.200 D8: the employer-board sweep — its freshness + how many boards
+      // it watches (a count, never which), then the adapters' aggregate telemetry.
+      const b = arch?.board_sweep
+      if (!b) return providerFacts(node, obs)
+      return [
+        {
+          label: 'Last good sweep',
+          value: b.last_success_age_sec == null ? (b.running ? 'running now' : '—') : fmtAge(b.last_success_age_sec),
+        },
+        { label: 'Boards watched', value: b.enabled ? String(b.boards) : 'sweep off' },
+        ...providerFacts(node, obs),
+      ]
     }
     case 'sandbox': {
       // §24.80: the public-demo kill switch + the day's spend against its budget.
@@ -281,7 +306,9 @@ export function NodePanel({
 
           {idle && !node.actor ? (
             <p data-testid="arch-idle-note" className="text-[11px] leading-relaxed text-muted-foreground">
-              Idle means at rest right now — nothing running, not a fault. This node wakes on demand.
+              {node.quotaIdle && arch?.job_search?.quota_spent
+                ? 'Idle means at rest by design — its search budget is spent for now, not a fault. It resumes when the budget resets.'
+                : 'Idle means at rest right now — nothing running, not a fault. This node wakes on demand.'}
             </p>
           ) : null}
 

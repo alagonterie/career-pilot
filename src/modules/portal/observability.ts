@@ -21,7 +21,9 @@ import { getDb, hasTable } from '../../db/connection.js';
 import { getActiveSessions, getRunningSessions } from '../../db/sessions.js';
 import { getConfig } from '../../get-config.js';
 import type { Session } from '../../types.js';
+import { isSweepRunning, readLastSuccessfulSweepAt } from '../career-pilot/ats-sweep.js';
 import { OWNER_GROUP_FOLDER, isOpsSession } from '../career-pilot/ops-session.js';
+import { readSearchQuota } from '../career-pilot/search-quota.js';
 
 const DEFAULT_OBSERVABILITY_CACHE_MS = 30_000;
 const DEFAULT_ERROR_RATE_DEGRADED = 0.25;
@@ -274,6 +276,59 @@ export function sandboxSpend24hUsd(now: number = Date.now()): number {
     )
     .get({ cutoff: cutoffIso }) as { cents: number };
   return (row?.cents ?? 0) / 100;
+}
+
+/**
+ * The employer-board sweep's architecture probe (§24.200 D8). The sweep writes
+ * no `request_telemetry` of its own (its board adapters do, per provider), so
+ * its freshness comes from `lead_source_runs`: `fresh` = a sweep finished OK
+ * within `ats_sweep_stale_hours`. `boards` counts the `active` watchlist rows —
+ * a read, never the lazy seed (a public page read must not write). An absent or
+ * retired board is not `active` and is never fetched, so it cannot affect this
+ * probe; its 404s are recorded `ok` by the adapter (§24.184 D1). Aggregate-only:
+ * no board, company, or token leaves this function.
+ */
+export interface BoardSweepProbe {
+  enabled: boolean;
+  boards: number;
+  running: boolean;
+  last_success_age_sec: number | null;
+  fresh: boolean;
+}
+
+export function boardSweepProbe(now: number = Date.now()): BoardSweepProbe {
+  const db = getDb();
+  const enabled = getConfig<boolean>(db, 'ats_sweep_enabled', true);
+  const staleHours = getConfig<number>(db, 'ats_sweep_stale_hours', 6);
+  const boards = hasTable(db, 'ats_watchlist')
+    ? (db.prepare(`SELECT COUNT(*) AS n FROM ats_watchlist WHERE state = 'active'`).get() as { n: number }).n
+    : 0;
+  const last = readLastSuccessfulSweepAt(db);
+  const lastMs = last ? Date.parse(last) : NaN;
+  const age = Number.isFinite(lastMs) ? Math.max(0, Math.floor((now - lastMs) / 1000)) : null;
+  return {
+    enabled,
+    boards,
+    running: isSweepRunning(),
+    last_success_age_sec: age,
+    fresh: age !== null && age <= staleHours * 3600,
+  };
+}
+
+/**
+ * The search-index supplement's quota state (§24.200 D8): `quota_spent` when
+ * today's page cap or the period's quota is used up (a cap of 0 — search
+ * switched off — reads spent). The node then reads idle, not down: the tool
+ * returns `unavailable` without calling out, by design. Only the boolean is
+ * served — no page counts on the public page.
+ */
+export interface JobSearchProbe {
+  quota_spent: boolean;
+}
+
+export function jobSearchProbe(now: Date = new Date()): JobSearchProbe {
+  const q = readSearchQuota(getDb(), now);
+  return { quota_spent: q.used_today >= q.daily_cap || q.used_period >= q.monthly_quota };
 }
 
 export async function getObservability(): Promise<Observability> {

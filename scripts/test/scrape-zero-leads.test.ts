@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { zeroLeadsExplainedByRejects } from './scrape-zero-leads.js';
+import { zeroLeadsExplainedByRejects, zeroLeadsExplainedBySearchUnavailable } from './scrape-zero-leads.js';
 
 describe('zeroLeadsExplainedByRejects (Tier-4 scrape flow)', () => {
   it('explains zero keepers when every hit was rejected and nothing was recorded', () => {
@@ -19,5 +19,25 @@ describe('zeroLeadsExplainedByRejects (Tier-4 scrape flow)', () => {
   it('never excuses anything without a rejected count', () => {
     expect(zeroLeadsExplainedByRejects({ searchRejectedTotal: 0, recordCalls: 0, recordRefusals: 0 })).toBe(false);
     expect(zeroLeadsExplainedByRejects({ searchRejectedTotal: 0, recordCalls: 2, recordRefusals: 2 })).toBe(false);
+  });
+});
+
+describe('zeroLeadsExplainedBySearchUnavailable (search is a gated supplement)', () => {
+  it('an unavailable search with nothing else in the run explains zero keepers', () => {
+    expect(
+      zeroLeadsExplainedBySearchUnavailable({ searchUnavailable: true, fetchSourceCalls: 0, recordCalls: 0 }),
+    ).toBe(true);
+  });
+
+  it('does not excuse a run that read a board, or made record calls, or whose search answered', () => {
+    expect(
+      zeroLeadsExplainedBySearchUnavailable({ searchUnavailable: true, fetchSourceCalls: 1, recordCalls: 0 }),
+    ).toBe(false);
+    expect(
+      zeroLeadsExplainedBySearchUnavailable({ searchUnavailable: true, fetchSourceCalls: 0, recordCalls: 2 }),
+    ).toBe(false);
+    expect(
+      zeroLeadsExplainedBySearchUnavailable({ searchUnavailable: false, fetchSourceCalls: 0, recordCalls: 0 }),
+    ).toBe(false);
   });
 });

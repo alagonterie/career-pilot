@@ -32,7 +32,15 @@ import {
   normalizeProfileValue,
   type AppliedFromLeadDeps,
 } from '../career-pilot/actions.js';
+import { isSweepRunning, readLastSweep, startSweep, type LastSweepView } from '../career-pilot/ats-sweep.js';
+import { parseAtsJobUrl, pauseBoardsForCompany } from '../career-pilot/ats-watchlist.js';
 import { type HealthFinding, runHealthChecks } from '../career-pilot/health.js';
+import {
+  readLastSearch,
+  readSearchQuota,
+  type LastSearchView,
+  type SearchQuotaView,
+} from '../career-pilot/search-quota.js';
 import { VALID_STATUSES } from '../career-pilot/job-lead-actions.js';
 import {
   appendTitleToBlocklist,
@@ -650,6 +658,37 @@ export interface AdminLeadsView {
   closed: AdminLead[];
   /** The owner's title blocklist (§24.201 D4) — listed so each entry can be removed. */
   titleBlocklist: string[];
+  /** §24.201 D6: the sourcing system's state — last board sweep, whether one is
+   *  running, the last search's refusals, and the search quota. */
+  sourcing: AdminSourcingView;
+}
+
+export interface AdminSourcingView {
+  lastSweep: LastSweepView | null;
+  sweepRunning: boolean;
+  lastSearch: LastSearchView | null;
+  searchQuota: SearchQuotaView;
+}
+
+/** The Leads header's sourcing block. Never throws: a read failure degrades to
+ *  "nothing yet" rather than failing the whole Leads read. */
+export function buildAdminSourcing(db: Database.Database, now: Date = new Date()): AdminSourcingView {
+  let lastSweep: LastSweepView | null = null;
+  let lastSearch: LastSearchView | null = null;
+  try {
+    lastSweep = readLastSweep(db);
+    lastSearch = readLastSearch(db);
+  } catch (err) {
+    log.warn('admin: sourcing run read failed', { err: err instanceof Error ? err.message : String(err) });
+  }
+  let searchQuota: SearchQuotaView;
+  try {
+    searchQuota = readSearchQuota(db, now);
+  } catch (err) {
+    log.warn('admin: search quota read failed', { err: err instanceof Error ? err.message : String(err) });
+    searchQuota = { used_period: 0, monthly_quota: 0, used_today: 0, daily_cap: 0, period_start: '' };
+  }
+  return { lastSweep, sweepRunning: isSweepRunning(), lastSearch, searchQuota };
 }
 
 // The owner can set every lifecycle status EXCEPT 'applied' — that one implies a
@@ -703,6 +742,7 @@ export function buildAdminLeads(db: Database.Database): AdminLeadsView {
     leads: [],
     closed: [],
     titleBlocklist: [],
+    sourcing: buildAdminSourcing(db),
   };
   if (!hasTable(db, 'job_leads')) return empty;
 
@@ -755,6 +795,7 @@ export function buildAdminLeads(db: Database.Database): AdminLeadsView {
     leads,
     closed,
     titleBlocklist: readTitleBlocklist(db),
+    sourcing: empty.sourcing,
   };
 }
 
@@ -830,6 +871,8 @@ interface LeadForTombstone {
   company: string | null;
   title: string | null;
   application_id: string | null;
+  apply_url?: string | null;
+  source_url?: string | null;
 }
 
 /**
@@ -853,6 +896,28 @@ function deletionTombstone(db: Database.Database, lead: LeadForTombstone): Tombs
 }
 
 /**
+ * A deleted search hit whose link IS a board posting also gets an id tombstone
+ * under that board's own (source, job id). The board sweep lists the same job
+ * under a different source with a different description, so neither the search
+ * id nor the fingerprint would recognise it, and the deleted job would come
+ * back on the next sweep.
+ */
+function boardCopyTombstones(lead: LeadForTombstone, primary: TombstoneInput): TombstoneInput[] {
+  if (lead.source !== 'google_jobs' || primary.reason.startsWith('link:')) return [];
+  const seen = new Set<string>();
+  const out: TombstoneInput[] = [];
+  for (const url of [lead.apply_url, lead.source_url]) {
+    const ref = parseAtsJobUrl(url);
+    if (!ref) continue;
+    const key = `${ref.ats}:${ref.job_id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ ...primary, source: ref.ats, source_job_id: ref.job_id, content_fingerprint: null, match: 'id' });
+  }
+  return out;
+}
+
+/**
  * The Leads tab write. One JSON action:
  *   { action: 'set_status', id, status, reason? } — owner triage (allow-listed
  *     statuses minus 'applied'); 'archived' soft-closes (closed_at + reason).
@@ -864,9 +929,13 @@ function deletionTombstone(db: Database.Database, lead: LeadForTombstone): Tombs
  *   { action: 'bulk_delete', ids, confirm } — §24.187: the hard purge. Requires
  *     confirm:true; skips (and reports by reason) promoted (application_id) and
  *     email-linked leads; writes a tombstone per deleted lead (§24.200 D2/D3).
- *   { action: 'not_interested', id, reason, exclude_title? } — §24.201 D4:
- *     archive + a tombstone whose reach follows the reason; optionally append
- *     the title to the owner's title blocklist. 409 on a promoted lead.
+ *   { action: 'not_interested', id, reason, exclude_title?, block_company? } —
+ *     §24.201 D4: archive + a tombstone whose reach follows the reason;
+ *     optionally append the title to the owner's title blocklist and/or pause
+ *     the company's watched boards (`company_blocked` says whether any board
+ *     matched). 409 on a promoted lead.
+ *   { action: 'sweep_now' } — §24.201 D6: start the employer-board sweep
+ *     (202); 409 `already_running` / `halted`.
  *   { action: 'title_blocklist_remove', title } — take one title back off the
  *     owner's blocklist (the undo of "exclude this title").
  * A set_status / bulk_set_status to any non-archived status also clears the
@@ -886,9 +955,22 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
     reason?: unknown;
     confirm?: unknown;
     exclude_title?: unknown;
+    block_company?: unknown;
     title?: unknown;
   };
   const action = body.action;
+
+  // §24.201 D6: "Sweep now" — start the employer-board sweep detached and answer
+  // at once; the Leads read reports `sourcing.sweepRunning` and the run summary.
+  if (action === 'sweep_now') {
+    const started = startSweep(db, { trigger: 'manual' });
+    if (started.started) {
+      log.info('admin: employer-board sweep started on demand');
+      return { status: 202, body: { ok: true, started: true } };
+    }
+    if (started.reason === 'not_migrated') return { status: 404, body: { error: 'ats_watchlist not migrated' } };
+    return { status: 409, body: { error: started.reason } };
+  }
 
   if (action === 'set_status') {
     const id = typeof body.id === 'string' ? body.id : '';
@@ -994,7 +1076,8 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
       return { status: 400, body: { error: 'bulk_delete requires { confirm: true }' } };
     }
     const lookup = db.prepare(
-      `SELECT id, source, source_job_id, apply_link_kind, content_fingerprint, company, title, application_id
+      `SELECT id, source, source_job_id, apply_link_kind, content_fingerprint, company, title, application_id,
+              apply_url, source_url
          FROM job_leads WHERE id = ?`,
     );
     // §24.200 D3: email_events.linked_job_lead_id references job_leads with no
@@ -1025,7 +1108,11 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
         // §24.200 D2: the delete remembers why. A rejected-kind lead was deleted
         // for its link (id-only — the same job re-found with a direct link must
         // come back); a direct lead was deleted by owner intent (fingerprint).
-        if (canTombstone) writeTombstone(db, deletionTombstone(db, lead));
+        if (canTombstone) {
+          const primary = deletionTombstone(db, lead);
+          writeTombstone(db, primary);
+          for (const t of boardCopyTombstones(lead, primary)) writeTombstone(db, t);
+        }
         deleted += del.run(id).changes;
       }
     })();
@@ -1072,6 +1159,7 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
     const match: 'id' | 'fingerprint' = ID_ONLY_NOT_INTERESTED_REASONS.has(reason) ? 'id' : 'fingerprint';
     const now = new Date().toISOString();
     let titleBlocklisted = false;
+    let companyBlocked = false;
     db.transaction(() => {
       db.prepare(
         `UPDATE job_leads SET status = 'archived', status_changed_at = @now, closed_at = @now, closed_reason = @reason WHERE id = @id`,
@@ -1086,12 +1174,18 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
         match,
       });
       if (body.exclude_title === true && lead.title) titleBlocklisted = appendTitleToBlocklist(db, lead.title);
+      // "Block company": pause that company's watched boards, matched by the same
+      // company normalizer the lead matcher uses. False when no board matches.
+      if (body.block_company === true && lead.company && hasTable(db, 'ats_watchlist')) {
+        companyBlocked = pauseBoardsForCompany(db, lead.company).matched > 0;
+      }
     })();
     log.info('admin: job_lead not interested', {
       id,
       reason,
       tombstone_match: match,
       title_blocklisted: titleBlocklisted,
+      company_blocked: companyBlocked,
     });
     return {
       status: 200,
@@ -1101,6 +1195,7 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
         tombstone_match: match,
         title_blocklisted: titleBlocklisted,
         title_blocklist: readTitleBlocklist(db),
+        company_blocked: companyBlocked,
       },
     };
   }

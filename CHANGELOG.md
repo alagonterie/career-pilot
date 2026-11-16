@@ -34,6 +34,24 @@ fork version recorded in `package.json` — the two are never conflated.
 - **A one-time cleanup tool** removes the reposts already in the pool. It shows
   what it would remove before removing anything, and leaves alone any lead with
   an application, a tailored résumé, a linked email, or a status set by hand.
+- **Employers' own job boards are now the main source of leads.** The system
+  reads each watched company's public board directly, on a schedule, with no AI
+  spend. Every lead from there has a direct apply link and a real posting date,
+  and a posting that comes down is closed on its own.
+- **A third board system is supported**, alongside the existing two.
+- **The watched-company list lives in the database**, seeded from the existing
+  list, so adding a company no longer needs a file edit. A company's board can
+  be paused from a lead ("block this company's board").
+- **Web search is now a budgeted supplement.** It covers employers no board
+  reaches, within a daily and monthly page budget that is reserved before each
+  search rather than discovered afterwards.
+- **The Leads page shows how sourcing is going:** the last board sweep (new,
+  closed, reopened, boards failing), what the last search turned away and from
+  which sites, the search budget used, and a *Sweep now* button.
+- **The architecture page shows the board sweep** as its own component, and the
+  search component reads idle, not down, when its budget is spent.
+- **Health checks** flag a sweep that has gone stale, boards that keep failing,
+  and boards that have gone away.
 
 ### Fixed
 
@@ -44,6 +62,13 @@ fork version recorded in `package.json` — the two are never conflated.
   owner's own view still shows the real title.
 - **Deleting a lead that an email was linked to no longer fails.** Such leads
   are skipped and reported instead.
+- **An edited old posting no longer looks new.** One board system's posting
+  date was read from its last-edited time; it now uses the first-published time.
+- **Live board postings are no longer closed after two weeks.** The age rule
+  applied to every lead; it now applies only where nothing else confirms a
+  posting is still up.
+- **No alert for a job already applied to.** The strong-match alert skips leads
+  that are applied, archived or linked to an application.
 
 ## [1.1.10] - 2026-11-16
 

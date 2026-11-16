@@ -5,7 +5,8 @@
  */
 import { describe, expect, it } from 'bun:test';
 
-import { formatRecordJobLeadResult, formatSearchJobsResult } from './scrape-jobs.js';
+import { SearchJobsError } from '../career-pilot/serpapi-search.js';
+import { formatRecordJobLeadResult, formatSearchJobsResult, searchUnavailable } from './scrape-jobs.js';
 
 describe('formatSearchJobsResult', () => {
   it('passes the stash rejected counts through, by reason, in structured content and text', () => {
@@ -63,5 +64,19 @@ describe('formatRecordJobLeadResult', () => {
       content_fingerprint: 'abcdef0123456789',
     });
     expect(r.content[0].text).toBe('job_lead inserted: google_jobs::gj-1 (id lead-1, score 72)');
+  });
+});
+
+describe('searchUnavailable (search quota refusal, §24.200 D8)', () => {
+  it('maps a QUOTA refusal to the existing unavailable shape with the reason', () => {
+    const r = searchUnavailable(
+      new SearchJobsError('QUOTA', 'search quota for this period spent (250/250 pages since 2026-11-01)'),
+    );
+    expect(r.structuredContent).toEqual({
+      unavailable: true,
+      reason: 'QUOTA: search quota for this period spent (250/250 pages since 2026-11-01)',
+    });
+    expect(r.content[0].text).toContain('search_jobs unavailable (QUOTA: search quota for this period spent');
+    expect(r.content[0].text).not.toMatch(/fall back/i);
   });
 });

@@ -682,35 +682,36 @@ The host bootstrap keeps a recurring job-scrape task scheduled — by
 default once a day, early (before the morning cron cascade). When it
 fires, your turn input is exactly `[scheduled trigger: job-scrape]`.
 
-This is a background **pool refresh**: keep `job_leads` fresh so
-killer-match has new postings to match against and the pipeline always
-reflects what's actually live. You don't scrape yourself — you
+This is a background **search supplement** to the pool. The watched
+employer boards are already swept by the host on its own schedule — new
+postings from them land in `job_leads` without you or the subagent
+polling anything. This run adds what only a job search reaches (in-house
+career sites no board API covers). You don't scrape yourself — you
 dispatch the `scrape-jobs` subagent and let it write the leads.
 
-The one thing that matters in your brief: tell the subagent to cover
-the candidate's **full set of target roles in one pass**, not a single
-narrow query. The candidate's `target_roles` are in your loaded
-profile — name them. A daily scan should catch a good posting for
-*any* of those roles the day it appears, not rotate through them.
+Search spends a capped quota, so the brief asks for **ONE focused
+query** built from the candidate's strongest-fit target role (the
+`target_roles` are in your loaded profile — pick the one the candidate
+most wants), not a sweep of every role and not several pages. Do not ask
+the subagent to poll employer boards on a generic refresh — the host
+already does that.
 
 **Workflow:**
 
 ```
 1. Dispatch Agent({
      subagent_type: "scrape-jobs",
-     description: "Daily pool refresh across all target roles",
-     prompt: "Scheduled daily refresh of the job-lead pool. Run a
-       broad scan covering ALL of my target roles — <list them from
-       the profile, e.g. Senior/Staff Backend, Platform,
-       Infrastructure, Developer Experience, Agent Systems>. Compose a
-       natural-language query (or split into a couple of themed
-       queries if the roles span distant areas) so a strong posting
-       for any of these surfaces. Pull a healthy batch (paginate past
-       the first page), dedup against what we already track, and
-       record the new keepers. Weight toward my strongest fit
-       (distributed-systems / backend in Go/Rust)."
+     description: "Daily search supplement, one focused query",
+     prompt: "Scheduled daily search supplement for the job-lead pool.
+       The employer boards are swept by the host; do not poll them.
+       Run ONE focused search for my strongest-fit role — <the one
+       target role, sharpened by a key skill, e.g. Staff Backend
+       Engineer, distributed systems> — with my location preference,
+       and record the new keepers."
    })
-   → subagent scans, dedups, records new job_leads, returns a count.
+   → subagent searches once, records new job_leads, returns a count
+     (or that search was unavailable — the quota may be spent; that
+     is fine, the board sweep still feeds the pool).
 
 2. Silent. Emit ONLY an <internal> note with the count. NO <message>
    block. The candidate doesn't need a "I scraped jobs" ping —
@@ -1239,7 +1240,7 @@ facing answer comes from the query.
    })
    → [top 5 newly-landed leads]
 
-3. <message to="local-cli-test">Refreshed leads — N new across Greenhouse + Lever.
+3. <message to="local-cli-test">Refreshed leads — N new in the pool.
 
    **Top by fit score:**
    - <company> — <role> · <rules_score>
@@ -1254,7 +1255,9 @@ facing answer comes from the query.
 calls: prepend `research-company` before scrape-jobs to enrich the
 pre-record judgment with fresh company context. Pass the digest under
 `## Company research` in scrape-jobs's prompt and name the company in the
-brief (scrape-jobs puts it in its search query) to scope the scan.
+brief to scope the scan: scrape-jobs reads that company's watched
+employer board (`fetch_source`) and falls back to one search only when
+the company is not on the watchlist.
 Surface from `query_job_leads({company: "Anthropic", limit: 10})` afterward,
 optionally prefixed with 1-2 lines distilled from the digest (Pattern A
 for the research portion).
@@ -1262,6 +1265,16 @@ for the research portion).
 When the candidate asks "any new AI roles?" *later* — answer with
 another `query_job_leads`, not by re-running scrape-jobs. The pool is
 your world-model; query it, don't rebuild it.
+
+**"Watch / track / add <company>"** — call `discover_ats_board` yourself
+(no subagent) with the company's Greenhouse, Lever or Ashby board link
+and the company name. It takes a board link, not a careers page: if you
+only have the careers page, WebFetch it and pass the board link it
+points to. Once added, the host's scheduled sweep covers that board —
+no scrape needed. If the result says the board is paused by the
+candidate, tell them it stays paused (they blocked that company) rather
+than retrying; if no supported board exists, say the company uses
+another system.
 
 ### Turn discipline (load-bearing)
 

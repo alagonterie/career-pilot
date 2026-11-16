@@ -19,6 +19,7 @@ import {
   ADMIN_DENY,
   ADMIN_KNOB_KEYS,
   ALL_KNOB_KEYS,
+  cronMaxGapHours,
   KNOB_SPECS,
   MODEL_OPTIONS,
   UNSPEC_KNOBS,
@@ -176,6 +177,73 @@ describe('validateKnobWrite — text knobs (§24.138)', () => {
     expect(validateKnobWrite('sanitization_pass3_model', 'gpt-5').ok).toBe(false);
     expect(validateKnobWrite('sanitization_llm_review_aggressiveness', 'high').ok).toBe(true);
     expect(validateKnobWrite('sanitization_llm_review_aggressiveness', 'extreme').ok).toBe(false);
+  });
+
+  it('refuses a sweep-filter pattern that does not compile, at save (§24.200 D5)', () => {
+    for (const key of ['ats_sweep_title_include', 'ats_sweep_title_exclude', 'ats_sweep_location_filter']) {
+      expect(KNOB_SPECS[key]?.regex).toBe(true);
+      expect(validateKnobWrite(key, '\\b(staff|principal)\\b')).toMatchObject({ ok: true });
+      expect(validateKnobWrite(key, '')).toMatchObject({ ok: true, value: '' });
+      const bad = validateKnobWrite(key, '(unclosed');
+      expect(bad.ok).toBe(false);
+      expect(bad.error).toMatch(/not a valid regular expression/);
+    }
+  });
+
+  it('the shipped sweep-filter defaults compile', () => {
+    const db = getDb();
+    for (const key of ['ats_sweep_title_include', 'ats_sweep_title_exclude', 'ats_sweep_location_filter']) {
+      expect(() => new RegExp(getConfig<string>(db, key), 'i')).not.toThrow();
+    }
+  });
+});
+
+describe('sweep-interval invariant (§24.200 D5)', () => {
+  it('measures the longest gap between fires', () => {
+    expect(cronMaxGapHours('0 */2 * * *')).toBe(2);
+    expect(cronMaxGapHours('0 7 * * *')).toBe(24);
+    expect(cronMaxGapHours('0 9 * * 1-5')).toBe(72); // Friday → Monday
+  });
+
+  it('the default employer-board sweep fires more often than the killer-match recency window', () => {
+    // A fresh posting must land in the pool while it is still inside the alert
+    // window, or killer-match can never alert on a board posting.
+    const db = getDb();
+    const gap = cronMaxGapHours(getConfig<string>(db, 'ats_sweep_cron'));
+    const windowHours = getConfig<number>(db, 'killer_match_recency_window_hours');
+    expect(gap).toBeGreaterThan(0);
+    expect(gap!).toBeLessThan(windowHours);
+  });
+
+  it('refuses at save a sweep cron whose gap is not shorter than the window, and writes nothing', () => {
+    const db = getDb();
+    const before = getConfig<string>(db, 'ats_sweep_cron');
+    const out = applyKnobWrite(db, { key: 'ats_sweep_cron', value: '0 7 * * *' });
+    expect(out.status).toBe(400);
+    expect((out.body as { error: string }).error).toMatch(/killer-match recency window/);
+    expect(getConfig<string>(db, 'ats_sweep_cron')).toBe(before);
+  });
+
+  it('refuses at save a recency window at or below the sweep gap', () => {
+    const db = getDb();
+    const gap = cronMaxGapHours(getConfig<string>(db, 'ats_sweep_cron'))!;
+    const out = applyKnobWrite(db, { key: 'killer_match_recency_window_hours', value: gap });
+    expect(out.status).toBe(400);
+    expect((out.body as { error: string }).error).toMatch(/killer-match recency window/);
+    expect(applyKnobWrite(db, { key: 'killer_match_recency_window_hours', value: Math.ceil(gap) + 1 }).status).toBe(
+      200,
+    );
+  });
+
+  it('refuses a reset that would break the pair, and keeps the override', () => {
+    const db = getDb();
+    // Window 30h lets a daily sweep through; resetting the window to its
+    // default would then leave a 24h gap against a shorter window.
+    expect(applyKnobWrite(db, { key: 'killer_match_recency_window_hours', value: 30 }).status).toBe(200);
+    expect(applyKnobWrite(db, { key: 'ats_sweep_cron', value: '0 7 * * *' }).status).toBe(200);
+    const out = applyKnobWrite(db, { key: 'killer_match_recency_window_hours', reset: true });
+    expect(out.status).toBe(400);
+    expect(getConfig<number>(db, 'killer_match_recency_window_hours')).toBe(30);
   });
 });
 

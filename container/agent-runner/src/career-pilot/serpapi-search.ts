@@ -1,5 +1,9 @@
 /**
- * SerpApi `google_jobs` search — the PRIMARY job-lead source (STRATEGY §24.50).
+ * SerpApi `google_jobs` search — a gated SUPPLEMENT to the host's direct
+ * employer-board sweep (STRATEGY §24.50, reversed by §24.200 D4/D8). Every page
+ * is reserved from the host's search quota before it is fetched
+ * (`SearchGoogleJobsOpts.reservePage`); a refused first page makes the search
+ * unavailable.
  *
  * Container-side, mirroring the `rank-leads.ts` pattern: the MCP tool body
  * fetches an external API directly, leaning on the OneCLI-gated outbound path
@@ -249,6 +253,21 @@ export interface SearchGoogleJobsArgs {
   location?: string | null;
   remote?: boolean | null;
   limit?: number | null;
+}
+
+/** The host's answer to "may I spend one more result page?" (§24.200 D8). */
+export interface PageReservation {
+  granted: boolean;
+  /** Why not, when refused (e.g. the day's budget or the period's quota is spent). */
+  message?: string;
+  reason?: string;
+}
+
+export interface SearchGoogleJobsOpts {
+  /** Asked BEFORE every page fetch. A refusal on the first page makes the
+   *  search unavailable (`QUOTA`); on a later page it ends the search with what
+   *  it has. A throw counts as a refusal — the spend gate fails closed. */
+  reservePage?: () => Promise<PageReservation>;
 }
 
 export class SearchJobsError extends Error {
@@ -505,7 +524,10 @@ async function fetchPage(url: string): Promise<SerpApiResponse> {
  * nothing. Throws `SearchJobsError` only for genuine unavailability (HTTP
  * error / network / parse), which the caller maps to the ATS fallback.
  */
-export async function searchGoogleJobs(args: SearchGoogleJobsArgs): Promise<GoogleJobPayload[]> {
+export async function searchGoogleJobs(
+  args: SearchGoogleJobsArgs,
+  opts: SearchGoogleJobsOpts = {},
+): Promise<GoogleJobPayload[]> {
   const query = (args.query ?? '').trim();
   if (!query) throw new SearchJobsError('BAD_ARGS', 'query is required');
   const limit = Math.min(MAX_LIMIT, Math.max(1, args.limit && args.limit > 0 ? Math.floor(args.limit) : DEFAULT_LIMIT));
@@ -517,6 +539,18 @@ export async function searchGoogleJobs(args: SearchGoogleJobsArgs): Promise<Goog
   let url: string | null = buildSearchUrl(args);
 
   for (let page = 0; page < maxPages && url; page += 1) {
+    if (opts.reservePage) {
+      let r: PageReservation;
+      try {
+        r = await opts.reservePage();
+      } catch (e) {
+        r = { granted: false, message: `quota check failed: ${e instanceof Error ? e.message : String(e)}` };
+      }
+      if (!r.granted) {
+        if (page === 0) throw new SearchJobsError('QUOTA', r.message ?? r.reason ?? 'search quota spent');
+        break; // keep what the granted pages returned
+      }
+    }
     const data: SerpApiResponse = await fetchPage(url);
     if (data.error) break; // 200 + error ⇒ no results for this query; stop cleanly
     const jobs = data.jobs_results ?? [];

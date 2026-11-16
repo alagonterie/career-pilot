@@ -37,6 +37,11 @@ export const PIPELINE_DATA_TABLES = [
   // that rebuilt the pool while keeping tombstones would silently refuse the
   // re-seeded postings, so it is cleared with (and ahead of) the pool.
   'job_lead_tombstones',
+  // §24.200 D5 — sourcing-run summaries describe the pool being rebuilt.
+  // (`ats_watchlist` is deliberately ABSENT: it is the owner's board list —
+  // configuration, not pipeline state — and survives every reset. So is
+  // `search_quota_usage`: a reset must not hand back provider quota really spent.)
+  'lead_source_runs',
   'job_leads',
   'simulator_runs',
   'email_events',

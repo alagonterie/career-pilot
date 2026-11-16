@@ -317,6 +317,31 @@ const LEADS = {
       snippet: null,
     },
   ],
+  // §24.200 slice (b) — the direct-board sweep + the search supplement.
+  sourcing: {
+    lastSweep: {
+      id: 'run-1',
+      started_at: '2026-06-25T00:00:00Z',
+      finished_at: '2026-06-25T00:01:00Z',
+      ok: true,
+      trigger: 'schedule',
+      boards_ok: 12,
+      boards_failed: 1,
+      new: 4,
+      refreshed: 30,
+      closed: 2,
+      reopened: 1,
+      rejected: { filter: 40, age: 3 },
+      failing_boards: [{ company: 'Acme', ats: 'lever', error: 'HTTP 500' }],
+    },
+    sweepRunning: false,
+    lastSearch: {
+      at: '2026-06-25T00:00:00Z',
+      rejected: { aggregator: 6 },
+      rejected_by_site: { 'reposter.example': 6 },
+    },
+    searchQuota: { used_period: 120, monthly_quota: 250, used_today: 4, daily_cap: 20, period_start: '2026-06-01' },
+  },
 }
 
 /** Stub the admin reads (+ the knob/control/sandbox POSTs). `available:false` → every read 404s. */
@@ -455,6 +480,35 @@ test.describe('/admin — control center (§24.138)', () => {
     await page.getByTestId('leads-applied-open').click()
     await expect(page.getByTestId('leads-applied-popover')).toBeVisible()
     await expect(page.getByTestId('leads-applied-date')).toHaveValue(/^\d{4}-\d{2}-\d{2}$/)
+  })
+
+  test('Leads sourcing strip: last sweep, quota, Sweep now, block a board (§24.201 D4/D6)', async ({ page }) => {
+    await stubAdmin(page)
+    const posted: Record<string, unknown>[] = []
+    page.on('request', (req) => {
+      if (req.url().endsWith('/api/admin/leads') && req.method() === 'POST') {
+        posted.push(req.postDataJSON() as Record<string, unknown>)
+      }
+    })
+    await page.goto('/admin?tab=leads')
+
+    await expect(page.getByTestId('leads-sweep-summary')).toContainText('4 new · 2 closed · 1 reopened')
+    await expect(page.getByTestId('leads-search-quota')).toContainText('120 / 250 this period · today 4 / 20')
+    await page.getByTestId('leads-sweep-detail-toggle').click()
+    await expect(page.getByTestId('leads-sweep-failing-board')).toContainText('Acme (lever)')
+
+    await page.getByTestId('leads-sweep-now').click()
+    await expect(page.getByTestId('leads-note')).toContainText('Sweep started')
+    await expect.poll(() => posted.some((b) => b.action === 'sweep_now')).toBe(true)
+
+    // a board-sourced lead offers "block this company's board"
+    await page.getByTestId('leads-row').first().click()
+    await page.getByTestId('leads-ni-open').click()
+    await page.getByTestId('leads-ni-block-company').check()
+    await page.getByTestId('leads-ni-confirm').click()
+    await expect
+      .poll(() => posted.find((b) => b.action === 'not_interested'))
+      .toMatchObject({ id: 'lead-1', block_company: true })
   })
 
   test('the active tab is URL-driven — deep-link + back/forward (§24.176)', async ({ page }) => {

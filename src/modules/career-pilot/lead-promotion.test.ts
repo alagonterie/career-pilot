@@ -281,3 +281,43 @@ describe('backfillLeadPromotions', () => {
     expect(backfillLeadPromotions(getDb()).promotions).toHaveLength(0);
   });
 });
+
+describe('promoteLeadOnApplied — postings that came down (§24.201 D8, lead_promotion_absent_grace_days)', () => {
+  const closeAs = (id: string, reason: string, daysAgo: number) =>
+    getDb()
+      .prepare('UPDATE job_leads SET closed_at = ?, closed_reason = ? WHERE id = ?')
+      .run(new Date(Date.now() - daysAgo * 86_400_000).toISOString(), reason, id);
+
+  it('links a lead closed as absent within the grace window instead of creating a duplicate', () => {
+    seedApp('app-1', { job_url: 'https://boards.example.com/eng-42' });
+    seedLead({ id: 'lead-1', source_url: 'https://boards.example.com/eng-42' });
+    closeAs('lead-1', 'absent', 3);
+
+    const res = promoteLeadOnApplied(getDb(), { application_id: 'app-1', to: 'APPLIED' }, { createIfMissing: true });
+    expect(res).toEqual({ leadId: 'lead-1', via: 'url' });
+    expect(leadOf('lead-1')).toEqual({ status: 'applied', application_id: 'app-1' });
+    expect((getDb().prepare('SELECT COUNT(*) AS n FROM job_leads').get() as { n: number }).n).toBe(1);
+  });
+
+  it('prefers an open lead over a recently-absent one with the same company + title', () => {
+    seedApp('app-1', { job_url: null, company_name: 'Acme', role_title: 'Backend Engineer' });
+    seedLead({ id: 'gone', rules_score: 99 });
+    closeAs('gone', 'absent', 1);
+    seedLead({ id: 'open', rules_score: 10 });
+
+    expect(promoteLeadOnApplied(getDb(), { application_id: 'app-1', to: 'APPLIED' })).toEqual({
+      leadId: 'open',
+      via: 'company_title',
+    });
+  });
+
+  it('ignores an absent lead past the grace window, and a lead closed for another reason', () => {
+    seedApp('app-1', { job_url: 'https://boards.example.com/eng-42' });
+    seedLead({ id: 'old', source_url: 'https://boards.example.com/eng-42' });
+    closeAs('old', 'absent', 45); // default grace is 30 days
+    seedLead({ id: 'archived', source_url: 'https://boards.example.com/eng-42' });
+    closeAs('archived', 'manual', 1);
+
+    expect(promoteLeadOnApplied(getDb(), { application_id: 'app-1', to: 'APPLIED' })).toBeNull();
+  });
+});

@@ -311,6 +311,47 @@ export interface AdminLeadsView {
   /** §24.201 D4 — the owner's excluded titles (whole-title, case-insensitive).
    *  Optional on the client: a host without the list omits it (= empty). */
   titleBlocklist?: string[]
+  /** §24.200 D5/D8 — the direct-board sweep and the search supplement. Optional
+   *  on the client: a host without the sweep omits it and the strip is hidden. */
+  sourcing?: AdminLeadsSourcing
+}
+
+/** One `lead_source_runs` row — a single direct-board sweep (§24.200 D5). */
+export interface LeadSweepRun {
+  id: string
+  started_at: string
+  /** Typed nullable defensively: a run row may be read before it finishes. */
+  finished_at: string | null
+  ok: boolean
+  trigger: 'schedule' | 'manual'
+  boards_ok: number
+  boards_failed: number
+  new: number
+  refreshed: number
+  closed: number
+  reopened: number
+  /** Postings the sweep did not insert, by reason (filter, age, tombstone, cap…). */
+  rejected: Record<string, number>
+  failing_boards: { company: string; ats: string; error: string }[]
+}
+
+export interface AdminLeadsSourcing {
+  lastSweep: LeadSweepRun | null
+  sweepRunning: boolean
+  /** The last search-index run: what the insert guard refused, by reason and by
+   *  the reposting site it came from. */
+  lastSearch: {
+    at: string
+    rejected: Record<string, number>
+    rejected_by_site: Record<string, number>
+  } | null
+  searchQuota: {
+    used_period: number
+    monthly_quota: number
+    used_today: number
+    daily_cap: number
+    period_start: string
+  }
 }
 
 /** Poll the owner job-leads world-model (real company names — owner-only). */
@@ -327,7 +368,16 @@ export type AdminLeadsWrite =
   | { action: 'bulk_set_status'; ids: string[]; status: string; reason?: string }
   | { action: 'bulk_delete'; ids: string[]; confirm: true }
   // §24.201 D4 — archive + a tombstone whose reach follows the reason.
-  | { action: 'not_interested'; id: string; reason: NotInterestedReason; exclude_title?: boolean }
+  // `block_company` (§24.200 slice b) also pauses that company's watchlist board.
+  | {
+      action: 'not_interested'
+      id: string
+      reason: NotInterestedReason
+      exclude_title?: boolean
+      block_company?: boolean
+    }
+  // §24.201 D6 — start a direct-board sweep now (detached; the poll shows it).
+  | { action: 'sweep_now' }
   // The undo of "exclude this title" — the response carries the updated list.
   | { action: 'title_blocklist_remove'; title: string }
   // §24.201 D8 — create the application and the lead link atomically.
@@ -387,6 +437,25 @@ export interface NotInterestedResult {
   title_blocklisted: boolean
   /** The owner's title blocklist after this write (absent on an older host). */
   title_blocklist?: string[]
+  /** Whether `block_company` paused a watchlist board — false when no board on
+   *  the watchlist matches the lead's company (absent on an older host). */
+  company_blocked?: boolean
+}
+
+export type SweepNowOutcome =
+  | { kind: 'started' }
+  | { kind: 'already_running' }
+  | { kind: 'halted' }
+  | { kind: 'error'; status: number; error: string }
+
+/** "Sweep now" (§24.201 D6). The sweep is detached on the host: a 202 means it
+ *  started, and the regular leads poll picks up the run as it lands. */
+export async function postSweepNow(baseUrl: string): Promise<SweepNowOutcome> {
+  const res = await postAdminLeads(baseUrl, { action: 'sweep_now' })
+  if (res.ok) return { kind: 'started' }
+  if (res.status === 409 && res.error === 'already_running') return { kind: 'already_running' }
+  if (res.status === 409 && res.error === 'halted') return { kind: 'halted' }
+  return { kind: 'error', status: res.status, error: res.error ?? `failed (${res.status})` }
 }
 
 export interface AppliedFromLeadResult {

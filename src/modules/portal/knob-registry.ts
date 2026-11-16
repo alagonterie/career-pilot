@@ -21,6 +21,7 @@
  * shell in api.ts wraps them.
  */
 import type Database from 'better-sqlite3';
+import { CronExpressionParser } from 'cron-parser';
 
 import { getConfig, getConfigDefault } from '../../get-config.js';
 
@@ -57,6 +58,10 @@ export interface KnobSpec {
   maxLength?: number;
   /** Validation regex (string source), for `type: 'text'` — only checked when the value is non-empty. */
   pattern?: string;
+  /** For `type: 'text'`: the value is itself a regular expression (compiled
+   *  case-insensitively by its reader) — a non-empty value that does not compile
+   *  is refused at save rather than failing later inside the job that reads it. */
+  regex?: boolean;
   /** Surfaced to the UI — e.g. cron changes only take effect on the next reclone. */
   note?: string;
 }
@@ -712,6 +717,132 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     integer: true,
     note: 'How close (SimHash Hamming bits) a new posting from the same company must be to a "not interested" / deleted posting to be refused. 0 = exact fingerprint only (default — no distance has been measured on this pool yet). Raising it refuses near-duplicates too, at the risk of refusing a sibling posting you wanted.',
   },
+  lead_promotion_absent_grace_days: {
+    type: 'number',
+    group: 'scouting',
+    label: 'Link applications to taken-down postings (days)',
+    min: 0,
+    max: 365,
+    integer: true,
+    note: 'When an application is reported after its posting came off the employer board, it still links to that lead if the lead was closed as gone within this many days (instead of creating a duplicate lead). 0 = only open leads are matched.',
+  },
+  ats_response_cache_max_entries: {
+    type: 'number',
+    group: 'scouting',
+    label: 'Board response cache size (boards)',
+    min: 1,
+    max: 5000,
+    integer: true,
+    note: 'How many employer boards’ last responses the host keeps in memory (each holds the whole board). Past this the least recently used board is dropped and simply refetched next time. Keep it at or above the number of watched boards so the hourly cache and ETags stay effective.',
+  },
+  ats_sweep_enabled: {
+    type: 'boolean',
+    group: 'scouting',
+    label: 'Employer-board sweep enabled',
+    note: 'Master toggle for the scheduled sweep of watched employer boards. It never runs while the system is halted or the kill switch is on, whatever this says.',
+  },
+  ats_sweep_cron: {
+    type: 'cron',
+    group: 'scouting',
+    label: 'Employer-board sweep cron',
+    note: 'How often the host sweeps every watched board. It must run more often than the killer-match recency window, or a fresh posting is already outside the alert window when it lands — a schedule with a longer gap is refused at save. Read by the host on each tick, so a change applies without a reclone.',
+  },
+  ats_sweep_title_include: {
+    type: 'text',
+    group: 'scouting',
+    label: 'Sweep: titles to keep (regex)',
+    maxLength: 1000,
+    regex: true,
+    note: 'A case-insensitive regular expression; a board posting is considered only when its title matches. Empty keeps every title. A pattern that does not compile is refused at save.',
+  },
+  ats_sweep_title_exclude: {
+    type: 'text',
+    group: 'scouting',
+    label: 'Sweep: titles to drop (regex)',
+    maxLength: 1000,
+    regex: true,
+    note: 'A case-insensitive regular expression; a board posting whose title matches is dropped even if it matched the keep pattern. Empty drops nothing. A pattern that does not compile is refused at save.',
+  },
+  ats_sweep_location_filter: {
+    type: 'text',
+    group: 'scouting',
+    label: 'Sweep: locations to keep (regex)',
+    maxLength: 1000,
+    regex: true,
+    note: 'A case-insensitive regular expression matched against a board posting’s location(s); empty keeps every location. A pattern that does not compile is refused at save.',
+  },
+  ats_sweep_max_age_days: {
+    type: 'number',
+    group: 'scouting',
+    label: 'Sweep: max posting age (days)',
+    min: 1,
+    max: 365,
+    integer: true,
+    note: 'A board posting first published longer ago than this is not added by the sweep (it is counted as rejected for age).',
+  },
+  ats_sweep_max_new_per_run: {
+    type: 'number',
+    group: 'scouting',
+    label: 'Sweep: max new leads per run',
+    min: 0,
+    max: 1000,
+    integer: true,
+    note: 'Caps how many new leads one sweep adds (the rest are counted as rejected for the cap and picked up by later sweeps). Also bounds the ranking spend those new leads cause downstream.',
+  },
+  ats_sweep_stale_hours: {
+    type: 'number',
+    group: 'scouting',
+    label: 'Sweep stale after (hours)',
+    min: 1,
+    max: 720,
+    integer: true,
+    note: 'Health and the architecture map report the employer-board sweep as down when no sweep has succeeded for this long.',
+  },
+  ats_board_failing_days: {
+    type: 'number',
+    group: 'scouting',
+    label: 'Board failing after (days)',
+    min: 1,
+    max: 90,
+    integer: true,
+    note: 'Health reports a watched board whose last successful fetch is older than this many days.',
+  },
+  ats_watchlist_retire_after: {
+    type: 'number',
+    group: 'scouting',
+    label: 'Retire a board after (failed sweeps)',
+    min: 1,
+    max: 1000,
+    integer: true,
+    note: 'A watched board that the ATS reports as gone (not found) this many sweeps in a row is set to absent and no longer swept. Other failures (rate limits, server errors, network outages) never retire a board; health reports them instead. One successful fetch resets the count.',
+  },
+  search_daily_page_cap: {
+    type: 'number',
+    group: 'budget',
+    label: 'Search pages per day',
+    min: 0,
+    max: 1000,
+    integer: true,
+    note: 'The most result pages the job-search supplement may spend in one day. Past it, search reports itself unavailable until tomorrow. 0 = search off.',
+  },
+  search_monthly_quota: {
+    type: 'number',
+    group: 'budget',
+    label: 'Search pages per billing period',
+    min: 0,
+    max: 1_000_000,
+    integer: true,
+    note: 'The job-search provider’s quota for one billing period, counted from the anchor day below. Past it, search reports itself unavailable until the next period.',
+  },
+  search_quota_period_anchor_day: {
+    type: 'number',
+    group: 'budget',
+    label: 'Search billing period starts on (day of month)',
+    min: 1,
+    max: 28,
+    integer: true,
+    note: 'The day of the month the search provider’s quota resets. Capped at 28 so every month has the day.',
+  },
   applied_undo_window_s: {
     type: 'number',
     group: 'scouting',
@@ -753,7 +884,7 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     min: 1,
     max: 720,
     integer: true,
-    note: 'Only leads first seen within this window are eligible for an alert.',
+    note: 'Only leads first seen within this window are eligible for an alert. Must stay longer than the employer-board sweep’s longest gap between runs (refused at save otherwise).',
   },
   killer_match_max_per_fire: {
     type: 'number',
@@ -1325,6 +1456,16 @@ export function validateKnobWrite(key: string, value: unknown): ValidationResult
     if (spec.pattern && v.length > 0 && !new RegExp(spec.pattern).test(v)) {
       return { ok: false, error: `${key} must match ${spec.pattern}` };
     }
+    if (spec.regex && v.length > 0) {
+      try {
+        new RegExp(v, 'i');
+      } catch (err) {
+        return {
+          ok: false,
+          error: `${key} is not a valid regular expression: ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    }
     return { ok: true, stored: v, value: v };
   }
 
@@ -1333,6 +1474,60 @@ export function validateKnobWrite(key: string, value: unknown): ValidationResult
     return { ok: false, error: `${key} must be a 5-field cron expression` };
   }
   return { ok: true, stored: value.trim(), value: value.trim() };
+}
+
+// ── cross-knob invariants ────────────────────────────────────────────────────────
+
+/**
+ * The longest gap (hours) between two consecutive fires of `cron`, scanned over
+ * eight days so weekday-restricted schedules are measured too. null when the
+ * expression does not parse. Pure.
+ */
+export function cronMaxGapHours(cron: string): number | null {
+  try {
+    const start = Date.parse('2026-01-05T00:00:00Z');
+    const iter = CronExpressionParser.parse(cron, { currentDate: new Date(start), tz: 'UTC' });
+    let prev = iter.next().getTime();
+    let max = 0;
+    for (let i = 0; i < 20_000; i++) {
+      const next = iter.next().getTime();
+      max = Math.max(max, next - prev);
+      prev = next;
+      if (next - start > 8 * 86_400_000) break;
+    }
+    return max / 3_600_000;
+  } catch {
+    return null;
+  }
+}
+
+/** Knobs whose values must agree with each other, checked whenever either is saved or reset. */
+const SWEEP_INTERVAL_KEYS = new Set(['ats_sweep_cron', 'killer_match_recency_window_hours']);
+
+/**
+ * §24.200 D5: the employer-board sweep must fire more often than the
+ * killer-match recency window, or a fresh board posting is already outside the
+ * alert window when it lands and killer-match can never alert on it. `pending`
+ * is the value about to be stored for `key`; the other knob is read as it
+ * resolves now. Returns an error message, or null when the pair is consistent.
+ */
+export function checkCrossKnobInvariants(db: Database.Database, key: string, pending: unknown): string | null {
+  if (!SWEEP_INTERVAL_KEYS.has(key)) return null;
+  const cron = key === 'ats_sweep_cron' ? String(pending) : getConfig<string>(db, 'ats_sweep_cron');
+  const windowHours =
+    key === 'killer_match_recency_window_hours'
+      ? Number(pending)
+      : getConfig<number>(db, 'killer_match_recency_window_hours');
+  const gap = cronMaxGapHours(cron);
+  if (gap === null) return `ats_sweep_cron does not parse as a schedule: ${cron}`;
+  if (!(gap < windowHours)) {
+    return (
+      `the employer-board sweep (ats_sweep_cron "${cron}") can go ${Number(gap.toFixed(2))}h between runs, which is not ` +
+      `shorter than the killer-match recency window (killer_match_recency_window_hours = ${windowHours}h): ` +
+      'a fresh board posting would land after its alert window closed. Make the sweep more frequent or the window longer.'
+    );
+  }
+  return null;
 }
 
 // ── preferences write ──────────────────────────────────────────────────────────
@@ -1404,7 +1599,13 @@ export function applyKnobWrite(
 
   if (body.reset === true) {
     if (!KNOB_SPECS[key] || !allowed) return { status: 400, body: { error: `key not writable: ${key}` } };
+    const prior = db.prepare('SELECT value FROM preferences WHERE key = ?').get(key) as { value: string } | undefined;
     deletePreference(db, key);
+    const invariant = checkCrossKnobInvariants(db, key, getConfig(db, key));
+    if (invariant) {
+      if (prior) writePreference(db, key, prior.value); // nothing changes on a refusal
+      return { status: 400, body: { error: invariant } };
+    }
     return { status: 200, body: { key, reset: true, value: getConfig(db, key) } };
   }
 
@@ -1413,6 +1614,8 @@ export function applyKnobWrite(
   if (!res.ok) {
     return { status: 400, body: { error: res.error } };
   }
+  const invariant = checkCrossKnobInvariants(db, key, res.value);
+  if (invariant) return { status: 400, body: { error: invariant } };
   writePreference(db, key, res.stored as string);
   const spec = KNOB_SPECS[key];
   return { status: 200, body: { key, value: res.value, applied: true, note: spec.note ?? null } };
