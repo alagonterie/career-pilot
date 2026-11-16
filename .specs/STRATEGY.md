@@ -7915,6 +7915,26 @@ Not taken from upstream: its move back to a separately installed claude-code (`p
 
 ---
 
+## §24.200 — The Turnstile gate was correct but mute: a dead button with no reason, a contact retry that could never succeed; and the e2e gate died on a runner-image roll
+
+**What was checked (prod, 2026-11-16).** The §24.70 edge guard is live and correct: a tokenless or bogus-token `POST /api/{contact,simulator}` returns 403 `turnstile_failed`; the production environment carries a real site key + secret + hostname; in a real browser the invisible widget solves in ~2 s and the submit button enables. Turnstile guards only the two mutations, never page loads. Prod has no WAF challenge/rate rules (§24.165 D7), so nothing else at the edge challenges a visitor. The owner's report of "inconsistent" behavior traces to three client-side gaps, not to the wiring:
+
+1. **A silently disabled button.** With a real site key the submit button is disabled until a token arrives (`appearance: 'interaction-only'` — the widget is invisible unless Cloudflare demands a checkbox). For 1–3 s on every load — and forever when the solve is blocked (content blocker, strict privacy browser) — the button is dead with no explanation.
+2. **A contact retry that cannot succeed.** A Turnstile token is single-use. `ContactForm` stays mounted after a failed submit and kept the spent token, so every retry re-sent it and was rejected with 403 until a reload — while the error text said "please try again". (`/watch` is unaffected: `SimInput` unmounts on error and remounts with a fresh widget.)
+3. **A 403 that hides its cause.** Both forms folded `turnstile_failed` into their generic failure copy.
+
+**Decision (D1) — the hook reports what the widget is doing.** `useTurnstile` additionally returns `status` (`off` — no site key; `solving`; `ready`; `failed` — the widget's error callback fired) and `reset()` (re-runs the widget and clears the token). It also returns a `hint` node: under enforcement only, a quiet "Verifying you're human…" line while `solving`, and an actionable line when `failed` (allow the verification / disable content blockers, or reload). With no site key or the always-pass test key the hint renders nothing — local, tests, dev and the `@visual` baselines are unchanged.
+
+**Decision (D2) — every failed contact submit burns the token on purpose.** After any non-OK or thrown `POST /api/contact`, `ContactForm` calls `reset()`: the button returns to its `solving` state and re-enables on the fresh token, so "try again" is true. A 403 gets its own copy (verification failed — wait a moment and send again) instead of the relay-unavailable copy.
+
+**Decision (D3) — `/watch` names a verification failure.** `useSimulatorRun` maps a 403 to a verification-specific error message; the existing error fallback's reset already remounts `SimInput` with a fresh widget.
+
+**Decision (D4) — the e2e runner is pinned.** `frontend-e2e` ran on `ubuntu-latest`, which rolled to Ubuntu 26.04; the installed Playwright has no dependency set for it, so `playwright install --with-deps` failed before any test ran. The job now pins `ubuntu-24.04` — a runner-image roll must be a deliberate change made together with a Playwright version that supports it. The browser-cache key hashed `frontend/pnpm-lock.yaml`, which does not exist (the lockfile is at the workspace root), so the key was constant and never invalidated on a Playwright bump; it now hashes `pnpm-lock.yaml`.
+
+**DoD.** `useTurnstile`: `status` is `off` with no key; `solving` → `ready` on the widget's success; `failed` on its error; `reset()` clears the token, returns to `solving`, and calls the widget's reset. The hint renders only under enforcement. `ContactForm`: a failed submit resets the widget; a 403 shows the verification copy; other failures keep the existing copy. `useSimulatorRun`: a 403 yields the verification message. `frontend-e2e` passes on the pinned runner. Not verified here: a real prod form submission (it pages the owner / spends a sandbox run) — the owner confirms on the next real use.
+
+---
+
 1. **Where exactly do we host OneCLI?** It runs as a local proxy at `127.0.0.1:10254` on the host. For local dev: same. For prod: it must run as a sidecar service or as a container on the VM. NanoClaw's `/init-onecli` skill handles this — assume their docs cover it, verify during Phase 0.
 
 2. **Cloudflare Tunnel + SSE longevity:** Cloudflare Tunnel works for SSE but has connection-idle timeouts. Need to verify the default timeout is >5 minutes (our session ceiling) or configure keep-alives. Verify during Phase 4. **Resolution (§24.39, D9):** settled in the deployed dev env (Sub-milestone 9.2) against the live tunnel — the browser's direct SSE connection bypasses the Worker (and `EventSource` can't set headers), so it passes via the **Access session cookie** (`CF_Authorization`) instead of the Service-Auth header; the exact cross-host priming + the tunnel idle-timeout/keep-alive are verified against primary CF docs at build time.
