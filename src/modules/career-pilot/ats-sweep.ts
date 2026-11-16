@@ -326,16 +326,18 @@ async function runSweep(db: Database.Database, trigger: SweepTrigger, deps: Swee
 
     const searchCopies = indexSearchCopies(db);
     const boards = listActiveBoards(db);
+    const swept: SweptBoard[] = [];
     for (const board of boards) {
-      await sweepBoard(db, board, listBoard, clock, run, {
+      const result = await sweepBoard(db, board, listBoard, clock, run, {
         include,
         exclude,
         location,
         maxAgeDays,
-        maxNew,
         searchCopies,
       });
+      if (result) swept.push(result);
     }
+    insertNewestFirst(db, swept, maxNew, run);
     // A run that reached no board at all did not succeed: health and the
     // /architecture probe read freshness from ok=1, and an egress or vendor
     // outage must read as down, not as a fresh sweep. (No active boards → ok.)
@@ -399,9 +401,51 @@ interface SweepFilters {
   exclude: CompiledFilter;
   location: CompiledFilter;
   maxAgeDays: number;
-  maxNew: number;
   /** `indexSearchCopies` for this run. */
   searchCopies: Map<string, string[]>;
+}
+
+/** One board that answered: its new postings that passed every filter, not yet stored. */
+interface SweptBoard {
+  board: WatchlistRow;
+  at: Date;
+  candidates: JobLeadPayload[];
+}
+
+/**
+ * Store the run's new postings NEWEST FIRST across every board, up to
+ * `ats_sweep_max_new_per_run`. The cap is applied to the whole run rather than
+ * board by board in watchlist order: otherwise one large board fills every run
+ * for a day and a posting published an hour ago on a later board waits behind
+ * month-old ones — past the alert window it was fresh for. A posting with no
+ * date sorts last. Then each board's fetch is recorded with what it yielded.
+ */
+function insertNewestFirst(db: Database.Database, swept: SweptBoard[], maxNew: number, run: SweepRunResult): void {
+  const queue = swept.flatMap((b, i) => b.candidates.map((posting) => ({ posting, i })));
+  const postedMs = (p: JobLeadPayload): number => {
+    const t = p.source_posted_at ? Date.parse(p.source_posted_at) : NaN;
+    return Number.isNaN(t) ? -Infinity : t;
+  };
+  queue.sort((a, b) => postedMs(b.posting) - postedMs(a.posting));
+  const newByBoard = new Array<number>(swept.length).fill(0);
+  for (const { posting, i } of queue) {
+    if (run.new >= maxNew) {
+      bump(run.rejected, 'cap');
+      continue;
+    }
+    const result = upsertJobLead(db, posting);
+    if (!result.recorded) {
+      bump(run.rejected, result.reason);
+      continue;
+    }
+    if (result.inserted_or_updated === 'inserted') {
+      run.new += 1;
+      newByBoard[i] += 1;
+    }
+  }
+  swept.forEach((b, i) => {
+    recordBoardFetch(db, b.board.id, { ok: true, absent: false, newLeads: newByBoard[i] }, b.at);
+  });
 }
 
 async function sweepBoard(
@@ -411,7 +455,7 @@ async function sweepBoard(
   clock: () => Date,
   run: SweepRunResult,
   f: SweepFilters,
-): Promise<void> {
+): Promise<SweptBoard | null> {
   const ats = board.ats;
   let res: SourceListResult;
   try {
@@ -427,7 +471,7 @@ async function sweepBoard(
     const error = res.absent ? `board absent${res.error ? ` (${res.error})` : ''}` : (res.error ?? 'fetch failed');
     run.failing_boards.push({ company: board.company, ats, error });
     recordBoardFetch(db, board.id, { ok: false, absent: res.absent, error: res.error ?? null }, clock());
-    return;
+    return null;
   }
 
   run.boards_ok += 1;
@@ -452,7 +496,7 @@ async function sweepBoard(
     location: f.location.re,
     maxAgeDays: f.maxAgeDays,
   };
-  let newForBoard = 0;
+  const candidates: JobLeadPayload[] = [];
   for (const raw of res.postings) {
     if (known.has(raw.source_job_id)) continue;
     const copies = f.searchCopies.get(atsJobKey(ats, board.token, raw.source_job_id));
@@ -467,21 +511,9 @@ async function sweepBoard(
       bump(run.rejected, drop);
       continue;
     }
-    if (run.new >= f.maxNew) {
-      bump(run.rejected, 'cap');
-      continue;
-    }
-    const result = upsertJobLead(db, posting);
-    if (!result.recorded) {
-      bump(run.rejected, result.reason);
-      continue;
-    }
-    if (result.inserted_or_updated === 'inserted') {
-      run.new += 1;
-      newForBoard += 1;
-    }
+    candidates.push(posting);
   }
-  recordBoardFetch(db, board.id, { ok: true, absent: false, newLeads: newForBoard }, now);
+  return { board, at: now, candidates };
 }
 
 // ── scheduling ─────────────────────────────────────────────────────────────

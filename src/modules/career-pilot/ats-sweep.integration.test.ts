@@ -146,6 +146,60 @@ describe('sweepWatchlist — inserts + the run row', () => {
     expect(getBoard(getDb(), 'greenhouse', 'acme')?.last_ok_at).toBeTruthy();
   });
 
+  it('spends the per-run cap on the NEWEST postings across every board, not on the first board', async () => {
+    // Watchlist order is tier, company: Acme is swept first and alone could fill the cap.
+    addBoard('acme', 'Acme');
+    addBoard('globex', 'Globex');
+    setPref('ats_sweep_max_new_per_run', 3);
+    const hoursAgo = (n: number): string => new Date(Date.now() - n * 3_600_000).toISOString();
+    const run = await sweep(
+      boards({
+        acme: ok([
+          posting('acme', 'a-old-1', { source_posted_at: hoursAgo(200) }),
+          posting('acme', 'a-old-2', { source_posted_at: hoursAgo(190) }),
+          posting('acme', 'a-old-3', { source_posted_at: hoursAgo(180) }),
+          posting('acme', 'a-fresh', { source_posted_at: hoursAgo(3) }),
+          posting('acme', 'a-undated', { source_posted_at: null }),
+        ]),
+        globex: ok([
+          posting('globex', 'g-fresh-1', { source_posted_at: hoursAgo(1) }),
+          posting('globex', 'g-fresh-2', { source_posted_at: hoursAgo(2) }),
+        ]),
+      }),
+    );
+    expect(run.new).toBe(3);
+    expect(run.rejected).toEqual({ cap: 4 });
+    const stored = (
+      getDb().prepare('SELECT source_job_id FROM job_leads ORDER BY source_job_id').all() as Array<{
+        source_job_id: string;
+      }>
+    ).map((r) => r.source_job_id);
+    expect(stored).toEqual(['a-fresh', 'g-fresh-1', 'g-fresh-2']);
+    // Each board's row records what IT yielded.
+    expect(getBoard(getDb(), 'greenhouse', 'acme')).toMatchObject({ leads_found: 1 });
+    expect(getBoard(getDb(), 'greenhouse', 'globex')).toMatchObject({ leads_found: 2 });
+
+    // The next run takes the next-newest of what was left, undated last.
+    const second = await sweep(
+      boards({
+        acme: ok([
+          posting('acme', 'a-old-1', { source_posted_at: hoursAgo(200) }),
+          posting('acme', 'a-old-2', { source_posted_at: hoursAgo(190) }),
+          posting('acme', 'a-old-3', { source_posted_at: hoursAgo(180) }),
+          posting('acme', 'a-fresh', { source_posted_at: hoursAgo(3) }),
+          posting('acme', 'a-undated', { source_posted_at: null }),
+        ]),
+        globex: ok([
+          posting('globex', 'g-fresh-1', { source_posted_at: hoursAgo(1) }),
+          posting('globex', 'g-fresh-2', { source_posted_at: hoursAgo(2) }),
+        ]),
+      }),
+    );
+    expect(second.new).toBe(3);
+    expect(second.rejected).toEqual({ cap: 1 });
+    expect(lead('a-undated')).toBeUndefined();
+  });
+
   it('filters new postings by title, location and age, caps the run, and counts each rejection by reason', async () => {
     addBoard('acme', 'Acme');
     setPref('ats_sweep_title_include', '\\bengineer\\b');
@@ -154,16 +208,17 @@ describe('sweepWatchlist — inserts + the run row', () => {
     setPref('ats_sweep_max_age_days', 30);
     setPref('ats_sweep_max_new_per_run', 2);
     const old = new Date(Date.now() - 60 * 86_400_000).toISOString();
+    const daysAgo = (n: number): string => new Date(Date.now() - n * 86_400_000).toISOString();
     const run = await sweep(
       boards({
         acme: ok([
-          posting('acme', 'keep-1'),
+          posting('acme', 'keep-1', { source_posted_at: daysAgo(1) }),
           posting('acme', 'designer', { title: 'Product Designer' }),
           posting('acme', 'sales', { title: 'Sales Engineer' }),
           posting('acme', 'onsite', { location_raw: 'Berlin', workplace_type: 'onsite' }),
           posting('acme', 'old', { source_posted_at: old }),
-          posting('acme', 'keep-2'),
-          posting('acme', 'over-cap'),
+          posting('acme', 'keep-2', { source_posted_at: daysAgo(2) }),
+          posting('acme', 'over-cap', { source_posted_at: daysAgo(3) }),
         ]),
       }),
     );

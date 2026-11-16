@@ -102,7 +102,7 @@
     "ats_sweep_enabled": true,
     "ats_sweep_cron": "0 */2 * * *",
     "ats_sweep_title_include": "\\b(software|engineer|engineering|developer|sre|site reliability|devops|platform|infrastructure|backend|back-end|full[- ]?stack|architect)\\b",
-    "ats_sweep_title_exclude": "\\b(sales|account executive|account manager|recruit(er|ing)|marketing|intern(ship)?|new grad|customer success|solutions engineer|sales engineer|legal|counsel|finance|accountant)\\b",
+    "ats_sweep_title_exclude": "\\b(sales|customer engineer|support engineer|field engineer|technician|data cent(er|re)|positioning|account executive|account manager|recruit(er|ing)|marketing|intern(ship)?|new grad|customer success|solutions engineer|sales engineer|legal|counsel|finance|accountant)\\b",
     "ats_sweep_location_filter": "",
     "ats_sweep_max_age_days": 30,
     "ats_sweep_max_new_per_run": 40,
