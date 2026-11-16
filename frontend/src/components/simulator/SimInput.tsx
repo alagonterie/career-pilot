@@ -53,7 +53,7 @@ const inputClass =
  * lands (§24.31).
  */
 export function SimInput({ onRun, disabled }: { onRun: (input: SimRunInput) => void; disabled?: boolean }) {
-  const { token, enforce, widget } = useTurnstile('simulator_run')
+  const { token, enforce, widget, hint } = useTurnstile('simulator_run')
   const {
     register,
     handleSubmit,
@@ -100,6 +100,7 @@ export function SimInput({ onRun, disabled }: { onRun: (input: SimRunInput) => v
             active={disabled ? 'Starting…' : 'Watch me apply →'}
           />
         </Button>
+        {hint}
       </div>
 
       <div className="mt-2 rounded-lg border border-border bg-card px-5 py-4 text-sm text-muted-foreground">

@@ -108,6 +108,20 @@ describe('useSimulatorRun', () => {
     expect(b.result.current.degradeReason).toBe('rate_limit')
   })
 
+  it('names a verification failure on a 403 from the edge guard (§24.200 D3)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => res({ error: 'turnstile_failed' }, false, 403)),
+    )
+
+    const { result } = renderHook(() => useSimulatorRun())
+    act(() => result.current.start({ company: 'Acme', role: 'SWE', turnstileToken: 'spent' }))
+
+    await waitFor(() => expect(result.current.status).toBe('error'))
+    expect(result.current.errorMessage).toMatch(/verify you’re human/i)
+    expect(connectSimulatorStream).not.toHaveBeenCalled()
+  })
+
   it('goes to `error` when the POST cannot be reached', async () => {
     vi.stubGlobal(
       'fetch',

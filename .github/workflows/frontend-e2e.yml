@@ -33,7 +33,11 @@ concurrency:
 
 jobs:
   frontend-e2e:
-    runs-on: ubuntu-latest
+    # Pinned, not `ubuntu-latest` (STRATEGY §24.200 D4): Playwright ships a
+    # system-dependency set per Ubuntu release, so a runner-image roll breaks
+    # `install --with-deps` until Playwright supports it. Bump this together
+    # with a Playwright version that knows the new release.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -61,7 +65,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
             playwright-${{ runner.os }}-
       - name: Install Playwright Chromium

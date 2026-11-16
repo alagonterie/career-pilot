@@ -178,6 +178,13 @@ export function useSimulatorRun(): SimRunState {
           setStatus('unavailable')
           return
         }
+        if (res.status === 403) {
+          // The edge guard's Turnstile verdict (§24.200 D3). "Try again" remounts
+          // the input, which solves a fresh token.
+          setStatus('error')
+          setErrorMessage('Couldn’t verify you’re human — please try again.')
+          return
+        }
         if (!res.ok) {
           setStatus('error')
           setErrorMessage('Could not start the run — please try again.')

@@ -33,7 +33,7 @@ const inputClass =
 export function ContactForm({ company, role, from }: { company?: string; role?: string; from?: string }) {
   const [sent, setSent] = React.useState(false)
   const [submitError, setSubmitError] = React.useState<string | null>(null)
-  const { token, enforce, widget } = useTurnstile('contact_submit')
+  const { token, enforce, widget, hint, reset } = useTurnstile('contact_submit')
 
   const {
     register,
@@ -46,6 +46,7 @@ export function ContactForm({ company, role, from }: { company?: string; role?: 
 
   const onSubmit = async (data: ContactFields): Promise<void> => {
     setSubmitError(null)
+    let status: number | null = null
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (token) headers['x-turnstile-token'] = token
@@ -54,10 +55,18 @@ export function ContactForm({ company, role, from }: { company?: string; role?: 
         headers,
         body: JSON.stringify({ ...data, source: from }),
       })
+      status = res.status
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       setSent(true)
     } catch {
-      setSubmitError('Couldn’t send right now — please try again, or reach me via the links in the footer.')
+      // The token is single-use and now spent (§24.200 D2): solve a fresh one so
+      // the retry this message invites can actually succeed.
+      reset()
+      setSubmitError(
+        status === 403
+          ? 'Couldn’t verify you’re human — give it a moment, then send again.'
+          : 'Couldn’t send right now — please try again, or reach me via the links in the footer.',
+      )
     }
   }
 
@@ -116,7 +125,8 @@ export function ContactForm({ company, role, from }: { company?: string; role?: 
 
       {widget}
 
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-3">
+        {hint}
         {/* §24.120 Δ: StableLabel fixes the button's width to its widest label so
             it never resizes when "Send →" swaps to "Sending…". */}
         <Button type="submit" disabled={isSubmitting || (enforce && !token)}>
