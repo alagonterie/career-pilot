@@ -279,7 +279,7 @@ export function sandboxSpend24hUsd(now: number = Date.now()): number {
 }
 
 /**
- * The employer-board sweep's architecture probe (§24.200 D8). The sweep writes
+ * The employer-board sweep's architecture probe (§24.201 D8). The sweep writes
  * no `request_telemetry` of its own (its board adapters do, per provider), so
  * its freshness comes from `lead_source_runs`: `fresh` = a sweep finished OK
  * within `ats_sweep_stale_hours`. `boards` counts the `active` watchlist rows —
@@ -316,7 +316,7 @@ export function boardSweepProbe(now: number = Date.now()): BoardSweepProbe {
 }
 
 /**
- * The search-index supplement's quota state (§24.200 D8): `quota_spent` when
+ * The search-index supplement's quota state (§24.201 D8): `quota_spent` when
  * today's page cap or the period's quota is used up (a cap of 0 — search
  * switched off — reads spent). The node then reads idle, not down: the tool
  * returns `unavailable` without calling out, by design. Only the boolean is

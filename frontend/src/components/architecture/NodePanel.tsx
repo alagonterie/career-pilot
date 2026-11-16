@@ -102,7 +102,7 @@ function nodeFacts(
     }
     case 'provider': {
       const facts = providerFacts(node, obs)
-      // §24.200 D8: a budgeted search node says whether its page budget is left
+      // §24.201 D8: a budgeted search node says whether its page budget is left
       // (a yes/no only — no page counts on the public page).
       if (node.quotaIdle && arch?.job_search) {
         facts.push({ label: 'Search budget', value: arch.job_search.quota_spent ? 'spent for now' : 'available' })
@@ -110,7 +110,7 @@ function nodeFacts(
       return facts
     }
     case 'boards': {
-      // §24.200 D8: the employer-board sweep — its freshness + how many boards
+      // §24.201 D8: the employer-board sweep — its freshness + how many boards
       // it watches (a count, never which), then the adapters' aggregate telemetry.
       const b = arch?.board_sweep
       if (!b) return providerFacts(node, obs)

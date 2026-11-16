@@ -179,7 +179,7 @@ describe('validateKnobWrite — text knobs (§24.138)', () => {
     expect(validateKnobWrite('sanitization_llm_review_aggressiveness', 'extreme').ok).toBe(false);
   });
 
-  it('refuses a sweep-filter pattern that does not compile, at save (§24.200 D5)', () => {
+  it('refuses a sweep-filter pattern that does not compile, at save (§24.201 D5)', () => {
     for (const key of ['ats_sweep_title_include', 'ats_sweep_title_exclude', 'ats_sweep_location_filter']) {
       expect(KNOB_SPECS[key]?.regex).toBe(true);
       expect(validateKnobWrite(key, '\\b(staff|principal)\\b')).toMatchObject({ ok: true });
@@ -198,7 +198,7 @@ describe('validateKnobWrite — text knobs (§24.138)', () => {
   });
 });
 
-describe('sweep-interval invariant (§24.200 D5)', () => {
+describe('sweep-interval invariant (§24.201 D5)', () => {
   it('measures the longest gap between fires', () => {
     expect(cronMaxGapHours('0 */2 * * *')).toBe(2);
     expect(cronMaxGapHours('0 7 * * *')).toBe(24);

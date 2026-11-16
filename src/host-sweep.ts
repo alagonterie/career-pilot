@@ -271,7 +271,7 @@ async function sweep(): Promise<void> {
     reapStaleSandboxSessions();
     // MODULE-HOOK:career-pilot-sandbox-reap:end
 
-    // 0d. Direct employer-board sweep (STRATEGY.md §24.200 D5): start it when
+    // 0d. Direct employer-board sweep (STRATEGY.md §24.201 D5): start it when
     // `ats_sweep_cron` says it is due. Detached + single-flight — the tick never
     // waits on it (board fetches must not stall container wakes); not started
     // under halted/killswitch; missed occurrences collapse into one run.
@@ -280,7 +280,7 @@ async function sweep(): Promise<void> {
     maybeStartScheduledSweep(getDb());
     // MODULE-HOOK:career-pilot-ats-sweep:end
 
-    // 0d2. Admin-triggered agent actions (STRATEGY.md §24.202 D4): observe each
+    // 0d2. Admin-triggered agent actions (STRATEGY.md §24.203 D4): observe each
     // queued/running action against the ops session's acknowledgements, and
     // expire a queued one past admin_action_ttl_minutes — cancelling its task —
     // BEFORE the session loop below could wake a container for it. Never throws.

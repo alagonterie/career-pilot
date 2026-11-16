@@ -1,5 +1,5 @@
 /**
- * Board-lead lifecycle + the watchlist readers (STRATEGY.md §24.200 D6, D7):
+ * Board-lead lifecycle + the watchlist readers (STRATEGY.md §24.201 D6, D7):
  *   - the 14-day stale rule closes only search-sourced leads — a board lead seen
  *     by two `ok` sweeps 15 days apart stays open;
  *   - close-on-absence closes on an `ok` fetch, never a promoted / applied lead,
@@ -139,7 +139,7 @@ function seedApplication(appId: string): void {
 
 const daysAgo = (d: number): Date => new Date(Date.now() - d * 86_400_000);
 
-describe('stale rule is scoped to search-sourced leads (§24.200 D6c)', () => {
+describe('stale rule is scoped to search-sourced leads (§24.201 D6c)', () => {
   it('a board lead present in two ok sweeps 15 days apart is NOT closed; a stale search lead is', async () => {
     const db = getDb();
     // The board is watched and active — the sweep, not the stale rule, owns its leads.
@@ -197,7 +197,7 @@ describe('a board lead whose board is not being swept falls back to the stale ru
   });
 });
 
-describe('close-on-absence primitives (§24.200 D6c)', () => {
+describe('close-on-absence primitives (§24.201 D6c)', () => {
   beforeEach(() => {
     const db = getDb();
     for (const id of ['a', 'b', 'c', 'd', 'e']) upsertJobLead(db, boardPayload(id));
@@ -277,7 +277,7 @@ describe('the writer the sweep uses honours tombstones', () => {
   });
 });
 
-describe('killer-match eligibility (§24.200 D6e)', () => {
+describe('killer-match eligibility (§24.201 D6e)', () => {
   it('excludes leads that are applied, archived or linked to an application', () => {
     const db = getDb();
     for (const id of ['ok', 'applied', 'archived', 'linked']) {
@@ -323,7 +323,7 @@ describe('killer-match eligibility (§24.200 D6e)', () => {
   });
 });
 
-describe('fetch_source reads the watchlist table (§24.200 D7)', () => {
+describe('fetch_source reads the watchlist table (§24.201 D7)', () => {
   it('reaches a board that exists only as a table row (no seed-file entry), and skips a paused one', async () => {
     const db = getDb();
     upsertBoard(db, { ats: 'ashby', token: 'hooli', company: 'Hooli', origin: 'owner', tier: 'A' });
@@ -364,7 +364,7 @@ describe('fetch_source reads the watchlist table (§24.200 D7)', () => {
   });
 });
 
-describe('discover_ats_board (§24.200 D7)', () => {
+describe('discover_ats_board (§24.201 D7)', () => {
   it('detects every supported board reference form', () => {
     expect(detectAtsBoard('<a href="https://jobs.ashbyhq.com/hooli">Jobs</a>')).toEqual({
       ats: 'ashby',

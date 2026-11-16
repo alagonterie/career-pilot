@@ -1,6 +1,6 @@
 /**
  * scripts/test/scrape-zero-leads.ts — the Tier-4 scrape flow's "zero keepers"
- * rule (STRATEGY.md §24.200 DoD (a)), kept pure so it is unit-tested.
+ * rule (STRATEGY.md §24.201 DoD (a)), kept pure so it is unit-tested.
  *
  * The flow passes with "at least one lead recorded, or a `rejected` count that
  * explains zero keepers". A search `rejected` count explains zero rows only when
@@ -9,7 +9,7 @@
  * written rows and did not are a broken writer, and a rejected count elsewhere in
  * the run must not excuse them.
  *
- * §24.200 D8: search is a quota-gated supplement that answers `{unavailable}`
+ * §24.201 D8: search is a quota-gated supplement that answers `{unavailable}`
  * when no search key is configured (the usual local/CI case) or the quota is
  * spent, and the subagent is told to stop there. That too explains zero keepers
  * — but only when nothing else could have produced one: no record call and no

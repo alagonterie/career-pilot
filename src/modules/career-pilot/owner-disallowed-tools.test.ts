@@ -49,7 +49,7 @@ const TOOLS_IN_USE = [
   'mcp__nanoclaw__schedule_task',
   'mcp__nanoclaw__send_message',
   'mcp__nanoclaw__send_file',
-  // §24.202: the admin-action loop (the ops-session handler reads + completes).
+  // §24.203: the admin-action loop (the ops-session handler reads + completes).
   'mcp__nanoclaw__get_admin_action',
   'mcp__nanoclaw__complete_admin_action',
 ];

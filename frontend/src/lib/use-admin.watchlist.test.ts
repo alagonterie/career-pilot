@@ -9,7 +9,7 @@ import {
   type SweepFilterPreview,
 } from './use-admin'
 
-// §24.201 D6/D7 — the watchlist + add-by-URL helpers map every contract
+// §24.202 D6/D7 — the watchlist + add-by-URL helpers map every contract
 // response to a discriminated outcome with a plain sentence.
 
 afterEach(() => {

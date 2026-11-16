@@ -1,6 +1,6 @@
 /**
  * The owner's Watchlist tab, the sweep-filter preview and "add a lead by URL"
- * (STRATEGY.md §24.200 D7 slice c; §24.201 D6 + D7). Every status-code row of
+ * (STRATEGY.md §24.201 D7 slice c; §24.202 D6 + D7). Every status-code row of
  * the contract, the preview's equality with the sweep's own filter, the
  * never-fetch rule for a non-ATS URL, and the adminEnabled() gate on the routes.
  * No network: the adapter is injected and `fetch` is stubbed to fail the test.

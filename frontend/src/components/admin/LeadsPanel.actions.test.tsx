@@ -5,7 +5,7 @@ import { type AdminLead, type AdminLeadsView, type AgentActionsMeta, boardPromot
 
 import { bulkDeleteNote, LeadsPanel, resetLeadsVisitSessionForTests } from './LeadsPanel'
 
-// §24.202 on the Leads tab: the agent-action buttons sit in the lead's "act"
+// §24.203 on the Leads tab: the agent-action buttons sit in the lead's "act"
 // row after "I applied", Run now sits with the header actions, and a host
 // without agent actions shows none of it.
 
@@ -95,7 +95,7 @@ const BASE: AdminLeadsView = {
   closed: [],
 }
 
-describe('LeadsPanel — agent actions (§24.202)', () => {
+describe('LeadsPanel — agent actions (§24.203)', () => {
   it('puts the action buttons in the lead’s act row, after I applied', () => {
     render(<LeadsPanel data={{ ...BASE, agentActions: META }} baseUrl="http://x" onSaved={vi.fn()} />)
     fireEvent.click(screen.getByTestId('leads-row'))

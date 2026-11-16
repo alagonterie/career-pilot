@@ -1,5 +1,5 @@
 /**
- * Migration 154 (STRATEGY.md §24.200 D6d): a STORED killer-match allow-list gains
+ * Migration 154 (STRATEGY.md §24.201 D6d): a STORED killer-match allow-list gains
  * 'ashby'; an absent row, an empty list, a list that has it, and a non-array are
  * left alone.
  */

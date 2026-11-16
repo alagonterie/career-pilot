@@ -1,6 +1,6 @@
 /**
  * Migration 156 — the watchlist key is case-insensitive, and an owner's
- * "remove" is remembered (STRATEGY.md §24.200 D7, §24.201 D6).
+ * "remove" is remembered (STRATEGY.md §24.201 D7, §24.202 D6).
  *
  * 1. Board slugs are case-insensitive on every ATS we read, and every lookup
  *    (`findBoard`) already matches `lower(token)`. But `UNIQUE (ats, token)` uses

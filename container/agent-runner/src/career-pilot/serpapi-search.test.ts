@@ -211,7 +211,7 @@ describe('searchGoogleJobs', () => {
   });
 });
 
-describe('searchGoogleJobs — the host quota reservation (§24.200 D8)', () => {
+describe('searchGoogleJobs — the host quota reservation (§24.201 D8)', () => {
   function pagedFetch(): { calls: () => number } {
     let n = 0;
     globalThis.fetch = (async () => {

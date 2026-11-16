@@ -17,7 +17,7 @@ import {
   statusText,
 } from './AgentActions'
 
-// §24.202 — the agent-action buttons: fixed requests with one optional note,
+// §24.203 — the agent-action buttons: fixed requests with one optional note,
 // fire-and-poll status on the lead, and the results rendered where they belong.
 
 const META: AgentActionsMeta = {

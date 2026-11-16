@@ -1,5 +1,5 @@
 /**
- * Migration 150 — applications.sent_resume_id (STRATEGY.md §24.201 D8).
+ * Migration 150 — applications.sent_resume_id (STRATEGY.md §24.202 D8).
  *
  * "I applied" on the Leads tab creates the application from the lead in one
  * step, and the owner may say which tailored résumé went out with it. This

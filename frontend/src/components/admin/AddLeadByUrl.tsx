@@ -3,7 +3,7 @@ import { useState, type FormEvent } from 'react'
 import { postAddLeadByUrl, postWatchlistAddByUrl, type AddLeadByUrlResult } from '~/lib/use-admin'
 
 /**
- * §24.201 D7 — "Add lead by URL" in the Leads header. One input: a Greenhouse,
+ * §24.202 D7 — "Add lead by URL" in the Leads header. One input: a Greenhouse,
  * Lever or Ashby posting link. The host parses it and reads the posting through
  * that ATS's own API (the pasted page is never fetched), bypassing the title
  * filter and clearing a matching "not interested" — the owner chose this

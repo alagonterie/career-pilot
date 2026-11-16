@@ -196,7 +196,7 @@ describe('handleClaimKillerMatches', () => {
     seedLead({
       id: 'wrong-source',
       company: 'Notion',
-      // Not in the default allow-list ('ashby' is, since §24.200 D6d).
+      // Not in the default allow-list ('ashby' is, since §24.201 D6d).
       source: 'manual',
       rules_score: 95,
       source_posted_at: freshTimestamp(1),
@@ -394,7 +394,7 @@ function daysAgoIso(days: number): string {
   return new Date(Date.now() - days * 86_400_000).toISOString();
 }
 
-// The stale rule closes only search-sourced leads (§24.200 D6c), so these seed
+// The stale rule closes only search-sourced leads (§24.201 D6c), so these seed
 // google_jobs leads by default; a board lead is exempt (covered below and in
 // board-lifecycle.integration.test.ts).
 function seedJobLeadForClose(opts: {
@@ -532,7 +532,7 @@ describe('handleCloseStaleLeads', () => {
     expect(row.id).toBe('borderline');
   });
 
-  it('does NOT close a stale BOARD lead of an active watched board — those close on absence, not age (§24.200 D6c)', async () => {
+  it('does NOT close a stale BOARD lead of an active watched board — those close on absence, not age (§24.201 D6c)', async () => {
     // A board lead whose board is NOT being swept (paused / retired / unwatched)
     // does fall back to the stale rule — board-lifecycle.integration.test.ts.
     const now = new Date().toISOString();

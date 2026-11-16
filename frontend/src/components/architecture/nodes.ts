@@ -13,7 +13,7 @@ export type Region = 'owner' | 'triggers' | 'host' | 'container' | 'public'
  * no health claim — we never paint a color we don't actually probe (§24.24).
  * `provider` reads per-provider health from request_telemetry (§24.69).
  * `sandbox`/`sweep` are the §24.80 promotions: the public-demo kill switch + 24h
- * spend-vs-cap, and the host sweep loop's freshness. `boards` is the §24.200 D8
+ * spend-vs-cap, and the host sweep loop's freshness. `boards` is the §24.201 D8
  * employer-board sweep: down only when no sweep has succeeded recently; its
  * board adapters' telemetry can amber it, never redden it. */
 export type ProbeKind =
@@ -40,7 +40,7 @@ export interface ArchNode {
    * ⇒ down) or 'gateway' (down only when EVERY present provider is down — the
    * OneCLI shape: one service failing is that service's problem, not the gateway's). */
   providerAggregate?: 'worst' | 'gateway'
-  /** §24.200 D8: a budgeted search node — reads `idle` (at rest by design), not
+  /** §24.201 D8: a budgeted search node — reads `idle` (at rest by design), not
    * down, while the search page budget is spent (`arch.job_search.quota_spent`). */
   quotaIdle?: boolean
   description: string
@@ -215,7 +215,7 @@ export const NODES: ArchNode[] = [
     label: 'Employer boards',
     region: 'host',
     probe: 'boards',
-    // §24.200 D8: the PRIMARY job source. Status = sweep freshness (down when no
+    // §24.201 D8: the PRIMARY job source. Status = sweep freshness (down when no
     // sweep has finished OK within ats_sweep_stale_hours) folded with the board
     // adapters' telemetry, which can only amber it. A board that moved or went
     // away is recorded ok by its adapter (§24.184 D1) and, once retired, is no
@@ -306,7 +306,7 @@ export const NODES: ArchNode[] = [
     label: 'Job search API',
     region: 'container',
     probe: 'provider',
-    // §24.200 D8: the search-index SUPPLEMENT (the employer boards are now the
+    // §24.201 D8: the search-index SUPPLEMENT (the employer boards are now the
     // primary — host-boards). Health tracks ONLY the search provider; the board
     // adapters have their own node (§24.184 already scoped this one to the search
     // API). A spent page budget reads idle, not down (quotaIdle).
@@ -396,7 +396,7 @@ export const EDGES: ArchEdge[] = [
   // inbound edge above, Google Workspace reads as the duplex service it is.
   { from: 'host-onecli', to: 'trig-google' },
   { from: 'trig-cron', to: 'host-router' },
-  // The cron sweep fires the employer-board sweep on its schedule (§24.200 D8).
+  // The cron sweep fires the employer-board sweep on its schedule (§24.201 D8).
   { from: 'trig-cron', to: 'host-boards' },
   { from: 'host-router', to: 'host-db', bidirectional: true },
   { from: 'host-router', to: 'cont-runtime' },
@@ -477,12 +477,12 @@ export function deriveNodeStatus(
     case 'sessions':
       return (arch?.sessions.running ?? 0) > 0 ? 'healthy' : 'idle'
     case 'provider':
-      // §24.200 D8: a budgeted search node at its page budget is at rest by
+      // §24.201 D8: a budgeted search node at its page budget is at rest by
       // design (the tool answers "unavailable" without calling out) — idle.
       if (node.quotaIdle && arch?.job_search?.quota_spent) return 'idle'
       return deriveProviderStatus(node, obs)
     case 'boards': {
-      // §24.200 D8: the employer-board sweep. Idle when there's nothing to judge
+      // §24.201 D8: the employer-board sweep. Idle when there's nothing to judge
       // (older backend, switched off, no boards watched, or the system halted —
       // the sweep is refused then by design). Down only on FRESHNESS: no sweep
       // has finished OK within the host-tier stale threshold (bar the very first

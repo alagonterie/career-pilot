@@ -1,6 +1,6 @@
 /**
  * Migration 154 — add 'ashby' to a stored killer-match source allow-list
- * (STRATEGY.md §24.200 D6d).
+ * (STRATEGY.md §24.201 D6d).
  *
  * The shipped default gains 'ashby' in config/defaults.json, but an owner who
  * ever saved `killer_match_source_allow_list` has a `preferences` row that

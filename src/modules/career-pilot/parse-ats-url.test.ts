@@ -1,5 +1,5 @@
 /**
- * `parseAtsUrl` — one fixture per accepted form (STRATEGY.md §24.200 D7 slice c
+ * `parseAtsUrl` — one fixture per accepted form (STRATEGY.md §24.201 D7 slice c
  * DoD: "parseAtsUrl fixtures pass; a malformed token is refused"). Pure string
  * parsing: nothing here touches the network.
  */

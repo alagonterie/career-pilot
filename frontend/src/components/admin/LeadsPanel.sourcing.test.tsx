@@ -12,7 +12,7 @@ import {
   sweepSummary,
 } from './LeadsPanel'
 
-// §24.200 slice (b) / §24.201 D4 + D6 on the Leads tab: the sourcing strip,
+// §24.201 slice (b) / §24.202 D4 + D6 on the Leads tab: the sourcing strip,
 // "Sweep now", "block this company's board", and the ashby source.
 
 beforeEach(() => {
@@ -142,18 +142,18 @@ function postedBodies(fetchMock: ReturnType<typeof stubApi>): Record<string, unk
     .map(([, init]) => JSON.parse(String(init?.body)) as Record<string, unknown>)
 }
 
-describe('LeadsPanel — sourcing strip (§24.201 D6)', () => {
+describe('LeadsPanel — sourcing strip (§24.202 D6)', () => {
   it('renders without a sourcing block from an older host — no strip, no Sweep now', () => {
     render(<LeadsPanel data={BASE} baseUrl="http://x" onSaved={vi.fn()} />)
     expect(screen.getByTestId('leads-rollup')).toBeInTheDocument()
     expect(screen.getAllByTestId('leads-row')).toHaveLength(3)
     expect(screen.queryByTestId('leads-sourcing')).not.toBeInTheDocument()
     expect(screen.queryByTestId('leads-sweep-now')).not.toBeInTheDocument()
-    // §24.201 D7 — add-by-link ships with board sourcing, so it hides too
+    // §24.202 D7 — add-by-link ships with board sourcing, so it hides too
     expect(screen.queryByTestId('leads-add-url-form')).not.toBeInTheDocument()
   })
 
-  it('mounts "Add lead by link" in the rollup when the host serves board sourcing (§24.201 D7)', () => {
+  it('mounts "Add lead by link" in the rollup when the host serves board sourcing (§24.202 D7)', () => {
     render(<LeadsPanel data={withSourcing()} baseUrl="http://x" onSaved={vi.fn()} />)
     const form = within(screen.getByTestId('leads-rollup')).getByTestId('leads-add-url-form')
     expect(within(form).getByTestId('leads-add-url-input')).toBeInTheDocument()
@@ -261,7 +261,7 @@ describe('LeadsPanel — sourcing strip (§24.201 D6)', () => {
   })
 })
 
-describe('LeadsPanel — not interested: block company (§24.201 D4)', () => {
+describe('LeadsPanel — not interested: block company (§24.202 D4)', () => {
   it('offers the board block only on board-sourced leads', () => {
     render(<LeadsPanel data={BASE} baseUrl="http://x" onSaved={vi.fn()} />)
     fireEvent.click(screen.getAllByTestId('leads-row')[1]) // Umbrella (ashby)
@@ -343,7 +343,7 @@ describe('LeadsPanel — not interested: block company (§24.201 D4)', () => {
   })
 })
 
-describe('LeadsPanel — ashby source (§24.200 D6d)', () => {
+describe('LeadsPanel — ashby source (§24.201 D6d)', () => {
   it('is one of the enumerated sources', () => {
     expect(LEAD_SOURCES).toContain('ashby')
   })

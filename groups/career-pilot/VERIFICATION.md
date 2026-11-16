@@ -106,7 +106,7 @@ They should have substantive `what_didnt` / `next_time` content, not
 boilerplate. If reflections are shallow, the prompting templates in the
 persona's "Reflection prompting" section need work.
 
-### 6. Admin-action handler (STRATEGY.md §24.202)
+### 6. Admin-action handler (STRATEGY.md §24.203)
 
 The `[scheduled trigger: admin-action] action_id=…` handler. Host-side
 behaviour (enqueue gates, expiry + task cancel, ack-observed status, the

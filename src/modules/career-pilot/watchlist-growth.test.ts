@@ -1,5 +1,5 @@
 /**
- * The watchlist grows by itself (STRATEGY.md §24.200 D7, slice c DoD):
+ * The watchlist grows by itself (STRATEGY.md §24.201 D7, slice c DoD):
  *   - a search hit whose link is already a direct ATS link yields its board
  *     (origin 'search'), bounded by ats_watchlist_max_auto_adds_per_run and
  *     ats_watchlist_max_boards, the excess recorded as rejected 'watchlist_cap'

@@ -271,7 +271,7 @@ describe('LeadsPanel — batch cleanup (§24.187)', () => {
   })
 })
 
-// ── §24.201: triage without the agent ────────────────────────────────────────
+// ── §24.202: triage without the agent ────────────────────────────────────────
 
 type Handler = (body: Record<string, unknown>) => { status: number; body: unknown }
 
@@ -306,7 +306,7 @@ const MIXED: AdminLeadsView = {
   ],
 }
 
-describe('linkKindOf (§24.201 D1)', () => {
+describe('linkKindOf (§24.202 D1)', () => {
   it('uses apply_link_kind, else falls back on source', () => {
     expect(linkKindOf({ apply_link_kind: 'aggregator', source: 'google_jobs' })).toBe('aggregator')
     expect(linkKindOf({ apply_link_kind: 'company', source: 'google_jobs' })).toBe('company')
@@ -318,7 +318,7 @@ describe('linkKindOf (§24.201 D1)', () => {
   })
 })
 
-describe('LeadsPanel — link kind (§24.201 D1)', () => {
+describe('LeadsPanel — link kind (§24.202 D1)', () => {
   afterEach(() => vi.restoreAllMocks())
 
   it('every row carries a link chip derived from apply_link_kind with the source fallback', () => {
@@ -341,7 +341,7 @@ describe('LeadsPanel — link kind (§24.201 D1)', () => {
   })
 })
 
-describe('LeadsPanel — freshness (§24.201 D5)', () => {
+describe('LeadsPanel — freshness (§24.202 D5)', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
@@ -459,7 +459,7 @@ describe('LeadsPanel — freshness (§24.201 D5)', () => {
   })
 })
 
-describe('LeadsPanel — selection drives the batch (§24.201 D2)', () => {
+describe('LeadsPanel — selection drives the batch (§24.202 D2)', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
@@ -577,7 +577,7 @@ describe('LeadsPanel — bulk delete warning', () => {
   })
 })
 
-describe('LeadsPanel — keyboard triage (§24.201 D3)', () => {
+describe('LeadsPanel — keyboard triage (§24.202 D3)', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
@@ -666,7 +666,7 @@ describe('LeadsPanel — keyboard triage (§24.201 D3)', () => {
     expect(postedBodies(fetchMock)).toHaveLength(0)
   })
 
-  // §24.201 D3: after ticking a row, the outlined row may be a different one —
+  // §24.202 D3: after ticking a row, the outlined row may be a different one —
   // a / q / x / o must not act on it from the checkbox; j / k still move.
   it('acting keys are inert while a row checkbox has focus; j still moves', () => {
     const fetchMock = stubApi()
@@ -694,7 +694,7 @@ describe('LeadsPanel — keyboard triage (§24.201 D3)', () => {
   })
 })
 
-describe('LeadsPanel — not interested (§24.201 D4)', () => {
+describe('LeadsPanel — not interested (§24.202 D4)', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
@@ -780,7 +780,7 @@ describe('LeadsPanel — not interested (§24.201 D4)', () => {
   })
 })
 
-describe('LeadsPanel — "I applied" (§24.201 D8)', () => {
+describe('LeadsPanel — "I applied" (§24.202 D8)', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
@@ -1020,7 +1020,7 @@ describe('LeadsPanel — "I applied" (§24.201 D8)', () => {
   })
 })
 
-describe('LeadsPanel — title blocklist (§24.201 D4)', () => {
+describe('LeadsPanel — title blocklist (§24.202 D4)', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
@@ -1088,7 +1088,7 @@ describe('LeadsPanel — title blocklist (§24.201 D4)', () => {
   })
 })
 
-describe('LeadsPanel — promoted leads (§24.201 D4/D8)', () => {
+describe('LeadsPanel — promoted leads (§24.202 D4/D8)', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()

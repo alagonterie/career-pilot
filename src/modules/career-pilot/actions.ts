@@ -1410,7 +1410,7 @@ function encodeSuffix(n: number): string {
   }
 }
 
-// ── Application insert core (§24.201 D8) ─────────────────────────────────────
+// ── Application insert core (§24.202 D8) ─────────────────────────────────────
 
 /** The fields one new `applications` row is built from. Values are stored as
  * given (`?? null`) — the agent path passes its raw patch through unchanged. */
@@ -1437,7 +1437,7 @@ export interface ApplicationInsert {
 /**
  * The synchronous half of creating an application, shared by the agent's
  * `update_application` INSERT branch and the `/admin` "I applied" action
- * (§24.201 D8): allocate the obfuscated label from the one allocator (a host
+ * (§24.202 D8): allocate the obfuscated label from the one allocator (a host
  * path that skipped it would ship a label-less row and disable redaction) and
  * insert the row. No classification (async — the caller does it first), no
  * response writing, no post-commit hooks. Safe inside a `db.transaction`. Throws
@@ -1476,7 +1476,7 @@ export function insertApplicationCore(db: Database.Database, input: ApplicationI
   return { obfuscated_label };
 }
 
-// ── /admin "I applied" + undo (§24.201 D8) ───────────────────────────────────
+// ── /admin "I applied" + undo (§24.202 D8) ───────────────────────────────────
 //
 // The Leads tab's one-click "I applied": create the application AND link the
 // clicked lead in one step, instead of telling the agent. Owner-only — routed
@@ -1618,7 +1618,7 @@ function parseAppliedDate(raw: string, now: Date): string | null {
 
 /**
  * `applied_from_lead {lead_id, applied_at?, note?, tailored_resume_id?,
- * confirm_duplicate?}` — in the fixed order §24.201 D8 states, because a SQLite
+ * confirm_duplicate?}` — in the fixed order §24.202 D8 states, because a SQLite
  * transaction cannot span the classification call:
  *   (1) classify the industry (falls back to 'misc');
  *   (2) ONE synchronous transaction: re-check the lead and the duplicate,

@@ -1,5 +1,5 @@
 /**
- * §24.202 D5/D6 — the runtime prompt contract for admin actions, checked
+ * §24.203 D5/D6 — the runtime prompt contract for admin actions, checked
  * statically (the behaviour itself is live-verified; see the VERIFICATION.md
  * files). The shared draft-outreach subagent has ONE explicit no-recipient
  * trigger, both callers emit it, and none of the touched runtime artifacts

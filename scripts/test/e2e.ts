@@ -64,7 +64,7 @@
  *                           live, ≥1 record_job_lead row landed in job_leads
  *                           with non-null fingerprint + rules_score (or a
  *                           search_jobs `rejected` count that explains zero
- *                           keepers — §24.200 insert guard — or, with no board
+ *                           keepers — §24.201 insert guard — or, with no board
  *                           read at all, a search `unavailable` answer),
  *                           ≥80% of recorded leads have rules_score>0
  *                           (relaxable per §24.5 empirical prediction),
@@ -1656,7 +1656,7 @@ async function runScrapeJobs(): Promise<void> {
   // Assertion blocks mapped to spec DoD items 1-11:
   //   1. scrape-jobs subagent dispatched ≥1 time.
   //   2. a source tool (fetch_source for the company, else search_jobs) ≥1×.
-  //   3. ≥1 record_job_lead call landed → ≥1 row in job_leads, OR (§24.200)
+  //   3. ≥1 record_job_lead call landed → ≥1 row in job_leads, OR (§24.201)
   //      zero keepers explained by search_jobs' `rejected` count (the host
   //      insert guard refuses non-direct-link hits before caching them), OR
   //      search answered {unavailable} and no board was read.
@@ -1676,7 +1676,7 @@ async function runScrapeJobs(): Promise<void> {
     // to surface results in-turn means it can't short-circuit before the
     // Agent actually runs. Trigger phrases ("find roles at <company>",
     // "refresh job leads") keep the routing test intact. Company-scoped
-    // (§24.200 D8): the subagent reads that company's watched board with
+    // (§24.201 D8): the subagent reads that company's watched board with
     // fetch_source, which needs no search key; a generic brief would be one
     // search_jobs query and nothing else.
     `Find roles at ${E2E_SCRAPE_COMPANY} — refresh my job leads from their board and tell me what new postings landed in the pool.`,
@@ -1711,7 +1711,7 @@ async function runScrapeJobs(): Promise<void> {
   }
   ok(`at least one scrape-jobs success: ${successfulScrapes.length}/${scrapeCalls.length}`);
 
-  // 2. A source tool called ≥1 time inside the subagent. §24.200 D4/D8: the
+  // 2. A source tool called ≥1 time inside the subagent. §24.201 D4/D8: the
   // watched employer boards are primary and swept by the HOST (no agent turn);
   // inside the subagent, fetch_source (Greenhouse/Lever/Ashby boards) serves a
   // company-scoped brief and search_jobs (SerpApi / google_jobs) is the one-query
@@ -1728,13 +1728,13 @@ async function runScrapeJobs(): Promise<void> {
   const searchJobsCalls: Array<{ subagentPath: string }> = [];
   const fetchSourceCalls: Array<{ subagentPath: string; postings_total?: number }> = [];
   const recordLeadCalls: Array<{ subagentPath: string; source_job_id?: string; source?: string }> = [];
-  // §24.200 D1: the host's insert guard refuses non-direct-link hits (and
+  // §24.201 D1: the host's insert guard refuses non-direct-link hits (and
   // tombstoned / blocklisted postings) BEFORE caching them; search_jobs reports
   // them as `rejected N before caching (...)`. A run whose hits were all
   // rejected legitimately records zero leads — this tally is what explains it.
   const searchJobsIds = new Set<string>();
   let searchRejectedTotal = 0;
-  // §24.200 D8: search answered {unavailable} (no key / quota spent).
+  // §24.201 D8: search answered {unavailable} (no key / quota spent).
   let searchUnavailable = false;
   // record_job_lead calls the host deliberately refused (recorded:false) — the
   // only record calls a rejected count may excuse.
@@ -1797,7 +1797,7 @@ async function runScrapeJobs(): Promise<void> {
       `fetch_source ${fetchSourceCalls.length}× (employer boards)`,
   );
 
-  // 3. ≥1 record_job_lead call landed → ≥1 row in job_leads — OR (§24.200 D1)
+  // 3. ≥1 record_job_lead call landed → ≥1 row in job_leads — OR (§24.201 D1)
   // zero keepers explained by a rejected count from the host's insert guard. The
   // excuse holds only while no record call should have written a row (none made,
   // or every one a deliberate recorded:false) — never for a broken writer.

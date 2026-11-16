@@ -603,7 +603,7 @@ describe('buildAdminLeads / applyAdminLeadsWrite (§24.173)', () => {
     expect(out.body).toMatchObject({ skipped_by_reason: { promoted: 1 } });
   });
 
-  // ── §24.200 D2/D3 + §24.201 D4: tombstones + "not interested" ──────────────
+  // ── §24.201 D2/D3 + §24.202 D4: tombstones + "not interested" ──────────────
 
   function tombstones(): Array<{ source_job_id: string; reason: string; match: string }> {
     return getDb()
@@ -684,7 +684,7 @@ describe('buildAdminLeads / applyAdminLeadsWrite (§24.173)', () => {
       seedLead({ id });
       const out = applyAdminLeadsWrite(getDb(), { action: 'not_interested', id, reason });
       expect(out.status).toBe(200);
-      // §24.201 D4: the response also says whether "block company" paused a board.
+      // §24.202 D4: the response also says whether "block company" paused a board.
       expect(out.body).toEqual({
         ok: true,
         id,
@@ -757,7 +757,7 @@ describe('buildAdminLeads / applyAdminLeadsWrite (§24.173)', () => {
     expect(getConfig<string[]>(getDb(), 'lead_title_blocklist')).toEqual([]);
   });
 
-  // §24.201 D8: the owner status controls never move a promoted lead.
+  // §24.202 D8: the owner status controls never move a promoted lead.
   function seedPromoted(): void {
     getDb()
       .prepare(
@@ -867,7 +867,7 @@ describe('buildAdminLeads / applyAdminLeadsWrite (§24.173)', () => {
   });
 });
 
-describe('Leads sourcing: sweep_now, block_company and the sourcing read (§24.201 D4, D6)', () => {
+describe('Leads sourcing: sweep_now, block_company and the sourcing read (§24.202 D4, D6)', () => {
   // These tests own the watchlist (an empty seed) and must never reach a real
   // board: any fetch fails the test.
   const emptySeed = path.join(os.tmpdir(), `nanoclaw-admin-empty-seed-${process.pid}.json`);

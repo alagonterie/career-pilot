@@ -1,5 +1,5 @@
 /**
- * Board adapters (STRATEGY.md §24.200 D6): Greenhouse dates from
+ * Board adapters (STRATEGY.md §24.201 D6): Greenhouse dates from
  * `first_published`, the Ashby adapter (incl. the hybrid case — `isRemote` is
  * never read), the `{ok, absent, postings}` result, explicit gzip, and the
  * response cache's entry cap. Fixture-driven; `fetch` is stubbed — no network.
@@ -135,7 +135,7 @@ describe('Ashby', () => {
   });
 });
 
-describe('list result shape (§24.200 D6b)', () => {
+describe('list result shape (§24.201 D6b)', () => {
   it('a 404 board is absent, not ok', async () => {
     stubFetch('gone', 404);
     expect(await leverAdapter.list('gone-board')).toMatchObject({ ok: false, absent: true, postings: [] });
@@ -167,7 +167,7 @@ describe('list result shape (§24.200 D6b)', () => {
   });
 });
 
-describe('response cache cap (§24.200 D6f)', () => {
+describe('response cache cap (§24.201 D6f)', () => {
   it('evicts the least recently used board past ats_response_cache_max_entries', async () => {
     setPref('ats_response_cache_max_entries', '2');
     const fetchFn = stubFetch(JSON.stringify({ jobs: [] }));

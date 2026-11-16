@@ -567,12 +567,12 @@ async function handleAdminControl(
   json(res, out.status, out.body, cors);
 }
 
-/** `GET /api/admin/watchlist` (§24.201 D6) — the employer boards the sweep reads. */
+/** `GET /api/admin/watchlist` (§24.202 D6) — the employer boards the sweep reads. */
 function handleAdminWatchlist(res: http.ServerResponse, cors: Record<string, string>): void {
   json(res, 200, buildAdminWatchlist(getDb()), cors);
 }
 
-/** `POST /api/admin/watchlist` (§24.201 D6, §24.200 D7) — add by URL, pause /
+/** `POST /api/admin/watchlist` (§24.202 D6, §24.201 D7) — add by URL, pause /
  *  resume, remove, and the sweep-filter preview. */
 async function handleAdminWatchlistWrite(
   req: http.IncomingMessage,
@@ -589,19 +589,19 @@ async function handleAdminWatchlistWrite(
   json(res, out.status, out.body, cors);
 }
 
-/** `GET /api/admin/actions[?lead_id=]` (§24.202) — the agent actions, newest first, + the page's gate. */
+/** `GET /api/admin/actions[?lead_id=]` (§24.203) — the agent actions, newest first, + the page's gate. */
 function handleAdminActions(res: http.ServerResponse, leadId: string | null, cors: Record<string, string>): void {
   const out = readAdminActions(getDb(), leadId);
   json(res, out.status, out.body, cors);
 }
 
-/** `GET /api/admin/actions/<id>` (§24.202) — one action with its result and progress; the poll target. */
+/** `GET /api/admin/actions/<id>` (§24.203) — one action with its result and progress; the poll target. */
 function handleAdminAction(res: http.ServerResponse, id: string, cors: Record<string, string>): void {
   const out = readAdminAction(getDb(), id);
   json(res, out.status, out.body, cors);
 }
 
-/** `POST /api/admin/actions` (§24.202) — enqueue a lead action or a Run now. 202 on success. */
+/** `POST /api/admin/actions` (§24.203) — enqueue a lead action or a Run now. 202 on success. */
 async function handleAdminActionWrite(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -632,7 +632,7 @@ async function handleAdminLeadsWrite(
   } catch {
     return json(res, 400, { error: 'invalid JSON body' }, cors);
   }
-  // Async entry: also routes the §24.201 D8 "I applied" / undo actions.
+  // Async entry: also routes the §24.202 D8 "I applied" / undo actions.
   const out = await applyAdminLeadsWriteAsync(getDb(), body);
   json(res, out.status, out.body, cors);
 }
@@ -899,7 +899,7 @@ function handleArchitecture(res: http.ServerResponse, cors: Record<string, strin
   // the (host-tier) staleness threshold backend-side, so the FE just renders.
   const lastSweepAt = getLastSweepAtMs();
   const sweepAgeSec = lastSweepAt === null ? null : Math.max(0, Math.floor((Date.now() - lastSweepAt) / 1000));
-  // §24.200 D8 job-source probes: the employer-board sweep's freshness and the
+  // §24.201 D8 job-source probes: the employer-board sweep's freshness and the
   // search supplement's quota. Omitted on a read failure (the FE reads idle).
   let boardSweep: BoardSweepProbe | undefined;
   let jobSearch: JobSearchProbe | undefined;
@@ -1185,7 +1185,7 @@ function emptyPayloadFor(path: string): unknown {
         // §24.80: a bare/quiet system — sandbox enabled but unused, sweep not yet ticked.
         sandbox: { enabled: true, spend_24h_usd: 0, daily_budget_usd: 0 },
         sweep: { last_run_age_sec: null, fresh: false },
-        // §24.200 D8: no boards watched yet, search budget untouched.
+        // §24.201 D8: no boards watched yet, search budget untouched.
         board_sweep: { enabled: true, boards: 0, running: false, last_success_age_sec: null, fresh: false },
         job_search: { quota_spent: false },
         backend: 'online',
@@ -1439,7 +1439,7 @@ async function requestHandler(req: http.IncomingMessage, res: http.ServerRespons
       if (method === 'POST' && path === '/api/admin/leads') return await handleAdminLeadsWrite(req, res, cors);
       if (method === 'GET' && path === '/api/admin/watchlist') return handleAdminWatchlist(res, cors);
       if (method === 'POST' && path === '/api/admin/watchlist') return await handleAdminWatchlistWrite(req, res, cors);
-      // §24.202 — the agent-action buttons.
+      // §24.203 — the agent-action buttons.
       if (method === 'GET' && path === '/api/admin/actions')
         return handleAdminActions(res, url.searchParams.get('lead_id') || null, cors);
       if (method === 'POST' && path === '/api/admin/actions') return await handleAdminActionWrite(req, res, cors);

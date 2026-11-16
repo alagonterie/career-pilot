@@ -1,5 +1,5 @@
 /**
- * §24.202 — admin-triggered agent actions: the enqueue gates, dispatch into the
+ * §24.203 — admin-triggered agent actions: the enqueue gates, dispatch into the
  * ops session (action-id-only sentinel, own series ids), status observed from
  * the ops acknowledgements, TTL expiry that cancels the task, the two owner-only
  * container actions, and a result outliving its lead. No agent turn runs: the

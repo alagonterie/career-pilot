@@ -364,7 +364,7 @@ export function applyAdminSandboxRunDelete(raw: unknown): { status: number; body
   return deleted ? { status: 200, body: { id, deleted: true } } : { status: 404, body: { error: 'not_found', id } };
 }
 
-// ── §24.138 / §24.203: the Pipeline tab (owner view — REAL company names) ─────
+// ── §24.138 / §24.204: the Pipeline tab (owner view — REAL company names) ─────
 // Read-only by design: built in admin-pipeline.ts, and there is no pipeline writer.
 
 export { buildAdminPipeline, type AdminPipeline, type AdminPipelineRow } from './admin-pipeline.js';
@@ -613,7 +613,7 @@ export interface AdminLead {
   killer_match_pushed_at: string | null;
   application_id: string | null;
   snippet: string | null;
-  /** §24.202: the per-lead agent-action lock + newest action per kind. Omitted
+  /** §24.203: the per-lead agent-action lock + newest action per kind. Omitted
    *  when agent_actions is not migrated. */
   actions?: LeadActionsSummary;
 }
@@ -636,12 +636,12 @@ export interface AdminLeadsView {
   leads: AdminLead[];
   /** Recently-closed leads, closed_at DESC, capped — the client toggles these in. */
   closed: AdminLead[];
-  /** The owner's title blocklist (§24.201 D4) — listed so each entry can be removed. */
+  /** The owner's title blocklist (§24.202 D4) — listed so each entry can be removed. */
   titleBlocklist: string[];
-  /** §24.201 D6: the sourcing system's state — last board sweep, whether one is
+  /** §24.202 D6: the sourcing system's state — last board sweep, whether one is
    *  running, the last search's refusals, and the search quota. */
   sourcing: AdminSourcingView;
-  /** §24.202: the agent-action buttons' gate + counters. Omitted when agent_actions
+  /** §24.203: the agent-action buttons' gate + counters. Omitted when agent_actions
    *  is not migrated. */
   agentActions?: AgentActionsMeta;
 }
@@ -784,7 +784,7 @@ export function buildAdminLeads(db: Database.Database): AdminLeadsView {
   return view;
 }
 
-/** §24.202: per-lead action summaries + the buttons' meta. Observes the ops
+/** §24.203: per-lead action summaries + the buttons' meta. Observes the ops
  *  session first (so an expired action no longer reads as in flight). A failure
  *  here degrades to "no buttons" rather than failing the whole Leads read. */
 function attachAgentActions(db: Database.Database, view: AdminLeadsView): void {
@@ -860,7 +860,7 @@ function parseBulkIds(raw: unknown): { ids: string[] } | { error: { status: numb
   return { ids };
 }
 
-/** §24.201 D4 — the "not interested" reasons, and the ones whose tombstone is id-only. */
+/** §24.202 D4 — the "not interested" reasons, and the ones whose tombstone is id-only. */
 const NOT_INTERESTED_REASONS = new Set(['role', 'level', 'location', 'company', 'other']);
 const ID_ONLY_NOT_INTERESTED_REASONS = new Set(['level', 'location']);
 
@@ -879,7 +879,7 @@ interface LeadForTombstone {
 }
 
 /**
- * The tombstone an owner hard delete writes (§24.200 D2): a lead whose link kind
+ * The tombstone an owner hard delete writes (§24.201 D2): a lead whose link kind
  * the insert guard rejects was deleted for its LINK → id-only, reason
  * 'link:<kind>' (the same job re-found with a direct link is accepted); any other
  * lead was deleted by owner intent → fingerprint reach, reason 'deleted'.
@@ -931,13 +931,13 @@ function boardCopyTombstones(lead: LeadForTombstone, primary: TombstoneInput): T
  *     across an explicit id list (the rows the owner's filter is showing).
  *   { action: 'bulk_delete', ids, confirm } — §24.187: the hard purge. Requires
  *     confirm:true; skips (and reports by reason) promoted (application_id) and
- *     email-linked leads; writes a tombstone per deleted lead (§24.200 D2/D3).
+ *     email-linked leads; writes a tombstone per deleted lead (§24.201 D2/D3).
  *   { action: 'not_interested', id, reason, exclude_title?, block_company? } —
- *     §24.201 D4: archive + a tombstone whose reach follows the reason;
+ *     §24.202 D4: archive + a tombstone whose reach follows the reason;
  *     optionally append the title to the owner's title blocklist and/or pause
  *     the company's watched boards (`company_blocked` says whether any board
  *     matched). 409 on a promoted lead.
- *   { action: 'sweep_now' } — §24.201 D6: start the employer-board sweep
+ *   { action: 'sweep_now' } — §24.202 D6: start the employer-board sweep
  *     (202); 409 `already_running` / `halted`.
  *   { action: 'title_blocklist_remove', title } — take one title back off the
  *     owner's blocklist (the undo of "exclude this title").
@@ -963,7 +963,7 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
   };
   const action = body.action;
 
-  // §24.201 D6: "Sweep now" — start the employer-board sweep detached and answer
+  // §24.202 D6: "Sweep now" — start the employer-board sweep detached and answer
   // at once; the Leads read reports `sourcing.sweepRunning` and the run summary.
   if (action === 'sweep_now') {
     const started = startSweep(db, { trigger: 'manual' });
@@ -987,7 +987,7 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
       | { status: string; application_id: string | null }
       | undefined;
     if (!existing) return { status: 404, body: { error: `no job_lead with id "${id}"` } };
-    // §24.201 D8: a promoted lead is the provenance of a real application; moving
+    // §24.202 D8: a promoted lead is the provenance of a real application; moving
     // it here would leave an applied-but-inconsistent lead. The Pipeline is the
     // agent's to maintain (and "I applied" has its own undo).
     if (existing.application_id) {
@@ -1041,7 +1041,7 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
             `UPDATE job_leads SET status = 'archived', status_changed_at = @now, closed_at = @now, closed_reason = @reason WHERE id = @id`,
           )
         : db.prepare(`UPDATE job_leads SET status = @status, status_changed_at = @now WHERE id = @id`);
-    // §24.201 D8: promoted leads are skipped (and reported), exactly as
+    // §24.202 D8: promoted leads are skipped (and reported), exactly as
     // set_status refuses them — never a failed batch.
     const linkOf = db.prepare(`SELECT application_id FROM job_leads WHERE id = ?`);
     let updated = 0;
@@ -1083,7 +1083,7 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
               apply_url, source_url
          FROM job_leads WHERE id = ?`,
     );
-    // §24.200 D3: email_events.linked_job_lead_id references job_leads with no
+    // §24.201 D3: email_events.linked_job_lead_id references job_leads with no
     // delete action, so deleting a linked lead would throw and fail the whole
     // batch. Skip it and say so instead.
     const emailLinked = hasTable(db, 'email_events')
@@ -1091,7 +1091,7 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
       : null;
     const del = db.prepare(`DELETE FROM job_leads WHERE id = ? AND application_id IS NULL`);
     const canTombstone = hasTable(db, 'job_lead_tombstones');
-    // §24.202 D2: a lead an agent action is working on stays until it finishes.
+    // §24.203 D2: a lead an agent action is working on stays until it finishes.
     const actionInFlight = leadIdsWithActionInFlight(db);
     let deleted = 0;
     const skippedByReason: { promoted?: number; email_linked?: number; action_in_flight?: number } = {};
@@ -1114,7 +1114,7 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
           bump('action_in_flight');
           continue;
         }
-        // §24.200 D2: the delete remembers why. A rejected-kind lead was deleted
+        // §24.201 D2: the delete remembers why. A rejected-kind lead was deleted
         // for its link (id-only — the same job re-found with a direct link must
         // come back); a direct lead was deleted by owner intent (fingerprint).
         if (canTombstone) {
@@ -1136,8 +1136,8 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
     return { status: 200, body: { ok: true, deleted, skipped, skipped_by_reason: skippedByReason } };
   }
 
-  // §24.201 D4: "not interested" — archive the lead and teach the guard. The
-  // tombstone's reach follows the reason (§24.200 D2): role/company/other refuse
+  // §24.202 D4: "not interested" — archive the lead and teach the guard. The
+  // tombstone's reach follows the reason (§24.201 D2): role/company/other refuse
   // near-identical postings from the same company too; location/level are
   // id-only, because boards post one boilerplate description per location and
   // per level, and a near-match would silently refuse a sibling the owner wants.
@@ -1240,7 +1240,7 @@ export function applyAdminLeadsWrite(db: Database.Database, raw: unknown): { sta
 
 /**
  * The Leads tab write, async entry point (what the API route calls). Adds the two
- * §24.201 D8 actions on top of the synchronous `applyAdminLeadsWrite`:
+ * §24.202 D8 actions on top of the synchronous `applyAdminLeadsWrite`:
  *   { action: 'applied_from_lead', lead_id, applied_at?, note?, tailored_resume_id?,
  *     confirm_duplicate? } — create the application from the clicked lead and link
  *     it, in one step (async: the industry classification runs before the
@@ -1259,7 +1259,7 @@ export async function applyAdminLeadsWriteAsync(
       if (!hasTable(db, 'job_leads')) return { status: 404, body: { error: 'job_leads not migrated' } };
       if (body.action === 'undo_applied') return applyUndoApplied(db, body, { now: deps.now });
       const out = await applyAppliedFromLead(db, body, deps);
-      // §24.200 D7 owner signal: applying from a lead promotes that lead's board
+      // §24.201 D7 owner signal: applying from a lead promotes that lead's board
       // (added as origin 'applied', or its tier raised). Best-effort, after the
       // application committed; an undo leaves the board as it is.
       if (out.status === 200 && typeof body.lead_id === 'string') {
@@ -1268,7 +1268,7 @@ export async function applyAdminLeadsWriteAsync(
       }
       return out;
     }
-    // §24.201 D7: add one posting by its URL (async: read through its adapter).
+    // §24.202 D7: add one posting by its URL (async: read through its adapter).
     if (body.action === 'add_lead_by_url') return applyAddLeadByUrl(db, body, deps);
   }
   return applyAdminLeadsWrite(db, raw);

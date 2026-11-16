@@ -1,8 +1,8 @@
 /**
  * scripts/purge-aggregator-leads.ts — one-time purge of search-sourced leads whose
- * apply link the insert guard now refuses (STRATEGY.md §24.200 D3).
+ * apply link the insert guard now refuses (STRATEGY.md §24.201 D3).
  *
- * The pool was ~80% aggregator reposts. §24.200 D1 stops new ones at the insert;
+ * The pool was ~80% aggregator reposts. §24.201 D1 stops new ones at the insert;
  * this clears the ones already stored. It is a RELEASE STEP: run it only AFTER
  * the D1 gate is deployed, or the next scrape re-adds what was purged.
  *
@@ -19,7 +19,7 @@
  *      résumé (the delete would cascade it away), an email_events link (that FK
  *      has no delete action — the delete would throw), or a status the owner set
  *      deliberately (queued / reviewed), or a lead an /admin agent action is still
- *      working on (a queued or running `agent_actions` row, §24.202 D2).
+ *      working on (a queued or running `agent_actions` row, §24.203 D2).
  *
  * Dry-run by default — nothing is written without --apply (not even the
  * re-derived kinds).

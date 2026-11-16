@@ -1,7 +1,7 @@
 /**
  * src/modules/portal/admin-watchlist.ts — the owner's Watchlist tab, the
- * sweep-filter preview and "add a lead by URL" (STRATEGY.md §24.200 D7,
- * §24.201 D6 + D7).
+ * sweep-filter preview and "add a lead by URL" (STRATEGY.md §24.201 D7,
+ * §24.202 D6 + D7).
  *
  *   - `buildAdminWatchlist` — every board with its open-lead count, the counts
  *     and the growth caps.
@@ -494,7 +494,7 @@ export function previewSweepFilters(db: Database.Database, rawFilters: unknown, 
   return { status: 200, body: out };
 }
 
-// ── add a lead by URL (§24.201 D7) ─────────────────────────────────────────
+// ── add a lead by URL (§24.202 D7) ─────────────────────────────────────────
 
 export interface BoardProposal {
   ats: AtsSource;

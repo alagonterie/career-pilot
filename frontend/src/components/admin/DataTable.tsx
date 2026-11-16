@@ -62,7 +62,7 @@ export interface DataTableProps<Row> {
   initialSort?: { columnId: string; dir: SortDir }
   /** When this changes, jump back to page 1 (e.g. a filter-state signature). */
   resetKey?: string | number
-  /** Optional row selection (§24.201 D2): a leading checkbox column plus a
+  /** Optional row selection (§24.202 D2): a leading checkbox column plus a
    * header checkbox that selects / clears the CURRENT PAGE. Controlled — the
    * caller owns the set (keys are `rowKey` values). A checkbox click never
    * toggles the row's disclosure. */
@@ -72,7 +72,7 @@ export interface DataTableProps<Row> {
     /** Accessible label for a row's checkbox (default "Select row"). */
     rowLabel?: (row: Row) => string
   }
-  /** Optional keyboard-focus support (§24.201 D3): the focused row's key gets a
+  /** Optional keyboard-focus support (§24.202 D3): the focused row's key gets a
    * visible focus style; the table pages to it when it changes. */
   focusedKey?: string | null
   /** Called when a row is clicked, so the caller can move its focus there. */

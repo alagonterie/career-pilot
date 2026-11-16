@@ -105,7 +105,7 @@ registerOwnerOnly('career_pilot.update_job_lead_status', handleUpdateJobLeadStat
 registerOwnerOnly('career_pilot.discover_ats_board', handleDiscoverAtsBoard);
 registerOwnerOnly('career_pilot.fetch_source', handleFetchSource);
 registerOwnerOnly('career_pilot.stash_job_payloads', handleStashJobPayloads);
-// §24.200 D8: search_jobs reserves each result page before fetching it.
+// §24.201 D8: search_jobs reserves each result page before fetching it.
 registerOwnerOnly('career_pilot.reserve_search_quota', handleReserveSearchQuota);
 registerOwnerOnly('career_pilot.get_lead_summaries_for_ranking', handleGetLeadSummariesForRanking);
 registerOwnerOnly('career_pilot.write_llm_scores', handleWriteLlmScores);
@@ -126,7 +126,7 @@ registerOwnerOnly('career_pilot.filter_seen_email_events', handleFilterSeenEmail
 registerOwnerOnly('career_pilot.persist_learning', handlePersistLearning);
 registerOwnerOnly('career_pilot.read_learnings', handleReadLearnings);
 registerOwnerOnly('career_pilot.read_contacts', handleReadContacts);
-// §24.202 D3: the /admin agent-action loop. Owner-only like every private
+// §24.203 D3: the /admin agent-action loop. Owner-only like every private
 // action; both handlers additionally refuse anything but the ops session.
 registerOwnerOnly('career_pilot.get_admin_action', handleGetAdminAction);
 registerOwnerOnly('career_pilot.complete_admin_action', handleCompleteAdminAction);

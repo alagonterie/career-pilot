@@ -12,7 +12,7 @@ import {
 import { cn } from '~/lib/utils'
 
 /**
- * §24.201 D6 — the sweep-filter editor. Edits the direct-board sweep's filter
+ * §24.202 D6 — the sweep-filter editor. Edits the direct-board sweep's filter
  * knobs (titles to keep / drop, locations to keep, max posting age, max new
  * leads per run) in the preferences tier through the ordinary knob write, and
  * previews how many of the open board leads the proposed filters would keep.

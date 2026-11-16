@@ -4,14 +4,14 @@
  * Host-side modules. Each adapter implements `SourceAdapter` from
  * `./types.ts` — `list(token)` fetches every posting on one board and returns a
  * `SourceListResult`: `{ok, absent, postings}`, so a caller can tell a board that
- * answered from one that is gone (404/410) from a failed fetch (§24.200 D6b).
+ * answered from one that is gone (404/410) from a failed fetch (§24.201 D6b).
  *
  * Polite-fetch is centralized here: per-host crawl-delay, a 1h in-process
  * response cache bounded by `ats_response_cache_max_entries` (oldest-used entry
  * evicted first), ETag conditional GET, explicit `Accept-Encoding: gzip`. No
  * per-adapter reinvention — every adapter goes through `listBoard`.
  *
- * Spec: STRATEGY.md §24.5, §24.200 D6 + .specs/research/PHASE_2_5_JOB_BOARDS.md §Q1.
+ * Spec: STRATEGY.md §24.5, §24.201 D6 + .specs/research/PHASE_2_5_JOB_BOARDS.md §Q1.
  */
 import { getDb } from '../../../db/connection.js';
 import { getConfig, getConfigDefault } from '../../../get-config.js';
@@ -132,7 +132,7 @@ async function politeFetch(
     'User-Agent': USER_AGENT,
     Accept: 'application/json',
     // Full boards are large JSON documents; ask for compression explicitly
-    // (§24.200 D6f). fetch decodes a gzip body transparently.
+    // (§24.201 D6f). fetch decodes a gzip body transparently.
     'Accept-Encoding': 'gzip',
   };
   if (etag) headers['If-None-Match'] = etag;
@@ -305,7 +305,7 @@ function normalizeGreenhouse(j: GreenhouseJob, board_token: string): JobLeadPayl
     comp_period: pay?.pay_period === 'year' ? 'year' : pay?.pay_period === 'hour' ? 'hour' : null,
     description_html,
     description_text,
-    // §24.200 D6a: the publish date, not the last edit — an edited old
+    // §24.201 D6a: the publish date, not the last edit — an edited old
     // requisition must not look fresh to the age gate or to killer-match.
     source_posted_at: toUtcIso(j.first_published) ?? toUtcIso(j.updated_at),
     raw_payload: {

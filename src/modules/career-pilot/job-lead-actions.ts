@@ -107,7 +107,7 @@ function toSummary(p: JobLeadPayload): PostingSummary {
     company: p.company,
     location_raw: p.location_raw ?? null,
     workplace_type: p.workplace_type ?? null,
-    // §24.200 D1: the subagent sees how direct the link is (resolved exactly as
+    // §24.201 D1: the subagent sees how direct the link is (resolved exactly as
     // the writer stores it).
     apply_link_kind: resolveApplyLinkKind(p),
     snippet,
@@ -224,13 +224,13 @@ export function refreshLastSeenOfOpenLead(db: Database.Database, source: string,
 }
 
 /**
- * The one job_leads writer (§24.200 D1). Runs the shared pre-insert guard, then
+ * The one job_leads writer (§24.201 D1). Runs the shared pre-insert guard, then
  * UPSERTs on (source, source_job_id): on conflict it advances last_seen_at and
  * refreshes the mutable content fields, but never overwrites id, first_seen_at,
  * status or application_id — those are downstream-owned. Every path that adds a
  * lead goes through here so the guard cannot be skipped. Throws only on a DB
  * error; callers map that to their own error frame. `guardOpts.ownerChosen` is
- * passed ONLY by the owner's add-by-URL (§24.201 D7) — see `LeadGuardOptions`.
+ * passed ONLY by the owner's add-by-URL (§24.202 D7) — see `LeadGuardOptions`.
  */
 export function upsertJobLead(
   db: Database.Database,
@@ -311,7 +311,7 @@ export function upsertJobLead(
     // §24.190. greenhouse/lever adapters hit the employer's own ATS board by
     // construction, so they're 'ats' without needing to say so; only the
     // aggregator-fed google_jobs path has to classify per-lead. The guard
-    // resolves a missing kind with this same function (§24.200 D1).
+    // resolves a missing kind with this same function (§24.201 D1).
     apply_link_kind: resolveApplyLinkKind(fp),
     content_fingerprint: fingerprint,
     title: fp.title,
@@ -746,7 +746,7 @@ export function buildKillerMatchEligibilityClause(
   prefs.sourceAllowList.forEach((src, i) => {
     params[`src_${i}`] = src;
   });
-  // §24.200 D6e: never alert on a posting the owner already applied to (from the
+  // §24.201 D6e: never alert on a posting the owner already applied to (from the
   // Leads tab the link lands before any email does) or set aside.
   const whereSql = `killer_match_pushed_at IS NULL
         AND closed_at IS NULL
@@ -866,7 +866,7 @@ function readCloseDetectionThresholdDays(db: Database.Database): number {
  * (`application_id` set) are excluded — the application history outweighs the
  * pool-cleanliness signal.
  *
- * §24.200 D6c: scoped to SEARCH-sourced leads. A board lead's presence is
+ * §24.201 D6c: scoped to SEARCH-sourced leads. A board lead's presence is
  * refreshed by the sweep and its closure is decided by close-on-absence
  * (`closeAbsentLeads`) from a real fetch of its board; the age of `last_seen_at`
  * says nothing about it, so this rule must never close one — WHILE its board is
@@ -903,7 +903,7 @@ export function buildCloseStaleEligibilityClause(
   return { whereSql, params };
 }
 
-// ── board-lead lifecycle primitives (§24.200 D6c) ─────────────────────────
+// ── board-lead lifecycle primitives (§24.201 D6c) ─────────────────────────
 //
 // The deterministic sweep calls these after each fetch of one watched board.
 // They are pure DB operations (no fetch, no config), synchronous, and safe to
@@ -1268,10 +1268,10 @@ function discoverRef(url: string): AtsUrlRef | null {
 
 /**
  * Parse a Greenhouse / Lever / Ashby board link and — once the board's public
- * API answers — add it to the watchlist as origin 'owner' (§24.200 D7), so the
+ * API answers — add it to the watchlist as origin 'owner' (§24.201 D7), so the
  * next sweep and every `fetch_source` reach it with no file edit.
  *
- * The host NEVER fetches the supplied URL (§24.200 D7, §24.201 D7): it parses
+ * The host NEVER fetches the supplied URL (§24.201 D7, §24.202 D7): it parses
  * `{ats, token}` against fixed per-ATS host patterns and calls only the
  * adapter's own API host. A careers page that merely embeds a board is answered
  * `reason:'not_a_board_link'` — the agent reads the page itself (in its
@@ -1393,7 +1393,7 @@ export async function handleDiscoverAtsBoard(
       return;
     }
 
-    // Growth is bounded (§24.200 D7): a NEW board, or a RETIRED one being revived
+    // Growth is bounded (§24.201 D7): a NEW board, or a RETIRED one being revived
     // (it rejoins the counted rows), past `ats_watchlist_max_boards` is not
     // added. An active row is still answered.
     const caps = readWatchlistCaps(getDb());
@@ -1510,7 +1510,7 @@ export async function handleFetchSource(
 
     const db = getDb();
     const allSummaries: PostingSummary[] = [];
-    // §24.200 D1: the same early guard the stash applies — a tombstoned or
+    // §24.201 D1: the same early guard the stash applies — a tombstoned or
     // title-blocklisted posting is counted by reason and NOT cached, so the
     // subagent never sees it and a record_job_lead for it is NOT_IN_CACHE.
     const rejected: Partial<Record<LeadRefusalReason, number>> = {};
@@ -1625,7 +1625,7 @@ export async function handleStashJobPayloads(
     const db = getDb();
     const summaries: PostingSummary[] = [];
     let skipped = 0;
-    // §24.200 D1: refused payloads are counted by reason and NOT cached, so a
+    // §24.201 D1: refused payloads are counted by reason and NOT cached, so a
     // later record_job_lead for one is NOT_IN_CACHE — the gate needs no prompt
     // cooperation from the subagent.
     const rejected: Partial<Record<LeadRefusalReason, number>> = {};
@@ -1666,7 +1666,7 @@ export async function handleStashJobPayloads(
     }
     const rejectedTotal = Object.values(rejected).reduce((a, b) => a + (b ?? 0), 0);
     if (rejectedTotal > 0) log.info('stash_job_payloads: payloads refused by insert guard', { rejected });
-    // §24.200 D7 growth: a hit whose link is already a direct ATS link yields
+    // §24.201 D7 growth: a hit whose link is already a direct ATS link yields
     // its board (origin 'search'), bounded by the watchlist caps. Boards over
     // a cap are recorded on the run row as rejected 'watchlist_cap'.
     const growth = growWatchlistFromSearchHits(db, accepted);
@@ -1674,7 +1674,7 @@ export async function handleStashJobPayloads(
       log.info('stash_job_payloads: watchlist grew from search hits', { added: growth.added });
     const runRejected: Record<string, number> = { ...(rejected as Record<string, number>) };
     if (growth.rejected_cap > 0) runRejected.watchlist_cap = growth.rejected_cap;
-    // §24.201 D6: the Leads tab's "last search" line (refusals by reason and by
+    // §24.202 D6: the Leads tab's "last search" line (refusals by reason and by
     // the site each refused hit came through). Best-effort.
     recordSearchRun(db, {
       rejected: runRejected,

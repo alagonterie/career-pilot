@@ -17,7 +17,7 @@ import { DataTable, type Column } from './DataTable'
  * The OWNER view of the application pipeline — real company names (the public
  * surface is anonymized to obfuscated_label). A stage-count strip + the table.
  *
- * §24.203: still strictly READ-ONLY — stage changes stay the pipeline scribe's and
+ * §24.204: still strictly READ-ONLY — stage changes stay the pipeline scribe's and
  * the agent's, so nothing here writes. It catches up with what the public page
  * shows and surfaces what the scribe concluded: an expandable row detail (win
  * rationale, stage timeline, the scribe's narrative + suggestions, learnings,
@@ -183,7 +183,7 @@ const LAST_ACTIVITY_COLUMN: Column<AdminPipelineRow> = {
   cell: (r) => fmtTs(r.last_activity_at),
 }
 
-/** Which §24.203 fields this host sends (each one independently). */
+/** Which §24.204 fields this host sends (each one independently). */
 function capabilities(rows: AdminPipelineRow[]) {
   const has = (k: keyof AdminPipelineRow) => rows.some((r) => r[k] !== undefined)
   return {
@@ -373,7 +373,7 @@ function transition(from: string | null, to: string | null): string | null {
   return to ?? from
 }
 
-/** The row's read-only detail (§24.203 D2). Each block renders only when it has content. */
+/** The row's read-only detail (§24.204 D2). Each block renders only when it has content. */
 export function PipelineDetail({ row, baseUrl }: { row: AdminPipelineRow; baseUrl: string }) {
   const attention = row.attention ?? []
   const timeline = row.timeline ?? []

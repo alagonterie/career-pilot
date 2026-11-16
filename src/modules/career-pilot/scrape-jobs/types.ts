@@ -34,7 +34,7 @@ export function isAtsSource(v: unknown): v is AtsSource {
 export type SourcePriority = 'A' | 'B' | 'C';
 
 /**
- * One board to scan: an `active` row of the `ats_watchlist` table (§24.200 D7),
+ * One board to scan: an `active` row of the `ats_watchlist` table (§24.201 D7),
  * projected to the shape `fetch_source` has always consumed. (It is also the
  * shape of one entry in `groups/career-pilot/data/ats-targets.json`, which is
  * now read only by the boot-time seed.)
@@ -106,7 +106,7 @@ export interface SourceAdapter {
 }
 
 /**
- * What one board fetch says (§24.200 D6b). Success, an empty board, a missing
+ * What one board fetch says (§24.201 D6b). Success, an empty board, a missing
  * board and a failure used to all come back as `[]`; the sweep's close-on-absence
  * needs to tell them apart:
  *   - `ok: true`  — the board answered (200, 304, or a fresh cache hit). `postings`
@@ -148,7 +148,7 @@ export interface PostingSummary {
   company: string;
   location_raw?: string | null;
   workplace_type?: 'remote' | 'hybrid' | 'onsite' | null;
-  /** How direct the apply link is, resolved as the writer stores it (§24.200 D1). */
+  /** How direct the apply link is, resolved as the writer stores it (§24.201 D1). */
   apply_link_kind?: 'company' | 'ats' | 'aggregator' | 'unknown' | null;
   /** ~120-char excerpt of description_text. Empty string if the source
    *  provided no description. */

@@ -17,7 +17,7 @@ artifacts must not carry developer meta-content.
       the JD field does not derail the flow).
 - [x] No real identifiers (committed file — generic placeholders only) and
       no spec references (runtime artifact).
-- [ ] (§24.202 D5) Step 3 passes `draft-outreach` the explicit
+- [ ] (§24.203 D5) Step 3 passes `draft-outreach` the explicit
       `## Recipient: none` block (+ `role: hiring manager for this role`) instead
       of describing the missing address in prose; the shared subagent's
       no-recipient mode is checked in

@@ -1,6 +1,6 @@
 /**
  * src/modules/career-pilot/agent-actions.ts — admin-triggered agent actions
- * (STRATEGY.md §24.202).
+ * (STRATEGY.md §24.203).
  *
  * `/admin` buttons ask the owner agent for a fixed piece of work: research a
  * lead's company, draft outreach for it, build an interview kit for a promoted

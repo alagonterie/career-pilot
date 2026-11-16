@@ -1,5 +1,5 @@
 /**
- * The employer-board watchlist store (STRATEGY.md §24.200 D7, §24.201 D4): the
+ * The employer-board watchlist store (STRATEGY.md §24.201 D7, §24.202 D4): the
  * insert-missing seed is idempotent and never overwrites a row, the readers see
  * only `active` boards, "block company" pauses a company's boards (and an
  * agent re-add never lifts that pause), only repeated "board gone" answers
@@ -183,7 +183,7 @@ describe('upsertBoard', () => {
   });
 });
 
-describe('block company (§24.201 D4)', () => {
+describe('block company (§24.202 D4)', () => {
   it('pauses every active board of a company, matched by normalized name', () => {
     const db = getDb();
     ensureAtsWatchlistSeeded(db, seedFile(SEED));

@@ -4,7 +4,7 @@ Developer-facing DoD for the SHARED `draft-outreach` subagent
 (`groups/_shared-subagents/draft-outreach.md`, composed into both the owner
 group and the public simulator). Not rendered into any runtime prompt — the
 composer skips `*.VERIFICATION.md` (`isRenderableSubagentSource`). Governing
-spec: STRATEGY.md §24.202 D5.
+spec: STRATEGY.md §24.203 D5.
 
 ## Frontmatter
 

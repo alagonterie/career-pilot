@@ -31,7 +31,7 @@ function provider(name: string, status: ProviderStatus, over: Partial<ProviderSt
 
 const ALL_PROVIDERS = ['gmail', 'calendar', 'drive', 'serpapi', 'greenhouse', 'lever', 'ashby', 'portkey']
 
-// §24.200 D8 — a watched, freshly-swept employer-board sweep.
+// §24.201 D8 — a watched, freshly-swept employer-board sweep.
 const BOARDS_OK: NonNullable<ArchitectureData['board_sweep']> = {
   enabled: true,
   boards: 12,
@@ -150,7 +150,7 @@ describe('deriveNodeStatus (the honesty core)', () => {
     expect(deriveNodeStatus(sw, { ...ARCH, sweep: { last_run_age_sec: 600, fresh: false } }, MODE, OBS)).toBe('down')
   })
 
-  it('lights the employer-board node from sweep freshness; board telemetry only ambers it (§24.200 D8)', () => {
+  it('lights the employer-board node from sweep freshness; board telemetry only ambers it (§24.201 D8)', () => {
     const boards = byId('host-boards')
     const withBoards = (b: Partial<NonNullable<ArchitectureData['board_sweep']>>): ArchitectureData => ({
       ...ARCH,
@@ -192,7 +192,7 @@ describe('deriveNodeStatus (the honesty core)', () => {
     ).toBe('healthy')
   })
 
-  it('reads the search supplement idle, not down, while its page budget is spent (§24.200 D8)', () => {
+  it('reads the search supplement idle, not down, while its page budget is spent (§24.201 D8)', () => {
     const jobs = byId('cont-jobs')
     const down = obsWith(provider('serpapi', 'down'))
     // Without the quota block (older backend) the telemetry decides.
@@ -266,7 +266,7 @@ describe('ArchDiagram', () => {
     expect(screen.getByTestId('arch-node-cont-jobs')).toHaveAttribute('data-status', 'healthy')
   })
 
-  it('draws the employer-board sweep as a HOST-tier node lit by its freshness (§24.200 D8)', () => {
+  it('draws the employer-board sweep as a HOST-tier node lit by its freshness (§24.201 D8)', () => {
     const { rerender } = render(<ArchDiagram arch={ARCH} mode={MODE} obs={OBS} selectedId={null} onSelect={() => {}} />)
     expect(byId('host-boards').region).toBe('host')
     // No board_sweep block yet → idle, not a fake green or red.
@@ -460,7 +460,7 @@ describe('NodePanel', () => {
     const jobs = byId('cont-jobs')
     const prose = `${jobs.label} ${jobs.description}`
     expect(prose).not.toMatch(/serpapi/i)
-    // §24.200 D8: re-described as the search-index SUPPLEMENT on a page budget
+    // §24.201 D8: re-described as the search-index SUPPLEMENT on a page budget
     // (the employer boards are the primary now) — no longer a "fallback" story.
     expect(jobs.description).toMatch(/supplement/i)
     expect(jobs.description).toMatch(/commercial job-search index/i)
@@ -472,7 +472,7 @@ describe('NodePanel', () => {
     expect(screen.getByRole('link', { name: /scrape-jobs\.ts/ })).toBeInTheDocument()
   })
 
-  it('names no job-source vendor brand anywhere on the public map (§24.63 D1 / §24.200 D8)', () => {
+  it('names no job-source vendor brand anywhere on the public map (§24.63 D1 / §24.201 D8)', () => {
     // The search vendor is aliased for legal reasons, and the board APIs
     // (including the newly-added one) are described generically — the provider
     // slugs are data, never prose.
@@ -492,7 +492,7 @@ describe('NodePanel', () => {
     // key-less public fetches — folding them in here misattributes non-gateway
     // traffic (the §24.69 D6 "union" bug). cont-jobs maps ONLY serpapi (§24.184);
     // the board adapters (greenhouse/lever/ashby) have their own host node
-    // (§24.200 D8), where a dead board token cannot redden anything.
+    // (§24.201 D8), where a dead board token cannot redden anything.
     const gateway = byId('host-onecli')
     expect(gateway.providers).toEqual(['gmail', 'calendar', 'drive', 'serpapi', 'portkey'])
     for (const ats of ['greenhouse', 'lever', 'ashby']) {
@@ -503,7 +503,7 @@ describe('NodePanel', () => {
     expect(byId('host-boards').providers).toEqual(['greenhouse', 'lever', 'ashby'])
   })
 
-  it('shows the board-sweep facts — freshness + a board COUNT, never which boards (§24.200 D8)', () => {
+  it('shows the board-sweep facts — freshness + a board COUNT, never which boards (§24.201 D8)', () => {
     render(
       <NodePanel
         node={byId('host-boards')}
@@ -524,7 +524,7 @@ describe('NodePanel', () => {
     expect(screen.getByRole('link', { name: /ats-sweep\.ts/ })).toBeInTheDocument()
   })
 
-  it('explains a spent search budget as rest by design, not a fault (§24.200 D8)', () => {
+  it('explains a spent search budget as rest by design, not a fault (§24.201 D8)', () => {
     const arch: ArchitectureData = { ...ARCH, job_search: { quota_spent: true } }
     render(<NodePanel node={byId('cont-jobs')} status="idle" arch={arch} mode={MODE} obs={OBS} onClose={() => {}} />)
     expect(screen.getByText('Search budget')).toBeInTheDocument()

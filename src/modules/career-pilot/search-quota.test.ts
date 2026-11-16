@@ -1,6 +1,6 @@
 /**
- * The search supplement's spend gate (STRATEGY.md §24.200 D8) and its run
- * summary (§24.201 D6): reservations refused past the daily page cap and past
+ * The search supplement's spend gate (STRATEGY.md §24.201 D8) and its run
+ * summary (§24.202 D6): reservations refused past the daily page cap and past
  * the period quota since the anchor day; the host action's answer shapes; the
  * stash recording refusals by reason and by originating site.
  */

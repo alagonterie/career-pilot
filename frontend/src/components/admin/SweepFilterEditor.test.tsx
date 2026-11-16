@@ -6,7 +6,7 @@ import type { DevKnob } from '~/lib/use-dev-inspector'
 
 import { parseSweepDraft, previewHeadline, SweepFilterEditor } from './SweepFilterEditor'
 
-// §24.201 D6 — the sweep-filter editor: Save over the existing knob write,
+// §24.202 D6 — the sweep-filter editor: Save over the existing knob write,
 // Preview over the watchlist's preview_filters, and a refused pattern saves nothing.
 
 afterEach(() => {

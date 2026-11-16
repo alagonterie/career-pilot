@@ -1,6 +1,6 @@
 /**
  * The host ⇄ frontend contract for the /admin Watchlist, Pipeline and agent
- * actions (STRATEGY.md §24.201 D6–D7, §24.202, §24.203).
+ * actions (STRATEGY.md §24.202 D6–D7, §24.203, §24.204).
  *
  * The frontend (`frontend/src/lib/use-admin.ts`) types these bodies by hand.
  * This file pins the EXACT key sets those types rely on, read from the real host

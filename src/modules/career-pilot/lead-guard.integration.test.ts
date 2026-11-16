@@ -1,6 +1,6 @@
 /**
- * Integration tests for the shared pre-insert lead guard (STRATEGY.md §24.200
- * D1 + D2, §24.201 D4) across both of its callers: `stash_job_payloads` (early —
+ * Integration tests for the shared pre-insert lead guard (STRATEGY.md §24.201
+ * D1 + D2, §24.202 D4) across both of its callers: `stash_job_payloads` (early —
  * a refused payload is never cached) and `record_job_lead` / `upsertJobLead`
  * (the writer — re-checks, answers a refusal with a non-error recorded:false).
  *
@@ -112,7 +112,7 @@ function leadCount(): number {
   return (getDb().prepare('SELECT COUNT(*) AS n FROM job_leads').get() as { n: number }).n;
 }
 
-describe('stash + record: link-kind gate (§24.200 D1)', () => {
+describe('stash + record: link-kind gate (§24.201 D1)', () => {
   it('an aggregator payload is reported rejected, not cached, and record_job_lead returns NOT_IN_CACHE', async () => {
     const agg = hit({
       source_job_id: 'gj-agg',
@@ -168,7 +168,7 @@ describe('stash + record: link-kind gate (§24.200 D1)', () => {
   });
 });
 
-describe('tombstones (§24.200 D2)', () => {
+describe('tombstones (§24.201 D2)', () => {
   it('an id-tombstoned posting is refused; the same posting re-found with a direct link is accepted', () => {
     const db = getDb();
     const agg = hit({ source_job_id: 'gj-x', apply_link_kind: 'aggregator' });
@@ -353,7 +353,7 @@ describe('a refused re-sighting of a lead still in the pool', () => {
   });
 });
 
-describe('owner title blocklist (§24.201 D4)', () => {
+describe('owner title blocklist (§24.202 D4)', () => {
   it('refuses a case-insensitive whole-title match, not a substring', async () => {
     setPref('lead_title_blocklist', '["senior backend engineer"]');
     const stash = await call(handleStashJobPayloads, 's6', {

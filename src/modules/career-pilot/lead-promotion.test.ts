@@ -282,7 +282,7 @@ describe('backfillLeadPromotions', () => {
   });
 });
 
-describe('promoteLeadOnApplied — postings that came down (§24.201 D8, lead_promotion_absent_grace_days)', () => {
+describe('promoteLeadOnApplied — postings that came down (§24.202 D8, lead_promotion_absent_grace_days)', () => {
   const closeAs = (id: string, reason: string, daysAgo: number) =>
     getDb()
       .prepare('UPDATE job_leads SET closed_at = ?, closed_reason = ? WHERE id = ?')

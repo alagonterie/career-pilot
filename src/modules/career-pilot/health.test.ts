@@ -432,7 +432,7 @@ describe('runHealthChecks', () => {
   });
 });
 
-describe('runHealthChecks — admin-action one-shots (§24.202 D3)', () => {
+describe('runHealthChecks — admin-action one-shots (§24.203 D3)', () => {
   it('a finished Run now / admin-action one-shot leaves the ops-series check green', async () => {
     seedSession('sess-chat', null);
     seedHealthyOps();
@@ -479,7 +479,7 @@ describe('runHealthChecks — admin-action one-shots (§24.202 D3)', () => {
   });
 });
 
-describe('runHealthChecks — the employer-board sweep (§24.200 D5)', () => {
+describe('runHealthChecks — the employer-board sweep (§24.201 D5)', () => {
   function board(token: string, over: Record<string, unknown> = {}): void {
     getDb()
       .prepare(

@@ -1,6 +1,6 @@
 /**
  * src/modules/career-pilot/search-quota.ts — the search supplement's spend gate
- * and its run summary (STRATEGY.md §24.200 D8, §24.201 D6).
+ * and its run summary (STRATEGY.md §24.201 D8, §24.202 D6).
  *
  * The container's `search_jobs` tool calls `career_pilot.reserve_search_quota`
  * BEFORE each result page it fetches. The host counts pages per UTC day in

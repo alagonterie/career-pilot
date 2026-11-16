@@ -5,7 +5,7 @@ import type { AdminWatchlistBoard, AdminWatchlistView } from '~/lib/use-admin'
 
 import { addBoardNote, agoLabel, WatchlistPanel } from './WatchlistPanel'
 
-// §24.201 D6 — the Watchlist tab: boards, pause / resume / remove, add by URL.
+// §24.202 D6 — the Watchlist tab: boards, pause / resume / remove, add by URL.
 
 afterEach(() => {
   vi.restoreAllMocks()

@@ -32,7 +32,7 @@ export interface ArchitectureData {
     last_run_age_sec: number | null
     fresh: boolean
   }
-  /** §24.200 D8 employer-board sweep: is it switched on, how many boards are
+  /** §24.201 D8 employer-board sweep: is it switched on, how many boards are
    * watched (count only), is one running, and how long since a sweep last
    * finished OK — `fresh` = within the host-tier `ats_sweep_stale_hours`.
    * Absent on an older backend → the node reads idle. */
@@ -43,7 +43,7 @@ export interface ArchitectureData {
     last_success_age_sec: number | null
     fresh: boolean
   }
-  /** §24.200 D8 search-index supplement: its page budget is used up for now
+  /** §24.201 D8 search-index supplement: its page budget is used up for now
    * (the node then reads idle, not down). Absent on an older backend. */
   job_search?: {
     quota_spent: boolean

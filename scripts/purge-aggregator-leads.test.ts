@@ -1,5 +1,5 @@
 /**
- * scripts/purge-aggregator-leads.ts (STRATEGY.md §24.200 D3) — against a real
+ * scripts/purge-aggregator-leads.ts (STRATEGY.md §24.201 D3) — against a real
  * migrated schema with foreign keys ON, so a delete that would throw on the
  * email_events FK (or silently cascade a tailored résumé) is caught here.
  */
@@ -171,7 +171,7 @@ describe('purgeAggregatorLeads', () => {
     expect(again.rederived_changed).toBe(0);
   });
 
-  it('skips (and reports) a lead an admin agent action is still working on (§24.202 D2)', () => {
+  it('skips (and reports) a lead an admin agent action is still working on (§24.203 D2)', () => {
     seed({ id: 'agg-busy' });
     seed({ id: 'agg-done' });
     seed({ id: 'agg-free' });

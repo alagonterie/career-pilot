@@ -75,7 +75,7 @@ export function enqueueKitWake(inDb: Database.Database, applicationId: string, r
 /**
  * Same as `enqueueKitWake`, returning the task row's id — the inserted row, or
  * the already-pending wake it deduped onto. The `/admin` *Build interview kit*
- * action (§24.202 D3) records it so it can observe that task's acknowledgement.
+ * action (§24.203 D3) records it so it can observe that task's acknowledgement.
  */
 export function enqueueKitWakeTask(
   inDb: Database.Database,
@@ -130,7 +130,7 @@ export function releaseSharedActionTask(db: Database.Database, messageId: string
  *
  * `inDb` is the session inbound DB the kit wake is written to. It is only needed
  * for an interview-round transition; a caller with no agent session (the
- * `/admin` "I applied" action, §24.201 D8 — always a transition to APPLIED)
+ * `/admin` "I applied" action, §24.202 D8 — always a transition to APPLIED)
  * passes null, and an interview-round change then logs and skips the wake
  * instead of failing.
  */
@@ -147,7 +147,7 @@ export function reactToStatusTransitions(
       // lead (link + flip to `applied`). No-op for non-submitted transitions.
       // §24.195: an application with no discovered lead gets a synthesized one.
       const promoted = promoteLeadOnApplied(db, c, { createIfMissing: true });
-      // §24.200 D7 owner signal, on the agent path too: an application linked
+      // §24.201 D7 owner signal, on the agent path too: an application linked
       // to a lead here promotes that lead's board (added as 'applied', or its
       // tier raised). Only when THIS call linked it — the /admin "I applied"
       // action links first and promotes the board itself, so it is never

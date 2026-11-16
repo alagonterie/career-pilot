@@ -3,7 +3,7 @@
  * fetch records one request_telemetry row — 2xx ok, a board-absent 404/410 ok
  * (a dead/renamed seed token is config drift, not a failure), a real transient
  * failure (403/5xx / network throw) ok:0 with its status — and in-process cache
- * hits record nothing. The adapters stay fail-soft: a failure is a {ok:false} result, never a throw (§24.200 D6b).
+ * hits record nothing. The adapters stay fail-soft: a failure is a {ok:false} result, never a throw (§24.201 D6b).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 

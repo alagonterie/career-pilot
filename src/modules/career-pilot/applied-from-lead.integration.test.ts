@@ -1,5 +1,5 @@
 /**
- * "I applied" from the /admin Leads tab + its undo (STRATEGY.md §24.201 D8).
+ * "I applied" from the /admin Leads tab + its undo (STRATEGY.md §24.202 D8).
  *
  * Real migrated in-memory DB with foreign keys ON (`initTestDb`). The two LLM
  * calls (industry classification, win-confidence) are injected mocks; global
@@ -137,7 +137,7 @@ async function applyOk(raw: Record<string, unknown>): Promise<OkBody> {
   return out.body as OkBody;
 }
 
-describe('applied_from_lead (§24.201 D8)', () => {
+describe('applied_from_lead (§24.202 D8)', () => {
   it('links the CLICKED lead even when a higher-scored same-title lead exists', async () => {
     const clicked = seedLead({ rules_score: 10 });
     const better = seedLead({ rules_score: 95 });
@@ -418,7 +418,7 @@ describe('applied_from_lead (§24.201 D8)', () => {
   });
 });
 
-describe('undo_applied (§24.201 D8)', () => {
+describe('undo_applied (§24.202 D8)', () => {
   it('with foreign keys on, removes the application, its event and public row, and restores the lead', async () => {
     expect(getDb().pragma('foreign_keys', { simple: true })).toBe(1);
     const lead = seedLead({ status: 'queued' });

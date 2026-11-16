@@ -13,7 +13,7 @@ import {
   type AdminActionOutcome,
 } from './use-admin'
 
-// §24.202 — the agent-action helpers: the compose link, the write's outcome
+// §24.203 — the agent-action helpers: the compose link, the write's outcome
 // mapping, and a plain sentence for every refusal the actions route returns.
 
 afterEach(() => {

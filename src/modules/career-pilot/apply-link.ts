@@ -72,7 +72,7 @@ function isAtsHost(host: string): boolean {
 }
 
 /** Company name → a comparable token ("Socket.dev" → "socket"). Exported for the
- * lead guard's same-company tombstone scoping (§24.200 D2). */
+ * lead guard's same-company tombstone scoping (§24.201 D2). */
 export function companyToken(company: string): string {
   return company
     .toLowerCase()
@@ -154,7 +154,7 @@ export function pickApplyLink(
  * Re-derive a STORED google_jobs lead's apply link + kind from its persisted
  * `raw_payload` (`apply_options` + Google's `source_link`/`share_link`), with no
  * re-scrape. Shared by `scripts/backfill-apply-links.ts` (§24.190) and
- * `scripts/purge-aggregator-leads.ts` (§24.200 D3) so both classify identically.
+ * `scripts/purge-aggregator-leads.ts` (§24.201 D3) so both classify identically.
  * An unreadable payload degrades to ranking the stored `source_url` alone —
  * never worse than what the row already has for the URL (`apply_url` kept).
  */

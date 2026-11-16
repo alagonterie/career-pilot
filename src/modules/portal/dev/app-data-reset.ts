@@ -33,16 +33,16 @@ export const PIPELINE_DATA_TABLES = [
   // explicitly, ahead of its parent, so a dev reset never strands tailored
   // résumés pointing at leads that no longer exist.
   'tailored_resumes',
-  // §24.200 D2 — the memory of removed leads. No FK to job_leads, but a reset
+  // §24.201 D2 — the memory of removed leads. No FK to job_leads, but a reset
   // that rebuilt the pool while keeping tombstones would silently refuse the
   // re-seeded postings, so it is cleared with (and ahead of) the pool.
   'job_lead_tombstones',
-  // §24.200 D5 — sourcing-run summaries describe the pool being rebuilt.
+  // §24.201 D5 — sourcing-run summaries describe the pool being rebuilt.
   // (`ats_watchlist` is deliberately ABSENT: it is the owner's board list —
   // configuration, not pipeline state — and survives every reset. So is
   // `search_quota_usage`: a reset must not hand back provider quota really spent.)
   'lead_source_runs',
-  // §24.202 D2 — admin-triggered agent actions. A child of job_leads (ON DELETE
+  // §24.203 D2 — admin-triggered agent actions. A child of job_leads (ON DELETE
   // SET NULL, which the FK-off wipe cannot apply), so it is listed ahead of it.
   'agent_actions',
   'job_leads',

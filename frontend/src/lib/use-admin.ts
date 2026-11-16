@@ -97,7 +97,7 @@ export interface AdminPipelineRow {
   applied_at: string | null
   last_activity_at: string | null
   win_confidence: number | null
-  // ── §24.203: the read-only catch-up. Every field below is optional — an older
+  // ── §24.204: the read-only catch-up. Every field below is optional — an older
   // host omits them all and the tab renders its original five columns. ──
   stage_entered_at?: string | null
   /** Whole days since the row entered its stage (≥ 0), or null when unknown. */
@@ -126,11 +126,11 @@ export interface AdminPipelineRow {
 export interface AdminPipeline {
   applications: AdminPipelineRow[]
   stageCounts: Record<string, number>
-  /** §24.203: the scribe's ghosting thresholds, e.g. { applied: 21, screen: 10, onsite: 7 }. */
+  /** §24.204: the scribe's ghosting thresholds, e.g. { applied: 21, screen: 10, onsite: 7 }. */
   ghostingThresholdsDays?: Record<string, number>
-  /** §24.203: stage → threshold key (stages without one are never tinted). */
+  /** §24.204: stage → threshold key (stages without one are never tinted). */
   ghostingStageMap?: Record<string, string>
-  /** §24.203: the latest scribe run, or null when it has never run. */
+  /** §24.204: the latest scribe run, or null when it has never run. */
   scribe?: {
     run_at: string
     /** Attention items with no application (company-only), shown above the table. */
@@ -138,7 +138,7 @@ export interface AdminPipeline {
   } | null
 }
 
-// ── §24.203: what the owner Pipeline tab shows in a row's detail ─────────────
+// ── §24.204: what the owner Pipeline tab shows in a row's detail ─────────────
 
 export type ScribePriority = 'same_day' | 'action_owed' | 'fyi'
 
@@ -278,7 +278,7 @@ export interface AdminWriteResult {
   /** On a 409 set_live_mode, the required-but-missing profile fields. */
   missing?: string[]
   /** The parsed JSON body (success or error) — for actions whose response
-   *  carries more than ok/error (§24.200/§24.201: bulk_delete's skip report,
+   *  carries more than ok/error (§24.201/§24.202: bulk_delete's skip report,
    *  applied_from_lead's undo handle, a 409 duplicate's existing row). */
   data?: Record<string, unknown>
 }
@@ -390,7 +390,7 @@ export interface AdminLead {
   application_id: string | null
   /** ~200-char excerpt of the JD; the full posting is at source_url. */
   snippet: string | null
-  /** §24.202 — this lead's agent actions (the in-flight lock + newest per kind).
+  /** §24.203 — this lead's agent actions (the in-flight lock + newest per kind).
    *  Absent on a host without agent actions. */
   actions?: LeadActionsSummary
 }
@@ -409,18 +409,18 @@ export interface AdminLeadsView {
   rollup: AdminLeadsRollup
   leads: AdminLead[]
   closed: AdminLead[]
-  /** §24.201 D4 — the owner's excluded titles (whole-title, case-insensitive).
+  /** §24.202 D4 — the owner's excluded titles (whole-title, case-insensitive).
    *  Optional on the client: a host without the list omits it (= empty). */
   titleBlocklist?: string[]
-  /** §24.200 D5/D8 — the direct-board sweep and the search supplement. Optional
+  /** §24.201 D5/D8 — the direct-board sweep and the search supplement. Optional
    *  on the client: a host without the sweep omits it and the strip is hidden. */
   sourcing?: AdminLeadsSourcing
-  /** §24.202 — the agent-action switches (pause state, daily cap, Run now).
+  /** §24.203 — the agent-action switches (pause state, daily cap, Run now).
    *  Absent on a host without agent actions, which hides every action button. */
   agentActions?: AgentActionsMeta
 }
 
-/** One `lead_source_runs` row — a single direct-board sweep (§24.200 D5). */
+/** One `lead_source_runs` row — a single direct-board sweep (§24.201 D5). */
 export interface LeadSweepRun {
   id: string
   started_at: string
@@ -471,8 +471,8 @@ export type AdminLeadsWrite =
   // (WYSIWYG: the server never re-derives the selection).
   | { action: 'bulk_set_status'; ids: string[]; status: string; reason?: string }
   | { action: 'bulk_delete'; ids: string[]; confirm: true }
-  // §24.201 D4 — archive + a tombstone whose reach follows the reason.
-  // `block_company` (§24.200 slice b) also pauses that company's watchlist board.
+  // §24.202 D4 — archive + a tombstone whose reach follows the reason.
+  // `block_company` (§24.201 slice b) also pauses that company's watchlist board.
   | {
       action: 'not_interested'
       id: string
@@ -480,11 +480,11 @@ export type AdminLeadsWrite =
       exclude_title?: boolean
       block_company?: boolean
     }
-  // §24.201 D6 — start a direct-board sweep now (detached; the poll shows it).
+  // §24.202 D6 — start a direct-board sweep now (detached; the poll shows it).
   | { action: 'sweep_now' }
   // The undo of "exclude this title" — the response carries the updated list.
   | { action: 'title_blocklist_remove'; title: string }
-  // §24.201 D8 — create the application and the lead link atomically.
+  // §24.202 D8 — create the application and the lead link atomically.
   | {
       action: 'applied_from_lead'
       lead_id: string
@@ -494,7 +494,7 @@ export type AdminLeadsWrite =
       confirm_duplicate?: boolean
     }
   | { action: 'undo_applied'; application_id: string }
-  // §24.201 D7 — a Greenhouse / Lever / Ashby posting link (see postAddLeadByUrl).
+  // §24.202 D7 — a Greenhouse / Lever / Ashby posting link (see postAddLeadByUrl).
   | { action: 'add_lead_by_url'; url: string; company?: string }
 
 /** Triage / re-score / batch-clean leads (server allow-lists the status set + the
@@ -503,7 +503,7 @@ export function postAdminLeads(baseUrl: string, body: AdminLeadsWrite): Promise<
   return postAdmin(baseUrl, body, '/api/admin/leads')
 }
 
-// ── §24.200 / §24.201: the triage + "I applied" response shapes ──────────────
+// ── §24.201 / §24.202: the triage + "I applied" response shapes ──────────────
 
 export const NOT_INTERESTED_REASONS = ['role', 'level', 'location', 'company', 'other'] as const
 export type NotInterestedReason = (typeof NOT_INTERESTED_REASONS)[number]
@@ -516,7 +516,7 @@ export interface BulkDeleteResult {
   skipped?: number
   // The host's only skip reasons. A lead with a tailored résumé is NOT skipped —
   // its tailored_resumes rows are deleted with it (ON DELETE CASCADE, §24.191 D4).
-  // §24.202 adds `action_in_flight`: a lead with a queued or running agent action.
+  // §24.203 adds `action_in_flight`: a lead with a queued or running agent action.
   skipped_by_reason?: { promoted?: number; email_linked?: number; action_in_flight?: number }
 }
 
@@ -555,7 +555,7 @@ export type SweepNowOutcome =
   | { kind: 'halted' }
   | { kind: 'error'; status: number; error: string }
 
-/** "Sweep now" (§24.201 D6). The sweep is detached on the host: a 202 means it
+/** "Sweep now" (§24.202 D6). The sweep is detached on the host: a 202 means it
  *  started, and the regular leads poll picks up the run as it lands. */
 export async function postSweepNow(baseUrl: string): Promise<SweepNowOutcome> {
   const res = await postAdminLeads(baseUrl, { action: 'sweep_now' })
@@ -612,7 +612,7 @@ export type AppliedFromLeadOutcome =
   | { kind: 'not_found' }
   | { kind: 'error'; status: number; error: string }
 
-/** "I applied" (§24.201 D8). Maps the contract's 409/404/400 shapes to a
+/** "I applied" (§24.202 D8). Maps the contract's 409/404/400 shapes to a
  *  discriminated outcome so the caller never parses status codes. */
 export async function postAppliedFromLead(
   baseUrl: string,
@@ -701,7 +701,7 @@ export function tailoredPdfUrl(baseUrl: string, runId: string): string {
   return `${baseUrl}/api/admin/tailored/${encodeURIComponent(runId)}/resume.pdf`
 }
 
-// ── §24.201 D6: the Watchlist tab (employer boards the sweep reads) ───────────
+// ── §24.202 D6: the Watchlist tab (employer boards the sweep reads) ───────────
 
 export type AtsSource = 'greenhouse' | 'lever' | 'ashby'
 export type WatchlistState = 'active' | 'paused' | 'absent'
@@ -892,7 +892,7 @@ export async function postSweepPreview(baseUrl: string, filters: SweepFilterProp
   return { kind: 'error', status: res.status, message: adminRefusalMessage(res) }
 }
 
-// ── §24.201 D7: add a lead by its posting URL ─────────────────────────────────
+// ── §24.202 D7: add a lead by its posting URL ─────────────────────────────────
 
 export interface AddLeadByUrlResult {
   ok: true
@@ -916,7 +916,7 @@ export type AddLeadByUrlOutcome =
   | { kind: 'ok'; result: AddLeadByUrlResult }
   | { kind: 'refused'; status: number; error: string; message: string }
 
-/** "Add lead by URL" (§24.201 D7): a Greenhouse / Lever / Ashby posting link. */
+/** "Add lead by URL" (§24.202 D7): a Greenhouse / Lever / Ashby posting link. */
 export async function postAddLeadByUrl(baseUrl: string, url: string, company?: string): Promise<AddLeadByUrlOutcome> {
   const trimmed = company?.trim()
   const res = await postAdminLeads(
@@ -934,7 +934,7 @@ export async function postAddLeadByUrl(baseUrl: string, url: string, company?: s
   }
 }
 
-// ── §24.202: agent actions — fixed buttons whose results land on the lead ─────
+// ── §24.203: agent actions — fixed buttons whose results land on the lead ─────
 
 export type AgentActionKind = 'research_company' | 'draft_outreach' | 'build_interview_kit' | 'run_now'
 export type LeadActionKind = Exclude<AgentActionKind, 'run_now'>

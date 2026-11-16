@@ -1,5 +1,5 @@
 /**
- * The owner's read-only Pipeline tab (STRATEGY.md §24.203).
+ * The owner's read-only Pipeline tab (STRATEGY.md §24.204).
  *
  * `buildAdminPipeline` returns every new field from one seeded fixture (an
  * application with events, a scribe run with attention items and suggestions,
@@ -285,7 +285,7 @@ function seedFixture(): void {
   tr.run('tr-other', 'lead-other', '2026-10-06T00:00:00Z', 'ready', 'tailored');
 }
 
-describe('buildAdminPipeline — the §24.203 fields', () => {
+describe('buildAdminPipeline — the §24.204 fields', () => {
   it('returns every new field from a seeded fixture', () => {
     seedFixture();
     const p = buildAdminPipeline(getDb(), { now: NOW });

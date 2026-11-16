@@ -1,6 +1,6 @@
 /**
  * src/modules/career-pilot/ats-sweep.ts — the direct employer-board sweep
- * (STRATEGY.md §24.200 D5, D6c; §24.201 D6 "Sweep now").
+ * (STRATEGY.md §24.201 D5, D6c; §24.202 D6 "Sweep now").
  *
  * Host-side, deterministic and LLM-free. For every `active` watchlist board it
  * lists the board through its adapter and then, on an `ok` fetch:

@@ -1,6 +1,6 @@
 /**
  * src/modules/portal/admin-actions.ts — the `/api/admin/actions` resource
- * (STRATEGY.md §24.202): the owner's agent-action buttons.
+ * (STRATEGY.md §24.203): the owner's agent-action buttons.
  *
  *   GET  /api/admin/actions[?lead_id=<id>]  → { actions, meta }
  *   GET  /api/admin/actions/<id>            → AgentActionDetail | 404

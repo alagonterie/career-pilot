@@ -97,7 +97,7 @@ function AdminPage() {
   const persona = useAdminPersona(API_BASE)
   const leads = useAdminLeads(API_BASE)
   const watchlist = useAdminWatchlist(API_BASE)
-  // §24.201 D6 — a host without the watchlist 404s its read: hide the tab
+  // §24.202 D6 — a host without the watchlist 404s its read: hide the tab
   // (and its panel, on a deep link) rather than show a broken one.
   const watchlistMissing = watchlist.status === 'error' && watchlist.data === null
   const tabs = watchlistMissing ? TABS.filter((t) => t.id !== 'watchlist') : TABS

@@ -29,7 +29,7 @@ following checks, in increasing rigor:
   mcp__nanoclaw__fetch_source, mcp__nanoclaw__record_job_lead]` — exactly
   those four, no more. (`fetch_source` = the watched employer boards, for
   company-scoped requests; `search_jobs` = the one-query search supplement.
-  The scheduled board sweep is host-run, not a tool. STRATEGY.md §24.200 D4/D5/D8,
+  The scheduled board sweep is host-run, not a tool. STRATEGY.md §24.201 D4/D5/D8,
   which reverses §24.50's search-primary / ATS-fallback split.)
 - The rendered file does NOT exist in `groups/career-pilot-sandbox/`
   (the source isn't in that group → no render → orchestrator can't
@@ -98,7 +98,7 @@ Critical subset to check first if the run fails:
   rows — within-source dedup via `ON CONFLICT (source, source_job_id)
   DO UPDATE` is working.
 
-**Insert guard (STRATEGY.md §24.200 D1).** The host refuses, before
+**Insert guard (STRATEGY.md §24.201 D1).** The host refuses, before
 caching, search hits whose apply link is not direct (`aggregator` /
 `unknown` by default — the `lead_reject_link_kinds` knob), postings the
 owner removed (tombstones), and owner-blocklisted titles. `search_jobs`
@@ -121,7 +121,7 @@ reports them as `rejected` / `rejected_total` (and in its text as
 Host-side proof lives in `src/modules/career-pilot/lead-guard.integration.test.ts`;
 the result pass-through in `container/agent-runner/src/mcp-tools/scrape-jobs.test.ts`.
 
-**Sourcing split (STRATEGY.md §24.200 D4/D5/D8).** The direct employer
+**Sourcing split (STRATEGY.md §24.201 D4/D5/D8).** The direct employer
 boards are the primary feed and are swept by the HOST on `ats_sweep_cron`
 (no agent turn, no LLM); search is a gated supplement. Check in the
 transcript of a scheduled run and a company-scoped run:

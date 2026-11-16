@@ -1,5 +1,5 @@
 /**
- * The direct employer-board sweep (STRATEGY.md §24.200 D5, D6c) end to end over
+ * The direct employer-board sweep (STRATEGY.md §24.201 D5, D6c) end to end over
  * a real migrated DB, with the board adapter injected (fixtures — no network):
  *   - a sweep inserts only direct (`ats`) rows and writes a `lead_source_runs` row;
  *   - title / location / age filters and the per-run cap reject by reason; an
@@ -406,7 +406,7 @@ describe('the schedule', () => {
   });
 });
 
-describe('a sweep that reached no board is not a success (§24.200 D8 freshness)', () => {
+describe('a sweep that reached no board is not a success (§24.201 D8 freshness)', () => {
   it('every board failing records ok=0, so health and /architecture read the outage as stale', async () => {
     addBoard('acme', 'Acme');
     addBoard('globex', 'Globex');

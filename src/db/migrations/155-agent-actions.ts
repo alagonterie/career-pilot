@@ -1,5 +1,5 @@
 /**
- * Migration 155 — agent_actions (STRATEGY.md §24.202 D2).
+ * Migration 155 — agent_actions (STRATEGY.md §24.203 D2).
  *
  * One row per `/admin` button press that asks the owner agent to do something:
  * a lead action (research the company, draft outreach, build an interview kit)

@@ -5,7 +5,7 @@ import type { AdminPipelineRow } from '~/lib/use-admin'
 
 import { PipelinePanel } from './PipelinePanel'
 
-// §24.203: the owner Pipeline tab catches up — read-only detail, attention chip,
+// §24.204: the owner Pipeline tab catches up — read-only detail, attention chip,
 // days-in-stage, last email and the stage filter. Every new field is optional.
 
 function row(over: Partial<AdminPipelineRow> & { application_id: string }): AdminPipelineRow {
@@ -56,7 +56,7 @@ const order = () =>
 
 const headers = () => screen.getAllByRole('columnheader').map((h) => (h.textContent ?? '').replace(/[↕▲▼]/g, '').trim())
 
-describe('PipelinePanel — §24.203 read-only catch-up', () => {
+describe('PipelinePanel — §24.204 read-only catch-up', () => {
   it('an older host (no new fields) renders the original five columns and no detail', () => {
     render(<PipelinePanel rows={[row({ application_id: 'a1' })]} stageCounts={{ screening: 1 }} />)
     expect(headers()).toEqual(['Company', 'Role', 'Stage', 'Win', 'Last activity'])

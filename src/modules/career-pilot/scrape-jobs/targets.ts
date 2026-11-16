@@ -2,11 +2,11 @@
  * Board targets reader.
  *
  * Resolves the boards a scan covers from the `active` rows of the `ats_watchlist`
- * table (STRATEGY.md §24.200 D7) — no longer from `ats-targets.json`, which is
+ * table (STRATEGY.md §24.201 D7) — no longer from `ats-targets.json`, which is
  * now read only by the watchlist's boot-time seed. `priority` filters on the
  * row's `tier`; `company` is an exact, case-insensitive name match. Host-side.
  *
- * Spec: STRATEGY.md §24.5 what-lands #4, §24.200 D7.
+ * Spec: STRATEGY.md §24.5 what-lands #4, §24.201 D7.
  */
 import type Database from 'better-sqlite3';
 

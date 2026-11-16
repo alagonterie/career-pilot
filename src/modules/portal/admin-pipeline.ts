@@ -1,6 +1,6 @@
 /**
  * src/modules/portal/admin-pipeline.ts — the owner's read-only Pipeline tab
- * (STRATEGY.md §24.138, §24.203).
+ * (STRATEGY.md §24.138, §24.204).
  *
  * One GET, no writer: stage changes stay the pipeline-scribe's and the agent's,
  * so there is deliberately no `applyAdminPipelineWrite` and no admin POST route
@@ -318,7 +318,7 @@ const VIEW_IDS = 'SELECT application_id FROM public_pipeline_view';
 
 /**
  * The owner pipeline view: the pipeline read-model joined to `applications` for
- * the REAL company name, plus (§24.203) the stage clock, the private rationale,
+ * the REAL company name, plus (§24.204) the stage clock, the private rationale,
  * the event timeline, the scribe's latest narrative / attention / suggestions,
  * the newest mail, learnings, kits and the linked lead's tailored résumés.
  * Empty on an un-migrated DB.

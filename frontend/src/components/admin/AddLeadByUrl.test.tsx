@@ -5,7 +5,7 @@ import type { AddLeadByUrlResult } from '~/lib/use-admin'
 
 import { AddLeadByUrl, addLeadNote, boardNote, offerWatch } from './AddLeadByUrl'
 
-// §24.201 D7 — "Add lead by URL" on the Leads tab: one input, the host's refusal
+// §24.202 D7 — "Add lead by URL" on the Leads tab: one input, the host's refusal
 // sentences, and a success note that proposes (never auto-adds) the board.
 
 afterEach(() => {

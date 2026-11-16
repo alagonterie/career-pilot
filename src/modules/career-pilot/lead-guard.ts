@@ -1,8 +1,8 @@
 /**
  * src/modules/career-pilot/lead-guard.ts — the ONE pre-insert guard every
- * job_leads writer shares (STRATEGY.md §24.200 D1 + D2, §24.201 D4).
+ * job_leads writer shares (STRATEGY.md §24.201 D1 + D2, §24.202 D4).
  *
- * Before §24.200 the search path computed `apply_link_kind` and then recorded the
+ * Before §24.201 the search path computed `apply_link_kind` and then recorded the
  * lead anyway, and a hard delete had no memory, so the owner's deleting never
  * converged. This module decides — for one normalized payload — whether it may
  * enter the pool at all. It refuses, in order:
@@ -227,7 +227,7 @@ export function matchTombstone(
 /** Options only the owner's own add-by-URL may pass (see `checkLeadGuard`). */
 export interface LeadGuardOptions {
   /**
-   * The owner picked this exact posting (§24.201 D7 "add a lead by URL"): the
+   * The owner picked this exact posting (§24.202 D7 "add a lead by URL"): the
    * title blocklist does not apply to it, and a FINGERPRINT tombstone written
    * for some OTHER posting does not refuse it (that tombstone is left in place —
    * it still refuses the posting it was written for and its other siblings).

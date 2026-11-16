@@ -1,6 +1,6 @@
 /**
  * `fetch_source` applies the same early insert guard as `stash_job_payloads`
- * (STRATEGY.md §24.200 D1): a tombstoned or title-blocklisted board posting is
+ * (STRATEGY.md §24.201 D1): a tombstoned or title-blocklisted board posting is
  * counted by reason and NOT cached, so the subagent never sees it and a later
  * `record_job_lead` for it is NOT_IN_CACHE.
  *
@@ -106,7 +106,7 @@ function posting(over: Partial<JobLeadPayload> = {}): JobLeadPayload {
   };
 }
 
-describe('fetch_source early guard (§24.200 D1)', () => {
+describe('fetch_source early guard (§24.201 D1)', () => {
   it('does not cache or summarize a tombstoned or blocklisted posting, and reports rejected counts', async () => {
     boardPostings.push(
       posting(),

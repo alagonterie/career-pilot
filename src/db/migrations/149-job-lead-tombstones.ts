@@ -1,5 +1,5 @@
 /**
- * Migration 149 — job_lead_tombstones (STRATEGY.md §24.200 D2).
+ * Migration 149 — job_lead_tombstones (STRATEGY.md §24.201 D2).
  *
  * A hard `DELETE FROM job_leads` used to have no memory: the next scrape that
  * surfaced the same posting re-inserted it, so the owner's deleting never

@@ -65,7 +65,7 @@ function normUrl(u: string | null | undefined): string | null {
 }
 
 /** Lowercase + collapse whitespace. Exported for the "I applied" duplicate check
- * (§24.201 D8), which must compare company + title exactly as this matcher does. */
+ * (§24.202 D8), which must compare company + title exactly as this matcher does. */
 export function normText(s: string | null | undefined): string | null {
   if (!s) return null;
   const t = s.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -139,7 +139,7 @@ export function promoteLeadOnApplied(
           WHERE closed_at IS NULL AND application_id IS NULL AND status != 'applied'`,
       )
       .all() as LeadRow[];
-    // §24.201 D8: an application reported AFTER its posting came off the board
+    // §24.202 D8: an application reported AFTER its posting came off the board
     // still links to that lead (closed as 'absent' within the grace window)
     // instead of synthesizing a duplicate. Open leads are always preferred.
     const graceDays = getConfig<number>(db, 'lead_promotion_absent_grace_days');

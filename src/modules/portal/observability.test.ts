@@ -280,7 +280,7 @@ describe('§9 projection safety', () => {
   });
 });
 
-// §24.200 D8: the /architecture job-source probes.
+// §24.201 D8: the /architecture job-source probes.
 function setPref(key: string, value: string | number | boolean): void {
   getDb()
     .prepare('INSERT OR REPLACE INTO preferences (key, value, updated_at) VALUES (?, ?, ?)')

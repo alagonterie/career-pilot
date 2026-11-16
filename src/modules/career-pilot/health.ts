@@ -464,7 +464,7 @@ function checkRequestTelemetry(now: number, findings: HealthFinding[]): void {
 }
 
 /**
- * The direct employer-board sweep (§24.200 D5/D8): stale when no sweep has
+ * The direct employer-board sweep (§24.201 D5/D8): stale when no sweep has
  * succeeded inside `ats_sweep_stale_hours` (it is the primary lead source), and
  * one finding listing the watched boards whose last successful fetch is older
  * than `ats_board_failing_days`, and one listing boards RETIRED (set `absent`)

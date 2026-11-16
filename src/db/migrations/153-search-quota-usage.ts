@@ -1,5 +1,5 @@
 /**
- * Migration 153 — search_quota_usage (STRATEGY.md §24.200 D8).
+ * Migration 153 — search_quota_usage (STRATEGY.md §24.201 D8).
  *
  * The spend gate for the search supplement: `search_jobs` reserves the result
  * pages it is about to fetch, and the host refuses past `search_daily_page_cap`

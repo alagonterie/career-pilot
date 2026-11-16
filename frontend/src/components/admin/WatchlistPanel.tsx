@@ -17,7 +17,7 @@ import { DataTable, type Column } from './DataTable'
 import { SweepFilterEditor } from './SweepFilterEditor'
 
 /**
- * §24.201 D6 — the Watchlist tab: the employer boards the direct-board sweep
+ * §24.202 D6 — the Watchlist tab: the employer boards the direct-board sweep
  * reads. Each board shows where it came from, whether the sweep reads it, when
  * it last answered, and what it has produced. Pause / resume / remove act on
  * one board; "add company by URL" adds a Greenhouse, Lever or Ashby board (the

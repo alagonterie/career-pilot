@@ -278,7 +278,7 @@ describe('GET /api/architecture', () => {
     expect(cold.sweep.fresh).toBe(false);
   });
 
-  it('exposes the §24.200 D8 job-source probes (board sweep freshness + search quota)', async () => {
+  it('exposes the §24.201 D8 job-source probes (board sweep freshness + search quota)', async () => {
     const now = new Date().toISOString();
     getDb()
       .prepare(

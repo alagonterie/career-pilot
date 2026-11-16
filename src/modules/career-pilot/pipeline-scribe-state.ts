@@ -1,6 +1,6 @@
 /**
  * The pipeline-scribe's latest run, read and reconciled against live
- * application state (STRATEGY.md §24.199; shared by §24.203).
+ * application state (STRATEGY.md §24.199; shared by §24.204).
  *
  * One reader for both consumers: the agent's `read_pipeline_state` action and
  * the owner's `/admin` Pipeline tab. The stored run is a snapshot and is never

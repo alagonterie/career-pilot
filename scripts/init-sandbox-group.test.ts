@@ -27,7 +27,7 @@ describe('SANDBOX_DISALLOWED_TOOLS — the sandbox tool lockdown (§24.141 S2-0)
     }
   });
 
-  it('removes the owner-only admin-action tools from the sandbox (§24.202)', () => {
+  it('removes the owner-only admin-action tools from the sandbox (§24.203)', () => {
     for (const tool of ['mcp__nanoclaw__get_admin_action', 'mcp__nanoclaw__complete_admin_action']) {
       expect(SANDBOX_DISALLOWED_TOOLS).toContain(tool);
     }

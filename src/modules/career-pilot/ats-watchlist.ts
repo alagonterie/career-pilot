@@ -1,6 +1,6 @@
 /**
  * src/modules/career-pilot/ats-watchlist.ts — the employer-board watchlist store
- * (STRATEGY.md §24.200 D7).
+ * (STRATEGY.md §24.201 D7).
  *
  * `ats_watchlist` is the runtime truth for which Greenhouse / Lever / Ashby boards
  * the host reads: `fetch_source` resolves companies from its `active` rows, the
@@ -287,7 +287,7 @@ export function setBoardState(db: Database.Database, id: number, state: Watchlis
 }
 
 /**
- * "Not interested → block company" (§24.201 D4): pause every `active` board of
+ * "Not interested → block company" (§24.202 D4): pause every `active` board of
  * that company. `matched` counts boards of the company in any state — the
  * caller's `company_blocked` is `matched > 0`.
  */
@@ -513,7 +513,7 @@ export function titleCaseToken(token: string): string {
     .join(' ');
 }
 
-// ── growth (§24.200 D7) ─────────────────────────────────────────────────────
+// ── growth (§24.201 D7) ─────────────────────────────────────────────────────
 
 /** The board row for (ats, token), matched case-insensitively on the token. */
 export function findBoard(db: Database.Database, ats: AtsSource, token: string): WatchlistRow | undefined {

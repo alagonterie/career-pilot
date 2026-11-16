@@ -67,7 +67,7 @@ describe('formatRecordJobLeadResult', () => {
   });
 });
 
-describe('searchUnavailable (search quota refusal, §24.200 D8)', () => {
+describe('searchUnavailable (search quota refusal, §24.201 D8)', () => {
   it('maps a QUOTA refusal to the existing unavailable shape with the reason', () => {
     const r = searchUnavailable(
       new SearchJobsError('QUOTA', 'search quota for this period spent (250/250 pages since 2026-11-01)'),

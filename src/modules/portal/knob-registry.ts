@@ -879,7 +879,7 @@ export const KNOB_SPECS: Record<string, KnobSpec> = {
     integer: true,
     note: 'The longest private note the Leads tab accepts with "I applied". A longer note is refused (400), not truncated. The note is stored as a private pipeline event and never published.',
   },
-  // §24.202 — the /admin agent-action buttons.
+  // §24.203 — the /admin agent-action buttons.
   admin_action_daily_cap: {
     type: 'number',
     group: 'budget',
@@ -1560,7 +1560,7 @@ export function cronMaxGapHours(cron: string): number | null {
 const SWEEP_INTERVAL_KEYS = new Set(['ats_sweep_cron', 'killer_match_recency_window_hours']);
 
 /**
- * §24.200 D5: the employer-board sweep must fire more often than the
+ * §24.201 D5: the employer-board sweep must fire more often than the
  * killer-match recency window, or a fresh board posting is already outside the
  * alert window when it lands and killer-match can never alert on it. `pending`
  * is the value about to be stored for `key`; the other knob is read as it

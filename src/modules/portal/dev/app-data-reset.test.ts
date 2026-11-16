@@ -1,6 +1,6 @@
 /**
  * The dev data reset's table list (§24.41/§24.48) — the job_leads children
- * (§24.191 tailored_resumes, §24.200 job_lead_tombstones) are listed ahead of
+ * (§24.191 tailored_resumes, §24.201 job_lead_tombstones) are listed ahead of
  * job_leads, and a wipe leaves no orphan rows behind.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -55,7 +55,7 @@ describe('PIPELINE_DATA_TABLES', () => {
     expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
   });
 
-  it('lists lead_source_runs ahead of job_leads and never lists ats_watchlist or search_quota_usage (§24.200)', () => {
+  it('lists lead_source_runs ahead of job_leads and never lists ats_watchlist or search_quota_usage (§24.201)', () => {
     const list = [...APP_DATA_TABLES] as string[];
     expect(list.indexOf('lead_source_runs')).toBeGreaterThanOrEqual(0);
     expect(list.indexOf('lead_source_runs')).toBeLessThan(list.indexOf('job_leads'));
@@ -63,7 +63,7 @@ describe('PIPELINE_DATA_TABLES', () => {
     expect(list).not.toContain('search_quota_usage');
   });
 
-  it('lists agent_actions ahead of job_leads (§24.202)', () => {
+  it('lists agent_actions ahead of job_leads (§24.203)', () => {
     const list = [...APP_DATA_TABLES] as string[];
     expect(list.indexOf('agent_actions')).toBeGreaterThanOrEqual(0);
     expect(list.indexOf('agent_actions')).toBeLessThan(list.indexOf('job_leads'));

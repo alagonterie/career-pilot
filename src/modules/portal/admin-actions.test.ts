@@ -1,5 +1,5 @@
 /**
- * §24.202 — the /admin side of agent actions: the list/detail/enqueue routes,
+ * §24.203 — the /admin side of agent actions: the list/detail/enqueue routes,
  * the per-lead summary + meta on the Leads read, bulk_delete skipping a lead
  * with an action in flight, and the adminEnabled() gate over real HTTP.
  */

@@ -45,7 +45,7 @@ const PIPELINE = {
       applied_at: '2026-06-10T00:00:00.000Z',
       last_activity_at: '2026-06-18T00:00:00.000Z',
       win_confidence: 68,
-      // §24.203: the read-only catch-up fields.
+      // §24.204: the read-only catch-up fields.
       stage_entered_at: '2026-06-06T00:00:00.000Z',
       days_in_stage: 12,
       ghosting_threshold_days: 10,
@@ -362,7 +362,7 @@ const LEADS = {
       snippet: null,
     },
   ],
-  // §24.200 slice (b) — the direct-board sweep + the search supplement.
+  // §24.201 slice (b) — the direct-board sweep + the search supplement.
   sourcing: {
     lastSweep: {
       id: 'run-1',
@@ -389,7 +389,7 @@ const LEADS = {
   },
 }
 
-// §24.201 D6 — the employer-board watchlist (contract: AdminWatchlistView).
+// §24.202 D6 — the employer-board watchlist (contract: AdminWatchlistView).
 const WATCHLIST = {
   boards: [
     {
@@ -437,7 +437,7 @@ const WATCHLIST = {
   caps: { max_boards: 200, counted: 2, max_auto_adds_per_run: 5 },
 }
 
-// The §24.200 D5 sweep-filter knobs, as GET /api/admin/knobs serves them.
+// The §24.201 D5 sweep-filter knobs, as GET /api/admin/knobs serves them.
 function sweepKnob(key: string, label: string, value: string | number, num?: { min: number; max: number }) {
   return {
     key,
@@ -474,7 +474,7 @@ const SWEEP_PREVIEW = {
   sample_newly_kept: [],
 }
 
-// §24.202 — the agent-action switches served with the leads read, and the
+// §24.203 — the agent-action switches served with the leads read, and the
 // action rows the page polls. Every field matches the contract's row shapes.
 const ACTION_META = {
   pause_state: 'active',
@@ -638,7 +638,7 @@ test.describe('/admin — control center (§24.138)', () => {
     expect(consoleErrors).toEqual([])
   })
 
-  test('the Pipeline tab is read-only and shows attention, days in stage and the row detail (§24.203)', async ({
+  test('the Pipeline tab is read-only and shows attention, days in stage and the row detail (§24.204)', async ({
     page,
   }) => {
     await stubAdmin(page)
@@ -695,7 +695,7 @@ test.describe('/admin — control center (§24.138)', () => {
     await expect(page.getByTestId('leads-row')).toHaveCount(3)
   })
 
-  test('Leads triage: link filter, row selection drives the batch, I-applied popover (§24.201)', async ({ page }) => {
+  test('Leads triage: link filter, row selection drives the batch, I-applied popover (§24.202)', async ({ page }) => {
     await stubAdmin(page)
     await page.goto('/admin?tab=leads')
     await expect(page.getByTestId('leads-row')).toHaveCount(2)
@@ -720,7 +720,7 @@ test.describe('/admin — control center (§24.138)', () => {
     await expect(page.getByTestId('leads-applied-date')).toHaveValue(/^\d{4}-\d{2}-\d{2}$/)
   })
 
-  test('Leads sourcing strip: last sweep, quota, Sweep now, block a board (§24.201 D4/D6)', async ({ page }) => {
+  test('Leads sourcing strip: last sweep, quota, Sweep now, block a board (§24.202 D4/D6)', async ({ page }) => {
     await stubAdmin(page)
     const posted: Record<string, unknown>[] = []
     page.on('request', (req) => {
@@ -749,7 +749,7 @@ test.describe('/admin — control center (§24.138)', () => {
       .toMatchObject({ id: 'lead-1', block_company: true })
   })
 
-  test('Watchlist tab + sweep filters + add a lead by link (§24.201 D6/D7)', async ({ page }) => {
+  test('Watchlist tab + sweep filters + add a lead by link (§24.202 D6/D7)', async ({ page }) => {
     await stubAdmin(page)
     // the knob read now carries the sweep filters (a later route wins)
     await page.route('**/api/admin/knobs', async (route) => {
@@ -863,7 +863,7 @@ test.describe('/admin — control center (§24.138)', () => {
     })
   })
 
-  test('Leads agent actions: draft outreach → poll → subject, body, compose link; Run now; recent (§24.202)', async ({
+  test('Leads agent actions: draft outreach → poll → subject, body, compose link; Run now; recent (§24.203)', async ({
     page,
   }) => {
     await stubAdmin(page)
@@ -926,7 +926,7 @@ test.describe('/admin — control center (§24.138)', () => {
     )
   })
 
-  test('the Watchlist tab is hidden on a host without the watchlist (§24.201 D6)', async ({ page }) => {
+  test('the Watchlist tab is hidden on a host without the watchlist (§24.202 D6)', async ({ page }) => {
     await stubAdmin(page)
     await page.route('**/api/admin/watchlist', (route) => route.fulfill(jsonRoute({ error: 'not_found' }, 404)))
     await page.goto('/admin?tab=leads')

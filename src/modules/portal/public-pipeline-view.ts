@@ -201,7 +201,7 @@ export function upsertPublicPipelineView(db: Database.Database, applicationId: s
       ? sanitize(app.win_confidence_rationale, { application_id: applicationId, db })
       : null;
 
-    // role_title: the same deterministic sanitize. Since §24.201 D8 the /admin
+    // role_title: the same deterministic sanitize. Since §24.202 D8 the /admin
     // "I applied" copies a SCRAPED posting title verbatim, and board/index titles
     // often embed the employer ("Staff Engineer - Acme") — unredacted, that
     // de-anonymizes an obfuscated card. Applies to agent-composed titles too.

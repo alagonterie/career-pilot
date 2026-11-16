@@ -1,6 +1,6 @@
 /**
  * SerpApi `google_jobs` search — a gated SUPPLEMENT to the host's direct
- * employer-board sweep (STRATEGY §24.50, reversed by §24.200 D4/D8). Every page
+ * employer-board sweep (STRATEGY §24.50, reversed by §24.201 D4/D8). Every page
  * is reserved from the host's search quota before it is fetched
  * (`SearchGoogleJobsOpts.reservePage`); a refused first page makes the search
  * unavailable.
@@ -255,7 +255,7 @@ export interface SearchGoogleJobsArgs {
   limit?: number | null;
 }
 
-/** The host's answer to "may I spend one more result page?" (§24.200 D8). */
+/** The host's answer to "may I spend one more result page?" (§24.201 D8). */
 export interface PageReservation {
   granted: boolean;
   /** Why not, when refused (e.g. the day's budget or the period's quota is spent). */

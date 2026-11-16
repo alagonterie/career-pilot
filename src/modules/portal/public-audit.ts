@@ -32,7 +32,7 @@ import { upsertPublicKitView } from './public-kit-view.js';
 import { sanitize, sanitizeForPublic } from './sanitizer.js';
 
 /** The pipeline_events kind/source of the owner's /admin "I applied" record
- * (§24.201 D8). Owner-sourced events are private: never mirrored publicly. */
+ * (§24.202 D8). Owner-sourced events are private: never mirrored publicly. */
 export const OWNER_APPLIED_EVENT_KIND = 'owner_applied';
 export const OWNER_EVENT_SOURCE = 'owner';
 
@@ -167,7 +167,7 @@ export async function mirrorPipelineEvent(
     return 'skipped';
   }
 
-  // Owner-sourced events are private by contract (§24.201 D8): the /admin
+  // Owner-sourced events are private by contract (§24.202 D8): the /admin
   // "I applied" record carries the owner's free-text note and internal ids. Its
   // creation path never mirrors it, but resanitizeApplicationAuditTrail
   // re-mirrors EVERY pipeline_events row of an application — so the filter has

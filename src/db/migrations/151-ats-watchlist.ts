@@ -1,5 +1,5 @@
 /**
- * Migration 151 — ats_watchlist (STRATEGY.md §24.200 D7).
+ * Migration 151 — ats_watchlist (STRATEGY.md §24.201 D7).
  *
  * The employer boards the host sweeps, as a table instead of a hand-kept file.
  * `groups/career-pilot/data/ats-targets.json` is now read only by the boot-time

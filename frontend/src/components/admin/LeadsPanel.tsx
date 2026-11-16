@@ -52,7 +52,7 @@ import { TailorResume } from './TailorResume'
  * WYSIWYG is the safety story for a destructive control, so the count in the
  * button is always the count in the table.
  *
- * §24.201 makes triage fast without the agent: a *Link* filter + per-row chip
+ * §24.202 makes triage fast without the agent: a *Link* filter + per-row chip
  * (D1 — the one fact the owner triages on was buried in the detail), real row
  * selection (D2 — the batch acts on the ticked rows when any are ticked, else on
  * every shown row; the count is always the rows that will be acted on), j/k/o/a/
@@ -71,7 +71,7 @@ const PROMOTED_MESSAGE = 'This lead is already an application — change it on t
 
 type SortKey = 'rules_score' | 'llm_score' | 'first_seen_at' | 'last_seen_at' | 'source_posted_at'
 
-// ── §24.201 D1: link kind, derived ────────────────────────────────────────────
+// ── §24.202 D1: link kind, derived ────────────────────────────────────────────
 
 /** The board sources whose apply link is direct by construction. */
 export const BOARD_SOURCES: ReadonlySet<string> = new Set(['greenhouse', 'lever', 'ashby'])
@@ -126,7 +126,7 @@ function LinkChip({ lead }: { lead: AdminLead }) {
   )
 }
 
-// ── §24.201 D5: "new since last visit", kept in this browser ─────────────────
+// ── §24.202 D5: "new since last visit", kept in this browser ─────────────────
 
 const LAST_VISIT_KEY = 'career-pilot.admin.leads.last-visit'
 
@@ -425,7 +425,7 @@ function leadColumns(isNew: (lead: AdminLead) => boolean): Column<AdminLead>[] {
           <span className={cn('font-mono text-xs', STATUS_TONE[lead.status] ?? 'text-muted-foreground')}>
             {lead.status}
           </span>
-          {/* §24.202 — an agent action holds this lead (refreshed by the leads poll). */}
+          {/* §24.203 — an agent action holds this lead (refreshed by the leads poll). */}
           {lead.actions?.in_flight ? (
             <span
               data-testid="leads-action-inflight"
@@ -439,7 +439,7 @@ function leadColumns(isNew: (lead: AdminLead) => boolean): Column<AdminLead>[] {
       ),
     },
     {
-      // §24.201 D5 — when the employer posted it (not when we first saw it).
+      // §24.202 D5 — when the employer posted it (not when we first saw it).
       id: 'posted',
       header: 'Posted',
       cellClassName: 'font-mono text-xs text-muted-foreground',
@@ -488,7 +488,7 @@ interface LeadDetailProps {
   applied: AppliedEntry | undefined
   onApplied: (lead: AdminLead, entry: AppliedEntry) => void
   onAppliedRefused: (message: string) => void
-  /** §24.202 — absent on a host without agent actions. */
+  /** §24.203 — absent on a host without agent actions. */
   agentMeta?: AgentActionsMeta
   onChanged: () => void
 }
@@ -584,7 +584,7 @@ function LeadDetail({
             onApplied={onApplied}
             onRefused={onAppliedRefused}
           />
-          {/* §24.202 — the per-lead agent actions, after "I applied". Hidden on
+          {/* §24.203 — the per-lead agent actions, after "I applied". Hidden on
               a host without agent actions. */}
           {agentMeta ? <LeadAgentActions lead={lead} meta={agentMeta} baseUrl={baseUrl} onChanged={onChanged} /> : null}
         </div>
@@ -662,7 +662,7 @@ function LeadDetail({
   )
 }
 
-// ── §24.201 D4: "not interested" ──────────────────────────────────────────────
+// ── §24.202 D4: "not interested" ──────────────────────────────────────────────
 
 const REASON_HINT: Record<NotInterestedReason, string> = {
   role: 'wrong kind of role — this posting and near-identical re-posts stay out',
@@ -763,7 +763,7 @@ function NotInterestedForm({
   )
 }
 
-// ── §24.201 D8: "I applied" ───────────────────────────────────────────────────
+// ── §24.202 D8: "I applied" ───────────────────────────────────────────────────
 
 const MAX_APPLIED_NOTE = 1000
 
@@ -1027,18 +1027,18 @@ export function LeadsPanel({
   const [note, setNote] = useState<string | null>(null)
   // The two-step confirm for the bulk actions — null, or which one is armed.
   const [arming, setArming] = useState<'archive' | 'delete' | null>(null)
-  // §24.201 D2 — the ticked rows (lead ids). Empty = "act on all shown".
+  // §24.202 D2 — the ticked rows (lead ids). Empty = "act on all shown".
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
-  // §24.201 D3 — keyboard triage: the focused row, the open disclosure, and the
+  // §24.202 D3 — keyboard triage: the focused row, the open disclosure, and the
   // table's display order (what j/k walk — it includes any header sort).
   const [focusedKey, setFocusedKey] = useState<string | null>(null)
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
   const [order, setOrder] = useState<string[]>([])
   const [niOpenId, setNiOpenId] = useState<string | null>(null)
-  // §24.201 D8 — "I applied"s recorded this session, keyed by lead id, so the
+  // §24.202 D8 — "I applied"s recorded this session, keyed by lead id, so the
   // Undo survives the lead refresh that brings back its application_id.
   const [applied, setApplied] = useState<Record<string, AppliedEntry>>({})
-  // §24.201 D5 — the previous visit's timestamp. A visit is a browser session:
+  // §24.202 D5 — the previous visit's timestamp. A visit is a browser session:
   // the baseline is read once per session, so a tab switch (which remounts the
   // panel) keeps the markers instead of counting as a new visit.
   const [lastVisit, setLastVisit] = useState<number | null>(null)
@@ -1049,7 +1049,7 @@ export function LeadsPanel({
     setLastVisit(sessionLastVisit())
   }, [])
 
-  // §24.201 D4 — the owner's title blocklist. A write's response carries the
+  // §24.202 D4 — the owner's title blocklist. A write's response carries the
   // fresh list; it stands in until the next poll brings the same list back.
   const [blocklistOverride, setBlocklistOverride] = useState<string[] | null>(null)
   useEffect(() => setBlocklistOverride(null), [data])
@@ -1167,7 +1167,7 @@ export function LeadsPanel({
     }
   }
 
-  // §24.201 D4 — archive + a tombstone whose reach follows the reason.
+  // §24.202 D4 — archive + a tombstone whose reach follows the reason.
   const notInterested = async (
     lead: AdminLead,
     reason: NotInterestedReason,
@@ -1202,7 +1202,7 @@ export function LeadsPanel({
     onSaved()
   }
 
-  // §24.201 D6 — "Sweep now". Its own in-flight flag, so a sweep request does
+  // §24.202 D6 — "Sweep now". Its own in-flight flag, so a sweep request does
   // not lock the row controls (and vice versa).
   const [sweepBusy, setSweepBusy] = useState(false)
   const sweepNow = async (): Promise<void> => {
@@ -1266,7 +1266,7 @@ export function LeadsPanel({
     }
   }
 
-  // ── §24.201 D3: keyboard triage ────────────────────────────────────────────
+  // ── §24.202 D3: keyboard triage ────────────────────────────────────────────
   // The table reports its display order; with no rows it renders nothing, so an
   // empty filter means an empty order (never a stale one).
   const navOrder = filtered.length === 0 ? [] : order
@@ -1407,10 +1407,10 @@ export function LeadsPanel({
           </div>
         </div>
         {data.sourcing ? <SourcingStrip sourcing={data.sourcing} /> : null}
-        {/* §24.201 D7 — shown with the board-sourcing strip: a host without the
+        {/* §24.202 D7 — shown with the board-sourcing strip: a host without the
             sweep predates adding a lead by its link. */}
         {data.sourcing ? <AddLeadByUrl baseUrl={baseUrl} onSaved={onSaved} /> : null}
-        {/* §24.202 — the way back to a result whose lead was deleted. */}
+        {/* §24.203 — the way back to a result whose lead was deleted. */}
         {data.agentActions ? (
           <RecentAgentActions baseUrl={baseUrl} authuser={data.agentActions.compose_authuser} />
         ) : null}
@@ -1440,7 +1440,7 @@ export function LeadsPanel({
       <div className="flex flex-wrap items-center gap-2">
         <Select label="Status" value={status} onChange={setStatus} options={['all', ...SETTABLE_STATUSES, 'applied']} />
         <Select label="Source" value={source} onChange={setSource} options={['all', ...LEAD_SOURCES]} />
-        {/* §24.201 D1 — the fact the owner actually triages on. */}
+        {/* §24.202 D1 — the fact the owner actually triages on. */}
         <Select label="Link" value={linkKind} onChange={setLinkKind} options={LINK_FILTER_OPTIONS} />
         <Select
           label="Sort"
@@ -1487,7 +1487,7 @@ export function LeadsPanel({
         </label>
       </div>
 
-      {/* Batch bar (§24.187 + §24.201 D2) — operates on the ticked rows when any
+      {/* Batch bar (§24.187 + §24.202 D2) — operates on the ticked rows when any
           are ticked, otherwise on every row the filters show; the count is
           always the number that will be acted on. Both actions are two-step in
           place: the first click arms, the second commits; any filter OR
@@ -1585,7 +1585,7 @@ export function LeadsPanel({
         </p>
       ) : null}
 
-      {/* §24.201 D8 — every "I applied" recorded this session, with its Undo.
+      {/* §24.202 D8 — every "I applied" recorded this session, with its Undo.
           Panel-level on purpose: the refresh after recording flips the lead to
           'applied', which a Status (or other) filter can hide — the Undo must
           stay reachable for its whole window regardless of the view. */}
@@ -1674,7 +1674,7 @@ export function LeadsPanel({
 }
 
 /** The result line for a bulk delete. Reports the server's own counts and its
- *  skip reasons (§24.200 D3) when it sends them; an older host that does not
+ *  skip reasons (§24.201 D3) when it sends them; an older host that does not
  *  falls back to the honest "up to N". */
 export function bulkDeleteNote(requested: number, d: BulkDeleteResult | undefined): string {
   const plural = (n: number) => `${n} lead${n === 1 ? '' : 's'}`
@@ -1730,7 +1730,7 @@ export function notInterestedNote(
   return `Not interested (${reason}): archived ${lead.company} — ${parts.join('; ')}.`
 }
 
-// ── §24.201 D6: the sourcing strip ────────────────────────────────────────────
+// ── §24.202 D6: the sourcing strip ────────────────────────────────────────────
 
 /** "3h ago", "just now", or "—". */
 function ago(iso: string | null): string {
@@ -1763,7 +1763,7 @@ export function quotaLine(q: AdminLeadsSourcing['searchQuota']): string {
   return `${q.used_period} / ${q.monthly_quota} this period · today ${q.used_today} / ${q.daily_cap}`
 }
 
-/** §24.201 D6 — the direct-board sweep and the search supplement, compactly:
+/** §24.202 D6 — the direct-board sweep and the search supplement, compactly:
  *  the last sweep's summary (expandable to its rejections and failing boards),
  *  the last search's refusals by reposting site, and the search quota. */
 function SourcingStrip({ sourcing }: { sourcing: AdminLeadsSourcing }) {
@@ -1829,7 +1829,7 @@ function SourcingStrip({ sourcing }: { sourcing: AdminLeadsSourcing }) {
   )
 }
 
-/** §24.201 D4 — the owner's excluded titles, in the Leads header. Collapsed by
+/** §24.202 D4 — the owner's excluded titles, in the Leads header. Collapsed by
  *  default (it only grows); each entry has its own remove — the one-click undo
  *  of "exclude this title". Hidden when empty. */
 function TitleBlocklist({

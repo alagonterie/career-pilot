@@ -1,5 +1,5 @@
 /**
- * Migration 152 — lead_source_runs (STRATEGY.md §24.200 D5, §24.201 D6).
+ * Migration 152 — lead_source_runs (STRATEGY.md §24.201 D5, §24.202 D6).
  *
  * One row per sourcing run, so the Leads tab can show what the last run did and
  * health can tell a live sweep from a dead one. `kind` is 'sweep' (the host's

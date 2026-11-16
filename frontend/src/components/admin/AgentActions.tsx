@@ -27,7 +27,7 @@ import {
 import { cn } from '~/lib/utils'
 
 /**
- * §24.202 — the agent-action buttons on `/admin`. Fixed requests with one
+ * §24.203 — the agent-action buttons on `/admin`. Fixed requests with one
  * optional note, not a chat box: per lead *Research company* and *Draft
  * outreach* (plus *Build interview kit* once the lead is an application), and a
  * global *Run now* for the job-scrape and daily-briefing series.
